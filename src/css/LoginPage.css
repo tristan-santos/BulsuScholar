@@ -32,13 +32,13 @@
 .login-panel-info {
   position: relative;
   min-height: 40vh;
-  background-color: #1f2c41;
+  background-color: #06321a;
   background-image:
     linear-gradient(
       135deg,
-      rgba(31, 44, 65, 0.92) 0%,
-      rgba(26, 37, 54, 0.88) 50%,
-      rgba(20, 30, 45, 0.94) 100%
+      rgba(11, 87, 43, 0.9) 0%,
+      rgba(5, 40, 20, 0.94) 45%,
+      rgba(2, 18, 9, 0.98) 100%
     ),
     var(--login-bg);
   background-size: cover;
@@ -71,12 +71,14 @@
   width: 48px;
   height: 48px;
   margin-bottom: 1.25rem;
-  color: #ff5722;
+  color: #0b572b;
 }
 
-.login-graduation-icon {
+.login-logo-img {
   width: 100%;
   height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .login-info-title {
@@ -124,7 +126,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #ff5722;
+  background: #0b572b;
 }
 
 .login-info-features li:last-child {
@@ -208,14 +210,14 @@
   display: block;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #ff5722;
+  color: #0b572b;
   text-decoration: none;
   margin-top: 0.35rem;
   transition: color 0.2s, text-decoration 0.2s;
 }
 
 .login-forgot:hover {
-  color: #e64a19;
+  color: #084320;
   text-decoration: underline;
 }
 
@@ -227,12 +229,16 @@
   border-radius: clamp(8px, 2vw, 10px);
   padding: 0 clamp(0.75rem, 2vw, 1rem);
   min-height: 48px;
-  transition: background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
 }
 
 .login-input-wrap:focus-within {
   background: #e8eaed;
-  box-shadow: 0 0 0 2px rgba(255, 87, 34, 0.25);
+  box-shadow:
+    0 0 0 2px rgba(11, 87, 43, 0.28),
+    0 4px 8px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
 }
 
 .login-input-icon {
@@ -243,7 +249,7 @@
 }
 
 .login-input-wrap:focus-within .login-input-icon {
-  color: #ff5722;
+  color: #0b572b;
 }
 
 .login-input {
@@ -268,7 +274,7 @@
   font-size: clamp(1rem, 2.5vw, 1.0625rem);
   font-weight: 600;
   color: #fff;
-  background: #ff5722;
+  background: #0b572b;
   border: none;
   border-radius: clamp(8px, 2vw, 10px);
   cursor: pointer;
@@ -276,7 +282,7 @@
 }
 
 .login-submit:hover {
-  background: #e64a19;
+  background: #084320;
 }
 
 .login-submit:active {
@@ -284,7 +290,7 @@
 }
 
 .login-submit:focus-visible {
-  outline: 2px solid #ff5722;
+  outline: 2px solid #0b572b;
   outline-offset: 2px;
 }
 

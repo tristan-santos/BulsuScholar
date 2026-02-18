@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaGraduationCap } from "react-icons/fa";
 import { HiOutlineMail, HiOutlineLockClosed } from "react-icons/hi";
 import "../css/LoginPage.css";
 import loginBackground from "../assets/LoginBackground.jpg";
+import logo from "../assets/logo.png";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -24,10 +24,14 @@ export default function LoginPage() {
       >
         <div className="login-info-inner">
           <div className="login-info-icon" aria-hidden>
-            <FaGraduationCap className="login-graduation-icon" />
+            <img
+              src={logo}
+              alt="Institutional Student Programs and Services logo"
+              className="login-logo-img"
+            />
           </div>
           <h1 className="login-info-title">
-            College Scholarship Tracking & Management System
+            Institutional Student Programs and Services
           </h1>
           <p className="login-info-desc">
             Empowering college students to achieve their educational dreams through
@@ -58,7 +62,7 @@ export default function LoginPage() {
 
       <div className="login-panel login-panel-form">
         <div className="login-form-inner">
-          <h2 className="login-form-title">Admin Login</h2>
+          <h2 className="login-form-title">Login</h2>
           <p className="login-form-subtitle">Sign in to access your dashboard</p>
 
           <form className="login-form" onSubmit={handleSubmit} noValidate>
