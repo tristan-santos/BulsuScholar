@@ -1,19 +1,78 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { HiOutlineMail, HiOutlineLockClosed } from "react-icons/hi"
+import { toast } from "react-toastify"
+import { doc, getDoc } from "firebase/firestore"
+import { db } from "../../firebase"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
+import logo2 from "../assets/logo2.png"
+
+const COLLECTIONS = [
+	{ type: "student", collection: "students" },
+	{ type: "admin", collection: "admins" },
+	{ type: "provider", collection: "providers" },
+]
 
 export default function LoginPage() {
-	const [studentNumber, setStudentNumber] = useState("")
+	const [userId, setUserId] = useState("")
 	const [password, setPassword] = useState("")
+	const [isLoading, setIsLoading] = useState(false)
 	const navigate = useNavigate()
 
-	const handleSubmit = (e) => {
+	const getDashboardPath = (type) => {
+		switch (type) {
+			case "student":
+				return "/student-dashboard"
+			case "admin":
+				return "/admin-dashboard"
+			case "provider":
+				return "/provider-dashboard"
+			default:
+				return "/"
+		}
+	}
+
+	const handleSubmit = async (e) => {
 		e.preventDefault()
-		// Prototype: no database — accept any credentials and redirect
-		navigate("/admin-dashboard", { replace: true })
+		const id = userId.trim()
+		if (!id) return
+
+		setIsLoading(true)
+		try {
+			// Check all collections in parallel to detect user type by document ID
+			const results = await Promise.all(
+				COLLECTIONS.map(({ type, collection }) =>
+					getDoc(doc(db, collection, id)).then((snap) => ({
+						exists: snap.exists(),
+						type,
+						data: snap.exists() ? snap.data() : null,
+					})),
+				),
+			)
+			const found = results.find((r) => r.exists)
+			if (found) {
+				toast.info("Logging in…", { autoClose: 1500 })
+				if (found.type === "student") {
+					sessionStorage.setItem("bulsuscholar_userId", id)
+					sessionStorage.setItem("bulsuscholar_userType", "student")
+				}
+				setTimeout(() => {
+					navigate(getDashboardPath(found.type), {
+						replace: true,
+						state: { user: found.data, userId: id },
+					})
+				}, 500)
+			} else {
+				toast.error("User not exist")
+			}
+		} catch (err) {
+			console.error(err)
+			toast.error("Login failed. Please try again.")
+		} finally {
+			setIsLoading(false)
+		}
 	}
 
 	return (
@@ -64,22 +123,27 @@ export default function LoginPage() {
 
 			<div className="login-panel login-panel-form">
 				<div className="login-form-inner">
+					<img
+						src={logo2}
+						alt="Bulacan State University Office of the Scholarships"
+						className="login-form-logo"
+					/>
 					<h2 className="login-form-title">BulsuScholar</h2>
 					<p className="login-form-subtitle">Login to access your dashboard</p>
 
 					<form className="login-form" onSubmit={handleSubmit} noValidate>
-						<label className="login-label" htmlFor="login-student-number">
-							Student Number
+						<label className="login-label" htmlFor="login-user-id">
+							User Id
 						</label>
 						<div className="login-input-wrap">
 							<HiOutlineMail className="login-input-icon" aria-hidden />
 							<input
-								id="login-student-number"
+								id="login-user-id"
 								type="text"
 								className="login-input"
-								placeholder="e.g., 202012345"
-								value={studentNumber}
-								onChange={(e) => setStudentNumber(e.target.value)}
+								placeholder="Enter your User Id"
+								value={userId}
+								onChange={(e) => setUserId(e.target.value)}
 								autoComplete="username"
 								autoCapitalize="off"
 							/>
@@ -104,8 +168,12 @@ export default function LoginPage() {
 							Forgot password?
 						</a>
 
-						<button type="submit" className="login-submit">
-							Enter
+						<button
+							type="submit"
+							className="login-submit"
+							disabled={isLoading}
+						>
+							{isLoading ? "Logging in…" : "Enter"}
 						</button>
 
 						<div className="login-create-account">
@@ -115,7 +183,7 @@ export default function LoginPage() {
 							<button
 								type="button"
 								className="create-account-btn"
-								onClick={() => navigate("/register")}
+								onClick={() => navigate("/signup")}
 							>
 								Create one!
 							</button>

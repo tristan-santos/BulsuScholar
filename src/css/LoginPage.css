@@ -128,7 +128,7 @@
 	width: 8px;
 	height: 8px;
 	border-radius: 50%;
-	background: #0b572b;
+	background: #ffffff;
 }
 
 .login-info-features li:last-child {
@@ -174,6 +174,14 @@
 	margin: auto;
 }
 
+.login-form-logo {
+	width: 72px;
+	height: 72px;
+	object-fit: contain;
+	display: block;
+	margin: 0 auto 1rem;
+}
+
 .login-form-title {
 	font-family:
 		system-ui,
@@ -213,6 +221,25 @@
 	font-weight: 600;
 	color: #1f2937;
 	margin-bottom: 0.35rem;
+}
+
+.login-select {
+	width: 100%;
+	min-height: 48px;
+	padding: 0 1rem;
+	font-size: 1rem;
+	color: #1f2937;
+	background: #f0f2f5;
+	border: none;
+	border-radius: clamp(8px, 2vw, 10px);
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+	cursor: pointer;
+	outline: none;
+}
+
+.login-select:focus {
+	background: #e8eaed;
+	box-shadow: 0 0 0 2px rgba(11, 87, 43, 0.28);
 }
 
 .login-forgot {
@@ -308,6 +335,41 @@
 .login-submit:focus-visible {
 	outline: 2px solid #0b572b;
 	outline-offset: 2px;
+}
+
+/* Create account section */
+.login-create-account {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	margin-top: 1rem;
+	padding: 1rem 1.25rem;
+	background: linear-gradient(135deg, #f8faf9 0%, #f0f7f3 100%);
+	border: 1px solid rgba(11, 87, 43, 0.15);
+	border-radius: 10px;
+	box-shadow: 0 1px 3px rgba(11, 87, 43, 0.06);
+}
+
+.login-create-text {
+	font-size: 0.9rem;
+	color: #4b5563;
+}
+
+.create-account-btn {
+	background: none;
+	border: none;
+	padding: 0;
+	font-size: 0.9rem;
+	font-weight: 600;
+	color: #0b572b;
+	cursor: pointer;
+	transition: color 0.2s;
+}
+
+.create-account-btn:hover {
+	color: #084320;
 }
 
 /* Mobile: ensure child stays within panel and remains usable */

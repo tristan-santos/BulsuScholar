@@ -15,12 +15,21 @@
 	box-sizing: border-box;
 }
 
+/* Hide scrollbars across the app (keep scroll functionality) */
+* {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+	display: none;
+}
+
 body {
 	margin: 0;
 	min-width: 320px;
 	min-height: 100vh;
 	min-height: 100dvh;
-  overflow-x: hidden;
+	overflow-x: hidden;
 }
 
 #root {
