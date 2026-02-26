@@ -1,6 +1,11 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { HiOutlineMail, HiOutlineLockClosed } from "react-icons/hi"
+import {
+	HiOutlineMail,
+	HiOutlineLockClosed,
+	HiOutlineEye,
+	HiOutlineEyeOff,
+} from "react-icons/hi"
 import { toast } from "react-toastify"
 import { doc, getDoc } from "firebase/firestore"
 import { db } from "../../firebase"
@@ -18,6 +23,7 @@ const COLLECTIONS = [
 export default function LoginPage() {
 	const [userId, setUserId] = useState("")
 	const [password, setPassword] = useState("")
+	const [showPassword, setShowPassword] = useState(false)
 	const [isLoading, setIsLoading] = useState(false)
 	const navigate = useNavigate()
 
@@ -156,13 +162,25 @@ export default function LoginPage() {
 							<HiOutlineLockClosed className="login-input-icon" aria-hidden />
 							<input
 								id="login-password"
-								type="password"
+								type={showPassword ? "text" : "password"}
 								className="login-input"
 								placeholder="Enter your password"
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 								autoComplete="current-password"
 							/>
+							<button
+								type="button"
+								className="login-input-eye-btn"
+								onClick={() => setShowPassword((v) => !v)}
+								aria-label={showPassword ? "Hide password" : "Show password"}
+							>
+								{showPassword ? (
+									<HiOutlineEyeOff className="login-input-eye-icon" aria-hidden />
+								) : (
+									<HiOutlineEye className="login-input-eye-icon" aria-hidden />
+								)}
+							</button>
 						</div>
 						<a href="#forgot" className="login-forgot">
 							Forgot password?

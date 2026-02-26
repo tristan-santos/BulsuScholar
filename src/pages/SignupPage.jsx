@@ -8,7 +8,13 @@ import {
 	HiOutlineTrash,
 	HiOutlineCloudUpload,
 	HiOutlineClock,
+	HiOutlineEye,
+	HiOutlineEyeOff,
 } from "react-icons/hi"
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
+import { toast } from "react-toastify"
+import { db, storage } from "../../firebase"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -39,12 +45,50 @@ const SCHOLARSHIP_PROVIDERS = [
 
 const SCHOLARSHIP_TYPES = ["Scholarship", "Educational Assistance"]
 
+async function encryptPasswordAES256(plainPassword) {
+	if (!plainPassword) return ""
+
+	const secret =
+		import.meta.env.VITE_PASSWORD_SECRET ||
+		"bulsuscholar-default-secret-key-32!!!"
+
+	const enc = new TextEncoder()
+	const keyBytes = enc.encode(secret.padEnd(32).slice(0, 32))
+
+	const cryptoKey = await window.crypto.subtle.importKey(
+		"raw",
+		keyBytes,
+		{ name: "AES-GCM" },
+		false,
+		["encrypt"],
+	)
+
+	const iv = window.crypto.getRandomValues(new Uint8Array(12))
+	const cipherBuffer = await window.crypto.subtle.encrypt(
+		{ name: "AES-GCM", iv },
+		cryptoKey,
+		enc.encode(plainPassword),
+	)
+
+	const combined = new Uint8Array(iv.byteLength + cipherBuffer.byteLength)
+	combined.set(iv, 0)
+	combined.set(new Uint8Array(cipherBuffer), iv.byteLength)
+
+	let binary = ""
+	for (let i = 0; i < combined.byteLength; i += 1) {
+		binary += String.fromCharCode(combined[i])
+	}
+	return btoa(binary)
+}
+
 export default function SignupPage() {
 	const navigate = useNavigate()
 	const [step, setStep] = useState(1)
 	const [userId, setUserId] = useState("")
 	const [password, setPassword] = useState("")
 	const [confirmPassword, setConfirmPassword] = useState("")
+	const [showPassword, setShowPassword] = useState(false)
+	const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 	const [fname, setFname] = useState("")
 	const [mname, setMname] = useState("")
 	const [lname, setLname] = useState("")
@@ -55,7 +99,6 @@ export default function SignupPage() {
 	const [showAddScholarshipForm, setShowAddScholarshipForm] = useState(false)
 	const [editingScholarshipIndex, setEditingScholarshipIndex] = useState(null)
 	const [scholarships, setScholarships] = useState([])
-	const [scholarshipName, setScholarshipName] = useState("")
 	const [scholarshipProvider, setScholarshipProvider] = useState("")
 	const [scholarshipProviderOther, setScholarshipProviderOther] = useState("")
 	const [scholarshipDate, setScholarshipDate] = useState("")
@@ -64,17 +107,117 @@ export default function SignupPage() {
 	const [registrationNumber, setRegistrationNumber] = useState("")
 	const [isPending, setIsPending] = useState(false)
 
-	const isNextDisabled =
-		(step === 3 &&
-			(hasExistingScholarship === null ||
-				(hasExistingScholarship === true && scholarships.length === 0))) ||
-		(step === 4 && (!corFile || !registrationNumber.trim()))
+	const isStep1Invalid =
+		step === 1 &&
+		(!userId.trim() ||
+			!password.trim() ||
+			!confirmPassword.trim() ||
+			password !== confirmPassword)
 
-	const handleNext = (e) => {
+	const isStep2Invalid =
+		step === 2 &&
+		(!fname.trim() ||
+			!lname.trim() ||
+			!course ||
+			!year ||
+			!section.trim())
+
+	const isStep3Invalid =
+		step === 3 &&
+		(hasExistingScholarship === null ||
+			(hasExistingScholarship === true && scholarships.length === 0))
+
+	const isStep4Invalid =
+		step === 4 && (!corFile || !registrationNumber.trim())
+
+	const isNextDisabled = isStep1Invalid || isStep2Invalid || isStep3Invalid || isStep4Invalid
+
+	const handleNext = async (e) => {
 		e.preventDefault()
 		if (isNextDisabled) return
 		if (step === TOTAL_STEPS) {
-			setIsPending(true)
+			try {
+				const encryptedPassword = await encryptPasswordAES256(password)
+				const studentId = userId.trim()
+
+				// Prevent duplicate registrations in students or pendingStudent
+				const [studentSnap, pendingSnap, existingSnap] = await Promise.all([
+					getDoc(doc(db, "students", studentId)),
+					getDoc(doc(db, "pendingStudent", studentId)),
+					getDoc(doc(db, "existingStudent", studentId)),
+				])
+
+				if (studentSnap.exists() || pendingSnap.exists()) {
+					toast.error(
+						"This student number is already registered and is still in review.",
+					)
+					return
+				}
+
+				let corFilePayload = null
+				if (corFile) {
+					try {
+						const path = `pending-cor/${studentId}/${Date.now()}-${corFile.name}`
+						const storageRef = ref(storage, path)
+						await uploadBytes(storageRef, corFile)
+						const url = await getDownloadURL(storageRef)
+						corFilePayload = {
+							name: corFile.name,
+							type: corFile.type,
+							size: corFile.size,
+							url,
+							path,
+						}
+					} catch (uploadErr) {
+						console.error("Failed to upload COR file:", uploadErr)
+					}
+				}
+
+				const baseData = {
+					course,
+					fname: fname.trim(),
+					lname: lname.trim(),
+					mname: mname.trim(),
+					studentnumber: studentId,
+					userType: "student",
+					year,
+					section: section.trim(),
+					registrationNumber: registrationNumber.trim(),
+					corFile: corFilePayload,
+					password: encryptedPassword,
+					hasExistingScholarship,
+					scholarships,
+				}
+
+				if (existingSnap.exists()) {
+					// Auto-approve if student exists in existingStudent
+					await setDoc(
+						doc(db, "students", studentId),
+						{
+							...baseData,
+							isValidated: true,
+							isPending: false,
+							validatedAt: serverTimestamp(),
+							createdAt: serverTimestamp(),
+						},
+						{ merge: true },
+					)
+					toast.success("Account matched existing records and was auto-approved.")
+				} else {
+					// Normal flow: create pendingStudent document
+					await setDoc(doc(db, "pendingStudent", studentId), {
+						...baseData,
+						isValidated: false,
+						isPending: true,
+						validatedAt: null,
+						createdAt: serverTimestamp(),
+					})
+				}
+
+				setIsPending(true)
+			} catch (err) {
+				console.error("Error saving pending student:", err)
+			}
 			return
 		}
 		if (step < TOTAL_STEPS) setStep((s) => s + 1)
@@ -92,11 +235,10 @@ export default function SignupPage() {
 
 	const handleSaveScholarship = () => {
 		const provider = scholarshipProvider === "Other" ? scholarshipProviderOther : scholarshipProvider
-		if (!scholarshipName.trim() || !provider.trim() || !scholarshipDate || !scholarshipType) return
+		if (!provider.trim() || !scholarshipDate || !scholarshipType) return
 		const data = {
-			name: scholarshipName,
 			provider,
-			date: scholarshipDate,
+			lastPayout: scholarshipDate,
 			type: scholarshipType,
 		}
 		if (editingScholarshipIndex !== null) {
@@ -107,7 +249,6 @@ export default function SignupPage() {
 		} else {
 			setScholarships((prev) => [...prev, data])
 		}
-		setScholarshipName("")
 		setScholarshipProvider("")
 		setScholarshipProviderOther("")
 		setScholarshipDate("")
@@ -117,11 +258,10 @@ export default function SignupPage() {
 
 	const handleEditScholarship = (index) => {
 		const s = scholarships[index]
-		setScholarshipName(s.name)
 		const isOther = !SCHOLARSHIP_PROVIDERS.slice(0, -1).includes(s.provider)
 		setScholarshipProvider(isOther ? "Other" : s.provider)
 		setScholarshipProviderOther(isOther ? s.provider : "")
-		setScholarshipDate(s.date)
+		setScholarshipDate(s.lastPayout || s.date || "")
 		setScholarshipType(s.type)
 		setEditingScholarshipIndex(index)
 		setShowAddScholarshipForm(true)
@@ -134,7 +274,6 @@ export default function SignupPage() {
 	const handleCancelScholarshipForm = () => {
 		setShowAddScholarshipForm(false)
 		setEditingScholarshipIndex(null)
-		setScholarshipName("")
 		setScholarshipProvider("")
 		setScholarshipProviderOther("")
 		setScholarshipDate("")
@@ -324,13 +463,25 @@ export default function SignupPage() {
 									<HiOutlineLockClosed className="login-input-icon" aria-hidden />
 									<input
 										id="signup-password"
-										type="password"
+										type={showPassword ? "text" : "password"}
 										className="login-input"
 										placeholder="Enter your password"
 										value={password}
 										onChange={(e) => setPassword(e.target.value)}
 										autoComplete="new-password"
 									/>
+									<button
+										type="button"
+										className="login-input-eye-btn"
+										onClick={() => setShowPassword((v) => !v)}
+										aria-label={showPassword ? "Hide password" : "Show password"}
+									>
+										{showPassword ? (
+											<HiOutlineEyeOff className="login-input-eye-icon" aria-hidden />
+										) : (
+											<HiOutlineEye className="login-input-eye-icon" aria-hidden />
+										)}
+									</button>
 								</div>
 
 								<label className="login-label" htmlFor="signup-confirm-password">
@@ -340,13 +491,25 @@ export default function SignupPage() {
 									<HiOutlineLockClosed className="login-input-icon" aria-hidden />
 									<input
 										id="signup-confirm-password"
-										type="password"
+										type={showConfirmPassword ? "text" : "password"}
 										className="login-input"
 										placeholder="Confirm your password"
 										value={confirmPassword}
 										onChange={(e) => setConfirmPassword(e.target.value)}
 										autoComplete="new-password"
 									/>
+									<button
+										type="button"
+										className="login-input-eye-btn"
+										onClick={() => setShowConfirmPassword((v) => !v)}
+										aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+									>
+										{showConfirmPassword ? (
+											<HiOutlineEyeOff className="login-input-eye-icon" aria-hidden />
+										) : (
+											<HiOutlineEye className="login-input-eye-icon" aria-hidden />
+										)}
+									</button>
 								</div>
 							</>
 						)}
@@ -509,7 +672,9 @@ export default function SignupPage() {
 														{scholarships.map((s, i) => (
 															<li key={i} className="scholarship-item">
 																<HiOutlineAcademicCap className="scholarship-item-icon" aria-hidden />
-																<span className="scholarship-item-name">{s.name}</span>
+																<span className="scholarship-item-name">
+																	{s.provider}
+																</span>
 																<div className="scholarship-item-actions">
 																	<button
 																		type="button"
@@ -535,19 +700,6 @@ export default function SignupPage() {
 											</>
 										) : (
 											<div className="scholarship-form">
-												<label className="login-label" htmlFor="scholarship-name">
-													Scholarship Name
-												</label>
-												<div className="login-input-wrap">
-													<input
-														id="scholarship-name"
-														type="text"
-														className="login-input"
-														placeholder="Enter scholarship name"
-														value={scholarshipName}
-														onChange={(e) => setScholarshipName(e.target.value)}
-													/>
-												</div>
 
 												<label className="login-label" htmlFor="scholarship-provider">
 													Scholarship Provider
@@ -585,7 +737,7 @@ export default function SignupPage() {
 												)}
 
 												<label className="login-label" htmlFor="scholarship-date">
-													Date of Scholarship Application
+													Last Payout Date
 												</label>
 												<div className="login-input-wrap">
 													<input
@@ -699,7 +851,15 @@ export default function SignupPage() {
 									<div className="signup-review-section">
 										<h3 className="signup-review-heading">Scholarships</h3>
 										{scholarships.map((s, i) => (
-											<p key={i} className="signup-review-row">{s.name} — {s.provider} ({s.type})</p>
+											<p key={i} className="signup-review-row">
+												{s.provider} — {s.type}
+												{s.lastPayout && (
+													<>
+														{" "}
+														(Last payout: {s.lastPayout})
+													</>
+												)}
+											</p>
 										))}
 									</div>
 								)}

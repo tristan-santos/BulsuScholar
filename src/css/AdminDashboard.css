@@ -539,3 +539,135 @@
 	margin: 0;
 	padding: 1rem 0;
 }
+
+/* Approvals table actions & preview */
+.dashboard-approval-actions {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.dashboard-approval-btn {
+	padding: 0.35rem 0.9rem;
+	border-radius: 9999px;
+	border: none;
+	font-size: 0.8rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition:
+		background 0.15s ease,
+		transform 0.08s ease,
+		box-shadow 0.15s ease;
+}
+
+.dashboard-approval-btn--approve {
+	background: #16a34a;
+	color: #fff;
+	box-shadow: 0 1px 3px rgba(22, 163, 74, 0.3);
+}
+
+.dashboard-approval-btn--approve:hover {
+	background: #15803d;
+	transform: translateY(-1px);
+}
+
+.dashboard-approval-btn--reject {
+	background: #fee2e2;
+	color: #b91c1c;
+}
+
+.dashboard-approval-btn--reject:hover {
+	background: #fecaca;
+	transform: translateY(-1px);
+}
+
+.dashboard-preview-btn {
+	padding: 0.35rem 0.9rem;
+	border-radius: 9999px;
+	border: 1px solid #d1d5db;
+	background: #f9fafb;
+	font-size: 0.8rem;
+	font-weight: 500;
+	color: #374151;
+	cursor: pointer;
+	transition:
+		background 0.15s ease,
+		border-color 0.15s ease,
+		transform 0.08s ease;
+}
+
+.dashboard-preview-btn:hover {
+	background: #eff6ff;
+	border-color: #3b82f6;
+	transform: translateY(-1px);
+}
+
+.dashboard-preview-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(15, 23, 42, 0.55);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 50;
+}
+
+.dashboard-preview-modal {
+	background: #fff;
+	border-radius: 12px;
+	max-width: 900px;
+	width: 90%;
+	max-height: 90vh;
+	display: flex;
+	flex-direction: column;
+	box-shadow: 0 20px 40px rgba(15, 23, 42, 0.35);
+}
+
+.dashboard-preview-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0.9rem 1.25rem;
+	border-bottom: 1px solid #e5e7eb;
+}
+
+.dashboard-preview-title {
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 600;
+	color: #111827;
+}
+
+.dashboard-preview-sub {
+	margin: 0.2rem 0 0;
+	font-size: 0.8rem;
+	color: #6b7280;
+}
+
+.dashboard-preview-close {
+	border: none;
+	background: transparent;
+	font-size: 1.4rem;
+	line-height: 1;
+	cursor: pointer;
+	color: #6b7280;
+}
+
+.dashboard-preview-close:hover {
+	color: #111827;
+}
+
+.dashboard-preview-body {
+	padding: 0.75rem 1.25rem 1.25rem;
+	flex: 1;
+	display: flex;
+}
+
+.dashboard-preview-frame,
+.dashboard-preview-image {
+	width: 100%;
+	height: 70vh;
+	border: none;
+	border-radius: 8px;
+	object-fit: contain;
+	background: #000;
+}

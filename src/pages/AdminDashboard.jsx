@@ -1,7 +1,7 @@
 /**
- * Admin Dashboard - Overview content (prototype, no database).
+ * Admin Dashboard - Manage scholarship applications and approvals.
  */
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
 	Chart as ChartJS,
 	CategoryScale,
@@ -32,6 +32,8 @@ import {
 	HiMenu,
 	HiX,
 } from "react-icons/hi"
+import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore"
+import { db } from "../../firebase"
 import "../css/AdminDashboard.css"
 import logo from "../assets/logo.png"
 
@@ -236,6 +238,39 @@ export default function AdminDashboard() {
 	// Filters for Overview
 	const [overviewStatusFilter, setOverviewStatusFilter] = useState("All")
 	const [chartTimePeriod, setChartTimePeriod] = useState("Monthly")
+
+	// Pending students for approvals tab
+	const [pendingStudents, setPendingStudents] = useState([])
+	const [isLoadingPending, setIsLoadingPending] = useState(false)
+	const [previewFile, setPreviewFile] = useState(null)
+
+	useEffect(() => {
+		async function fetchPending() {
+			try {
+				setIsLoadingPending(true)
+				const snap = await getDocs(collection(db, "pendingStudent"))
+				const items = []
+				snap.forEach((d) => {
+					const data = d.data() || {}
+					if (data.isPending === true || data.isValidated === false || data.isValidated === "false") {
+						items.push({
+							id: d.id,
+							...data,
+						})
+					}
+				})
+				setPendingStudents(items)
+			} catch (err) {
+				// eslint-disable-next-line no-console
+				console.error("Failed to load pending students", err)
+			} finally {
+				setIsLoadingPending(false)
+			}
+		}
+		if (activeTab === "Approvals") {
+			fetchPending()
+		}
+	}, [activeTab])
 
 	// Filters for Analytics
 	const [analyticsCourseFilter, setAnalyticsCourseFilter] = useState("All")
@@ -502,10 +537,10 @@ export default function AdminDashboard() {
 						</button>
 						<button
 							type="button"
-							className={`dashboard-tab ${activeTab === "Analytics" ? "dashboard-tab--active" : ""}`}
-							onClick={() => setActiveTab("Analytics")}
+							className={`dashboard-tab ${activeTab === "Approvals" ? "dashboard-tab--active" : ""}`}
+							onClick={() => setActiveTab("Approvals")}
 						>
-							Analytics
+							Approvals
 						</button>
 						<button
 							type="button"
@@ -792,6 +827,156 @@ export default function AdminDashboard() {
 								</div>
 							</section>
 						</>
+					)}
+
+					{activeTab === "Approvals" && (
+						<section className="dashboard-panel dashboard-panel--table">
+							<div className="dashboard-panel-header">
+								<div>
+									<h3 className="dashboard-panel-title">Pending approvals</h3>
+									<p className="dashboard-panel-sub">
+										Review student registrations that are waiting for verification.
+									</p>
+								</div>
+							</div>
+
+							{isLoadingPending ? (
+								<p className="dashboard-placeholder">Loading pending students…</p>
+							) : pendingStudents.length === 0 ? (
+								<p className="dashboard-placeholder">
+									There are no pending student accounts at the moment.
+								</p>
+							) : (
+								<div className="dashboard-table-wrap">
+									<table className="dashboard-table">
+										<thead>
+											<tr>
+												<th>Student</th>
+												<th>Student No.</th>
+												<th>Course / Year &amp; Section</th>
+												<th>Registration No.</th>
+												<th>COR File</th>
+												<th>Actions</th>
+											</tr>
+										</thead>
+										<tbody>
+											{pendingStudents.map((s) => {
+												const fullName = [s.fname, s.mname, s.lname].filter(Boolean).join(" ")
+												const studentNo = s.studentnumber || s.id
+												const fileMeta = s.corFile || null
+												return (
+													<tr key={s.id}>
+														<td>
+															<div style={{ display: "flex", flexDirection: "column" }}>
+																<span style={{ fontWeight: 600 }}>{fullName || "Student"}</span>
+															</div>
+														</td>
+														<td>
+															<span className="dashboard-table-id">
+																{studentNo || "—"}
+															</span>
+														</td>
+														<td>
+															<div style={{ display: "flex", flexDirection: "column" }}>
+																<span>{s.course || "—"}</span>
+																<span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+																	Year {s.year || "—"} / Sec {s.section || "—"}
+																</span>
+															</div>
+														</td>
+														<td>{s.registrationNumber || "—"}</td>
+														<td>
+															{fileMeta ? (
+																<button
+																	type="button"
+																	className="dashboard-preview-btn"
+																	onClick={() =>
+																		setPreviewFile({
+																			studentName: fullName || "Student",
+																			studentNo,
+																			file: fileMeta,
+																		})
+																	}
+																>
+																	Preview
+																</button>
+															) : (
+																<span style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
+																	No COR uploaded
+																</span>
+															)}
+														</td>
+														<td>
+															<div className="dashboard-approval-actions">
+																<button
+																	type="button"
+																	className="dashboard-approval-btn dashboard-approval-btn--approve"
+																	onClick={async () => {
+																		try {
+																			const studentId = studentNo
+																			await setDoc(
+																				doc(db, "students", studentId),
+																				{
+																					fname: s.fname || "",
+																					mname: s.mname || "",
+																					lname: s.lname || "",
+																					course: s.course || "",
+																					year: s.year || "",
+																					section: s.section || "",
+																					studentnumber: studentId,
+																					userType: "student",
+																					isValidated: true,
+																					isPending: false,
+																					validatedAt: serverTimestamp(),
+																					registrationNumber: s.registrationNumber || "",
+																					corFile: s.corFile || null,
+																					password: s.password || "",
+																				},
+																				{ merge: true },
+																			)
+																			await deleteDoc(doc(db, "pendingStudent", s.id))
+																			setPendingStudents((prev) =>
+																				prev.filter((p) => p.id !== s.id),
+																			)
+																		} catch (err) {
+																			// eslint-disable-next-line no-console
+																			console.error("Approve failed", err)
+																		}
+																	}}
+																>
+																	Approve
+																</button>
+																<button
+																	type="button"
+																	className="dashboard-approval-btn dashboard-approval-btn--reject"
+																	onClick={async () => {
+																		try {
+																			await setDoc(doc(db, "rejected", s.id), {
+																				...s,
+																				rejectedAt: serverTimestamp(),
+																			})
+																			await deleteDoc(doc(db, "pendingStudent", s.id))
+																			setPendingStudents((prev) =>
+																				prev.filter((p) => p.id !== s.id),
+																			)
+																		} catch (err) {
+																			// eslint-disable-next-line no-console
+																			console.error("Reject failed", err)
+																		}
+																	}}
+																>
+																	Reject
+																</button>
+															</div>
+														</td>
+													</tr>
+												)
+											})}
+										</tbody>
+									</table>
+								</div>
+							)}
+						</section>
 					)}
 
 					{activeTab === "Analytics" && (
@@ -1233,6 +1418,64 @@ export default function AdminDashboard() {
 					)}
 				</div>
 			</main>
+
+			{previewFile && (
+				<div
+					className="dashboard-preview-backdrop"
+					onClick={() => setPreviewFile(null)}
+					role="presentation"
+				>
+					<div
+						className="dashboard-preview-modal"
+						onClick={(e) => e.stopPropagation()}
+						role="dialog"
+						aria-modal="true"
+						aria-label="Preview COR file"
+					>
+						<div className="dashboard-preview-header">
+							<div>
+								<h3 className="dashboard-preview-title">
+									{previewFile.studentName}
+								</h3>
+								<p className="dashboard-preview-sub">
+									Student No. {previewFile.studentNo || "—"}
+								</p>
+							</div>
+							<button
+								type="button"
+								className="dashboard-preview-close"
+								onClick={() => setPreviewFile(null)}
+								aria-label="Close preview"
+							>
+								×
+							</button>
+						</div>
+
+						<div className="dashboard-preview-body">
+							{previewFile.file?.url ? (
+								previewFile.file.type?.startsWith("image/") ? (
+									<img
+										src={previewFile.file.url}
+										alt={previewFile.file.name || "COR"}
+										className="dashboard-preview-image"
+									/>
+								) : (
+									<iframe
+										title={previewFile.file.name || "COR"}
+										src={previewFile.file.url}
+										className="dashboard-preview-frame"
+									/>
+								)
+							) : (
+								<p className="dashboard-placeholder">
+									Preview is not available because no file URL was stored. Please
+									open the file from storage.
+								</p>
+							)}
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	)
 }

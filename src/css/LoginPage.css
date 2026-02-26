@@ -308,6 +308,29 @@
 	color: #9ca3af;
 }
 
+.login-input-eye-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	margin-left: 0.25rem;
+	border: none;
+	background: transparent;
+	color: #9ca3af;
+	cursor: pointer;
+	flex-shrink: 0;
+}
+
+.login-input-eye-btn:hover {
+	color: #4b5563;
+}
+
+.login-input-eye-icon {
+	width: 18px;
+	height: 18px;
+}
+
 .login-submit {
 	margin-top: 0.5rem;
 	padding: clamp(0.75rem, 2vw, 0.875rem) clamp(1.25rem, 3vw, 1.5rem);
