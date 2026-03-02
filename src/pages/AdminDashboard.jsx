@@ -1,7 +1,7 @@
 /**
  * Admin Dashboard - Manage scholarship applications and approvals.
  */
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
 	Chart as ChartJS,
 	CategoryScale,
@@ -31,11 +31,28 @@ import {
 	HiOutlineUserCircle,
 	HiMenu,
 	HiX,
+	HiOutlineMail,
+	HiOutlineSun,
+	HiOutlineMoon,
+	HiOutlineLogout,
+	HiOutlineAcademicCap,
+	HiOutlineCog,
 } from "react-icons/hi"
-import { collection, getDocs, doc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore"
-import { db } from "../../firebase"
+import {
+	collection,
+	getDocs,
+	doc,
+	setDoc,
+	deleteDoc,
+	serverTimestamp,
+	query,
+	where,
+} from "firebase/firestore"
+import { onAuthStateChanged } from "firebase/auth"
+import { db, auth } from "../../firebase"
 import "../css/AdminDashboard.css"
 import logo from "../assets/logo.png"
+import logo2 from "../assets/logo2.png"
 
 ChartJS.register(
 	CategoryScale,
@@ -52,45 +69,6 @@ ChartJS.register(
 	Tooltip,
 	Legend,
 )
-
-/* ----- Overview stat cards ----- */
-const OVERVIEW_STATS = [
-	{
-		label: "Total College Applications",
-		value: "1,284",
-		trend: "↑ 12% from last month",
-		trendUp: true,
-		icon: HiOutlineDocumentText,
-	},
-	{
-		label: "Active Scholarships",
-		value: "48",
-		trend: "↑ 3 new this month",
-		trendUp: true,
-		icon: HiOutlineUserGroup,
-	},
-	{
-		label: "Approved",
-		value: "856",
-		trend: "↑ 8% from last month",
-		trendUp: true,
-		icon: HiOutlineCheckCircle,
-	},
-	{
-		label: "Pending Review",
-		value: "142",
-		trend: "↓ 5% from last month",
-		trendUp: false,
-		icon: HiOutlineClock,
-	},
-	{
-		label: "Rejected",
-		value: "286",
-		trend: "↓ 3% from last month",
-		trendUp: false,
-		icon: HiOutlineXCircle,
-	},
-]
 
 /* ----- College Applications Overview (area/line chart) ----- */
 const APPLICATIONS_TREND = {
@@ -128,88 +106,6 @@ const APPLICATIONS_TREND = {
 	],
 }
 
-/* ----- Scholarship Distribution (pie) ----- */
-const SCHOLARSHIP_DISTRIBUTION = {
-	labels: [
-		"Engineering",
-		"Business Administration",
-		"Education",
-		"Nursing",
-		"Computer Science",
-	],
-	datasets: [
-		{
-			data: [33, 22, 17, 15, 13],
-			backgroundColor: ["#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#10b981"],
-			borderWidth: 0,
-		},
-	],
-}
-
-/* ----- Recent Applications table ----- */
-const RECENT_APPLICATIONS = [
-	{
-		id: "APP-2024-001",
-		name: "Maria Santos",
-		course: "BS Civil Engineering",
-		scholarship: "Engineering Excellence Award",
-		amount: "₱25,000",
-		gpa: "3.9",
-		date: "2/1/2024",
-		status: "pending",
-	},
-	{
-		id: "APP-2024-002",
-		name: "Juan Dela Cruz",
-		course: "BS Business Administration",
-		scholarship: "Merit Scholarship",
-		amount: "₱20,000",
-		gpa: "3.8",
-		date: "2/2/2024",
-		status: "approved",
-	},
-	{
-		id: "APP-2024-003",
-		name: "Ana Reyes",
-		course: "BS Nursing",
-		scholarship: "Healthcare Grant",
-		amount: "₱30,000",
-		gpa: "3.95",
-		date: "2/3/2024",
-		status: "under review",
-	},
-	{
-		id: "APP-2024-004",
-		name: "Carlos Mendoza",
-		course: "BS Computer Science",
-		scholarship: "Tech Excellence Award",
-		amount: "₱28,000",
-		gpa: "3.7",
-		date: "2/4/2024",
-		status: "rejected",
-	},
-	{
-		id: "APP-2024-005",
-		name: "Elena Torres",
-		course: "BS Education",
-		scholarship: "Future Educators Grant",
-		amount: "₱22,000",
-		gpa: "3.85",
-		date: "2/5/2024",
-		status: "approved",
-	},
-	{
-		id: "APP-2024-006",
-		name: "Miguel Fernandez",
-		course: "BS Civil Engineering",
-		scholarship: "Engineering Excellence Award",
-		amount: "₱25,000",
-		gpa: "3.6",
-		date: "2/6/2024",
-		status: "pending",
-	},
-]
-
 const lineChartOptions = {
 	responsive: true,
 	maintainAspectRatio: false,
@@ -234,41 +130,261 @@ const statusClass = (status) => {
 export default function AdminDashboard() {
 	const [activeTab, setActiveTab] = useState("Overview")
 	const [sidebarOpen, setSidebarOpen] = useState(false)
+	const [userMenuOpen, setUserMenuOpen] = useState(false)
+	const [theme, setTheme] = useState("light")
+	const [adminUser, setAdminUser] = useState(null)
+	const userMenuRef = useRef(null)
+
+	// State for applications data from Firestore
+	const [applications, setApplications] = useState([])
+	const [isLoadingApplications, setIsLoadingApplications] = useState(false)
+	const [overviewStats, setOverviewStats] = useState([])
+	const [scholarshipDistribution, setScholarshipDistribution] = useState({
+		labels: [],
+		datasets: [{ data: [], backgroundColor: [], borderWidth: 0 }],
+	})
 
 	// Filters for Overview
 	const [overviewStatusFilter, setOverviewStatusFilter] = useState("All")
 	const [chartTimePeriod, setChartTimePeriod] = useState("Monthly")
 
-	// Pending students for approvals tab
+	// Students for approvals tab (pending, approved, rejected)
 	const [pendingStudents, setPendingStudents] = useState([])
+	const [approvedStudents, setApprovedStudents] = useState([])
+	const [rejectedStudents, setRejectedStudents] = useState([])
 	const [isLoadingPending, setIsLoadingPending] = useState(false)
+	const [approvalStatusFilter, setApprovalStatusFilter] = useState("Pending")
 	const [previewFile, setPreviewFile] = useState(null)
+	const [previewImgError, setPreviewImgError] = useState(false)
 
+	// Handle click outside user menu
 	useEffect(() => {
-		async function fetchPending() {
+		function handleClickOutside(e) {
+			if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+				setUserMenuOpen(false)
+			}
+		}
+		if (userMenuOpen) {
+			document.addEventListener("mousedown", handleClickOutside)
+			return () => document.removeEventListener("mousedown", handleClickOutside)
+		}
+	}, [userMenuOpen])
+
+	// Listen for auth state changes
+	useEffect(() => {
+		const unsubscribe = onAuthStateChanged(auth, (user) => {
+			if (user) {
+				setAdminUser({
+					name: user.displayName || "Administrator",
+					uid: user.uid,
+					email: user.email,
+				})
+			} else {
+				setAdminUser(null)
+			}
+		})
+		return unsubscribe
+	}, [])
+
+	// Fetch applications from Firestore (from multiple collections)
+	useEffect(() => {
+		async function fetchApplications() {
 			try {
-				setIsLoadingPending(true)
-				const snap = await getDocs(collection(db, "pendingStudent"))
-				const items = []
-				snap.forEach((d) => {
+				setIsLoadingApplications(true)
+				const appData = []
+
+				// Fetch pending from pendingStudent collection
+				const pendingSnap = await getDocs(collection(db, "pendingStudent"))
+				pendingSnap.forEach((d) => {
 					const data = d.data() || {}
-					if (data.isPending === true || data.isValidated === false || data.isValidated === "false") {
-						items.push({
+					if (
+						data.isPending === true ||
+						data.isValidated === false ||
+						data.isValidated === "false"
+					) {
+						appData.push({
 							id: d.id,
+							status: "pending",
+							studentName: [data.fname, data.mname, data.lname]
+								.filter(Boolean)
+								.join(" "),
+							createdAt: data.createdAt || data.timestamp || new Date(),
 							...data,
 						})
 					}
 				})
-				setPendingStudents(items)
+
+				// Fetch approved from student collection
+				const approvedSnap = await getDocs(collection(db, "student"))
+				approvedSnap.forEach((d) => {
+					const data = d.data() || {}
+					appData.push({
+						id: d.id,
+						status: "approved",
+						studentName: [data.fname, data.mname, data.lname]
+							.filter(Boolean)
+							.join(" "),
+						createdAt: data.createdAt || data.timestamp || new Date(),
+						...data,
+					})
+				})
+
+				// Fetch rejected from rejected collection
+				const rejectedSnap = await getDocs(collection(db, "rejected"))
+				rejectedSnap.forEach((d) => {
+					const data = d.data() || {}
+					appData.push({
+						id: d.id,
+						status: "rejected",
+						studentName: [data.fname, data.mname, data.lname]
+							.filter(Boolean)
+							.join(" "),
+						createdAt: data.createdAt || data.timestamp || new Date(),
+						...data,
+					})
+				})
+
+				setApplications(appData)
+				calculateStats(appData)
+				updateScholarshipDistribution(appData)
 			} catch (err) {
-				// eslint-disable-next-line no-console
-				console.error("Failed to load pending students", err)
+				console.error("Failed to load applications:", err)
+			} finally {
+				setIsLoadingApplications(false)
+			}
+		}
+		fetchApplications()
+	}, [])
+
+	// Calculate overview stats from applications
+	const calculateStats = (appData) => {
+		const stats = [
+			{
+				label: "Total Applications",
+				value: appData.length.toString(),
+				trend: "All applications in system",
+				trendUp: true,
+				icon: HiOutlineDocumentText,
+			},
+			{
+				label: "Approved",
+				value: appData.filter((a) => a.status === "approved").length.toString(),
+				trend: "Successfully approved",
+				trendUp: true,
+				icon: HiOutlineCheckCircle,
+			},
+			{
+				label: "Pending Review",
+				value: appData
+					.filter((a) => a.status === "pending" || a.status === "under review")
+					.length.toString(),
+				trend: "Awaiting action",
+				trendUp: false,
+				icon: HiOutlineClock,
+			},
+			{
+				label: "Rejected",
+				value: appData.filter((a) => a.status === "rejected").length.toString(),
+				trend: "Applications denied",
+				trendUp: false,
+				icon: HiOutlineXCircle,
+			},
+		]
+		setOverviewStats(stats)
+	}
+
+	// Update scholarship distribution from applications
+	const updateScholarshipDistribution = (appData) => {
+		const courseCounts = {}
+		const colors = [
+			"#3b82f6",
+			"#f59e0b",
+			"#ef4444",
+			"#8b5cf6",
+			"#10b981",
+			"#ec4899",
+			"#14b8a6",
+		]
+
+		appData.forEach((app) => {
+			const course = app.course || "Other"
+			courseCounts[course] = (courseCounts[course] || 0) + 1
+		})
+
+		const labels = Object.keys(courseCounts)
+		const data = Object.values(courseCounts)
+		const backgroundColor = colors.slice(0, labels.length)
+
+		setScholarshipDistribution({
+			labels,
+			datasets: [
+				{
+					data,
+					backgroundColor,
+					borderWidth: 0,
+				},
+			],
+		})
+	}
+
+	useEffect(() => {
+		async function fetchAllApprovals() {
+			try {
+				setIsLoadingPending(true)
+
+				// Fetch pending students
+				const pendingSnap = await getDocs(collection(db, "pendingStudent"))
+				const pendingItems = []
+				pendingSnap.forEach((d) => {
+					const data = d.data() || {}
+					if (
+						data.isPending === true ||
+						data.isValidated === false ||
+						data.isValidated === "false"
+					) {
+						pendingItems.push({
+							id: d.id,
+							status: "pending",
+							...data,
+						})
+					}
+				})
+				setPendingStudents(pendingItems)
+
+				// Fetch approved students
+				const approvedSnap = await getDocs(collection(db, "students"))
+				const approvedItems = []
+				approvedSnap.forEach((d) => {
+					const data = d.data() || {}
+					if (data.isValidated === true || data.isValidated === "true") {
+						approvedItems.push({
+							id: d.id,
+							status: "approved",
+							...data,
+						})
+					}
+				})
+				setApprovedStudents(approvedItems)
+
+				// Fetch rejected students
+				const rejectedSnap = await getDocs(collection(db, "rejected"))
+				const rejectedItems = []
+				rejectedSnap.forEach((d) => {
+					rejectedItems.push({
+						id: d.id,
+						status: "rejected",
+						...d.data(),
+					})
+				})
+				setRejectedStudents(rejectedItems)
+			} catch (err) {
+				console.error("Failed to load approvals", err)
 			} finally {
 				setIsLoadingPending(false)
 			}
 		}
-		if (activeTab === "Approvals") {
-			fetchPending()
+		if (activeTab === "Registrations") {
+			fetchAllApprovals()
 		}
 	}, [activeTab])
 
@@ -282,15 +398,15 @@ export default function AdminDashboard() {
 	const [appDateFilter, setAppDateFilter] = useState("All Dates")
 
 	// Filter Overview applications
-	const filteredOverviewApps = RECENT_APPLICATIONS.filter((app) => {
+	const filteredOverviewApps = applications.filter((app) => {
 		if (overviewStatusFilter === "All") return true
-		const status = app.status.toLowerCase()
+		const status = (app.status || "").toLowerCase()
 		const filter = overviewStatusFilter.toLowerCase()
 		return status.includes(filter)
 	})
 
 	// Filter Applications page
-	const filteredApplications = RECENT_APPLICATIONS.filter((app) => {
+	const filteredApplications = applications.filter((app) => {
 		let statusMatch = true
 		let courseMatch = true
 		let dateMatch = true
@@ -302,25 +418,16 @@ export default function AdminDashboard() {
 				Approved: "approved",
 				Rejected: "rejected",
 			}
-			statusMatch = app.status === statusMap[appStatusFilter]
+			statusMatch =
+				(app.status || "").toLowerCase() === statusMap[appStatusFilter]
 		}
 
 		if (appCourseFilter !== "All Courses") {
-			const courseKeywords = {
-				"BS Engineering": "Engineering",
-				"BS Business Administration": "Business Administration",
-				"BS Education": "Education",
-				"BS Nursing": "Nursing",
-				"BS Computer Science": "Computer Science",
-			}
-			courseMatch = Object.entries(courseKeywords).some(
-				([course, keyword]) =>
-					app.course === course && appCourseFilter.includes(keyword),
-			)
+			courseMatch = (app.course || "").includes(appCourseFilter)
 		}
 
 		if (appDateFilter !== "All Dates") {
-			const appDate = new Date(app.date)
+			const appDate = app.createdAt ? new Date(app.createdAt) : null
 			const today = new Date()
 			const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
 			const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -328,21 +435,23 @@ export default function AdminDashboard() {
 				today.getTime() - 90 * 24 * 60 * 60 * 1000,
 			)
 
-			switch (appDateFilter) {
-				case "This Week":
-					dateMatch = appDate >= weekAgo && appDate <= today
-					break
-				case "This Month":
-					dateMatch = appDate.getMonth() === today.getMonth()
-					break
-				case "Last Month":
-					dateMatch = appDate.getMonth() === today.getMonth() - 1
-					break
-				case "Last 3 Months":
-					dateMatch = appDate >= threeMonthsAgo
-					break
-				default:
-					dateMatch = true
+			if (appDate) {
+				switch (appDateFilter) {
+					case "This Week":
+						dateMatch = appDate >= weekAgo && appDate <= today
+						break
+					case "This Month":
+						dateMatch = appDate.getMonth() === today.getMonth()
+						break
+					case "Last Month":
+						dateMatch = appDate.getMonth() === today.getMonth() - 1
+						break
+					case "Last 3 Months":
+						dateMatch = appDate >= threeMonthsAgo
+						break
+					default:
+						dateMatch = true
+				}
 			}
 		}
 
@@ -455,39 +564,112 @@ export default function AdminDashboard() {
 
 	return (
 		<div className="admin-dashboard">
-			{/* Dark header */}
-			<header className="dashboard-header">
-				<div className="dashboard-header-left">
-					<button
-						type="button"
-						className="dashboard-burger-btn"
-						aria-label="Toggle navigation"
-						onClick={() => setSidebarOpen(!sidebarOpen)}
-					>
-						{sidebarOpen ? (
-							<HiX className="dashboard-burger-icon" aria-hidden />
-						) : (
-							<HiMenu className="dashboard-burger-icon" aria-hidden />
-						)}
-					</button>
-					<div className="dashboard-logo">
-						<img src={logo} alt="Logo" className="dashboard-logo-img" />
+			<header className="admin-header">
+				<div className="admin-header-top-stripe"></div>
+				<div className="admin-header-content">
+					<div className="admin-header-left">
+						<img src={logo2} alt="BulsuScholar" className="admin-header-logo" />
+						<h1 className="admin-header-brand">BulsuScholar</h1>
 					</div>
-					<div>
-						<h1 className="dashboard-header-title">
-							Institutional Student Programs and Services
-						</h1>
-						<p className="dashboard-header-sub">Admin Dashboard</p>
+					<div className="admin-header-right">
+						<button
+							type="button"
+							className="admin-header-notification-btn"
+							aria-label="Messages"
+						>
+							<HiOutlineMail
+								className="admin-header-notification-icon"
+								aria-hidden
+							/>
+							<span className="admin-header-badge">0</span>
+						</button>
+						<div className="admin-header-user-wrap" ref={userMenuRef}>
+							<button
+								type="button"
+								className="admin-header-user-btn"
+								onClick={() => setUserMenuOpen((o) => !o)}
+								aria-label="User menu"
+								aria-expanded={userMenuOpen}
+							>
+								<HiMenu className="admin-header-menu-icon" aria-hidden />
+								<div className="admin-header-avatar">AD</div>
+							</button>
+							{userMenuOpen && (
+								<div className="admin-verified-dropdown">
+									<div className="admin-verified-dropdown-user">
+										<div className="admin-verified-dropdown-avatar">AD</div>
+										<div className="admin-verified-dropdown-user-info">
+											<p className="admin-verified-dropdown-name">
+												{adminUser?.name || "Administrator"}
+											</p>
+											<p className="admin-verified-dropdown-email">
+												{adminUser?.uid || "Loading..."}
+											</p>
+										</div>
+									</div>
+									<nav className="admin-verified-dropdown-nav">
+										<button
+											type="button"
+											className="admin-verified-dropdown-item"
+										>
+											<HiOutlineUserCircle
+												className="admin-verified-dropdown-item-icon"
+												aria-hidden
+											/>
+											My Profile
+										</button>
+										<button
+											type="button"
+											className="admin-verified-dropdown-item"
+										>
+											<HiOutlineCog
+												className="admin-verified-dropdown-item-icon"
+												aria-hidden
+											/>
+											Settings
+										</button>
+									</nav>
+									<div className="admin-verified-dropdown-theme">
+										<span className="admin-verified-dropdown-theme-label">
+											THEME
+										</span>
+										<div className="admin-verified-dropdown-theme-btns">
+											<button
+												type="button"
+												className={`admin-verified-dropdown-theme-btn ${theme === "light" ? "active" : ""}`}
+												onClick={() => setTheme("light")}
+											>
+												<HiOutlineSun aria-hidden />
+												Light
+											</button>
+											<button
+												type="button"
+												className={`admin-verified-dropdown-theme-btn ${theme === "dark" ? "active" : ""}`}
+												onClick={() => setTheme("dark")}
+											>
+												<HiOutlineMoon aria-hidden />
+												Dark
+											</button>
+										</div>
+									</div>
+									<button
+										type="button"
+										className="admin-verified-dropdown-logout"
+										onClick={() => {
+											setUserMenuOpen(false)
+											// Add logout logic here
+										}}
+									>
+										<HiOutlineLogout
+											className="admin-verified-dropdown-logout-icon"
+											aria-hidden
+										/>
+										Logout
+									</button>
+								</div>
+							)}
+						</div>
 					</div>
-				</div>
-				<div className="dashboard-header-right">
-					<button
-						type="button"
-						className="dashboard-user-btn"
-						aria-label="User menu"
-					>
-						<HiOutlineUserCircle className="dashboard-user-icon" aria-hidden />
-					</button>
 				</div>
 			</header>
 
@@ -537,32 +719,25 @@ export default function AdminDashboard() {
 						</button>
 						<button
 							type="button"
-							className={`dashboard-tab ${activeTab === "Approvals" ? "dashboard-tab--active" : ""}`}
-							onClick={() => setActiveTab("Approvals")}
+							className={`dashboard-tab ${activeTab === "Registrations" ? "dashboard-tab--active" : ""}`}
+							onClick={() => setActiveTab("Registrations")}
 						>
-							Approvals
-						</button>
-						<button
-							type="button"
-							className={`dashboard-tab ${activeTab === "Applications" ? "dashboard-tab--active" : ""}`}
-							onClick={() => setActiveTab("Applications")}
-						>
-							Applications
+							Registrations
 						</button>
 					</nav>
 
 					{activeTab === "Overview" && (
 						<>
-							{/* 6 stat cards */}
+							{/* stat cards from Firestore */}
 							<section className="dashboard-stats-grid">
-								{OVERVIEW_STATS.map(
-									({ label, value, trend, trendUp, icon }) => (
+								{overviewStats.map(
+									({ label, value, trend, trendUp, icon: Icon }) => (
 										<div key={label} className="dashboard-stat-card">
 											<div className="dashboard-stat-card-header">
 												<span className="dashboard-stat-label">{label}</span>
 												<span className="dashboard-stat-icon-wrap">
-													{icon && (
-														<icon className="dashboard-stat-icon" aria-hidden />
+													{Icon && (
+														<Icon className="dashboard-stat-icon" aria-hidden />
 													)}
 												</span>
 											</div>
@@ -711,117 +886,157 @@ export default function AdminDashboard() {
 									<div className="dashboard-pie-container">
 										<div className="dashboard-chart-wrap dashboard-chart-wrap--pie">
 											<Doughnut
-												data={SCHOLARSHIP_DISTRIBUTION}
+												data={scholarshipDistribution}
 												options={doughnutOptions}
 											/>
 										</div>
 										<div className="dashboard-pie-stats">
-											<div className="pie-stat-item">
-												<span
-													className="stat-color"
-													style={{ backgroundColor: "#3b82f6" }}
-												></span>
-												<span>Engineering</span>
-											</div>
-											<div className="pie-stat-item">
-												<span
-													className="stat-color"
-													style={{ backgroundColor: "#f59e0b" }}
-												></span>
-												<span>Business Admin</span>
-											</div>
-											<div className="pie-stat-item">
-												<span
-													className="stat-color"
-													style={{ backgroundColor: "#ef4444" }}
-												></span>
-												<span>Education</span>
-											</div>
-											<div className="pie-stat-item">
-												<span
-													className="stat-color"
-													style={{ backgroundColor: "#8b5cf6" }}
-												></span>
-												<span>Nursing</span>
-											</div>
-											<div className="pie-stat-item">
-												<span
-													className="stat-color"
-													style={{ backgroundColor: "#10b981" }}
-												></span>
-												<span>Computer Science</span>
-											</div>
+											{scholarshipDistribution.labels.map((label, idx) => (
+												<div key={label} className="pie-stat-item">
+													<span
+														className="stat-color"
+														style={{
+															backgroundColor:
+																scholarshipDistribution.datasets[0]
+																	?.backgroundColor?.[idx],
+														}}
+													></span>
+													<span>{label}</span>
+												</div>
+											))}
 										</div>
 									</div>
 								</div>
 							</section>
 
-							{/* Recent Applications table */}
+							{/* Pending Approvals Preview */}
 							<section className="dashboard-panel dashboard-panel--table">
-								<h3 className="dashboard-panel-title">
-									Recent College Applications
-								</h3>
-								<p className="dashboard-panel-sub">
-									Latest scholarship applications from college students
-								</p>
-								<div className="dashboard-filters">
-									<select
-										className="dashboard-filter-select"
-										value={overviewStatusFilter}
-										onChange={(e) => setOverviewStatusFilter(e.target.value)}
+								<div className="dashboard-panel-header">
+									<div>
+										<h3 className="dashboard-panel-title">
+											Pending Approvals Preview
+										</h3>
+										<p className="dashboard-panel-sub">
+											Students awaiting verification and approval
+										</p>
+									</div>
+									<button
+										type="button"
+										style={{
+											padding: "0.5rem 1rem",
+											background: "#16a34a",
+											color: "#fff",
+											border: "none",
+											borderRadius: "6px",
+											cursor: "pointer",
+											fontSize: "0.875rem",
+											fontWeight: "600",
+											transition: "all 0.2s ease",
+										}}
+										onClick={() => setActiveTab("Registrations")}
+										onMouseEnter={(e) =>
+											(e.target.style.background = "#15803d")
+										}
+										onMouseLeave={(e) =>
+											(e.target.style.background = "#16a34a")
+										}
 									>
-										<option>All</option>
-										<option>Pending</option>
-										<option>Approved</option>
-										<option>Under Review</option>
-										<option>Rejected</option>
-									</select>
+										View All ({pendingStudents.length})
+									</button>
 								</div>
 								<div className="dashboard-table-wrap">
 									<table className="dashboard-table">
 										<thead>
 											<tr>
-												<th>Application ID</th>
 												<th>Student Name</th>
+												<th>Student No.</th>
 												<th>Course</th>
-												<th>Scholarship</th>
-												<th>Amount</th>
-												<th>GPA</th>
-												<th>Date</th>
-												<th>Status</th>
-												<th>Actions</th>
+												<th>Year / Section</th>
+												<th>COR File</th>
 											</tr>
 										</thead>
 										<tbody>
-											{filteredOverviewApps.map((row) => (
-												<tr key={row.id}>
-													<td>
-														<span className="dashboard-table-id">{row.id}</span>
-													</td>
-													<td>{row.name}</td>
-													<td>{row.course}</td>
-													<td>{row.scholarship}</td>
-													<td>{row.amount}</td>
-													<td>{row.gpa}</td>
-													<td>{row.date}</td>
-													<td>
-														<span
-															className={`dashboard-status-pill ${statusClass(row.status)}`}
-														>
-															{row.status}
-														</span>
-													</td>
-													<td>
-														<button
-															type="button"
-															className="dashboard-actions-btn"
-															aria-label="Actions"
-														>
-															<HiOutlineDotsVertical aria-hidden />
-														</button>
+											{isLoadingPending ? (
+												<tr>
+													<td
+														colSpan="5"
+														style={{
+															textAlign: "center",
+															padding: "2rem",
+															color: "#6b7280",
+														}}
+													>
+														Loading pending students...
 													</td>
 												</tr>
-											))}
+											) : pendingStudents.length === 0 ? (
+												<tr>
+													<td
+														colSpan="5"
+														style={{
+															textAlign: "center",
+															padding: "2rem",
+															color: "#6b7280",
+														}}
+													>
+														No pending approvals at the moment
+													</td>
+												</tr>
+											) : (
+												pendingStudents.slice(0, 5).map((student) => {
+													const fullName = [
+														student.fname,
+														student.mname,
+														student.lname,
+													]
+														.filter(Boolean)
+														.join(" ")
+													const studentNo = student.studentnumber || student.id
+													const fileMeta = student.corFile || null
+													return (
+														<tr key={student.id}>
+															<td>{fullName || "—"}</td>
+															<td>
+																<span className="dashboard-table-id">
+																	{studentNo || "—"}
+																</span>
+															</td>
+															<td>{student.course || "—"}</td>
+															<td>
+																Yr {student.year || "—"} / Sec{" "}
+																{student.section || "—"}
+															</td>
+															<td>
+																{fileMeta ? (
+																	<button
+																		type="button"
+																		className="dashboard-preview-btn"
+																		onClick={() => {
+																			setPreviewImgError(false)
+																			setPreviewFile({
+																				studentName: fullName || "Student",
+																				studentNo,
+																				file: fileMeta,
+																			})
+																		}}
+																	>
+																		Preview
+																	</button>
+																) : (
+																	<span
+																		style={{
+																			fontSize: "0.8rem",
+																			color: "#9ca3af",
+																		}}
+																	>
+																		No file
+																	</span>
+																)}
+															</td>
+														</tr>
+													)
+												})
+											)}
 										</tbody>
 									</table>
 								</div>
@@ -829,154 +1044,401 @@ export default function AdminDashboard() {
 						</>
 					)}
 
-					{activeTab === "Approvals" && (
-						<section className="dashboard-panel dashboard-panel--table">
-							<div className="dashboard-panel-header">
-								<div>
-									<h3 className="dashboard-panel-title">Pending approvals</h3>
-									<p className="dashboard-panel-sub">
-										Review student registrations that are waiting for verification.
-									</p>
+					{activeTab === "Registrations" && (
+						<>
+							{/* Approvals Analytics KPI Cards */}
+							<section className="dashboard-stats-grid">
+								<div className="dashboard-stat-card dashboard-stat-card--blue">
+									<div className="dashboard-stat-card-header">
+										<span className="dashboard-stat-label">
+											Pending Reviews
+										</span>
+										<span
+											className="dashboard-stat-icon-wrap"
+											style={{ color: "#3b82f6" }}
+										>
+											<HiOutlineClock
+												className="dashboard-stat-icon"
+												aria-hidden
+											/>
+										</span>
+									</div>
+									<div className="dashboard-stat-value">
+										{pendingStudents.length}
+									</div>
+									<div className="dashboard-stat-trend dashboard-stat-trend--neutral">
+										Waiting for approval
+									</div>
 								</div>
-							</div>
+								<div className="dashboard-stat-card dashboard-stat-card--green">
+									<div className="dashboard-stat-card-header">
+										<span className="dashboard-stat-label">
+											Approved Students
+										</span>
+										<span
+											className="dashboard-stat-icon-wrap"
+											style={{ color: "#22c55e" }}
+										>
+											<HiOutlineCheckCircle
+												className="dashboard-stat-icon"
+												aria-hidden
+											/>
+										</span>
+									</div>
+									<div className="dashboard-stat-value">
+										{approvedStudents.length}
+									</div>
+									<div className="dashboard-stat-trend dashboard-stat-trend--up">
+										Total approved
+									</div>
+								</div>
+								<div className="dashboard-stat-card dashboard-stat-card--red">
+									<div className="dashboard-stat-card-header">
+										<span className="dashboard-stat-label">
+											Rejected Students
+										</span>
+										<span
+											className="dashboard-stat-icon-wrap"
+											style={{ color: "#ef4444" }}
+										>
+											<HiOutlineXCircle
+												className="dashboard-stat-icon"
+												aria-hidden
+											/>
+										</span>
+									</div>
+									<div className="dashboard-stat-value">
+										{rejectedStudents.length}
+									</div>
+									<div className="dashboard-stat-trend dashboard-stat-trend--down">
+										Total rejected
+									</div>
+								</div>
+							</section>
 
-							{isLoadingPending ? (
-								<p className="dashboard-placeholder">Loading pending students…</p>
-							) : pendingStudents.length === 0 ? (
-								<p className="dashboard-placeholder">
-									There are no pending student accounts at the moment.
-								</p>
-							) : (
-								<div className="dashboard-table-wrap">
-									<table className="dashboard-table">
-										<thead>
-											<tr>
-												<th>Student</th>
-												<th>Student No.</th>
-												<th>Course / Year &amp; Section</th>
-												<th>Registration No.</th>
-												<th>COR File</th>
-												<th>Actions</th>
-											</tr>
-										</thead>
-										<tbody>
-											{pendingStudents.map((s) => {
-												const fullName = [s.fname, s.mname, s.lname].filter(Boolean).join(" ")
-												const studentNo = s.studentnumber || s.id
-												const fileMeta = s.corFile || null
-												return (
-													<tr key={s.id}>
-														<td>
-															<div style={{ display: "flex", flexDirection: "column" }}>
-																<span style={{ fontWeight: 600 }}>{fullName || "Student"}</span>
-															</div>
-														</td>
-														<td>
-															<span className="dashboard-table-id">
-																{studentNo || "—"}
-															</span>
-														</td>
-														<td>
-															<div style={{ display: "flex", flexDirection: "column" }}>
-																<span>{s.course || "—"}</span>
-																<span style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-																	Year {s.year || "—"} / Sec {s.section || "—"}
-																</span>
-															</div>
-														</td>
-														<td>{s.registrationNumber || "—"}</td>
-														<td>
-															{fileMeta ? (
-																<button
-																	type="button"
-																	className="dashboard-preview-btn"
-																	onClick={() =>
-																		setPreviewFile({
-																			studentName: fullName || "Student",
-																			studentNo,
-																			file: fileMeta,
-																		})
-																	}
-																>
-																	Preview
-																</button>
-															) : (
-																<span style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-																	No COR uploaded
-																</span>
-															)}
-														</td>
-														<td>
-															<div className="dashboard-approval-actions">
-																<button
-																	type="button"
-																	className="dashboard-approval-btn dashboard-approval-btn--approve"
-																	onClick={async () => {
-																		try {
-																			const studentId = studentNo
-																			await setDoc(
-																				doc(db, "students", studentId),
-																				{
-																					fname: s.fname || "",
-																					mname: s.mname || "",
-																					lname: s.lname || "",
-																					course: s.course || "",
-																					year: s.year || "",
-																					section: s.section || "",
-																					studentnumber: studentId,
-																					userType: "student",
-																					isValidated: true,
-																					isPending: false,
-																					validatedAt: serverTimestamp(),
-																					registrationNumber: s.registrationNumber || "",
-																					corFile: s.corFile || null,
-																					password: s.password || "",
-																				},
-																				{ merge: true },
-																			)
-																			await deleteDoc(doc(db, "pendingStudent", s.id))
-																			setPendingStudents((prev) =>
-																				prev.filter((p) => p.id !== s.id),
-																			)
-																		} catch (err) {
-																			// eslint-disable-next-line no-console
-																			console.error("Approve failed", err)
-																		}
-																	}}
-																>
-																	Approve
-																</button>
-																<button
-																	type="button"
-																	className="dashboard-approval-btn dashboard-approval-btn--reject"
-																	onClick={async () => {
-																		try {
-																			await setDoc(doc(db, "rejected", s.id), {
-																				...s,
-																				rejectedAt: serverTimestamp(),
-																			})
-																			await deleteDoc(doc(db, "pendingStudent", s.id))
-																			setPendingStudents((prev) =>
-																				prev.filter((p) => p.id !== s.id),
-																			)
-																		} catch (err) {
-																			// eslint-disable-next-line no-console
-																			console.error("Reject failed", err)
-																		}
-																	}}
-																>
-																	Reject
-																</button>
-															</div>
-														</td>
-													</tr>
-												)
-											})}
-										</tbody>
-									</table>
+							<section className="dashboard-panel dashboard-panel--table">
+								<div className="dashboard-panel-header">
+									<div>
+										<h3 className="dashboard-panel-title">
+											Student Registrations
+										</h3>
+										<p className="dashboard-panel-sub">
+											View and manage student registrations.
+										</p>
+									</div>
 								</div>
-							)}
-						</section>
+
+								{/* Approval Status Filter Buttons */}
+								<div
+									style={{
+										display: "flex",
+										gap: "0.5rem",
+										marginBottom: "1.5rem",
+										padding: "0 0 1rem 0",
+										borderBottom: "1px solid #e5e7eb",
+									}}
+								>
+									{["Pending", "Approved", "Rejected"].map((status) => (
+										<button
+											type="button"
+											key={status}
+											onClick={() => setApprovalStatusFilter(status)}
+											style={{
+												padding: "0.5rem 1rem",
+												border:
+													approvalStatusFilter === status
+														? "2px solid #16a34a"
+														: "1px solid #d1d5db",
+												background:
+													approvalStatusFilter === status
+														? "rgba(22, 163, 74, 0.08)"
+														: "#fff",
+												borderRadius: "6px",
+												cursor: "pointer",
+												fontSize: "0.875rem",
+												fontWeight:
+													approvalStatusFilter === status ? "600" : "500",
+												color:
+													approvalStatusFilter === status
+														? "#16a34a"
+														: "#6b7280",
+												transition: "all 0.2s ease",
+											}}
+										>
+											{status} (
+											{status === "Pending"
+												? pendingStudents.length
+												: status === "Approved"
+													? approvedStudents.length
+													: rejectedStudents.length}
+											)
+										</button>
+									))}
+								</div>
+
+								{isLoadingPending ? (
+									<p className="dashboard-placeholder">Loading students…</p>
+								) : (approvalStatusFilter === "Pending" &&
+										pendingStudents.length === 0) ||
+								  (approvalStatusFilter === "Approved" &&
+										approvedStudents.length === 0) ||
+								  (approvalStatusFilter === "Rejected" &&
+										rejectedStudents.length === 0) ? (
+									<p className="dashboard-placeholder">
+										There are no {approvalStatusFilter.toLowerCase()} student
+										accounts at the moment.
+									</p>
+								) : (
+									<div className="dashboard-table-wrap">
+										<table className="dashboard-table">
+											<thead>
+												<tr>
+													<th>Student</th>
+													<th>Student No.</th>
+													<th>Course / Year &amp; Section</th>
+													<th>Registration No.</th>
+													<th>COR File</th>
+													<th>Actions</th>
+												</tr>
+											</thead>
+											<tbody>
+												{(() => {
+													let studentsToShow = []
+													if (approvalStatusFilter === "Pending") {
+														studentsToShow = pendingStudents
+													} else if (approvalStatusFilter === "Approved") {
+														studentsToShow = approvedStudents
+													} else if (approvalStatusFilter === "Rejected") {
+														studentsToShow = rejectedStudents
+													}
+													return studentsToShow.map((s) => {
+														const fullName = [s.fname, s.mname, s.lname]
+															.filter(Boolean)
+															.join(" ")
+														const studentNo = s.studentnumber || s.id
+														const fileMeta = s.corFile || null
+														return (
+															<tr key={s.id}>
+																<td>
+																	<div
+																		style={{
+																			display: "flex",
+																			flexDirection: "column",
+																		}}
+																	>
+																		<span style={{ fontWeight: 600 }}>
+																			{fullName || "Student"}
+																		</span>
+																	</div>
+																</td>
+																<td>
+																	<span className="dashboard-table-id">
+																		{studentNo || "—"}
+																	</span>
+																</td>
+																<td>
+																	<div
+																		style={{
+																			display: "flex",
+																			flexDirection: "column",
+																		}}
+																	>
+																		<span>{s.course || "—"}</span>
+																		<span
+																			style={{
+																				fontSize: "0.8rem",
+																				color: "#6b7280",
+																			}}
+																		>
+																			Year {s.year || "—"} / Sec{" "}
+																			{s.section || "—"}
+																		</span>
+																	</div>
+																</td>
+																<td>{s.registrationNumber || "—"}</td>
+																<td>
+																	{fileMeta ? (
+																		<button
+																			type="button"
+																			className="dashboard-preview-btn"
+																			onClick={() => {
+																				setPreviewImgError(false)
+																				setPreviewFile({
+																					studentName: fullName || "Student",
+																					studentNo,
+																					file: fileMeta,
+																				})
+																			}}
+																		>
+																			Preview
+																		</button>
+																	) : (
+																		<span
+																			style={{
+																				fontSize: "0.8rem",
+																				color: "#9ca3af",
+																			}}
+																		>
+																			No COR uploaded
+																		</span>
+																	)}
+																</td>
+																<td>
+																	<div className="dashboard-approval-actions">
+																		{approvalStatusFilter === "Pending" ? (
+																			<>
+																				<button
+																					type="button"
+																					className="dashboard-approval-btn dashboard-approval-btn--approve"
+																					onClick={async () => {
+																						try {
+																							const studentId = studentNo
+																							await setDoc(
+																								doc(db, "students", studentId),
+																								{
+																									fname: s.fname || "",
+																									mname: s.mname || "",
+																									lname: s.lname || "",
+																									course: s.course || "",
+																									year: s.year || "",
+																									section: s.section || "",
+																									studentnumber: studentId,
+																									userType: "student",
+																									isValidated: true,
+																									isPending: false,
+																									validatedAt:
+																										serverTimestamp(),
+																									registrationNumber:
+																										s.registrationNumber || "",
+																									corFile: s.corFile || null,
+																									password: s.password || "",
+																								},
+																								{ merge: true },
+																							)
+																							await deleteDoc(
+																								doc(db, "pendingStudent", s.id),
+																							)
+																							setPendingStudents((prev) =>
+																								prev.filter(
+																									(p) => p.id !== s.id,
+																								),
+																							)
+																							setApprovedStudents((prev) => [
+																								...prev,
+																								{
+																									id: studentNo,
+																									status: "approved",
+																									fname: s.fname || "",
+																									mname: s.mname || "",
+																									lname: s.lname || "",
+																									course: s.course || "",
+																									year: s.year || "",
+																									section: s.section || "",
+																									registrationNumber:
+																										s.registrationNumber || "",
+																									corFile: s.corFile || null,
+																									validatedAt: new Date(),
+																								},
+																							])
+																						} catch (err) {
+																							// eslint-disable-next-line no-console
+																							console.error(
+																								"Approve failed",
+																								err,
+																							)
+																						}
+																					}}
+																				>
+																					Approve
+																				</button>
+																				<button
+																					type="button"
+																					className="dashboard-approval-btn dashboard-approval-btn--reject"
+																					onClick={async () => {
+																						try {
+																							await setDoc(
+																								doc(db, "rejected", s.id),
+																								{
+																									...s,
+																									rejectedAt: serverTimestamp(),
+																								},
+																							)
+																							await deleteDoc(
+																								doc(db, "pendingStudent", s.id),
+																							)
+																							setPendingStudents((prev) =>
+																								prev.filter(
+																									(p) => p.id !== s.id,
+																								),
+																							)
+																							setRejectedStudents((prev) => [
+																								...prev,
+																								{
+																									id: s.id,
+																									status: "rejected",
+																									fname: s.fname || "",
+																									mname: s.mname || "",
+																									lname: s.lname || "",
+																									course: s.course || "",
+																									year: s.year || "",
+																									section: s.section || "",
+																									registrationNumber:
+																										s.registrationNumber || "",
+																									corFile: s.corFile || null,
+																									rejectedAt: new Date(),
+																								},
+																							])
+																						} catch (err) {
+																							// eslint-disable-next-line no-console
+																							console.error(
+																								"Reject failed",
+																								err,
+																							)
+																						}
+																					}}
+																				>
+																					Reject
+																				</button>
+																			</>
+																		) : (
+																			<span
+																				className={`dashboard-status-pill ${
+																					approvalStatusFilter === "Approved"
+																						? "dashboard-status-pill--approved"
+																						: "dashboard-status-pill--rejected"
+																				}`}
+																				style={{
+																					padding: "0.5rem 1rem",
+																					borderRadius: "9999px",
+																					fontSize: "0.875rem",
+																					fontWeight: "600",
+																					backgroundColor:
+																						approvalStatusFilter === "Approved"
+																							? "rgba(22, 163, 74, 0.1)"
+																							: "rgba(220, 38, 38, 0.1)",
+																					color:
+																						approvalStatusFilter === "Approved"
+																							? "#16a34a"
+																							: "#dc2626",
+																				}}
+																			>
+																				{approvalStatusFilter === "Approved"
+																					? "✓ Approved"
+																					: "✕ Rejected"}
+																			</span>
+																		)}
+																	</div>
+																</td>
+															</tr>
+														)
+													})
+												})()}
+											</tbody>
+										</table>
+									</div>
+								)}
+							</section>
+						</>
 					)}
 
 					{activeTab === "Analytics" && (
@@ -1242,11 +1704,21 @@ export default function AdminDashboard() {
 
 					{activeTab === "Applications" && (
 						<>
-							{/* Applications Status Cards */}
+							{/* Applications Status Cards - Dynamic from Firestore */}
 							<section className="dashboard-stats-grid">
-								<div className="dashboard-stat-card dashboard-stat-card--red">
+								<div
+									className="dashboard-stat-card dashboard-stat-card--red"
+									style={{ cursor: "pointer", transition: "all 0.3s ease" }}
+									onClick={() => setAppStatusFilter("Submitted")}
+									onMouseEnter={(e) =>
+										(e.currentTarget.style.transform = "translateY(-4px)")
+									}
+									onMouseLeave={(e) =>
+										(e.currentTarget.style.transform = "translateY(0)")
+									}
+								>
 									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">Submitted</span>
+										<span className="dashboard-stat-label">Pending</span>
 										<span
 											className="dashboard-stat-icon-wrap"
 											style={{ color: "#ef4444" }}
@@ -1257,12 +1729,28 @@ export default function AdminDashboard() {
 											/>
 										</span>
 									</div>
-									<div className="dashboard-stat-value">1,284</div>
+									<div className="dashboard-stat-value">
+										{
+											applications.filter(
+												(a) => (a.status || "").toLowerCase() === "pending",
+											).length
+										}
+									</div>
 									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										↑ 42 today
+										Awaiting review
 									</div>
 								</div>
-								<div className="dashboard-stat-card dashboard-stat-card--yellow">
+								<div
+									className="dashboard-stat-card dashboard-stat-card--yellow"
+									style={{ cursor: "pointer", transition: "all 0.3s ease" }}
+									onClick={() => setAppStatusFilter("In Review")}
+									onMouseEnter={(e) =>
+										(e.currentTarget.style.transform = "translateY(-4px)")
+									}
+									onMouseLeave={(e) =>
+										(e.currentTarget.style.transform = "translateY(0)")
+									}
+								>
 									<div className="dashboard-stat-card-header">
 										<span className="dashboard-stat-label">In Review</span>
 										<span
@@ -1275,12 +1763,29 @@ export default function AdminDashboard() {
 											/>
 										</span>
 									</div>
-									<div className="dashboard-stat-value">142</div>
+									<div className="dashboard-stat-value">
+										{
+											applications.filter(
+												(a) =>
+													(a.status || "").toLowerCase() === "under review",
+											).length
+										}
+									</div>
 									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										↑ 12 today
+										Being processed
 									</div>
 								</div>
-								<div className="dashboard-stat-card dashboard-stat-card--teal">
+								<div
+									className="dashboard-stat-card dashboard-stat-card--teal"
+									style={{ cursor: "pointer", transition: "all 0.3s ease" }}
+									onClick={() => setAppStatusFilter("Approved")}
+									onMouseEnter={(e) =>
+										(e.currentTarget.style.transform = "translateY(-4px)")
+									}
+									onMouseLeave={(e) =>
+										(e.currentTarget.style.transform = "translateY(0)")
+									}
+								>
 									<div className="dashboard-stat-card-header">
 										<span className="dashboard-stat-label">Approved</span>
 										<span
@@ -1293,12 +1798,28 @@ export default function AdminDashboard() {
 											/>
 										</span>
 									</div>
-									<div className="dashboard-stat-value">856</div>
+									<div className="dashboard-stat-value">
+										{
+											applications.filter(
+												(a) => (a.status || "").toLowerCase() === "approved",
+											).length
+										}
+									</div>
 									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										↑ 28 today
+										Scholarships granted
 									</div>
 								</div>
-								<div className="dashboard-stat-card dashboard-stat-card--darkred">
+								<div
+									className="dashboard-stat-card dashboard-stat-card--darkred"
+									style={{ cursor: "pointer", transition: "all 0.3s ease" }}
+									onClick={() => setAppStatusFilter("Rejected")}
+									onMouseEnter={(e) =>
+										(e.currentTarget.style.transform = "translateY(-4px)")
+									}
+									onMouseLeave={(e) =>
+										(e.currentTarget.style.transform = "translateY(0)")
+									}
+								>
 									<div className="dashboard-stat-card-header">
 										<span className="dashboard-stat-label">Rejected</span>
 										<span
@@ -1311,9 +1832,15 @@ export default function AdminDashboard() {
 											/>
 										</span>
 									</div>
-									<div className="dashboard-stat-value">286</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										↑ 8 today
+									<div className="dashboard-stat-value">
+										{
+											applications.filter(
+												(a) => (a.status || "").toLowerCase() === "rejected",
+											).length
+										}
+									</div>
+									<div className="dashboard-stat-trend dashboard-stat-trend--down">
+										Applications denied
 									</div>
 								</div>
 							</section>
@@ -1373,43 +1900,63 @@ export default function AdminDashboard() {
 												<th>Student Name</th>
 												<th>Course</th>
 												<th>Scholarship</th>
-												<th>Amount</th>
-												<th>GPA</th>
 												<th>Date</th>
 												<th>Status</th>
-												<th>Actions</th>
 											</tr>
 										</thead>
 										<tbody>
-											{filteredApplications.map((row) => (
-												<tr key={row.id}>
-													<td>
-														<span className="dashboard-table-id">{row.id}</span>
-													</td>
-													<td>{row.name}</td>
-													<td>{row.course}</td>
-													<td>{row.scholarship}</td>
-													<td>{row.amount}</td>
-													<td>{row.gpa}</td>
-													<td>{row.date}</td>
-													<td>
-														<span
-															className={`dashboard-status-pill ${statusClass(row.status)}`}
-														>
-															{row.status}
-														</span>
-													</td>
-													<td>
-														<button
-															type="button"
-															className="dashboard-actions-btn"
-															aria-label="Actions"
-														>
-															<HiOutlineDotsVertical aria-hidden />
-														</button>
+											{isLoadingApplications ? (
+												<tr>
+													<td
+														colSpan="6"
+														style={{
+															textAlign: "center",
+															padding: "2rem",
+															color: "#6b7280",
+														}}
+													>
+														Loading applications...
 													</td>
 												</tr>
-											))}
+											) : filteredApplications.length === 0 ? (
+												<tr>
+													<td
+														colSpan="6"
+														style={{
+															textAlign: "center",
+															padding: "2rem",
+															color: "#6b7280",
+														}}
+													>
+														No applications match the selected filters
+													</td>
+												</tr>
+											) : (
+												filteredApplications.map((row) => (
+													<tr key={row.id}>
+														<td>
+															<span className="dashboard-table-id">
+																{row.id || "—"}
+															</span>
+														</td>
+														<td>{row.studentName || row.fname || "—"}</td>
+														<td>{row.course || "—"}</td>
+														<td>{row.scholarship || "—"}</td>
+														<td>
+															{row.createdAt
+																? new Date(row.createdAt).toLocaleDateString()
+																: row.date || "—"}
+														</td>
+														<td>
+															<span
+																className={`dashboard-status-pill ${statusClass(row.status)}`}
+															>
+																{row.status || "pending"}
+															</span>
+														</td>
+													</tr>
+												))
+											)}
 										</tbody>
 									</table>
 								</div>
@@ -1452,24 +1999,20 @@ export default function AdminDashboard() {
 						</div>
 
 						<div className="dashboard-preview-body">
-							{previewFile.file?.url ? (
-								previewFile.file.type?.startsWith("image/") ? (
-									<img
-										src={previewFile.file.url}
-										alt={previewFile.file.name || "COR"}
-										className="dashboard-preview-image"
-									/>
-								) : (
-									<iframe
-										title={previewFile.file.name || "COR"}
-										src={previewFile.file.url}
-										className="dashboard-preview-frame"
-									/>
-								)
+							{previewFile.file?.url && !previewImgError ? (
+								<img
+									src={previewFile.file.url}
+									alt={previewFile.file.name || "COR"}
+									className="dashboard-preview-image"
+									onError={() => setPreviewImgError(true)}
+								/>
+							) : previewFile.file?.url && previewImgError ? (
+								<p className="dashboard-placeholder">
+									Image could not be loaded. The URL may have expired.
+								</p>
 							) : (
 								<p className="dashboard-placeholder">
-									Preview is not available because no file URL was stored. Please
-									open the file from storage.
+									Preview is not available because no file URL was stored.
 								</p>
 							)}
 						</div>

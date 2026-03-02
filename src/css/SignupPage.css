@@ -503,10 +503,17 @@
 .signup-review {
 	width: 100%;
 	text-align: left;
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
 }
 
 .signup-review-section {
-	margin-bottom: 1.25rem;
+	background: #fff;
+	border: 1px solid #e5e7eb;
+	border-radius: 6px;
+	overflow: hidden;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .signup-review-section:last-child {
@@ -514,23 +521,57 @@
 }
 
 .signup-review-heading {
-	font-size: 0.85rem;
+	font-size: 0.7rem;
 	font-weight: 700;
-	color: #0b572b;
+	color: #fff;
+	background: #0b572b;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	margin: 0 0 0.5rem;
+	margin: 0;
+	padding: 0.6rem 1rem;
 }
 
 .signup-review-row {
 	font-size: 0.9rem;
-	color: #374151;
-	margin: 0.35rem 0;
+	color: #1f2937;
+	margin: 0;
 	line-height: 1.4;
+	display: grid;
+	grid-template-columns: 120px 1fr;
+	gap: 0.75rem;
+	padding: 0.6rem 1rem;
+	border-bottom: 1px solid #f3f4f6;
+	align-items: center;
+}
+
+.signup-review-row:last-child {
+	border-bottom: none;
+}
+
+.signup-review-row:nth-child(even) {
+	background-color: #fafafa;
 }
 
 .signup-review-label {
 	font-weight: 600;
 	color: #6b7280;
-	margin-right: 0.5rem;
+	text-transform: uppercase;
+	font-size: 0.75rem;
+	letter-spacing: 0.005em;
+}
+
+@media (max-width: 640px) {
+	.signup-review-row {
+		grid-template-columns: 1fr;
+		gap: 0.3rem;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.signup-review-heading {
+		padding: 0.5rem 0.75rem;
+	}
+
+	.signup-review-label {
+		font-size: 0.7rem;
+	}
 }

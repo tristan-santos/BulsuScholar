@@ -369,8 +369,6 @@
 	gap: 0.4rem;
 	margin-top: 1rem;
 	padding: 1rem 1.25rem;
-	background: linear-gradient(135deg, #f8faf9 0%, #f0f7f3 100%);
-	border: 1px solid rgba(11, 87, 43, 0.15);
 	border-radius: 10px;
 	box-shadow: 0 1px 3px rgba(11, 87, 43, 0.06);
 }

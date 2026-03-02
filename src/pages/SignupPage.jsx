@@ -12,9 +12,9 @@ import {
 	HiOutlineEyeOff,
 } from "react-icons/hi"
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 import { toast } from "react-toastify"
-import { db, storage } from "../../firebase"
+import { db } from "../../firebase"
+import { uploadToCloudinary } from "../services/cloudinaryService"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -116,21 +116,17 @@ export default function SignupPage() {
 
 	const isStep2Invalid =
 		step === 2 &&
-		(!fname.trim() ||
-			!lname.trim() ||
-			!course ||
-			!year ||
-			!section.trim())
+		(!fname.trim() || !lname.trim() || !course || !year || !section.trim())
 
 	const isStep3Invalid =
 		step === 3 &&
 		(hasExistingScholarship === null ||
 			(hasExistingScholarship === true && scholarships.length === 0))
 
-	const isStep4Invalid =
-		step === 4 && (!corFile || !registrationNumber.trim())
+	const isStep4Invalid = step === 4 && (!corFile || !registrationNumber.trim())
 
-	const isNextDisabled = isStep1Invalid || isStep2Invalid || isStep3Invalid || isStep4Invalid
+	const isNextDisabled =
+		isStep1Invalid || isStep2Invalid || isStep3Invalid || isStep4Invalid
 
 	const handleNext = async (e) => {
 		e.preventDefault()
@@ -157,19 +153,17 @@ export default function SignupPage() {
 				let corFilePayload = null
 				if (corFile) {
 					try {
-						const path = `pending-cor/${studentId}/${Date.now()}-${corFile.name}`
-						const storageRef = ref(storage, path)
-						await uploadBytes(storageRef, corFile)
-						const url = await getDownloadURL(storageRef)
+						const imageData = await uploadToCloudinary(corFile)
 						corFilePayload = {
-							name: corFile.name,
-							type: corFile.type,
-							size: corFile.size,
-							url,
-							path,
+							name: imageData.name,
+							type: imageData.type,
+							size: imageData.size,
+							url: imageData.url,
 						}
 					} catch (uploadErr) {
+						toast.error("Failed to upload COR file: " + uploadErr.message)
 						console.error("Failed to upload COR file:", uploadErr)
+						return
 					}
 				}
 
@@ -202,7 +196,9 @@ export default function SignupPage() {
 						},
 						{ merge: true },
 					)
-					toast.success("Account matched existing records and was auto-approved.")
+					toast.success(
+						"Account matched existing records and was auto-approved.",
+					)
 				} else {
 					// Normal flow: create pendingStudent document
 					await setDoc(doc(db, "pendingStudent", studentId), {
@@ -234,7 +230,10 @@ export default function SignupPage() {
 	}
 
 	const handleSaveScholarship = () => {
-		const provider = scholarshipProvider === "Other" ? scholarshipProviderOther : scholarshipProvider
+		const provider =
+			scholarshipProvider === "Other"
+				? scholarshipProviderOther
+				: scholarshipProvider
 		if (!provider.trim() || !scholarshipDate || !scholarshipType) return
 		const data = {
 			provider,
@@ -318,7 +317,9 @@ export default function SignupPage() {
 								</span>
 							</li>
 							<li>
-								<span className="login-feature-title">Efficient Management</span>
+								<span className="login-feature-title">
+									Efficient Management
+								</span>
 								<span className="login-feature-desc">
 									Streamline the review and approval process
 								</span>
@@ -340,7 +341,8 @@ export default function SignupPage() {
 						</div>
 						<p className="signup-pending-title">Account verification pending</p>
 						<p className="signup-pending-info">
-							Your registration has been submitted. Verification typically takes 1–3 business days.
+							Your registration has been submitted. Verification typically takes
+							1–3 business days.
 						</p>
 						<button
 							type="button"
@@ -412,13 +414,21 @@ export default function SignupPage() {
 					<p className="login-form-subtitle">
 						{step === 1 && "Create your account"}
 						{step === 2 && "Enter your credentials."}
-						{step === 3 && (hasExistingScholarship === null
-							? "Tell us about your scholarships."
-							: "Add your scholarship details.")}
+						{step === 3 &&
+							(hasExistingScholarship === null
+								? "Tell us about your scholarships."
+								: "Add your scholarship details.")}
 						{step === 4 && "Upload Certificate of Registration."}
 						{step === 5 && "Review your information before submitting."}
 					</p>
-					<div className="signup-stepper" role="progressbar" aria-valuenow={step} aria-valuemin={1} aria-valuemax={TOTAL_STEPS} aria-label={`Step ${step} of ${TOTAL_STEPS}`}>
+					<div
+						className="signup-stepper"
+						role="progressbar"
+						aria-valuenow={step}
+						aria-valuemin={1}
+						aria-valuemax={TOTAL_STEPS}
+						aria-label={`Step ${step} of ${TOTAL_STEPS}`}
+					>
 						{Array.from({ length: TOTAL_STEPS }, (_, i) => (
 							<div key={i} className="stepper-segment">
 								<div
@@ -460,7 +470,10 @@ export default function SignupPage() {
 									Password
 								</label>
 								<div className="login-input-wrap">
-									<HiOutlineLockClosed className="login-input-icon" aria-hidden />
+									<HiOutlineLockClosed
+										className="login-input-icon"
+										aria-hidden
+									/>
 									<input
 										id="signup-password"
 										type={showPassword ? "text" : "password"}
@@ -474,21 +487,35 @@ export default function SignupPage() {
 										type="button"
 										className="login-input-eye-btn"
 										onClick={() => setShowPassword((v) => !v)}
-										aria-label={showPassword ? "Hide password" : "Show password"}
+										aria-label={
+											showPassword ? "Hide password" : "Show password"
+										}
 									>
 										{showPassword ? (
-											<HiOutlineEyeOff className="login-input-eye-icon" aria-hidden />
+											<HiOutlineEyeOff
+												className="login-input-eye-icon"
+												aria-hidden
+											/>
 										) : (
-											<HiOutlineEye className="login-input-eye-icon" aria-hidden />
+											<HiOutlineEye
+												className="login-input-eye-icon"
+												aria-hidden
+											/>
 										)}
 									</button>
 								</div>
 
-								<label className="login-label" htmlFor="signup-confirm-password">
+								<label
+									className="login-label"
+									htmlFor="signup-confirm-password"
+								>
 									Confirm Password
 								</label>
 								<div className="login-input-wrap">
-									<HiOutlineLockClosed className="login-input-icon" aria-hidden />
+									<HiOutlineLockClosed
+										className="login-input-icon"
+										aria-hidden
+									/>
 									<input
 										id="signup-confirm-password"
 										type={showConfirmPassword ? "text" : "password"}
@@ -502,12 +529,20 @@ export default function SignupPage() {
 										type="button"
 										className="login-input-eye-btn"
 										onClick={() => setShowConfirmPassword((v) => !v)}
-										aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+										aria-label={
+											showConfirmPassword ? "Hide password" : "Show password"
+										}
 									>
 										{showConfirmPassword ? (
-											<HiOutlineEyeOff className="login-input-eye-icon" aria-hidden />
+											<HiOutlineEyeOff
+												className="login-input-eye-icon"
+												aria-hidden
+											/>
 										) : (
-											<HiOutlineEye className="login-input-eye-icon" aria-hidden />
+											<HiOutlineEye
+												className="login-input-eye-icon"
+												aria-hidden
+											/>
 										)}
 									</button>
 								</div>
@@ -671,7 +706,10 @@ export default function SignupPage() {
 													<ul className="scholarship-list">
 														{scholarships.map((s, i) => (
 															<li key={i} className="scholarship-item">
-																<HiOutlineAcademicCap className="scholarship-item-icon" aria-hidden />
+																<HiOutlineAcademicCap
+																	className="scholarship-item-icon"
+																	aria-hidden
+																/>
 																<span className="scholarship-item-name">
 																	{s.provider}
 																</span>
@@ -682,7 +720,10 @@ export default function SignupPage() {
 																		onClick={() => handleEditScholarship(i)}
 																		aria-label="Edit scholarship"
 																	>
-																		<HiOutlinePencil className="scholarship-item-btn-icon" aria-hidden />
+																		<HiOutlinePencil
+																			className="scholarship-item-btn-icon"
+																			aria-hidden
+																		/>
 																	</button>
 																	<button
 																		type="button"
@@ -690,7 +731,10 @@ export default function SignupPage() {
 																		onClick={() => handleDeleteScholarship(i)}
 																		aria-label="Delete scholarship"
 																	>
-																		<HiOutlineTrash className="scholarship-item-btn-icon" aria-hidden />
+																		<HiOutlineTrash
+																			className="scholarship-item-btn-icon"
+																			aria-hidden
+																		/>
 																	</button>
 																</div>
 															</li>
@@ -700,15 +744,19 @@ export default function SignupPage() {
 											</>
 										) : (
 											<div className="scholarship-form">
-
-												<label className="login-label" htmlFor="scholarship-provider">
+												<label
+													className="login-label"
+													htmlFor="scholarship-provider"
+												>
 													Scholarship Provider
 												</label>
 												<select
 													id="scholarship-provider"
 													className="login-select"
 													value={scholarshipProvider}
-													onChange={(e) => setScholarshipProvider(e.target.value)}
+													onChange={(e) =>
+														setScholarshipProvider(e.target.value)
+													}
 												>
 													<option value="">Select provider</option>
 													{SCHOLARSHIP_PROVIDERS.map((p) => (
@@ -720,7 +768,10 @@ export default function SignupPage() {
 
 												{scholarshipProvider === "Other" && (
 													<>
-														<label className="login-label" htmlFor="scholarship-provider-other">
+														<label
+															className="login-label"
+															htmlFor="scholarship-provider-other"
+														>
 															Specify Provider
 														</label>
 														<div className="login-input-wrap">
@@ -730,13 +781,18 @@ export default function SignupPage() {
 																className="login-input"
 																placeholder="Enter provider name"
 																value={scholarshipProviderOther}
-																onChange={(e) => setScholarshipProviderOther(e.target.value)}
+																onChange={(e) =>
+																	setScholarshipProviderOther(e.target.value)
+																}
 															/>
 														</div>
 													</>
 												)}
 
-												<label className="login-label" htmlFor="scholarship-date">
+												<label
+													className="login-label"
+													htmlFor="scholarship-date"
+												>
 													Last Payout Date
 												</label>
 												<div className="login-input-wrap">
@@ -749,7 +805,10 @@ export default function SignupPage() {
 													/>
 												</div>
 
-												<label className="login-label" htmlFor="scholarship-type">
+												<label
+													className="login-label"
+													htmlFor="scholarship-type"
+												>
 													Type of Scholarship
 												</label>
 												<select
@@ -779,14 +838,18 @@ export default function SignupPage() {
 														className="login-submit"
 														onClick={handleSaveScholarship}
 													>
-														{editingScholarshipIndex !== null ? "Update" : "Save"}
+														{editingScholarshipIndex !== null
+															? "Update"
+															: "Save"}
 													</button>
 												</div>
 											</div>
 										)}
 									</div>
 								) : (
-									<p className="signup-step-content">No existing scholarship.</p>
+									<p className="signup-step-content">
+										No existing scholarship.
+									</p>
 								)}
 							</>
 						)}
@@ -795,24 +858,53 @@ export default function SignupPage() {
 								<label className="login-label" htmlFor="signup-cor-upload">
 									Upload Certificate of Registration (COR)
 								</label>
-								<label className="signup-upload-wrap" htmlFor="signup-cor-upload">
+								<label
+									className="signup-upload-wrap"
+									htmlFor="signup-cor-upload"
+								>
 									<input
 										id="signup-cor-upload"
 										type="file"
 										className="signup-file-input"
-										accept=".png,.jpg,.jpeg,.pdf"
-										onChange={(e) => setCorFile(e.target.files?.[0] ?? null)}
+										accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+										onChange={(e) => {
+											const file = e.target.files?.[0] ?? null
+											if (
+												file &&
+												!["image/png", "image/jpeg"].includes(file.type)
+											) {
+												toast.error(
+													"Only PNG and JPG/JPEG image files are allowed.",
+												)
+												e.target.value = ""
+												setCorFile(null)
+												return
+											}
+											setCorFile(file)
+										}}
 									/>
 									{corFile ? (
 										<>
-											<HiOutlineAcademicCap className="signup-upload-icon signup-upload-icon--success" aria-hidden />
-											<span className="signup-upload-filename">{corFile.name}</span>
+											<HiOutlineAcademicCap
+												className="signup-upload-icon signup-upload-icon--success"
+												aria-hidden
+											/>
+											<span className="signup-upload-filename">
+												{corFile.name}
+											</span>
 										</>
 									) : (
 										<>
-											<HiOutlineCloudUpload className="signup-upload-icon" aria-hidden />
-											<span className="signup-upload-hint">Drop file here or click to browse</span>
-											<span className="signup-upload-formats">PNG, JPG, or PDF</span>
+											<HiOutlineCloudUpload
+												className="signup-upload-icon"
+												aria-hidden
+											/>
+											<span className="signup-upload-hint">
+												Drop file here or click to browse
+											</span>
+											<span className="signup-upload-formats">
+												PNG or JPG only
+											</span>
 										</>
 									)}
 								</label>
@@ -820,7 +912,10 @@ export default function SignupPage() {
 								<p className="signup-cor-note">
 									Registration Number will appear at the COR.
 								</p>
-								<label className="login-label" htmlFor="signup-registration-number">
+								<label
+									className="login-label"
+									htmlFor="signup-registration-number"
+								>
 									Registration Number
 								</label>
 								<div className="login-input-wrap">
@@ -839,13 +934,25 @@ export default function SignupPage() {
 							<div className="signup-review">
 								<div className="signup-review-section">
 									<h3 className="signup-review-heading">Account</h3>
-									<p className="signup-review-row"><span className="signup-review-label">User Id</span> {userId}</p>
+									<p className="signup-review-row">
+										<span className="signup-review-label">User Id</span>{" "}
+										{userId}
+									</p>
 								</div>
 								<div className="signup-review-section">
 									<h3 className="signup-review-heading">Personal</h3>
-									<p className="signup-review-row"><span className="signup-review-label">Name</span> {[fname, mname, lname].filter(Boolean).join(" ")}</p>
-									<p className="signup-review-row"><span className="signup-review-label">Course</span> {course}</p>
-									<p className="signup-review-row"><span className="signup-review-label">Year</span> {year} · <span className="signup-review-label">Section</span> {section}</p>
+									<p className="signup-review-row">
+										<span className="signup-review-label">Name</span>{" "}
+										{[fname, mname, lname].filter(Boolean).join(" ")}
+									</p>
+									<p className="signup-review-row">
+										<span className="signup-review-label">Course</span> {course}
+									</p>
+									<p className="signup-review-row">
+										<span className="signup-review-label">Year</span> {year} ·{" "}
+										<span className="signup-review-label">Section</span>{" "}
+										{section}
+									</p>
 								</div>
 								{scholarships.length > 0 && (
 									<div className="signup-review-section">
@@ -853,20 +960,23 @@ export default function SignupPage() {
 										{scholarships.map((s, i) => (
 											<p key={i} className="signup-review-row">
 												{s.provider} — {s.type}
-												{s.lastPayout && (
-													<>
-														{" "}
-														(Last payout: {s.lastPayout})
-													</>
-												)}
+												{s.lastPayout && <> (Last payout: {s.lastPayout})</>}
 											</p>
 										))}
 									</div>
 								)}
 								<div className="signup-review-section">
 									<h3 className="signup-review-heading">COR</h3>
-									<p className="signup-review-row"><span className="signup-review-label">File</span> {corFile?.name ?? "—"}</p>
-									<p className="signup-review-row"><span className="signup-review-label">Registration No.</span> {registrationNumber || "—"}</p>
+									<p className="signup-review-row">
+										<span className="signup-review-label">File</span>{" "}
+										{corFile?.name ?? "—"}
+									</p>
+									<p className="signup-review-row">
+										<span className="signup-review-label">
+											Registration No.
+										</span>{" "}
+										{registrationNumber || "—"}
+									</p>
 								</div>
 							</div>
 						)}
