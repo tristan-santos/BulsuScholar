@@ -10,6 +10,7 @@ import {
 	HiOutlineAcademicCap,
 	HiOutlineCheckCircle,
 	HiOutlineClock,
+	HiOutlineDocumentText,
 	HiOutlineMail,
 	HiOutlineCog,
 	HiOutlineSun,
@@ -73,16 +74,21 @@ export default function StudentScholarshipsPage() {
 	}, [userMenuOpen])
 
 	const isValidated = checkValidated(user)
-	const scholarships = Array.isArray(user?.scholarships) ? user.scholarships : []
+	const scholarships = Array.isArray(user?.scholarships)
+		? user.scholarships
+		: []
 
 	const getUserInitials = () => {
 		if (!user) return "ST"
 		const f = user.fname?.[0]?.toUpperCase() || ""
 		const l = user.lname?.[0]?.toUpperCase() || ""
-		return (f + l) || "ST"
+		return f + l || "ST"
 	}
 
-	const studentNumber = location.state?.userId ?? sessionStorage.getItem("bulsuscholar_userId") ?? ""
+	const studentNumber =
+		location.state?.userId ??
+		sessionStorage.getItem("bulsuscholar_userId") ??
+		""
 
 	return (
 		<div className="admin-dashboard student-dashboard">
@@ -90,7 +96,11 @@ export default function StudentScholarshipsPage() {
 				<div className="student-header-top-stripe"></div>
 				<div className="student-header-content">
 					<div className="student-header-left">
-						<img src={logo2} alt="BulsuScholar" className="student-header-logo" />
+						<img
+							src={logo2}
+							alt="BulsuScholar"
+							className="student-header-logo"
+						/>
 						<h1 className="student-header-brand">BulsuScholar</h1>
 					</div>
 					<div className="student-header-right">
@@ -99,7 +109,10 @@ export default function StudentScholarshipsPage() {
 							className="student-header-notification-btn"
 							aria-label="Messages"
 						>
-							<HiOutlineMail className="student-header-notification-icon" aria-hidden />
+							<HiOutlineMail
+								className="student-header-notification-icon"
+								aria-hidden
+							/>
 							<span className="student-header-badge">3</span>
 						</button>
 						<div className="student-header-verified-wrap">
@@ -110,9 +123,15 @@ export default function StudentScholarshipsPage() {
 								title={isValidated ? "Verified" : "Pending"}
 							>
 								{isValidated ? (
-									<HiOutlineCheckCircle className="student-header-verified-icon" aria-hidden />
+									<HiOutlineCheckCircle
+										className="student-header-verified-icon"
+										aria-hidden
+									/>
 								) : (
-									<HiOutlineClock className="student-header-verified-icon" aria-hidden />
+									<HiOutlineClock
+										className="student-header-verified-icon"
+										aria-hidden
+									/>
 								)}
 								<span className="student-header-verified-tooltip-below">
 									{isValidated ? "Verified" : "Pending"}
@@ -128,9 +147,7 @@ export default function StudentScholarshipsPage() {
 								aria-expanded={userMenuOpen}
 							>
 								<HiMenu className="student-header-menu-icon" aria-hidden />
-								<div className="student-header-avatar">
-									{getUserInitials()}
-								</div>
+								<div className="student-header-avatar">{getUserInitials()}</div>
 							</button>
 							{userMenuOpen && (
 								<div className="student-verified-dropdown">
@@ -150,8 +167,14 @@ export default function StudentScholarshipsPage() {
 										</div>
 									</div>
 									<nav className="student-verified-dropdown-nav">
-										<button type="button" className="student-verified-dropdown-item">
-											<HiOutlineUserCircle className="student-verified-dropdown-item-icon" aria-hidden />
+										<button
+											type="button"
+											className="student-verified-dropdown-item"
+										>
+											<HiOutlineUserCircle
+												className="student-verified-dropdown-item-icon"
+												aria-hidden
+											/>
 											My Profile
 										</button>
 										<button
@@ -159,19 +182,32 @@ export default function StudentScholarshipsPage() {
 											className="student-verified-dropdown-item"
 											onClick={() => {
 												setUserMenuOpen(false)
-												navigate("/student-dashboard/scholarships", { state: { user } })
+												navigate("/student-dashboard/scholarships", {
+													state: { user },
+												})
 											}}
 										>
-											<HiOutlineAcademicCap className="student-verified-dropdown-item-icon" aria-hidden />
+											<HiOutlineAcademicCap
+												className="student-verified-dropdown-item-icon"
+												aria-hidden
+											/>
 											Scholarship
 										</button>
-										<button type="button" className="student-verified-dropdown-item">
-											<HiOutlineCog className="student-verified-dropdown-item-icon" aria-hidden />
+										<button
+											type="button"
+											className="student-verified-dropdown-item"
+										>
+											<HiOutlineCog
+												className="student-verified-dropdown-item-icon"
+												aria-hidden
+											/>
 											Settings
 										</button>
 									</nav>
 									<div className="student-verified-dropdown-theme">
-										<span className="student-verified-dropdown-theme-label">THEME</span>
+										<span className="student-verified-dropdown-theme-label">
+											THEME
+										</span>
 										<div className="student-verified-dropdown-theme-btns">
 											<button
 												type="button"
@@ -201,7 +237,10 @@ export default function StudentScholarshipsPage() {
 											navigate("/", { replace: true })
 										}}
 									>
-										<HiOutlineLogout className="student-verified-dropdown-logout-icon" aria-hidden />
+										<HiOutlineLogout
+											className="student-verified-dropdown-logout-icon"
+											aria-hidden
+										/>
 										Logout
 									</button>
 								</div>
@@ -231,15 +270,18 @@ export default function StudentScholarshipsPage() {
 							{scholarships.map((s, i) => (
 								<article key={i} className="student-scholarship-card">
 									<div className="student-scholarship-card-header">
-										<HiOutlineAcademicCap className="student-scholarship-card-icon" aria-hidden />
-										<span className="student-scholarship-status status-pending">
-											Declared
-										</span>
+										<HiOutlineAcademicCap
+											className="student-scholarship-card-icon"
+											aria-hidden
+										/>
 									</div>
-									<h3 className="student-scholarship-card-name">{s.name || "Scholarship"}</h3>
-									<p className="student-scholarship-card-provider">{s.provider || "—"}</p>
+									<h3 className="student-scholarship-card-name">
+										{s.name || "Scholarship"}
+									</h3>
+									<p className="student-scholarship-card-provider">
+										{s.provider || "—"}
+									</p>
 									<div className="student-scholarship-card-meta">
-										<span>{s.type || "—"}</span>
 										{s.date && (
 											<>
 												<span className="student-scholarship-card-sep">·</span>
@@ -253,14 +295,27 @@ export default function StudentScholarshipsPage() {
 											</>
 										)}
 									</div>
+									<div className="student-scholarship-card-action">
+										<button
+											type="button"
+											className="student-scholarship-request-soe"
+										>
+											<HiOutlineDocumentText />
+											Request SOE
+										</button>
+									</div>
 								</article>
 							))}
 						</div>
 					) : (
 						<div className="dashboard-panel student-empty student-scholarships-empty">
-							<HiOutlineAcademicCap className="student-scholarships-empty-icon" aria-hidden />
+							<HiOutlineAcademicCap
+								className="student-scholarships-empty-icon"
+								aria-hidden
+							/>
 							<p className="dashboard-placeholder">
-								You have no scholarships yet. Apply through the scholarship office to get started.
+								You have no scholarships yet. Apply through the scholarship
+								office to get started.
 							</p>
 							<button
 								type="button"

@@ -538,6 +538,7 @@
 /* ----- Stat cards (6) ----- */
 .dashboard-stats-grid {
 	display: grid;
+	justify-content: center;
 	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 	gap: clamp(0.75rem, 2vw, 1rem);
 	margin: 0 auto 1.5rem auto;

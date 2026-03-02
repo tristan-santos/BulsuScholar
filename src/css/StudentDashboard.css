@@ -125,7 +125,9 @@
 	border-radius: 6px;
 	opacity: 0;
 	pointer-events: none;
-	transition: opacity 0.2s, transform 0.2s;
+	transition:
+		opacity 0.2s,
+		transform 0.2s;
 }
 
 .student-header-verified-btn:hover .student-header-verified-tooltip-below {
@@ -163,7 +165,9 @@
 	min-width: 280px;
 	background: #fff;
 	border-radius: 12px;
-	box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+	box-shadow:
+		0 10px 25px rgba(0, 0, 0, 0.1),
+		0 4px 6px rgba(0, 0, 0, 0.05);
 	border: 1px solid #e5e7eb;
 	overflow: hidden;
 	z-index: 50;
@@ -275,7 +279,9 @@
 	font-size: 0.85rem;
 	color: #374151;
 	cursor: pointer;
-	transition: background 0.15s, border-color 0.15s;
+	transition:
+		background 0.15s,
+		border-color 0.15s;
 }
 
 .student-verified-dropdown-theme-btn:hover {
@@ -352,7 +358,9 @@
 	border: 1px solid #e5e7eb;
 	border-radius: 9999px;
 	cursor: pointer;
-	transition: background 0.2s, border-color 0.2s;
+	transition:
+		background 0.2s,
+		border-color 0.2s;
 }
 
 .student-header-user-btn:hover {
@@ -474,18 +482,25 @@
 /* ----- Scholarship cards ----- */
 .student-scholarship-cards {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-	gap: 1rem;
-	margin-bottom: 2rem;
+	/* single column so each card takes full available width */
+	grid-template-columns: 1fr;
+	row-gap: 1rem;
+	margin: 0 auto 2rem auto;
+	width: 100%;
 }
 
 .student-scholarship-card {
 	background: #fff;
 	border-radius: 12px;
-	padding: 1.25rem;
+	padding: 1rem;
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 	border: 1px solid #e5e7eb;
-	transition: box-shadow 0.2s, border-color 0.2s;
+	transition:
+		box-shadow 0.2s,
+		border-color 0.2s;
+	display: flex;
+	align-items: center;
+	gap: 1rem;
 }
 
 .student-scholarship-card:hover {
@@ -493,12 +508,11 @@
 	border-color: rgba(11, 87, 43, 0.2);
 }
 
-.student-scholarship-card-header {
+.student-scholarship-card-left {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 0.5rem;
-	margin-bottom: 0.75rem;
+	justify-content: center;
+	flex-shrink: 0;
 }
 
 .student-scholarship-card-icon {
@@ -518,23 +532,39 @@
 	letter-spacing: 0.03em;
 }
 
+/* hide status entirely (removes pending/approved etc) */
+.student-scholarship-status {
+	display: none !important;
+}
+
+.student-scholarship-card-info {
+	flex: 1;
+	min-width: 0;
+}
+
 .student-scholarship-card-name {
 	margin: 0;
 	font-size: 1rem;
 	font-weight: 700;
 	color: #1f2937;
 	line-height: 1.3;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .student-scholarship-card-provider {
-	margin: 0.35rem 0 0;
+	margin: 0.25rem 0 0;
 	font-size: 0.85rem;
 	color: #6b7280;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .student-scholarship-card-meta {
-	margin-top: 0.75rem;
-	padding-top: 0.75rem;
+	margin-top: 0.5rem;
+	padding-top: 0.5rem;
 	border-top: 1px solid #f3f4f6;
 	font-size: 0.8rem;
 	color: #9ca3af;
@@ -609,7 +639,9 @@
 	color: #374151;
 	border-radius: 8px;
 	cursor: pointer;
-	transition: background 0.2s, color 0.2s;
+	transition:
+		background 0.2s,
+		color 0.2s;
 }
 
 .student-scholarships-back-btn:hover {
@@ -644,7 +676,9 @@
 	font-size: 1rem;
 	font-weight: 600;
 	cursor: pointer;
-	transition: filter 0.2s, transform 0.1s;
+	transition:
+		filter 0.2s,
+		transform 0.1s;
 }
 
 .student-scholarships-apply-btn:hover {
@@ -662,7 +696,7 @@
 .student-info-card {
 	background: #fff;
 	border-radius: 10px;
-	padding: 1.25rem;
+	padding: 1rem;
 	border: 1px solid #e5e7eb;
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
@@ -697,3 +731,34 @@
 	background: rgba(239, 68, 68, 0.12);
 	color: #b91c1c;
 }
+
+.student-scholarship-request-soe {
+	padding: 0.5rem 1rem;
+	background: linear-gradient(135deg, #0b572b 0%, #06521f 100%);
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	font-size: 0.875rem;
+	font-weight: 600;
+	cursor: pointer;
+	margin-top: 0.5rem;
+	transition:
+		filter 0.2s,
+		transform 0.1s;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.student-scholarship-request-soe:hover {
+	filter: brightness(1.08);
+	transform: translateY(-1px);
+}
+
+.student-scholarship-card-action {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+
