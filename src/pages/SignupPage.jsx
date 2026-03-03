@@ -81,6 +81,23 @@ async function encryptPasswordAES256(plainPassword) {
 	return btoa(binary)
 }
 
+function isPasswordStrong(pwd) {
+	const hasCapital = /[A-Z]/.test(pwd)
+	const hasNumber = /[0-9]/.test(pwd)
+	const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd)
+	const hasMinLength = pwd.length >= 6
+	return hasCapital && hasNumber && hasSpecial && hasMinLength
+}
+
+function getPasswordRequirements(pwd) {
+	return {
+		hasCapital: /[A-Z]/.test(pwd),
+		hasNumber: /[0-9]/.test(pwd),
+		hasSpecial: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+		hasMinLength: pwd.length >= 6,
+	}
+}
+
 export default function SignupPage() {
 	const navigate = useNavigate()
 	const [step, setStep] = useState(1)
@@ -89,6 +106,7 @@ export default function SignupPage() {
 	const [confirmPassword, setConfirmPassword] = useState("")
 	const [showPassword, setShowPassword] = useState(false)
 	const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+	const [showPasswordTooltip, setShowPasswordTooltip] = useState(false)
 	const [fname, setFname] = useState("")
 	const [mname, setMname] = useState("")
 	const [lname, setLname] = useState("")
@@ -104,15 +122,18 @@ export default function SignupPage() {
 	const [scholarshipDate, setScholarshipDate] = useState("")
 	const [scholarshipType, setScholarshipType] = useState("")
 	const [corFile, setCorFile] = useState(null)
+	const [showImagePreview, setShowImagePreview] = useState(false)
 	const [registrationNumber, setRegistrationNumber] = useState("")
 	const [isPending, setIsPending] = useState(false)
+	const [verificationStatus, setVerificationStatus] = useState(null) // 'auto-verified' or 'pending-review'
 
 	const isStep1Invalid =
 		step === 1 &&
 		(!userId.trim() ||
 			!password.trim() ||
 			!confirmPassword.trim() ||
-			password !== confirmPassword)
+			password !== confirmPassword ||
+			!isPasswordStrong(password))
 
 	const isStep2Invalid =
 		step === 2 &&
@@ -131,6 +152,56 @@ export default function SignupPage() {
 	const handleNext = async (e) => {
 		e.preventDefault()
 		if (isNextDisabled) return
+
+		// Step 1: Check if user ID exists in Firebase
+		if (step === 1) {
+			const studentId = userId.trim()
+
+			if (!studentId) {
+				toast.error("Please enter a User ID")
+				return
+			}
+
+			if (!isPasswordStrong(password)) {
+				toast.error(
+					"Password must contain at least 1 capital letter, 1 number, and 1 special character (!@#$%^&*...)",
+				)
+				return
+			}
+
+			if (password !== confirmPassword) {
+				toast.error("Passwords do not match")
+				return
+			}
+
+			try {
+				// Check if user exists in students or pendingStudent collections
+				const [studentSnap, pendingSnap] = await Promise.all([
+					getDoc(doc(db, "students", studentId)),
+					getDoc(doc(db, "pendingStudent", studentId)),
+				])
+
+				if (studentSnap.exists()) {
+					toast.error("This User ID is already registered in the system.")
+					return
+				}
+
+				if (pendingSnap.exists()) {
+					toast.error(
+						"This User ID is already pending review. Please wait for approval.",
+					)
+					return
+				}
+
+				// User ID is available, proceed to next step silently
+				setStep((s) => s + 1)
+			} catch (err) {
+				console.error("Error checking user ID:", err)
+				toast.error("Failed to validate User ID. Please try again.")
+			}
+			return
+		}
+
 		if (step === TOTAL_STEPS) {
 			try {
 				const encryptedPassword = await encryptPasswordAES256(password)
@@ -183,24 +254,54 @@ export default function SignupPage() {
 					scholarships,
 				}
 
+				let isAutoVerified = false
+
 				if (existingSnap.exists()) {
-					// Auto-approve if student exists in existingStudent
-					await setDoc(
-						doc(db, "students", studentId),
-						{
+					// Check if names match in existingStudent record
+					const existingData = existingSnap.data()
+					const existingFname = existingData.fname?.trim().toLowerCase() || ""
+					const existingLname = existingData.lname?.trim().toLowerCase() || ""
+					const existingMname = existingData.mname?.trim().toLowerCase() || ""
+
+					const userFname = fname.trim().toLowerCase()
+					const userLname = lname.trim().toLowerCase()
+					const userMname = mname.trim().toLowerCase()
+
+					const namesMatch =
+						existingFname === userFname &&
+						existingLname === userLname &&
+						existingMname === userMname
+
+					if (namesMatch) {
+						// Auto-approve if student exists in existingStudent and names match
+						isAutoVerified = true
+						await setDoc(
+							doc(db, "students", studentId),
+							{
+								...baseData,
+								isValidated: true,
+								isPending: false,
+								validatedAt: serverTimestamp(),
+								createdAt: serverTimestamp(),
+							},
+							{ merge: true },
+						)
+						toast.success(
+							"Your account has been verified! You can now log in.",
+						)
+					} else {
+						// Names don't match - send to pending review
+						await setDoc(doc(db, "pendingStudent", studentId), {
 							...baseData,
-							isValidated: true,
-							isPending: false,
-							validatedAt: serverTimestamp(),
+							isValidated: false,
+							isPending: true,
+							validatedAt: null,
 							createdAt: serverTimestamp(),
-						},
-						{ merge: true },
-					)
-					toast.success(
-						"Account matched existing records and was auto-approved.",
-					)
+							namesMismatch: true,
+						})
+					}
 				} else {
-					// Normal flow: create pendingStudent document
+					// Student doesn't exist in existingStudent - send to pending review
 					await setDoc(doc(db, "pendingStudent", studentId), {
 						...baseData,
 						isValidated: false,
@@ -210,6 +311,9 @@ export default function SignupPage() {
 					})
 				}
 
+				setVerificationStatus(
+					isAutoVerified ? "auto-verified" : "pending-review",
+				)
 				setIsPending(true)
 			} catch (err) {
 				console.error("Error saving pending student:", err)
@@ -336,21 +440,47 @@ export default function SignupPage() {
 							className="login-form-logo"
 						/>
 						<h2 className="login-form-title">BulsuScholar</h2>
-						<div className="signup-pending-icon-wrap">
-							<HiOutlineClock className="signup-pending-icon" aria-hidden />
-						</div>
-						<p className="signup-pending-title">Account verification pending</p>
-						<p className="signup-pending-info">
-							Your registration has been submitted. Verification typically takes
-							1–3 business days.
-						</p>
-						<button
-							type="button"
-							className="login-submit signup-pending-back-btn"
-							onClick={() => navigate("/")}
-						>
-							Back to Login
-						</button>
+						{verificationStatus === "auto-verified" ? (
+							<>
+								<div className="signup-pending-icon-wrap signup-verified-wrap">
+									<span className="signup-verified-icon">✓</span>
+								</div>
+								<p className="signup-pending-title signup-verified-title">
+									You are now verified!
+								</p>
+								<p className="signup-pending-info">
+									Your account has been successfully verified. You can now log
+									in to access your scholarship information and dashboard.
+								</p>
+								<button
+									type="button"
+									className="login-submit signup-pending-back-btn"
+									onClick={() => navigate("/")}
+								>
+									Go to Login
+								</button>
+							</>
+						) : (
+							<>
+								<div className="signup-pending-icon-wrap">
+									<HiOutlineClock className="signup-pending-icon" aria-hidden />
+								</div>
+								<p className="signup-pending-title">
+									Account verification pending
+								</p>
+								<p className="signup-pending-info">
+									Your registration has been submitted and is under review.
+									Verification typically takes 1–3 business days.
+								</p>
+								<button
+									type="button"
+									className="login-submit signup-pending-back-btn"
+									onClick={() => navigate("/")}
+								>
+									Back to Login
+								</button>
+							</>
+						)}
 					</div>
 				</div>
 			</div>
@@ -460,7 +590,9 @@ export default function SignupPage() {
 										className="login-input"
 										placeholder="Enter your User Id"
 										value={userId}
-										onChange={(e) => setUserId(e.target.value)}
+										onChange={(e) =>
+											setUserId(e.target.value.replace(/\D/g, ""))
+										}
 										autoComplete="username"
 										autoCapitalize="off"
 									/>
@@ -469,40 +601,90 @@ export default function SignupPage() {
 								<label className="login-label" htmlFor="signup-password">
 									Password
 								</label>
-								<div className="login-input-wrap">
-									<HiOutlineLockClosed
-										className="login-input-icon"
-										aria-hidden
-									/>
-									<input
-										id="signup-password"
-										type={showPassword ? "text" : "password"}
-										className="login-input"
-										placeholder="Enter your password"
-										value={password}
-										onChange={(e) => setPassword(e.target.value)}
-										autoComplete="new-password"
-									/>
-									<button
-										type="button"
-										className="login-input-eye-btn"
-										onClick={() => setShowPassword((v) => !v)}
-										aria-label={
-											showPassword ? "Hide password" : "Show password"
-										}
+								<div className="password-input-container">
+									<div
+										className={`login-input-wrap ${
+											password.trim() && !isPasswordStrong(password)
+												? "login-input-wrap--error"
+												: ""
+										}`}
 									>
-										{showPassword ? (
-											<HiOutlineEyeOff
-												className="login-input-eye-icon"
-												aria-hidden
-											/>
-										) : (
-											<HiOutlineEye
-												className="login-input-eye-icon"
-												aria-hidden
-											/>
-										)}
-									</button>
+										<HiOutlineLockClosed
+											className="login-input-icon"
+											aria-hidden
+										/>
+										<input
+											id="signup-password"
+											type={showPassword ? "text" : "password"}
+											className="login-input"
+											placeholder="Enter your password"
+											value={password}
+											onChange={(e) => setPassword(e.target.value)}
+											onFocus={() => setShowPasswordTooltip(true)}
+											onBlur={() => setShowPasswordTooltip(false)}
+											autoComplete="new-password"
+										/>
+										<button
+											type="button"
+											className="login-input-eye-btn"
+											onClick={() => setShowPassword((v) => !v)}
+											aria-label={
+												showPassword ? "Hide password" : "Show password"
+											}
+										>
+											{showPassword ? (
+												<HiOutlineEyeOff
+													className="login-input-eye-icon"
+													aria-hidden
+												/>
+											) : (
+												<HiOutlineEye
+													className="login-input-eye-icon"
+													aria-hidden
+												/>
+											)}
+										</button>
+									</div>
+									{showPasswordTooltip && password && (
+										<div className="password-requirements-floating">
+											<div
+												className={`requirement ${
+													getPasswordRequirements(password).hasMinLength
+														? "requirement--met"
+														: ""
+												}`}
+											>
+												<span>✓</span> At least 6 characters
+											</div>
+											<div
+												className={`requirement ${
+													getPasswordRequirements(password).hasCapital
+														? "requirement--met"
+														: ""
+												}`}
+											>
+												<span>✓</span> At least 1 capital letter
+											</div>
+											<div
+												className={`requirement ${
+													getPasswordRequirements(password).hasNumber
+														? "requirement--met"
+														: ""
+												}`}
+											>
+												<span>✓</span> At least 1 number
+											</div>
+											<div
+												className={`requirement ${
+													getPasswordRequirements(password).hasSpecial
+														? "requirement--met"
+														: ""
+												}`}
+											>
+												<span>✓</span> At least 1 special character (!@#$%...)
+											</div>
+										</div>
+									)}
 								</div>
 
 								<label
@@ -610,7 +792,9 @@ export default function SignupPage() {
 									value={course}
 									onChange={(e) => setCourse(e.target.value)}
 								>
-									<option value="">Select course</option>
+									<option value="" disabled>
+										Select course
+									</option>
 									{COURSES.map((c) => (
 										<option key={c} value={c}>
 											{c}
@@ -629,7 +813,9 @@ export default function SignupPage() {
 											value={year}
 											onChange={(e) => setYear(e.target.value)}
 										>
-											<option value="">Select year</option>
+											<option value="" disabled>
+												Select year
+											</option>
 											{[1, 2, 3, 4].map((y) => (
 												<option key={y} value={y}>
 													{y}
@@ -641,16 +827,21 @@ export default function SignupPage() {
 										<label className="login-label" htmlFor="signup-section">
 											Section
 										</label>
-										<div className="login-input-wrap">
-											<input
-												id="signup-section"
-												type="text"
-												className="login-input"
-												placeholder="Section"
-												value={section}
-												onChange={(e) => setSection(e.target.value)}
-											/>
-										</div>
+										<select
+											id="signup-section"
+											className="login-select"
+											value={section}
+											onChange={(e) => setSection(e.target.value)}
+										>
+											<option value="" disabled>
+												Select section
+											</option>
+											{["A", "B", "C", "D", "E", "F", "G", "H"].map((sec) => (
+												<option key={sec} value={sec}>
+													{sec}
+												</option>
+											))}
+										</select>
 									</div>
 								</div>
 							</>
@@ -759,11 +950,23 @@ export default function SignupPage() {
 													}
 												>
 													<option value="">Select provider</option>
-													{SCHOLARSHIP_PROVIDERS.map((p) => (
-														<option key={p} value={p}>
-															{p}
-														</option>
-													))}
+													{SCHOLARSHIP_PROVIDERS.map((p) => {
+														const allSavedProviders = scholarships.map(
+															(s) => s.provider,
+														)
+														const isAlreadySaved =
+															allSavedProviders.includes(p) &&
+															editingScholarshipIndex === null
+														return (
+															<option
+																key={p}
+																value={p}
+																disabled={isAlreadySaved}
+															>
+																{p}
+															</option>
+														)
+													})}
 												</select>
 
 												{scholarshipProvider === "Other" && (
@@ -802,6 +1005,9 @@ export default function SignupPage() {
 														className="login-input"
 														value={scholarshipDate}
 														onChange={(e) => setScholarshipDate(e.target.value)}
+														max={new Date().toISOString().split("T")[0]}
+														onClick={(e) => e.currentTarget.showPicker?.()}
+														onFocus={(e) => e.currentTarget.showPicker?.()}
 													/>
 												</div>
 
@@ -837,6 +1043,13 @@ export default function SignupPage() {
 														type="button"
 														className="login-submit"
 														onClick={handleSaveScholarship}
+														disabled={
+															!scholarshipProvider.trim() ||
+															(scholarshipProvider === "Other" &&
+																!scholarshipProviderOther.trim()) ||
+															!scholarshipDate ||
+															!scholarshipType
+														}
 													>
 														{editingScholarshipIndex !== null
 															? "Update"
@@ -866,19 +1079,24 @@ export default function SignupPage() {
 										id="signup-cor-upload"
 										type="file"
 										className="signup-file-input"
-										accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+										accept=".png,.jpg,image/png,image/jpeg"
 										onChange={(e) => {
 											const file = e.target.files?.[0] ?? null
-											if (
-												file &&
-												!["image/png", "image/jpeg"].includes(file.type)
-											) {
-												toast.error(
-													"Only PNG and JPG/JPEG image files are allowed.",
-												)
-												e.target.value = ""
-												setCorFile(null)
-												return
+											if (file) {
+												const validExtensions = ["png", "jpg"]
+												const fileExtension = file.name
+													.split(".")
+													.pop()
+													?.toLowerCase()
+
+												if (!validExtensions.includes(fileExtension)) {
+													toast.error(
+														"Only PNG and JPG image files are allowed.",
+													)
+													e.target.value = ""
+													setCorFile(null)
+													return
+												}
 											}
 											setCorFile(file)
 										}}
@@ -925,7 +1143,9 @@ export default function SignupPage() {
 										className="login-input"
 										placeholder="Enter registration number"
 										value={registrationNumber}
-										onChange={(e) => setRegistrationNumber(e.target.value)}
+										onChange={(e) =>
+											setRegistrationNumber(e.target.value.replace(/\D/g, ""))
+										}
 									/>
 								</div>
 							</>
@@ -957,19 +1177,50 @@ export default function SignupPage() {
 								{scholarships.length > 0 && (
 									<div className="signup-review-section">
 										<h3 className="signup-review-heading">Scholarships</h3>
-										{scholarships.map((s, i) => (
-											<p key={i} className="signup-review-row">
-												{s.provider} — {s.type}
-												{s.lastPayout && <> (Last payout: {s.lastPayout})</>}
-											</p>
-										))}
+										<ul className="scholarship-list scholarship-review-list">
+											{scholarships.map((s, i) => (
+												<li
+													key={i}
+													className="scholarship-item scholarship-item-review"
+												>
+													<HiOutlineAcademicCap
+														className="scholarship-item-icon"
+														aria-hidden
+													/>
+													<div className="scholarship-item-content">
+														<div className="scholarship-item-name">
+															{s.provider}
+														</div>
+														<div className="scholarship-item-type">
+															{s.type}
+														</div>
+														{s.lastPayout && (
+															<div className="scholarship-item-payout">
+																Last payout: {s.lastPayout}
+															</div>
+														)}
+													</div>
+												</li>
+											))}
+										</ul>
 									</div>
 								)}
 								<div className="signup-review-section">
 									<h3 className="signup-review-heading">COR</h3>
 									<p className="signup-review-row">
-										<span className="signup-review-label">File</span>{" "}
-										{corFile?.name ?? "—"}
+										<span className="signup-review-label">File</span>
+										{corFile ? (
+											<button
+												type="button"
+												className="signup-preview-btn-mini"
+												onClick={() => setShowImagePreview(true)}
+												title={corFile.name}
+											>
+												View Image
+											</button>
+										) : (
+											"—"
+										)}
 									</p>
 									<p className="signup-review-row">
 										<span className="signup-review-label">
@@ -1017,6 +1268,31 @@ export default function SignupPage() {
 					</form>
 				</div>
 			</div>
+
+			{showImagePreview && corFile && (
+				<div
+					className="signup-preview-modal-overlay"
+					onClick={() => setShowImagePreview(false)}
+				>
+					<div
+						className="signup-preview-modal"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<button
+							type="button"
+							className="signup-preview-close"
+							onClick={() => setShowImagePreview(false)}
+						>
+							✕
+						</button>
+						<img
+							src={URL.createObjectURL(corFile)}
+							alt="COR File Preview"
+							className="signup-preview-image"
+						/>
+					</div>
+				</div>
+			)}
 		</div>
 	)
 }

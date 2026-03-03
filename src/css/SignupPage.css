@@ -93,12 +93,14 @@
 
 .signup-step-content {
 	text-align: center;
-	padding: 1rem 0;
+	padding: 1.5rem 0;
+	font-size: 1.05rem;
 }
 
 .signup-step-content p {
 	color: #6b7280;
 	margin: 0;
+	line-height: 1.6;
 }
 
 .signup-upload-wrap {
@@ -108,23 +110,26 @@
 	align-items: center;
 	justify-content: center;
 	gap: 0.5rem;
-	min-height: 120px;
-	padding: 1.5rem 1.25rem;
-	background: linear-gradient(145deg, #fafbfc 0%, #f0f4f2 100%);
-	border: 2px dashed rgba(11, 87, 43, 0.35);
-	border-radius: 12px;
-	margin-bottom: 1rem;
+	min-height: 140px;
+	padding: 2rem 1.5rem;
+	background: linear-gradient(135deg, #f8faff 0%, #f0f8f4 100%);
+	border: 2px dashed #0b572b;
+	border-radius: 16px;
+	margin-bottom: 1.25rem;
 	cursor: pointer;
 	transition:
 		border-color 0.25s ease,
 		background 0.25s ease,
-		box-shadow 0.25s ease;
+		box-shadow 0.25s ease,
+		transform 0.25s ease;
+	box-shadow: 0 2px 8px rgba(11, 87, 43, 0.08);
 }
 
 .signup-upload-wrap:hover {
-	border-color: rgba(11, 87, 43, 0.6);
-	background: linear-gradient(145deg, #f5f9f7 0%, #e8f0ec 100%);
-	box-shadow: 0 4px 12px rgba(11, 87, 43, 0.08);
+	border-color: #0b572b;
+	background: linear-gradient(135deg, #f0f8f4 0%, #e8f3f0 100%);
+	box-shadow: 0 6px 16px rgba(11, 87, 43, 0.12);
+	transform: translateY(-2px);
 }
 
 .signup-file-input {
@@ -137,19 +142,25 @@
 }
 
 .signup-upload-icon {
-	width: 40px;
-	height: 40px;
-	color: rgba(11, 87, 43, 0.5);
+	width: 48px;
+	height: 48px;
+	color: #0b572b;
 	flex-shrink: 0;
-	transition: color 0.25s ease;
+	transition:
+		color 0.25s ease,
+		transform 0.25s ease;
+	opacity: 0.8;
 }
 
 .signup-upload-wrap:hover .signup-upload-icon {
-	color: #0b572b;
+	color: #073f1f;
+	transform: scale(1.08);
 }
 
 .signup-upload-icon--success {
 	color: #0b572b;
+	opacity: 1;
+	transform: scale(1.1);
 }
 
 .signup-upload-hint {
@@ -166,18 +177,24 @@
 }
 
 .signup-upload-filename {
-	font-size: 0.9rem;
+	font-size: 1rem;
 	color: #0b572b;
-	font-weight: 600;
+	font-weight: 700;
 	text-align: center;
 	word-break: break-all;
+	margin-top: 0.25rem;
 }
 
 .signup-cor-note {
 	font-size: 0.85rem;
 	color: #6b7280;
-	margin: 0 0 0.5rem;
+	margin: 1rem 0 1.25rem;
+	padding: 0.75rem 1rem;
+	background: #f9fafb;
+	border-left: 3px solid #0b572b;
+	border-radius: 6px;
 	font-style: italic;
+	line-height: 1.5;
 }
 
 .signup-question {
@@ -245,6 +262,9 @@
 	list-style: none;
 	padding: 0;
 	margin: 1rem 0 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1rem;
 }
 
 .scholarship-item {
@@ -264,25 +284,77 @@
 	margin-bottom: 0;
 }
 
+.scholarship-item {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.75rem 0.85rem;
+	border: 1px solid #e5e7eb;
+	border-radius: 8px;
+	font-size: 0.9rem;
+	background: #fafafa;
+	flex: 1 1 calc(50% - 0.5rem);
+	min-width: 250px;
+}
+
+.scholarship-item:last-child {
+	margin-bottom: 0;
+}
+
 .scholarship-item-icon {
 	flex-shrink: 0;
-	width: 20px;
-	height: 20px;
+	width: 22px;
+	height: 22px;
 	color: #0b572b;
+	margin-top: 0.1rem;
 }
 
 .scholarship-item-name {
-	flex: 1;
-	min-width: 0;
-	color: #374151;
-	font-weight: 500;
-	margin-left: 0.25rem;
+	color: #1f2937;
+	font-weight: 600;
+	margin: 0;
+	font-size: 0.95rem;
 }
 
 .scholarship-item-actions {
 	display: flex;
 	gap: 0.4rem;
 	flex-shrink: 0;
+}
+
+/* Review scholarship items - no action buttons */
+.scholarship-item-review {
+	gap: 1rem;
+}
+
+.scholarship-item-review .scholarship-item-actions {
+	display: none;
+}
+
+.scholarship-item-content {
+	flex: 1;
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	/* gap: 1rem; */
+	min-width: 0;
+}
+
+.scholarship-item-type {
+	font-size: 0.85rem;
+	color: #6b7280;
+	font-weight: 500;
+}
+
+.scholarship-item-payout {
+	font-size: 0.8rem;
+	color: #9ca3af;
+	font-style: italic;
+}
+
+.scholarship-review-list {
+	margin: 0.75rem 0 0;
 }
 
 .scholarship-item-btn {
@@ -366,13 +438,20 @@
 .scholarship-form {
 	display: flex;
 	flex-direction: column;
-	gap: clamp(0.9rem, 2.5vw, 1.15rem);
+	gap: clamp(1rem, 2.5vw, 1.35rem);
+	padding: 1.5rem;
+	background: linear-gradient(135deg, #f8faff 0%, #f0f8f4 100%);
+	border: 1.5px solid rgba(11, 87, 43, 0.2);
+	border-radius: 12px;
+	margin-top: 1rem;
 }
 
 .scholarship-form-actions {
 	display: flex;
 	gap: 0.75rem;
-	margin-top: 0.5rem;
+	margin-top: 1rem;
+	padding-top: 1rem;
+	border-top: 1px solid rgba(11, 87, 43, 0.2);
 }
 
 .scholarship-form-actions .login-submit {
@@ -499,6 +578,26 @@
 	max-width: 280px;
 }
 
+/* Auto-verified state styles */
+.signup-verified-wrap {
+	background: rgba(16, 185, 129, 0.12);
+}
+
+.signup-verified-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	font-size: 24px;
+	font-weight: 700;
+	color: #10b981;
+}
+
+.signup-verified-title {
+	color: #10b981;
+}
+
 /* Step 5 review summary */
 .signup-review {
 	width: 100%;
@@ -573,5 +672,179 @@
 
 	.signup-review-label {
 		font-size: 0.7rem;
+	}
+}
+/* File Upload and Button Wrapper */
+.signup-button-wrapper {
+	display: flex;
+	justify-content: center;
+	width: 100%;
+	margin: 0.5rem 0;
+}
+
+/* Preview Button */
+.signup-preview-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	background: linear-gradient(135deg, #0b572b 0%, #073f1f 100%);
+	color: #fff;
+	border: none;
+	padding: 0.85rem 1.75rem;
+	border-radius: 10px;
+	font-size: 1rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition:
+		background 0.3s ease,
+		transform 0.2s ease,
+		box-shadow 0.3s ease;
+	margin-top: 1rem;
+	box-shadow: 0 4px 12px rgba(11, 87, 43, 0.25);
+	width: 100%;
+	max-width: 280px;
+	margin-left: auto;
+	margin-right: auto;
+}
+
+.signup-preview-btn:hover {
+	background: linear-gradient(135deg, #073f1f 0%, #051f12 100%);
+	transform: translateY(-3px);
+	box-shadow: 0 8px 20px rgba(11, 87, 43, 0.35);
+}
+
+.signup-preview-btn:active {
+	transform: translateY(-1px);
+}
+
+/* Mini Preview Button for Review */
+.signup-preview-btn-mini {
+	background: transparent;
+	color: #0b572b;
+	border: none;
+	padding: 0.25rem 0.5rem;
+	border-radius: 6px;
+	font-size: 0.9rem;
+	font-weight: 600;
+	cursor: pointer;
+	white-space: nowrap;
+	text-decoration: underline;
+	text-decoration-color: #0b572b;
+	text-underline-offset: 3px;
+	transition:
+		background 0.2s ease,
+		color 0.2s ease;
+}
+
+.signup-preview-btn-mini:hover {
+	background: rgba(11, 87, 43, 0.1);
+	color: #073f1f;
+	text-decoration-color: #073f1f;
+}
+
+.signup-preview-btn-mini:active {
+	background: rgba(11, 87, 43, 0.15);
+}
+
+/* Preview Modal Overlay */
+.signup-preview-modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.7);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 10000;
+	animation: fadeIn 0.2s ease;
+}
+
+/* Preview Modal */
+.signup-preview-modal {
+	position: relative;
+	background: #fff;
+	border-radius: 12px;
+	padding: 1.5rem;
+	max-width: 90vw;
+	max-height: 90vh;
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	animation: slideUp 0.3s ease;
+}
+
+.signup-preview-image {
+	max-width: 100%;
+	max-height: 80vh;
+	object-fit: contain;
+	border-radius: 8px;
+}
+
+/* Close Button */
+.signup-preview-close {
+	position: absolute;
+	top: 1rem;
+	right: 1rem;
+	background: #dc2626;
+	color: #fff;
+	border: none;
+	width: 36px;
+	height: 36px;
+	border-radius: 50%;
+	font-size: 1.5rem;
+	cursor: pointer;
+	transition:
+		background 0.2s,
+		transform 0.1s;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+}
+
+.signup-preview-close:hover {
+	background: #b91c1c;
+	transform: scale(1.1);
+}
+
+.signup-preview-close:active {
+	transform: scale(0.95);
+}
+
+/* Animations */
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes slideUp {
+	from {
+		opacity: 0;
+		transform: translateY(20px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@media (max-width: 640px) {
+	.signup-preview-modal {
+		max-width: 95vw;
+		padding: 1rem;
+	}
+
+	.signup-preview-close {
+		width: 32px;
+		height: 32px;
+		font-size: 1.25rem;
 	}
 }

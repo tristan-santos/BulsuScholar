@@ -165,13 +165,13 @@
 .login-form-inner {
 	width: 90%;
 	max-width: 90%;
-	max-height: 90%;
 	overflow: auto;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	text-align: center;
 	margin: auto;
+	padding: clamp(1rem, 3vw, 2rem) 0;
 }
 
 .login-form-logo {
@@ -191,10 +191,10 @@
 		"Helvetica Neue",
 		Arial,
 		sans-serif;
-	font-size: clamp(1.5rem, 4vw, 2.5rem);
-	font-weight: 700;
-	color: #1a1a1a;
-	margin: 0 0 0.35rem;
+	font-size: clamp(1.75rem, 5vw, 2.5rem);
+	font-weight: 800;
+	color: #0b572b;
+	margin: 0 0 0.5rem;
 	letter-spacing: -0.02em;
 	width: 100%;
 }
@@ -202,14 +202,15 @@
 .login-form-subtitle {
 	font-size: clamp(0.875rem, 2vw, 0.95rem);
 	color: #6b7280;
-	margin: 0 0 clamp(1.25rem, 4vw, 1.75rem);
+	margin: 0 0 clamp(1.5rem, 4vw, 2rem);
 	width: 100%;
+	line-height: 1.5;
 }
 
 .login-form {
 	display: flex;
 	flex-direction: column;
-	gap: clamp(0.9rem, 2.5vw, 1.15rem);
+	gap: clamp(1rem, 2.5vw, 1.35rem);
 	width: 100%;
 	max-width: 500px;
 	text-align: left;
@@ -217,10 +218,12 @@
 
 .login-label {
 	display: block;
-	font-size: 1rem;
-	font-weight: 600;
+	font-size: 0.95rem;
+	font-weight: 700;
 	color: #1f2937;
-	margin-bottom: 0.35rem;
+	margin-bottom: 0.5rem;
+	text-transform: capitalize;
+	letter-spacing: 0.01em;
 }
 
 .login-select {
@@ -229,17 +232,36 @@
 	padding: 0 1rem;
 	font-size: 1rem;
 	color: #1f2937;
-	background: #f0f2f5;
-	border: none;
+	background: linear-gradient(to right, #f8fafb, #f0f2f5);
+	border: 1.5px solid #e5e7eb;
 	border-radius: clamp(8px, 2vw, 10px);
-	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 	cursor: pointer;
 	outline: none;
+	transition:
+		background 0.2s ease,
+		border-color 0.2s ease,
+		box-shadow 0.2s ease;
+}
+
+.login-select:hover:not(:disabled) {
+	background: linear-gradient(to right, #f0f4f2, #e8eaed);
+	border-color: #0b572b;
 }
 
 .login-select:focus {
-	background: #e8eaed;
-	box-shadow: 0 0 0 2px rgba(11, 87, 43, 0.28);
+	background: linear-gradient(to right, #f3f8f6, #e8eaed);
+	border-color: #0b572b;
+	box-shadow:
+		0 0 0 2px rgba(11, 87, 43, 0.15),
+		0 4px 12px rgba(11, 87, 43, 0.1);
+}
+
+.login-select:disabled {
+	background: #f3f4f6;
+	color: #9ca3af;
+	cursor: not-allowed;
+	opacity: 0.6;
 }
 
 .login-forgot {
@@ -263,22 +285,33 @@
 	display: flex;
 	align-items: center;
 	gap: 0.75rem;
-	background: #f0f2f5;
+	background: linear-gradient(to right, #f8fafb, #f0f2f5);
+	border: 1.5px solid #e5e7eb;
 	border-radius: clamp(8px, 2vw, 10px);
 	padding: 0 clamp(0.75rem, 2vw, 1rem);
 	min-height: 48px;
-	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 	transition:
-		background 0.2s,
-		box-shadow 0.2s,
-		transform 0.1s;
+		background 0.2s ease,
+		box-shadow 0.2s ease,
+		border-color 0.2s ease,
+		transform 0.1s ease;
+}
+
+.login-input-wrap--error {
+	background: #fef2f2;
+	border-color: #dc2626;
+	box-shadow:
+		0 0 0 2px rgba(220, 38, 38, 0.1),
+		0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 .login-input-wrap:focus-within {
-	background: #e8eaed;
+	background: linear-gradient(to right, #f3f8f6, #e8eaed);
+	border-color: #0b572b;
 	box-shadow:
-		0 0 0 2px rgba(11, 87, 43, 0.28),
-		0 4px 8px rgba(15, 23, 42, 0.12);
+		0 0 0 2px rgba(11, 87, 43, 0.15),
+		0 4px 12px rgba(11, 87, 43, 0.1);
 	transform: translateY(-1px);
 }
 
@@ -336,28 +369,43 @@
 	padding: clamp(0.75rem, 2vw, 0.875rem) clamp(1.25rem, 3vw, 1.5rem);
 	min-height: 48px;
 	font-size: clamp(1rem, 2.5vw, 1.0625rem);
-	font-weight: 600;
+	font-weight: 700;
 	color: #fff;
-	background: #0b572b;
+	background: linear-gradient(135deg, #0b572b 0%, #073f1f 100%);
 	border: none;
 	border-radius: clamp(8px, 2vw, 10px);
 	cursor: pointer;
+	letter-spacing: 0.01em;
+	box-shadow: 0 4px 12px rgba(11, 87, 43, 0.25);
 	transition:
-		background 0.2s,
-		transform 0.1s;
+		background 0.3s ease,
+		transform 0.2s ease,
+		box-shadow 0.3s ease;
 }
 
-.login-submit:hover {
-	background: #084320;
+.login-submit:hover:not(:disabled) {
+	background: linear-gradient(135deg, #073f1f 0%, #051f12 100%);
+	transform: translateY(-2px);
+	box-shadow: 0 8px 20px rgba(11, 87, 43, 0.35);
 }
 
-.login-submit:active {
-	transform: scale(0.99);
+.login-submit:active:not(:disabled) {
+	transform: translateY(0);
+	box-shadow: 0 2px 8px rgba(11, 87, 43, 0.2);
 }
 
 .login-submit:focus-visible {
 	outline: 2px solid #0b572b;
 	outline-offset: 2px;
+}
+
+.login-submit:disabled {
+	background: #cbd5e1;
+	color: #94a3b8;
+	cursor: not-allowed;
+	opacity: 0.6;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	transform: none;
 }
 
 /* Create account section */
@@ -411,4 +459,99 @@
 		width: 92%;
 		max-width: 92%;
 	}
+}
+
+/* Password requirements */
+.password-input-container {
+	position: relative;
+	width: 100%;
+}
+
+.password-requirements-floating {
+	position: absolute;
+	top: -180px;
+	left: 0;
+	right: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.65rem;
+	padding: 1rem 1.1rem;
+	background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+	border: 1.5px solid rgba(11, 87, 43, 0.5);
+	border-radius: 10px;
+	font-size: 0.875rem;
+	z-index: 1000;
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+	pointer-events: none;
+}
+
+.password-requirements-floating::after {
+	content: "";
+	position: absolute;
+	bottom: -8px;
+	left: 20px;
+	width: 0;
+	height: 0;
+	border-left: 8px solid transparent;
+	border-right: 8px solid transparent;
+	border-top: 8px solid #1f2937;
+}
+
+.password-requirements {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin-top: 0.5rem;
+	padding: 0.75rem 1rem;
+	background: #fef2f2;
+	border: 1px solid rgba(220, 38, 38, 0.3);
+	border-radius: 6px;
+	font-size: 0.875rem;
+}
+
+.requirement {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: #7f1d1d;
+}
+
+.requirement span {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #fee2e2;
+	color: #991b1b;
+	font-weight: bold;
+	font-size: 0.7rem;
+}
+
+.requirement--met {
+	color: #15803d;
+}
+
+.requirement--met span {
+	background: #dcfce7;
+	color: #15803d;
+}
+
+.password-requirements-floating .requirement {
+	color: #d1d5db;
+}
+
+.password-requirements-floating .requirement span {
+	background: rgba(255, 255, 255, 0.1);
+	color: #9ca3af;
+}
+
+.password-requirements-floating .requirement--met {
+	color: #86efac;
+}
+
+.password-requirements-floating .requirement--met span {
+	background: rgba(34, 197, 94, 0.2);
+	color: #86efac;
 }
