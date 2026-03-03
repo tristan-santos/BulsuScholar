@@ -15,6 +15,7 @@ import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore"
 import { toast } from "react-toastify"
 import { db } from "../../firebase"
 import { uploadToCloudinary } from "../services/cloudinaryService"
+import { encryptPasswordAES256 } from "../services/authService"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -44,42 +45,6 @@ const SCHOLARSHIP_PROVIDERS = [
 ]
 
 const SCHOLARSHIP_TYPES = ["Scholarship", "Educational Assistance"]
-
-async function encryptPasswordAES256(plainPassword) {
-	if (!plainPassword) return ""
-
-	const secret =
-		import.meta.env.VITE_PASSWORD_SECRET ||
-		"bulsuscholar-default-secret-key-32!!!"
-
-	const enc = new TextEncoder()
-	const keyBytes = enc.encode(secret.padEnd(32).slice(0, 32))
-
-	const cryptoKey = await window.crypto.subtle.importKey(
-		"raw",
-		keyBytes,
-		{ name: "AES-GCM" },
-		false,
-		["encrypt"],
-	)
-
-	const iv = window.crypto.getRandomValues(new Uint8Array(12))
-	const cipherBuffer = await window.crypto.subtle.encrypt(
-		{ name: "AES-GCM", iv },
-		cryptoKey,
-		enc.encode(plainPassword),
-	)
-
-	const combined = new Uint8Array(iv.byteLength + cipherBuffer.byteLength)
-	combined.set(iv, 0)
-	combined.set(new Uint8Array(cipherBuffer), iv.byteLength)
-
-	let binary = ""
-	for (let i = 0; i < combined.byteLength; i += 1) {
-		binary += String.fromCharCode(combined[i])
-	}
-	return btoa(binary)
-}
 
 function isPasswordStrong(pwd) {
 	const hasCapital = /[A-Z]/.test(pwd)
@@ -286,9 +251,7 @@ export default function SignupPage() {
 							},
 							{ merge: true },
 						)
-						toast.success(
-							"Your account has been verified! You can now log in.",
-						)
+						toast.success("Your account has been verified! You can now log in.")
 					} else {
 						// Names don't match - send to pending review
 						await setDoc(doc(db, "pendingStudent", studentId), {

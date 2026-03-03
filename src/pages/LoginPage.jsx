@@ -9,6 +9,7 @@ import {
 import { toast } from "react-toastify"
 import { doc, getDoc } from "firebase/firestore"
 import { db } from "../../firebase"
+import { verifyPassword } from "../services/authService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
@@ -43,7 +44,18 @@ export default function LoginPage() {
 	const handleSubmit = async (e) => {
 		e.preventDefault()
 		const id = userId.trim()
-		if (!id) return
+		const pwd = password.trim()
+
+		// Validate inputs
+		if (!id) {
+			toast.error("Please enter your User ID")
+			return
+		}
+
+		if (!pwd) {
+			toast.error("Please enter your password")
+			return
+		}
 
 		setIsLoading(true)
 		try {
@@ -58,21 +70,36 @@ export default function LoginPage() {
 				),
 			)
 			const found = results.find((r) => r.exists)
-			if (found) {
-				toast.info("Logging in…", { autoClose: 1500 })
-				if (found.type === "student") {
-					sessionStorage.setItem("bulsuscholar_userId", id)
-					sessionStorage.setItem("bulsuscholar_userType", "student")
-				}
-				setTimeout(() => {
-					navigate(getDashboardPath(found.type), {
-						replace: true,
-						state: { user: found.data, userId: id },
-					})
-				}, 500)
-			} else {
-				toast.error("User not exist")
+
+			if (!found) {
+				toast.error("User ID not found. Please check your credentials.")
+				return
 			}
+
+			// Verify password
+			if (!found.data.password) {
+				toast.error("Account configuration error. Please contact support.")
+				return
+			}
+
+			const isPasswordCorrect = await verifyPassword(pwd, found.data.password)
+			if (!isPasswordCorrect) {
+				toast.error("Invalid password. Please try again.")
+				return
+			}
+
+			// Password is correct, proceed with login
+			toast.info("Logging in…", { autoClose: 1500 })
+			if (found.type === "student") {
+				sessionStorage.setItem("bulsuscholar_userId", id)
+				sessionStorage.setItem("bulsuscholar_userType", "student")
+			}
+			setTimeout(() => {
+				navigate(getDashboardPath(found.type), {
+					replace: true,
+					state: { user: found.data, userId: id },
+				})
+			}, 500)
 		} catch (err) {
 			console.error(err)
 			toast.error("Login failed. Please try again.")
@@ -176,7 +203,10 @@ export default function LoginPage() {
 								aria-label={showPassword ? "Hide password" : "Show password"}
 							>
 								{showPassword ? (
-									<HiOutlineEyeOff className="login-input-eye-icon" aria-hidden />
+									<HiOutlineEyeOff
+										className="login-input-eye-icon"
+										aria-hidden
+									/>
 								) : (
 									<HiOutlineEye className="login-input-eye-icon" aria-hidden />
 								)}
@@ -186,11 +216,7 @@ export default function LoginPage() {
 							Forgot password?
 						</a>
 
-						<button
-							type="submit"
-							className="login-submit"
-							disabled={isLoading}
-						>
+						<button type="submit" className="login-submit" disabled={isLoading}>
 							{isLoading ? "Logging in…" : "Enter"}
 						</button>
 
