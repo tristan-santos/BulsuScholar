@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"gitgit": "git add . && git commit -m 'update' && git push origin Main",
+		"gitgit": "git add . && git commit -m 'update' && git push origin main",
 		"tapos": "npm run build && npm run gitgit && firebase deploy",
 		"build": "vite build",
 		"lint": "eslint .",
