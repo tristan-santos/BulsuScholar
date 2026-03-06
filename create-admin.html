@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Create Admin Account - BulsuScholar</title>
+		<style>
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			body {
+				font-family:
+					-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+					sans-serif;
+				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+				min-height: 100vh;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 20px;
+			}
+			.container {
+				background: white;
+				border-radius: 12px;
+				box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+				padding: 40px;
+				width: 100%;
+				max-width: 450px;
+			}
+			h1 {
+				color: #333;
+				margin-bottom: 10px;
+				font-size: 24px;
+			}
+			.subtitle {
+				color: #666;
+				margin-bottom: 30px;
+				font-size: 14px;
+			}
+			.form-group {
+				margin-bottom: 20px;
+			}
+			label {
+				display: block;
+				margin-bottom: 8px;
+				color: #444;
+				font-weight: 500;
+				font-size: 14px;
+			}
+			input {
+				width: 100%;
+				padding: 12px 16px;
+				border: 2px solid #e1e1e1;
+				border-radius: 8px;
+				font-size: 16px;
+				transition: border-color 0.3s;
+			}
+			input:focus {
+				outline: none;
+				border-color: #667eea;
+			}
+			.info {
+				background: #f0f4ff;
+				border-left: 4px solid #667eea;
+				padding: 12px 16px;
+				margin-bottom: 24px;
+				border-radius: 4px;
+				font-size: 13px;
+				color: #444;
+			}
+			button {
+				width: 100%;
+				padding: 14px;
+				background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+				color: white;
+				border: none;
+				border-radius: 8px;
+				font-size: 16px;
+				font-weight: 600;
+				cursor: pointer;
+				transition:
+					transform 0.2s,
+					box-shadow 0.2s;
+			}
+			button:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+			}
+			button:disabled {
+				background: #ccc;
+				cursor: not-allowed;
+				transform: none;
+			}
+			.result {
+				margin-top: 20px;
+				padding: 16px;
+				border-radius: 8px;
+				display: none;
+			}
+			.result.success {
+				background: #d4edda;
+				border: 1px solid #c3e6cb;
+				color: #155724;
+				display: block;
+			}
+			.result.error {
+				background: #f8d7da;
+				border: 1px solid #f5c6cb;
+				color: #721c24;
+				display: block;
+			}
+			.loading {
+				text-align: center;
+				color: #666;
+				margin-top: 10px;
+				display: none;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Create Admin Account</h1>
+			<p class="subtitle">BulsuScholar Admin Account Creator</p>
+
+			<div class="info">
+				<strong>Note:</strong> Your password will be encrypted using AES-256-GCM
+				before being stored in Firestore. This ensures it matches the encryption
+				used during login.
+			</div>
+
+			<form id="createAdminForm">
+				<div class="form-group">
+					<label for="adminId">Admin ID</label>
+					<input
+						type="text"
+						id="adminId"
+						placeholder="Enter admin ID"
+						required
+					/>
+				</div>
+
+				<div class="form-group">
+					<label for="password">Password</label>
+					<input
+						type="password"
+						id="password"
+						placeholder="Enter password"
+						required
+					/>
+				</div>
+
+				<button type="submit" id="submitBtn">Create Admin Account</button>
+			</form>
+
+			<div class="loading" id="loading">Creating admin account...</div>
+			<div class="result" id="result"></div>
+		</div>
+
+		<!-- Firebase App -->
+		<script type="module">
+			import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js"
+			import {
+				getFirestore,
+				doc,
+				setDoc,
+				getDoc,
+			} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
+
+			// Firebase configuration - UPDATE THESE VALUES
+			const firebaseConfig = {
+				apiKey: "AIzaSyD7nRMxT8Y7nRMxT8Y7nRMxT8Y7nRMxT8Y",
+				authDomain: "bulsuscholar.firebaseapp.com",
+				projectId: "bulsuscholar",
+				storageBucket: "",
+				messagingSenderId: "123456789",
+				appId: "1:123456789:web:abcdef123456",
+			}
+
+			// Initialize Firebase
+			const app = initializeApp(firebaseConfig)
+			const db = getFirestore(app)
+
+			// Encryption Secret - Must match the one in authService.js
+			const SECRET = "bulsuscholar-default-secret-key-32!!!"
+
+			/**
+			 * Encrypts a password using AES-256-GCM
+			 */
+			async function encryptPasswordAES256(plainPassword) {
+				if (!plainPassword) return ""
+
+				const enc = new TextEncoder()
+				const keyBytes = enc.encode(SECRET.padEnd(32).slice(0, 32))
+
+				const cryptoKey = await window.crypto.subtle.importKey(
+					"raw",
+					keyBytes,
+					{ name: "AES-GCM" },
+					false,
+					["encrypt"],
+				)
+
+				const iv = window.crypto.getRandomValues(new Uint8Array(12))
+				const cipherBuffer = await window.crypto.subtle.encrypt(
+					{ name: "AES-GCM", iv },
+					cryptoKey,
+					enc.encode(plainPassword),
+				)
+
+				const combined = new Uint8Array(iv.byteLength + cipherBuffer.byteLength)
+				combined.set(iv, 0)
+				combined.set(new Uint8Array(cipherBuffer), iv.byteLength)
+
+				let binary = ""
+				for (let i = 0; i < combined.byteLength; i++) {
+					binary += String.fromCharCode(combined[i])
+				}
+				return btoa(binary)
+			}
+
+			/**
+			 * Create admin account
+			 */
+			async function createAdmin(adminId, password) {
+				// Check if admin exists
+				const existingAdmin = await getDoc(doc(db, "admins", adminId))
+				if (existingAdmin.exists()) {
+					throw new Error(`Admin with ID "${adminId}" already exists.`)
+				}
+
+				// Encrypt password
+				const encryptedPassword = await encryptPasswordAES256(password)
+
+				// Create admin document
+				const adminData = {
+					adminId: adminId,
+					password: encryptedPassword,
+					createdAt: new Date().toISOString(),
+				}
+
+				await setDoc(doc(db, "admins", adminId), adminData)
+				return adminData
+			}
+
+			// Handle form submission
+			document
+				.getElementById("createAdminForm")
+				.addEventListener("submit", async (e) => {
+					e.preventDefault()
+
+					const adminId = document.getElementById("adminId").value.trim()
+					const password = document.getElementById("password").value
+					const submitBtn = document.getElementById("submitBtn")
+					const loading = document.getElementById("loading")
+					const result = document.getElementById("result")
+
+					if (!adminId || !password) {
+						result.className = "result error"
+						result.textContent = "Please fill in all fields."
+						return
+					}
+
+					submitBtn.disabled = true
+					loading.style.display = "block"
+					result.className = "result"
+					result.textContent = ""
+
+					try {
+						await createAdmin(adminId, password)
+						result.className = "result success"
+						result.innerHTML = `<strong>Success!</strong><br>Admin account "${adminId}" has been created.<br>You can now login with these credentials.`
+						document.getElementById("createAdminForm").reset()
+					} catch (error) {
+						result.className = "result error"
+						result.textContent =
+							error.message || "Failed to create admin account."
+					} finally {
+						submitBtn.disabled = false
+						loading.style.display = "none"
+					}
+				})
+		</script>
+	</body>
+</html>

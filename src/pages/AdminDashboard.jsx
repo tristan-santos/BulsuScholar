@@ -47,6 +47,7 @@ import {
 	serverTimestamp,
 	query,
 	where,
+	onSnapshot,
 } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
 import { db, auth } from "../../firebase"
@@ -186,23 +187,39 @@ export default function AdminDashboard() {
 		return unsubscribe
 	}, [])
 
-	// Fetch applications from Firestore (from multiple collections)
+	// Fetch applications from Firestore (from multiple collections) - Real-time
 	useEffect(() => {
-		async function fetchApplications() {
-			try {
-				setIsLoadingApplications(true)
-				const appData = []
+		// Use refs to store current data from each listener
+		const pendingRef = { current: [] }
+		const approvedRef = { current: [] }
+		const rejectedRef = { current: [] }
 
-				// Fetch pending from pendingStudent collection
-				const pendingSnap = await getDocs(collection(db, "pendingStudent"))
-				pendingSnap.forEach((d) => {
+		// Helper to combine all data and update state
+		const updateCombinedApps = () => {
+			setApplications([
+				...pendingRef.current,
+				...approvedRef.current,
+				...rejectedRef.current,
+			])
+			// Also update the individual arrays for the Registrations tab
+			setPendingStudents([...pendingRef.current])
+			setApprovedStudents([...approvedRef.current])
+			setRejectedStudents([...rejectedRef.current])
+		}
+
+		// Real-time listener for pending applications
+		const unsubscribePendingApps = onSnapshot(
+			collection(db, "pendingStudent"),
+			(snapshot) => {
+				const pendingApps = []
+				snapshot.forEach((d) => {
 					const data = d.data() || {}
 					if (
 						data.isPending === true ||
 						data.isValidated === false ||
 						data.isValidated === "false"
 					) {
-						appData.push({
+						pendingApps.push({
 							id: d.id,
 							status: "pending",
 							studentName: [data.fname, data.mname, data.lname]
@@ -213,27 +230,46 @@ export default function AdminDashboard() {
 						})
 					}
 				})
+				pendingRef.current = pendingApps
+				updateCombinedApps()
+			},
+			(error) => console.error("Error fetching pending apps:", error),
+		)
 
-				// Fetch approved from student collection
-				const approvedSnap = await getDocs(collection(db, "student"))
-				approvedSnap.forEach((d) => {
+		// Real-time listener for approved applications
+		const unsubscribeApprovedApps = onSnapshot(
+			collection(db, "students"),
+			(snapshot) => {
+				const approvedApps = []
+				snapshot.forEach((d) => {
 					const data = d.data() || {}
-					appData.push({
-						id: d.id,
-						status: "approved",
-						studentName: [data.fname, data.mname, data.lname]
-							.filter(Boolean)
-							.join(" "),
-						createdAt: data.createdAt || data.timestamp || new Date(),
-						...data,
-					})
+					// Only include students where isValidated is true
+					if (data.isValidated === true || data.isValidated === "true") {
+						approvedApps.push({
+							id: d.id,
+							status: "approved",
+							studentName: [data.fname, data.mname, data.lname]
+								.filter(Boolean)
+								.join(" "),
+							createdAt: data.createdAt || data.timestamp || new Date(),
+							...data,
+						})
+					}
 				})
+				approvedRef.current = approvedApps
+				updateCombinedApps()
+			},
+			(error) => console.error("Error fetching approved apps:", error),
+		)
 
-				// Fetch rejected from rejected collection
-				const rejectedSnap = await getDocs(collection(db, "rejected"))
-				rejectedSnap.forEach((d) => {
+		// Real-time listener for rejected applications
+		const unsubscribeRejectedApps = onSnapshot(
+			collection(db, "rejected"),
+			(snapshot) => {
+				const rejectedApps = []
+				snapshot.forEach((d) => {
 					const data = d.data() || {}
-					appData.push({
+					rejectedApps.push({
 						id: d.id,
 						status: "rejected",
 						studentName: [data.fname, data.mname, data.lname]
@@ -243,18 +279,26 @@ export default function AdminDashboard() {
 						...data,
 					})
 				})
+				rejectedRef.current = rejectedApps
+				updateCombinedApps()
+			},
+			(error) => console.error("Error fetching rejected apps:", error),
+		)
 
-				setApplications(appData)
-				calculateStats(appData)
-				updateScholarshipDistribution(appData)
-			} catch (err) {
-				console.error("Failed to load applications:", err)
-			} finally {
-				setIsLoadingApplications(false)
-			}
+		// Cleanup listeners
+		return () => {
+			unsubscribePendingApps()
+			unsubscribeApprovedApps()
+			unsubscribeRejectedApps()
 		}
-		fetchApplications()
 	}, [])
+
+	// Recalculate stats and scholarship distribution when applications change (real-time)
+	useEffect(() => {
+		// Always calculate stats regardless of array length
+		calculateStats(applications)
+		updateScholarshipDistribution(applications)
+	}, [applications])
 
 	// Calculate overview stats from applications
 	const calculateStats = (appData) => {
@@ -326,67 +370,6 @@ export default function AdminDashboard() {
 			],
 		})
 	}
-
-	useEffect(() => {
-		async function fetchAllApprovals() {
-			try {
-				setIsLoadingPending(true)
-
-				// Fetch pending students
-				const pendingSnap = await getDocs(collection(db, "pendingStudent"))
-				const pendingItems = []
-				pendingSnap.forEach((d) => {
-					const data = d.data() || {}
-					if (
-						data.isPending === true ||
-						data.isValidated === false ||
-						data.isValidated === "false"
-					) {
-						pendingItems.push({
-							id: d.id,
-							status: "pending",
-							...data,
-						})
-					}
-				})
-				setPendingStudents(pendingItems)
-
-				// Fetch approved students
-				const approvedSnap = await getDocs(collection(db, "students"))
-				const approvedItems = []
-				approvedSnap.forEach((d) => {
-					const data = d.data() || {}
-					if (data.isValidated === true || data.isValidated === "true") {
-						approvedItems.push({
-							id: d.id,
-							status: "approved",
-							...data,
-						})
-					}
-				})
-				setApprovedStudents(approvedItems)
-
-				// Fetch rejected students
-				const rejectedSnap = await getDocs(collection(db, "rejected"))
-				const rejectedItems = []
-				rejectedSnap.forEach((d) => {
-					rejectedItems.push({
-						id: d.id,
-						status: "rejected",
-						...d.data(),
-					})
-				})
-				setRejectedStudents(rejectedItems)
-			} catch (err) {
-				console.error("Failed to load approvals", err)
-			} finally {
-				setIsLoadingPending(false)
-			}
-		}
-		if (activeTab === "Registrations") {
-			fetchAllApprovals()
-		}
-	}, [activeTab])
 
 	// Filters for Analytics
 	const [analyticsCourseFilter, setAnalyticsCourseFilter] = useState("All")
@@ -909,12 +892,12 @@ export default function AdminDashboard() {
 								</div>
 							</section>
 
-							{/* Pending Approvals Preview */}
+							{/* Pending Registrations Preview */}
 							<section className="dashboard-panel dashboard-panel--table">
 								<div className="dashboard-panel-header">
 									<div>
 										<h3 className="dashboard-panel-title">
-											Pending Approvals Preview
+											Pending Registrations Preview
 										</h3>
 										<p className="dashboard-panel-sub">
 											Students awaiting verification and approval
@@ -979,7 +962,7 @@ export default function AdminDashboard() {
 															color: "#6b7280",
 														}}
 													>
-														No pending approvals at the moment
+														No pending registrations at the moment
 													</td>
 												</tr>
 											) : (
