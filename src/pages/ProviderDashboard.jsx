@@ -1,11 +1,15 @@
 import { useNavigate } from "react-router-dom"
 import { HiOutlineUserCircle } from "react-icons/hi"
 import "../css/AdminDashboard.css"
+import useThemeMode from "../hooks/useThemeMode"
 
 export default function ProviderDashboard() {
 	const navigate = useNavigate()
+	const { theme } = useThemeMode()
 	return (
-		<div className="admin-dashboard">
+		<div
+			className={`admin-dashboard ${theme === "dark" ? "admin-dashboard--dark" : ""}`}
+		>
 			<header className="dashboard-header">
 				<div className="dashboard-header-left">
 					<h1 className="dashboard-header-title">BulsuScholar</h1>

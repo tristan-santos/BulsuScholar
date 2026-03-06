@@ -51,6 +51,7 @@ import {
 } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
 import { db, auth } from "../../firebase"
+import useThemeMode from "../hooks/useThemeMode"
 import "../css/AdminDashboard.css"
 import logo from "../assets/logo.png"
 import logo2 from "../assets/logo2.png"
@@ -132,7 +133,7 @@ export default function AdminDashboard() {
 	const [activeTab, setActiveTab] = useState("Overview")
 	const [sidebarOpen, setSidebarOpen] = useState(false)
 	const [userMenuOpen, setUserMenuOpen] = useState(false)
-	const [theme, setTheme] = useState("light")
+	const { theme, setTheme } = useThemeMode()
 	const [adminUser, setAdminUser] = useState(null)
 	const userMenuRef = useRef(null)
 
@@ -546,7 +547,9 @@ export default function AdminDashboard() {
 	}
 
 	return (
-		<div className="admin-dashboard">
+		<div
+			className={`admin-dashboard ${theme === "dark" ? "admin-dashboard--dark" : ""}`}
+		>
 			<header className="admin-header">
 				<div className="admin-header-top-stripe"></div>
 				<div className="admin-header-content">

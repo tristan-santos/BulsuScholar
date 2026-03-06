@@ -11,8 +11,6 @@ import {
 	HiOutlineCheckCircle,
 	HiOutlineClock,
 	HiOutlineDocumentText,
-	HiOutlineMail,
-	HiOutlineCog,
 	HiOutlineSun,
 	HiOutlineMoon,
 	HiOutlineLogout,
@@ -21,6 +19,7 @@ import {
 import logo2 from "../assets/logo2.png"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
+import useThemeMode from "../hooks/useThemeMode"
 
 function checkValidated(userData) {
 	if (!userData) return false
@@ -39,7 +38,7 @@ export default function StudentScholarshipsPage() {
 	const [user, setUser] = useState(location.state?.user ?? null)
 	const [userLoaded, setUserLoaded] = useState(!!location.state?.user)
 	const [userMenuOpen, setUserMenuOpen] = useState(false)
-	const [theme, setTheme] = useState("light")
+	const { theme, setTheme } = useThemeMode()
 	const userMenuRef = useRef(null)
 
 	useEffect(() => {
@@ -89,9 +88,12 @@ export default function StudentScholarshipsPage() {
 		location.state?.userId ??
 		sessionStorage.getItem("bulsuscholar_userId") ??
 		""
+	const avatarUrl = user?.profileImageUrl || ""
 
 	return (
-		<div className="admin-dashboard student-dashboard">
+		<div
+			className={`admin-dashboard student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}
+		>
 			<header className="dashboard-header student-header">
 				<div className="student-header-top-stripe"></div>
 				<div className="student-header-content">
@@ -104,17 +106,6 @@ export default function StudentScholarshipsPage() {
 						<h1 className="student-header-brand">BulsuScholar</h1>
 					</div>
 					<div className="student-header-right">
-						<button
-							type="button"
-							className="student-header-notification-btn"
-							aria-label="Messages"
-						>
-							<HiOutlineMail
-								className="student-header-notification-icon"
-								aria-hidden
-							/>
-							<span className="student-header-badge">3</span>
-						</button>
 						<div className="student-header-verified-wrap">
 							<button
 								type="button"
@@ -147,13 +138,31 @@ export default function StudentScholarshipsPage() {
 								aria-expanded={userMenuOpen}
 							>
 								<HiMenu className="student-header-menu-icon" aria-hidden />
-								<div className="student-header-avatar">{getUserInitials()}</div>
+								<div className="student-header-avatar">
+									{avatarUrl ? (
+										<img
+											src={avatarUrl}
+											alt="Profile"
+											className="student-header-avatar-image-mini"
+										/>
+									) : (
+										getUserInitials()
+									)}
+								</div>
 							</button>
 							{userMenuOpen && (
 								<div className="student-verified-dropdown">
 									<div className="student-verified-dropdown-user">
 										<div className="student-verified-dropdown-avatar">
-											{getUserInitials()}
+											{avatarUrl ? (
+												<img
+													src={avatarUrl}
+													alt="Profile"
+													className="student-header-avatar-image-mini"
+												/>
+											) : (
+												getUserInitials()
+											)}
 										</div>
 										<div className="student-verified-dropdown-user-info">
 											<p className="student-verified-dropdown-name">
@@ -162,7 +171,7 @@ export default function StudentScholarshipsPage() {
 													: "Student"}
 											</p>
 											<p className="student-verified-dropdown-email">
-												{studentNumber || "—"}
+												{studentNumber || "-"}
 											</p>
 										</div>
 									</div>
@@ -170,6 +179,12 @@ export default function StudentScholarshipsPage() {
 										<button
 											type="button"
 											className="student-verified-dropdown-item"
+											onClick={() => {
+												setUserMenuOpen(false)
+												navigate("/student-dashboard/profile", {
+													state: { user },
+												})
+											}}
 										>
 											<HiOutlineUserCircle
 												className="student-verified-dropdown-item-icon"
@@ -192,16 +207,6 @@ export default function StudentScholarshipsPage() {
 												aria-hidden
 											/>
 											Scholarship
-										</button>
-										<button
-											type="button"
-											className="student-verified-dropdown-item"
-										>
-											<HiOutlineCog
-												className="student-verified-dropdown-item-icon"
-												aria-hidden
-											/>
-											Settings
 										</button>
 									</nav>
 									<div className="student-verified-dropdown-theme">
@@ -263,7 +268,7 @@ export default function StudentScholarshipsPage() {
 
 					{!userLoaded ? (
 						<div className="dashboard-panel student-empty">
-							<p className="dashboard-placeholder">Loading…</p>
+							<p className="dashboard-placeholder">Loading...</p>
 						</div>
 					) : scholarships.length > 0 ? (
 						<div className="student-scholarship-cards">
@@ -279,12 +284,12 @@ export default function StudentScholarshipsPage() {
 										{s.name || "Scholarship"}
 									</h3>
 									<p className="student-scholarship-card-provider">
-										{s.provider || "—"}
+										{s.provider || "-"}
 									</p>
 									<div className="student-scholarship-card-meta">
 										{s.date && (
 											<>
-												<span className="student-scholarship-card-sep">·</span>
+												<span className="student-scholarship-card-sep">-</span>
 												<span>
 													{new Date(s.date).toLocaleDateString("en-PH", {
 														month: "short",
@@ -328,8 +333,46 @@ export default function StudentScholarshipsPage() {
 							</button>
 						</div>
 					)}
+					<footer className="student-footer">
+						<div className="student-footer-grid">
+							<div className="student-footer-brand">
+								<h3>BulsuScholar</h3>
+								<p>
+									Institutional Student Programs and Services scholarship portal.
+									Track and manage your scholarship declarations and requests.
+								</p>
+							</div>
+							<div className="student-footer-col">
+								<h4>Support</h4>
+								<p>Office of Scholarships</p>
+								<p>Email: scholarships@bulsu.edu.ph</p>
+								<p>Mon-Fri, 8:00 AM - 5:00 PM</p>
+							</div>
+							<div className="student-footer-col">
+								<h4>Quick Links</h4>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/profile", { state: { user } })}
+								>
+									My Profile
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard", { state: { user } })}
+								>
+									Dashboard Home
+								</button>
+							</div>
+						</div>
+						<p className="student-footer-bottom">
+							© {new Date().getFullYear()} BulsuScholar. All rights reserved.
+						</p>
+					</footer>
 				</div>
 			</main>
 		</div>
 	)
 }
+

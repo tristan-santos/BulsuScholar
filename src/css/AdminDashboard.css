@@ -1014,3 +1014,147 @@
 	background: #f3f4f6;
 	display: block;
 }
+
+/* ----- Global dark mode for admin/provider dashboards ----- */
+.admin-dashboard--dark {
+	background: #0f172a;
+	color: #e5e7eb;
+}
+
+.admin-dashboard--dark .admin-header,
+.admin-dashboard--dark .dashboard-header {
+	background: #111827;
+	color: #e5e7eb;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.admin-dashboard--dark .admin-header-brand,
+.admin-dashboard--dark .dashboard-header-title {
+	color: #a7f3d0;
+}
+
+.admin-dashboard--dark .dashboard-header-sub {
+	color: #9ca3af;
+}
+
+.admin-dashboard--dark .admin-header-user-btn,
+.admin-dashboard--dark .admin-header-notification-btn,
+.admin-dashboard--dark .dashboard-user-btn {
+	background: #1f2937;
+	border-color: #374151;
+	color: #e5e7eb;
+}
+
+.admin-dashboard--dark .admin-header-user-btn:hover,
+.admin-dashboard--dark .admin-header-notification-btn:hover,
+.admin-dashboard--dark .dashboard-user-btn:hover {
+	background: #273449;
+}
+
+.admin-dashboard--dark .admin-header-menu-icon,
+.admin-dashboard--dark .dashboard-user-icon {
+	color: #e5e7eb;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown {
+	background: #111827;
+	border-color: #374151;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-user {
+	background: #1f2937;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-name {
+	color: #f3f4f6;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-email,
+.admin-dashboard--dark .admin-verified-dropdown-theme-label {
+	color: #9ca3af;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-item {
+	color: #e5e7eb;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-item:hover {
+	background: #1f2937;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-item-icon {
+	color: #9ca3af;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-theme,
+.admin-dashboard--dark .admin-verified-dropdown-logout {
+	border-top-color: #374151;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-theme-btn {
+	background: #1f2937;
+	border-color: #374151;
+	color: #e5e7eb;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-theme-btn:hover {
+	background: #273449;
+}
+
+.admin-dashboard--dark .admin-verified-dropdown-theme-btn.active {
+	background: #0b572b;
+	border-color: #0b572b;
+	color: #ffffff;
+	box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.35);
+}
+
+.admin-dashboard--dark .dashboard-main {
+	background: #0f172a;
+}
+
+.admin-dashboard--dark .dashboard-panel,
+.admin-dashboard--dark .dashboard-stat-card,
+.admin-dashboard--dark .dashboard-filter,
+.admin-dashboard--dark .dashboard-modal,
+.admin-dashboard--dark .dashboard-card,
+.admin-dashboard--dark .dashboard-table-wrap,
+.admin-dashboard--dark .dashboard-preview-modal {
+	background: #111827;
+	border-color: #374151;
+}
+
+.admin-dashboard--dark .dashboard-panel-title,
+.admin-dashboard--dark .dashboard-stat-value,
+.admin-dashboard--dark .dashboard-page-heading,
+.admin-dashboard--dark .dashboard-modal-title,
+.admin-dashboard--dark .dashboard-preview-title {
+	color: #f3f4f6;
+}
+
+.admin-dashboard--dark .dashboard-panel-sub,
+.admin-dashboard--dark .dashboard-stat-label,
+.admin-dashboard--dark .dashboard-stat-trend,
+.admin-dashboard--dark .dashboard-placeholder,
+.admin-dashboard--dark .dashboard-page-sub,
+.admin-dashboard--dark .dashboard-preview-sub {
+	color: #9ca3af;
+}
+
+.admin-dashboard--dark .dashboard-table th {
+	background: #1f2937;
+	color: #cbd5e1;
+	border-color: #374151;
+}
+
+.admin-dashboard--dark .dashboard-table td {
+	border-color: #334155;
+	color: #e5e7eb;
+}
+
+.admin-dashboard--dark .dashboard-table tr:nth-child(even) {
+	background: rgba(31, 41, 55, 0.55);
+}
+
+.admin-dashboard--dark .dashboard-table tr:hover td {
+	background: rgba(45, 55, 72, 0.65);
+}

@@ -1,26 +1,24 @@
-/**
- * Student Dashboard - Scholarship system overview for students.
- */
-import { useState, useEffect, useRef } from "react"
-import { useNavigate, useLocation } from "react-router-dom"
-import { doc, getDoc } from "firebase/firestore"
-import { toast } from "react-toastify"
-import { db } from "../../firebase"
-import useThemeMode from "../hooks/useThemeMode"
+import { useEffect, useRef, useState } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
 import {
-	HiOutlineUserCircle,
+	HiMenu,
 	HiOutlineAcademicCap,
+	HiOutlineCamera,
 	HiOutlineCheckCircle,
 	HiOutlineClock,
-	HiOutlineDocumentText,
-	HiOutlineSun,
-	HiOutlineMoon,
 	HiOutlineLogout,
-	HiMenu,
+	HiOutlineMoon,
+	HiOutlineSun,
+	HiOutlineUserCircle,
 } from "react-icons/hi"
+import { toast } from "react-toastify"
+import { db } from "../../firebase"
+import { uploadToCloudinary } from "../services/cloudinaryService"
 import logo2 from "../assets/logo2.png"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
+import useThemeMode from "../hooks/useThemeMode"
 
 function checkValidated(userData) {
 	if (!userData) return false
@@ -33,11 +31,29 @@ function checkValidated(userData) {
 	)
 }
 
-export default function StudentDashboard() {
+export default function StudentProfilePage() {
 	const navigate = useNavigate()
 	const location = useLocation()
 	const [user, setUser] = useState(location.state?.user ?? null)
 	const [userLoaded, setUserLoaded] = useState(!!location.state?.user)
+	const [userMenuOpen, setUserMenuOpen] = useState(false)
+	const [isSaving, setIsSaving] = useState(false)
+	const [selectedPhoto, setSelectedPhoto] = useState(null)
+	const [photoPreview, setPhotoPreview] = useState("")
+	const userMenuRef = useRef(null)
+	const fileInputRef = useRef(null)
+	const { theme, setTheme } = useThemeMode()
+
+	const [formData, setFormData] = useState({
+		fname: "",
+		mname: "",
+		lname: "",
+		email: "",
+		course: "",
+		major: "",
+		year: "",
+		section: "",
+	})
 
 	useEffect(() => {
 		if (user != null) {
@@ -58,15 +74,6 @@ export default function StudentDashboard() {
 		}
 	}, [])
 
-	const isValidated = checkValidated(user)
-	const scholarships = Array.isArray(user?.scholarships)
-		? user.scholarships
-		: []
-	const [userMenuOpen, setUserMenuOpen] = useState(false)
-	const { theme, setTheme } = useThemeMode()
-	const userMenuRef = useRef(null)
-	const welcomeRef = useRef(null)
-
 	useEffect(() => {
 		function handleClickOutside(e) {
 			if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
@@ -85,21 +92,102 @@ export default function StudentDashboard() {
 		}
 	}, [userLoaded, user, navigate])
 
-	const stats = { validated: isValidated }
-	// Get user initials for avatar
-	const getUserInitials = () => {
-		if (!user) return "ST"
-		const f = user.fname?.[0]?.toUpperCase() || ""
-		const l = user.lname?.[0]?.toUpperCase() || ""
-		return f + l || "ST"
-	}
+	useEffect(() => {
+		if (!user) return
+		setFormData({
+			fname: user.fname || "",
+			mname: user.mname || "",
+			lname: user.lname || "",
+			email: user.email || "",
+			course: user.course || "",
+			major: user.major || "",
+			year: user.year || "",
+			section: user.section || "",
+		})
+	}, [user])
 
-	// Student number (document id / login id)
+	useEffect(() => {
+		if (!selectedPhoto) return undefined
+		const objectUrl = URL.createObjectURL(selectedPhoto)
+		setPhotoPreview(objectUrl)
+		return () => URL.revokeObjectURL(objectUrl)
+	}, [selectedPhoto])
+
+	const isValidated = checkValidated(user)
 	const studentNumber =
 		location.state?.userId ??
 		sessionStorage.getItem("bulsuscholar_userId") ??
 		""
-	const avatarUrl = user?.profileImageUrl || ""
+
+	const getUserInitials = () => {
+		const f = formData.fname?.[0]?.toUpperCase() || user?.fname?.[0]?.toUpperCase() || ""
+		const l = formData.lname?.[0]?.toUpperCase() || user?.lname?.[0]?.toUpperCase() || ""
+		return f + l || "ST"
+	}
+
+	const profileImageUrl = photoPreview || user?.profileImageUrl || ""
+
+	const handlePhotoChange = (e) => {
+		const file = e.target.files?.[0]
+		if (!file) return
+		if (!file.type.startsWith("image/")) {
+			toast.error("Please upload an image file.")
+			return
+		}
+		if (file.size > 5 * 1024 * 1024) {
+			toast.error("Image must be 5MB or less.")
+			return
+		}
+		setSelectedPhoto(file)
+	}
+
+	const handleSaveProfile = async () => {
+		const id = studentNumber.trim()
+		if (!id) {
+			toast.error("Missing student ID. Please login again.")
+			return
+		}
+
+		if (!formData.fname.trim() || !formData.lname.trim() || !formData.email.trim()) {
+			toast.error("First name, last name, and email are required.")
+			return
+		}
+
+		setIsSaving(true)
+		try {
+			let uploadedImageUrl = user?.profileImageUrl || null
+			if (selectedPhoto) {
+				const uploaded = await uploadToCloudinary(selectedPhoto)
+				uploadedImageUrl = uploaded.url
+			}
+
+			const payload = {
+				fname: formData.fname.trim(),
+				mname: formData.mname.trim(),
+				lname: formData.lname.trim(),
+				email: formData.email.trim(),
+				course: formData.course,
+				major: formData.major,
+				year: formData.year,
+				section: formData.section,
+				profileImageUrl: uploadedImageUrl,
+				updatedAt: serverTimestamp(),
+			}
+
+			await setDoc(doc(db, "students", id), payload, { merge: true })
+
+			const nextUser = { ...(user || {}), ...payload, profileImageUrl: uploadedImageUrl }
+			setUser(nextUser)
+			setSelectedPhoto(null)
+			setPhotoPreview("")
+			toast.success("Profile updated successfully.")
+		} catch (error) {
+			console.error("Failed to update profile:", error)
+			toast.error("Failed to update profile. Please try again.")
+		} finally {
+			setIsSaving(false)
+		}
+	}
 
 	if (!userLoaded) {
 		return (
@@ -109,7 +197,7 @@ export default function StudentDashboard() {
 				<main className="dashboard-main">
 					<div className="dashboard-content">
 						<div className="dashboard-panel student-dashboard-loading-panel">
-							<p className="dashboard-placeholder">Loading student dashboard...</p>
+							<p className="dashboard-placeholder">Loading profile...</p>
 						</div>
 					</div>
 				</main>
@@ -125,11 +213,7 @@ export default function StudentDashboard() {
 				<div className="student-header-top-stripe"></div>
 				<div className="student-header-content">
 					<div className="student-header-left">
-						<img
-							src={logo2}
-							alt="BulsuScholar"
-							className="student-header-logo"
-						/>
+						<img src={logo2} alt="BulsuScholar" className="student-header-logo" />
 						<h1 className="student-header-brand">BulsuScholar</h1>
 					</div>
 					<div className="student-header-right">
@@ -166,9 +250,9 @@ export default function StudentDashboard() {
 							>
 								<HiMenu className="student-header-menu-icon" aria-hidden />
 								<div className="student-header-avatar">
-									{avatarUrl ? (
+									{profileImageUrl ? (
 										<img
-											src={avatarUrl}
+											src={profileImageUrl}
 											alt="Profile"
 											className="student-header-avatar-image-mini"
 										/>
@@ -181,9 +265,9 @@ export default function StudentDashboard() {
 								<div className="student-verified-dropdown">
 									<div className="student-verified-dropdown-user">
 										<div className="student-verified-dropdown-avatar">
-											{avatarUrl ? (
+											{profileImageUrl ? (
 												<img
-													src={avatarUrl}
+													src={profileImageUrl}
 													alt="Profile"
 													className="student-header-avatar-image-mini"
 												/>
@@ -193,9 +277,8 @@ export default function StudentDashboard() {
 										</div>
 										<div className="student-verified-dropdown-user-info">
 											<p className="student-verified-dropdown-name">
-												{user?.fname && user?.lname
-													? `${user.fname} ${user.mname || ""} ${user.lname}`.trim()
-													: "Student"}
+												{`${formData.fname} ${formData.mname || ""} ${formData.lname}`.trim() ||
+													"Student"}
 											</p>
 											<p className="student-verified-dropdown-email">
 												{studentNumber || "-"}
@@ -203,16 +286,7 @@ export default function StudentDashboard() {
 										</div>
 									</div>
 									<nav className="student-verified-dropdown-nav">
-										<button
-											type="button"
-											className="student-verified-dropdown-item"
-											onClick={() => {
-												setUserMenuOpen(false)
-												navigate("/student-dashboard/profile", {
-													state: { user },
-												})
-											}}
-										>
+										<button type="button" className="student-verified-dropdown-item">
 											<HiOutlineUserCircle
 												className="student-verified-dropdown-item-icon"
 												aria-hidden
@@ -237,9 +311,7 @@ export default function StudentDashboard() {
 										</button>
 									</nav>
 									<div className="student-verified-dropdown-theme">
-										<span className="student-verified-dropdown-theme-label">
-											THEME
-										</span>
+										<span className="student-verified-dropdown-theme-label">THEME</span>
 										<div className="student-verified-dropdown-theme-btns">
 											<button
 												type="button"
@@ -284,122 +356,129 @@ export default function StudentDashboard() {
 
 			<main className="dashboard-main">
 				<div className="dashboard-content">
-					{/* Welcome banner */}
-					<div className="student-welcome" ref={welcomeRef}>
-						<div className="student-welcome-text">
-							<h2 className="student-welcome-title">
-								Welcome back{user?.fname ? `, ${user.fname}` : ""}
-							</h2>
-							<p className="student-welcome-sub">
-								Track your scholarships and application status in one place.
-							</p>
-						</div>
-						<div className="student-welcome-icon">
-							<HiOutlineAcademicCap aria-hidden />
-						</div>
-					</div>
-
-					{/* Account validation status - only show when loaded and not validated */}
-					{userLoaded && !stats.validated && (
-						<div className="student-validation-banner">
-							<HiOutlineClock className="student-validation-icon" aria-hidden />
-							<div>
-								<p className="student-validation-title">
-									Account pending verification
-								</p>
-								<p className="student-validation-desc">
-									Your registration is under review. This usually takes 1-3
-									business days.
-								</p>
-							</div>
-						</div>
-					)}
-
-					{/* My Scholarships section */}
 					<div className="dashboard-page-title">
-						<h2 className="dashboard-page-heading">My Scholarships</h2>
+						<h2 className="dashboard-page-heading">My Profile</h2>
 						<p className="dashboard-page-sub">
-							Your scholarship applications and their status
+							Keep your student information and profile photo updated.
 						</p>
 					</div>
 
-					{scholarships.length === 0 ? (
-						<div className="dashboard-panel student-empty student-dashboard-empty-scholarships">
-							<HiOutlineAcademicCap
-								className="student-dashboard-empty-scholarships-icon"
-								aria-hidden
-							/>
-							<p className="dashboard-placeholder student-dashboard-empty-scholarships-text">
-								You have no scholarships listed yet. Declare existing
-								scholarships during registration or apply through the
-								scholarship office.
+					<section className="student-profile-panel">
+						<div className="student-profile-media">
+							<div className="student-profile-avatar-wrap">
+								{profileImageUrl ? (
+									<img
+										src={profileImageUrl}
+										alt="Profile"
+										className="student-profile-avatar-image"
+									/>
+								) : (
+									<div className="student-profile-avatar-fallback">
+										{getUserInitials()}
+									</div>
+								)}
+								<button
+									type="button"
+									className="student-profile-upload-btn"
+									onClick={() => fileInputRef.current?.click()}
+								>
+									<HiOutlineCamera aria-hidden />
+									Upload Photo
+								</button>
+								<input
+									ref={fileInputRef}
+									type="file"
+									accept="image/*"
+									className="student-profile-file-input"
+									onChange={handlePhotoChange}
+								/>
+							</div>
+							<p className="student-profile-upload-hint">
+								JPG or PNG, maximum file size 5MB.
 							</p>
-							<p className="student-dashboard-empty-scholarships-hint">
-								Go to <strong>Scholarship</strong> in the menu to view your
-								applications or apply.
-							</p>
+						</div>
+
+						<div className="student-profile-form">
+							<label className="student-profile-label">
+								First Name
+								<input
+									type="text"
+									className="student-profile-input"
+									value={formData.fname}
+									onChange={(e) =>
+										setFormData((prev) => ({ ...prev, fname: e.target.value }))
+									}
+								/>
+							</label>
+							<label className="student-profile-label">
+								Middle Name
+								<input
+									type="text"
+									className="student-profile-input"
+									value={formData.mname}
+									onChange={(e) =>
+										setFormData((prev) => ({ ...prev, mname: e.target.value }))
+									}
+								/>
+							</label>
+							<label className="student-profile-label">
+								Last Name
+								<input
+									type="text"
+									className="student-profile-input"
+									value={formData.lname}
+									onChange={(e) =>
+										setFormData((prev) => ({ ...prev, lname: e.target.value }))
+									}
+								/>
+							</label>
+							<label className="student-profile-label">
+								Email
+								<input
+									type="email"
+									className="student-profile-input"
+									value={formData.email}
+									onChange={(e) =>
+										setFormData((prev) => ({ ...prev, email: e.target.value }))
+									}
+								/>
+							</label>
+							<label className="student-profile-label">
+								Course
+								<input type="text" className="student-profile-input" value={formData.course} readOnly />
+							</label>
+							<label className="student-profile-label">
+								Major
+								<input type="text" className="student-profile-input" value={formData.major} readOnly />
+							</label>
+							<label className="student-profile-label">
+								Year
+								<input type="text" className="student-profile-input" value={formData.year} readOnly />
+							</label>
+							<label className="student-profile-label">
+								Section
+								<input type="text" className="student-profile-input" value={formData.section} readOnly />
+							</label>
+						</div>
+
+						<div className="student-profile-actions">
 							<button
 								type="button"
-								className="student-dashboard-empty-scholarships-btn"
-								onClick={() =>
-									navigate("/student-dashboard/scholarships", {
-										state: { user },
-									})
-								}
+								className="student-profile-cancel-btn"
+								onClick={() => navigate("/student-dashboard", { state: { user } })}
 							>
-								View scholarships
+								Back to Dashboard
+							</button>
+							<button
+								type="button"
+								className="student-profile-save-btn"
+								onClick={handleSaveProfile}
+								disabled={isSaving}
+							>
+								{isSaving ? "Saving..." : "Save Profile"}
 							</button>
 						</div>
-					) : (
-						<div className="student-scholarship-cards">
-							{scholarships.map((s, i) => (
-								<article key={s.id ?? i} className="student-scholarship-card">
-									<div className="student-scholarship-card-left">
-										<HiOutlineAcademicCap
-											className="student-scholarship-card-icon"
-											aria-hidden
-										/>
-									</div>
-									<div className="student-scholarship-card-info">
-										<h3 className="student-scholarship-card-name">
-											{s.name || "Scholarship"}
-										</h3>
-										<p className="student-scholarship-card-provider">
-											{s.provider || "-"}
-										</p>
-									</div>
-									<div className="student-scholarship-card-action">
-										<button
-											type="button"
-											className="student-scholarship-request-soe"
-											onClick={() => toast.info("SOE request is coming soon.")}
-										>
-											<HiOutlineDocumentText />
-											Request SOE
-										</button>
-									</div>
-								</article>
-							))}
-						</div>
-					)}
-
-					{/* Quick info */}
-					<div className="student-info-cards">
-						<div className="student-info-card">
-							<h3 className="student-info-card-title">Need help?</h3>
-							<p className="student-info-card-desc">
-								Contact the Office of the Scholarships for application support
-								or questions about your status.
-							</p>
-						</div>
-						<div className="student-info-card">
-							<h3 className="student-info-card-title">COR & Registration</h3>
-							<p className="student-info-card-desc">
-								Keep your Certificate of Registration and registration number
-								updated for scholarship validation.
-							</p>
-						</div>
-					</div>
+					</section>
 
 					<footer className="student-footer">
 						<div className="student-footer-grid">
@@ -407,8 +486,8 @@ export default function StudentDashboard() {
 								<h3>BulsuScholar</h3>
 								<p>
 									Institutional Student Programs and Services scholarship portal.
-									Manage your records, documents, and application updates in one
-									place.
+									Manage your records, profile, and scholarship information in one
+									modern workspace.
 								</p>
 							</div>
 							<div className="student-footer-col">
@@ -422,9 +501,9 @@ export default function StudentDashboard() {
 								<button
 									type="button"
 									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/profile", { state: { user } })}
+									onClick={() => navigate("/student-dashboard", { state: { user } })}
 								>
-									My Profile
+									Dashboard Home
 								</button>
 								<button
 									type="button"
@@ -446,4 +525,3 @@ export default function StudentDashboard() {
 		</div>
 	)
 }
-
