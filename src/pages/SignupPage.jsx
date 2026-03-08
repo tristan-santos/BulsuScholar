@@ -19,6 +19,12 @@ import { toast } from "react-toastify"
 import { db } from "../../firebase"
 import { uploadToCloudinary } from "../services/cloudinaryService"
 import { encryptPasswordAES256 } from "../services/authService"
+import {
+	MAX_SCHOLARSHIP_SAVES,
+	buildScholarshipRecord,
+	getCurrentSemesterTag,
+	getDocumentUrlsForStudent,
+} from "../services/scholarshipService"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -535,6 +541,7 @@ export default function SignupPage() {
 			// All validations passed, proceed with registration
 			const encryptedPassword = await encryptPasswordAES256(password)
 
+			const semesterTag = getCurrentSemesterTag()
 			let corFilePayload = null
 			if (corFile) {
 				try {
@@ -544,6 +551,7 @@ export default function SignupPage() {
 						type: imageData.type,
 						size: imageData.size,
 						url: imageData.url,
+						semesterTag,
 					}
 				} catch (uploadErr) {
 					toast.error("Failed to upload COR file: " + uploadErr.message)
@@ -561,6 +569,7 @@ export default function SignupPage() {
 						type: imageData.type,
 						size: imageData.size,
 						url: imageData.url,
+						semesterTag,
 					}
 				} catch (uploadErr) {
 					toast.error(
@@ -588,6 +597,23 @@ export default function SignupPage() {
 				}
 			}
 
+			const normalizedScholarships = scholarships
+				.slice(0, MAX_SCHOLARSHIP_SAVES)
+				.map((entry) =>
+					buildScholarshipRecord({
+						name: entry.provider,
+						provider: entry.provider,
+						type: entry.type,
+						mode: "applied",
+						semesterTag,
+						documentUrls: getDocumentUrlsForStudent({
+							corFile: corFilePayload,
+							cogFile: cogFilePayload,
+							schoolIdFile: schoolIdFilePayload,
+						}),
+					}),
+				)
+
 			const baseData = {
 				course,
 				major: major.trim(),
@@ -604,11 +630,11 @@ export default function SignupPage() {
 				schoolIdFile: schoolIdFilePayload,
 				password: encryptedPassword,
 				hasExistingScholarship,
-				scholarships,
+				scholarships: normalizedScholarships,
 			}
 
 			// Determine if student should be auto-verified based on scholarships
-			const isAutoVerified = shouldAutoVerify(scholarships)
+			const isAutoVerified = shouldAutoVerify(normalizedScholarships)
 
 			if (isAutoVerified) {
 				// Auto-verified students go directly to students collection
@@ -661,6 +687,13 @@ export default function SignupPage() {
 		}
 
 		if (!provider || !scholarshipType) return
+		if (
+			editingScholarshipIndex === null &&
+			scholarships.length >= MAX_SCHOLARSHIP_SAVES
+		) {
+			toast.error(`You can only save up to ${MAX_SCHOLARSHIP_SAVES} scholarships.`)
+			return
+		}
 
 		const data = {
 			provider,
@@ -1270,6 +1303,7 @@ export default function SignupPage() {
 												<button
 													type="button"
 													className="signup-add-btn"
+													disabled={scholarships.length >= MAX_SCHOLARSHIP_SAVES}
 													onClick={() => {
 														setScholarshipProvider("")
 														setScholarshipProviderOther("")
@@ -1277,7 +1311,9 @@ export default function SignupPage() {
 														setShowAddScholarshipForm(true)
 													}}
 												>
-													+ Add Scholarship
+													{scholarships.length >= MAX_SCHOLARSHIP_SAVES
+														? `Scholarship limit reached (${MAX_SCHOLARSHIP_SAVES})`
+														: "+ Add Scholarship"}
 												</button>
 												{scholarships.length === 0 && (
 													<button

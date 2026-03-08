@@ -1,2010 +1,764 @@
-/**
- * Admin Dashboard - Manage scholarship applications and approvals.
- */
-import { useState, useEffect, useRef } from "react"
+
+import { useEffect, useMemo, useState } from "react"
+import { Link, useLocation, useNavigate } from "react-router-dom"
+import {
+	addDoc,
+	collection,
+	doc,
+	getDocs,
+	onSnapshot,
+	query,
+	serverTimestamp,
+	updateDoc,
+	where,
+	writeBatch,
+} from "firebase/firestore"
 import {
 	Chart as ChartJS,
 	CategoryScale,
 	LinearScale,
-	LineController,
-	BarController,
+	PointElement,
 	LineElement,
 	BarElement,
-	PointElement,
-	Filler,
-	DoughnutController,
 	ArcElement,
-	Title,
 	Tooltip,
 	Legend,
 } from "chart.js"
 import { Line, Doughnut, Bar } from "react-chartjs-2"
-import { FaGraduationCap } from "react-icons/fa"
 import {
-	HiOutlineDocumentText,
-	HiOutlineUserGroup,
-	HiOutlineCheckCircle,
-	HiOutlineClock,
-	HiOutlineXCircle,
-	HiOutlineCurrencyDollar,
-	HiOutlineDotsVertical,
-	HiOutlineUserCircle,
-	HiMenu,
-	HiX,
-	HiOutlineMail,
-	HiOutlineSun,
-	HiOutlineMoon,
-	HiOutlineLogout,
 	HiOutlineAcademicCap,
-	HiOutlineCog,
+	HiOutlineBell,
+	HiOutlineClock,
+	HiOutlineDocumentText,
+	HiOutlineLogout,
+	HiOutlineMoon,
+	HiOutlineSun,
+	HiOutlineUserGroup,
+	HiOutlineUsers,
+	HiOutlineShieldCheck,
+	HiOutlineTrash,
+	HiChevronDown,
+	HiChevronUp,
+	HiX,
 } from "react-icons/hi"
-import {
-	collection,
-	getDocs,
-	doc,
-	setDoc,
-	deleteDoc,
-	serverTimestamp,
-	query,
-	where,
-	onSnapshot,
-} from "firebase/firestore"
-import { onAuthStateChanged } from "firebase/auth"
-import { db, auth } from "../../firebase"
+import { toast } from "react-toastify"
+import { db } from "../../firebase"
 import useThemeMode from "../hooks/useThemeMode"
-import "../css/AdminDashboard.css"
-import logo from "../assets/logo.png"
+import { uploadToCloudinary } from "../services/cloudinaryService"
+import {
+	exportScholarshipsReportPdf,
+	exportSoeRequestsReportPdf,
+	exportStudentsReportPdf,
+	filterScholarshipRows,
+	filterStudentRows,
+	formatDate,
+	mapScholarshipRows,
+	mapStudents,
+} from "../services/adminService"
 import logo2 from "../assets/logo2.png"
+import "../css/AdminDashboard.css"
+import "../css/StudentDashboard.css"
 
-ChartJS.register(
-	CategoryScale,
-	LinearScale,
-	LineController,
-	BarController,
-	LineElement,
-	BarElement,
-	PointElement,
-	Filler,
-	DoughnutController,
-	ArcElement,
-	Title,
-	Tooltip,
-	Legend,
-)
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend)
 
-/* ----- College Applications Overview (area/line chart) ----- */
-const APPLICATIONS_TREND = {
-	labels: [
-		"Jan",
-		"Feb",
-		"Mar",
-		"Apr",
-		"May",
-		"Jun",
-		"Jul",
-		"Aug",
-		"Sep",
-		"Oct",
-		"Nov",
-		"Dec",
-	],
-	datasets: [
-		{
-			label: "Approved",
-			data: [65, 78, 82, 85, 88, 92, 95, 98, 102, 105, 108, 112],
-			borderColor: "#16a34a",
-			backgroundColor: "rgba(22, 163, 74, 0.35)",
-			fill: true,
-			tension: 0.3,
-		},
-		{
-			label: "Total Applications",
-			data: [95, 110, 125, 140, 155, 170, 165, 180, 195, 200, 190, 210],
-			borderColor: "#22c55e",
-			backgroundColor: "rgba(34, 197, 94, 0.3)",
-			fill: true,
-			tension: 0.3,
-		},
-	],
+const ADMIN_SECTIONS = [
+	{ id: "dashboard", label: "Dashboard", icon: HiOutlineAcademicCap, path: "/admin/dashboard" },
+	{ id: "students", label: "Student Management", icon: HiOutlineUsers, path: "/admin/students" },
+	{ id: "scholarships", label: "Scholarship Programs", icon: HiOutlineDocumentText, path: "/admin/scholarships" },
+	{ id: "soe", label: "SOE Requests", icon: HiOutlineClock, path: "/admin/soe-requests" },
+	{ id: "announcements", label: "Announcements", icon: HiOutlineBell, path: "/admin/announcements" },
+]
+
+const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6
+
+function toSectionFromPath(pathname) {
+	const match = ADMIN_SECTIONS.find((item) => pathname.startsWith(item.path))
+	return match?.id || "dashboard"
 }
 
-const lineChartOptions = {
-	responsive: true,
-	maintainAspectRatio: false,
-	plugins: { legend: { position: "bottom" } },
-	scales: { y: { beginAtZero: true } },
+function toProviderType(value = "") {
+	const normalized = String(value).toLowerCase()
+	if (normalized.includes("kuya")) return "kuya_win"
+	if (normalized.includes("tina")) return "tina_pancho"
+	if (normalized.includes("morisson") || normalized.includes("morrison")) return "morisson"
+	if (normalized.includes("none")) return "none"
+	return "other"
 }
 
-const doughnutOptions = {
-	responsive: true,
-	maintainAspectRatio: false,
-	plugins: { legend: { display: false } },
+function toJsDate(value) {
+	if (!value) return null
+	if (value?.toDate) return value.toDate()
+	const date = new Date(value)
+	return Number.isNaN(date.getTime()) ? null : date
 }
 
-const statusClass = (status) => {
-	const s = (status || "").toLowerCase()
-	if (s === "approved") return "status-approved"
-	if (s === "rejected") return "status-rejected"
-	if (s === "under review") return "status-review"
-	return "status-pending"
+function isScholarshipTrackable(status = "") {
+	const value = String(status).toLowerCase()
+	return !["rejected", "withdrawn", "expired", "cancelled", "resolved", "denied"].some((s) => value.includes(s))
+}
+
+function toDateString(value) {
+	if (!value) return ""
+	const date = toJsDate(value)
+	if (!date) return ""
+	const year = date.getFullYear()
+	const month = String(date.getMonth() + 1).padStart(2, "0")
+	const day = String(date.getDate()).padStart(2, "0")
+	return `${year}-${month}-${day}`
+}
+
+function toStatusClass(status = "") {
+	const normalized = String(status).toLowerCase()
+	if (normalized.includes("pending")) return "admin-status-badge admin-status-badge--pending"
+	if (normalized.includes("issued") || normalized.includes("approved") || normalized.includes("validated")) return "admin-status-badge admin-status-badge--ok"
+	if (normalized.includes("rejected") || normalized.includes("blocked")) return "admin-status-badge admin-status-badge--danger"
+	return "admin-status-badge admin-status-badge--neutral"
 }
 
 export default function AdminDashboard() {
-	const [activeTab, setActiveTab] = useState("Overview")
-	const [sidebarOpen, setSidebarOpen] = useState(false)
-	const [userMenuOpen, setUserMenuOpen] = useState(false)
+	const navigate = useNavigate()
+	const location = useLocation()
 	const { theme, setTheme } = useThemeMode()
-	const [adminUser, setAdminUser] = useState(null)
-	const userMenuRef = useRef(null)
+	const activeSection = toSectionFromPath(location.pathname)
 
-	// State for applications data from Firestore
-	const [applications, setApplications] = useState([])
-	const [isLoadingApplications, setIsLoadingApplications] = useState(false)
-	const [overviewStats, setOverviewStats] = useState([])
-	const [scholarshipDistribution, setScholarshipDistribution] = useState({
-		labels: [],
-		datasets: [{ data: [], backgroundColor: [], borderWidth: 0 }],
+	const [studentsRaw, setStudentsRaw] = useState([])
+	const [applicationsRaw, setApplicationsRaw] = useState([])
+	const [soeRequests, setSoeRequests] = useState([])
+	const [announcements, setAnnouncements] = useState([])
+
+	const [studentSearch, setStudentSearch] = useState("")
+	const [studentCourse, setStudentCourse] = useState("All")
+	const [studentYear, setStudentYear] = useState("All")
+	const [studentValidation, setStudentValidation] = useState("All")
+	const [scholarshipProvider, setScholarshipProvider] = useState("All")
+	const [scholarshipStatus, setScholarshipStatus] = useState("All")
+	const [applicationTrendRange, setApplicationTrendRange] = useState("monthly")
+	const [soeTrendRange, setSoeTrendRange] = useState("monthly")
+	const [soeSearch, setSoeSearch] = useState("")
+	const [soeStatus, setSoeStatus] = useState("All")
+	const [selectedStudentId, setSelectedStudentId] = useState("")
+	const [isBusy, setIsBusy] = useState(false)
+
+	const [announcementTitle, setAnnouncementTitle] = useState("")
+	const [announcementDescription, setAnnouncementDescription] = useState("")
+	const [announcementType, setAnnouncementType] = useState("Update")
+	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
+	const [announcementStartDate, setAnnouncementStartDate] = useState("")
+	const [announcementEndDate, setAnnouncementEndDate] = useState("")
+	const [showAnnouncementSchedule, setShowAnnouncementSchedule] = useState(false)
+	const [announcementCalendarMonth, setAnnouncementCalendarMonth] = useState(() => {
+		const now = new Date()
+		return new Date(now.getFullYear(), now.getMonth(), 1)
 	})
+	const [isPostingAnnouncement, setIsPostingAnnouncement] = useState(false)
 
-	// Filters for Overview
-	const [overviewStatusFilter, setOverviewStatusFilter] = useState("All")
-	const [chartTimePeriod, setChartTimePeriod] = useState("Monthly")
+	const [warningSearch, setWarningSearch] = useState("")
+	const [providerSearch, setProviderSearch] = useState({ kuya_win: "", tina_pancho: "", morisson: "", other: "", none: "" })
+	const [providerStatus, setProviderStatus] = useState({ kuya_win: "All", tina_pancho: "All", morisson: "All", other: "All", none: "All" })
+	const [collapsedTables, setCollapsedTables] = useState({ warning: false, kuya_win: true, tina_pancho: true, morisson: true, other: true, none: true })
+	const [soeResetByStudent, setSoeResetByStudent] = useState({})
 
-	// Students for approvals tab (pending, approved, rejected)
-	const [pendingStudents, setPendingStudents] = useState([])
-	const [approvedStudents, setApprovedStudents] = useState([])
-	const [rejectedStudents, setRejectedStudents] = useState([])
-	const [isLoadingPending, setIsLoadingPending] = useState(false)
-	const [approvalStatusFilter, setApprovalStatusFilter] = useState("Pending")
-	const [previewFile, setPreviewFile] = useState(null)
-	const [previewImgError, setPreviewImgError] = useState(false)
-
-	// Handle click outside user menu
 	useEffect(() => {
-		function handleClickOutside(e) {
-			if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
-				setUserMenuOpen(false)
-			}
-		}
-		if (userMenuOpen) {
-			document.addEventListener("mousedown", handleClickOutside)
-			return () => document.removeEventListener("mousedown", handleClickOutside)
-		}
-	}, [userMenuOpen])
+		const storedType = sessionStorage.getItem("bulsuscholar_userType")
+		if (storedType !== "admin") navigate("/", { replace: true })
+	}, [navigate])
 
-	// Listen for auth state changes
 	useEffect(() => {
-		const unsubscribe = onAuthStateChanged(auth, (user) => {
-			if (user) {
-				setAdminUser({
-					name: user.displayName || "Administrator",
-					uid: user.uid,
-					email: user.email,
-				})
-			} else {
-				setAdminUser(null)
-			}
-		})
-		return unsubscribe
-	}, [])
-
-	// Fetch applications from Firestore (from multiple collections) - Real-time
-	useEffect(() => {
-		// Use refs to store current data from each listener
-		const pendingRef = { current: [] }
-		const approvedRef = { current: [] }
-		const rejectedRef = { current: [] }
-
-		// Helper to combine all data and update state
-		const updateCombinedApps = () => {
-			setApplications([
-				...pendingRef.current,
-				...approvedRef.current,
-				...rejectedRef.current,
-			])
-			// Also update the individual arrays for the Registrations tab
-			setPendingStudents([...pendingRef.current])
-			setApprovedStudents([...approvedRef.current])
-			setRejectedStudents([...rejectedRef.current])
+		if (location.pathname === "/admin" || location.pathname === "/admin/") {
+			navigate("/admin/dashboard", { replace: true })
 		}
+	}, [location.pathname, navigate])
 
-		// Real-time listener for pending applications
-		const unsubscribePendingApps = onSnapshot(
-			collection(db, "pendingStudent"),
-			(snapshot) => {
-				const pendingApps = []
-				snapshot.forEach((d) => {
-					const data = d.data() || {}
-					if (
-						data.isPending === true ||
-						data.isValidated === false ||
-						data.isValidated === "false"
-					) {
-						pendingApps.push({
-							id: d.id,
-							status: "pending",
-							studentName: [data.fname, data.mname, data.lname]
-								.filter(Boolean)
-								.join(" "),
-							createdAt: data.createdAt || data.timestamp || new Date(),
-							...data,
-						})
-					}
-				})
-				pendingRef.current = pendingApps
-				updateCombinedApps()
-			},
-			(error) => console.error("Error fetching pending apps:", error),
-		)
-
-		// Real-time listener for approved applications
-		const unsubscribeApprovedApps = onSnapshot(
-			collection(db, "students"),
-			(snapshot) => {
-				const approvedApps = []
-				snapshot.forEach((d) => {
-					const data = d.data() || {}
-					// Only include students where isValidated is true
-					if (data.isValidated === true || data.isValidated === "true") {
-						approvedApps.push({
-							id: d.id,
-							status: "approved",
-							studentName: [data.fname, data.mname, data.lname]
-								.filter(Boolean)
-								.join(" "),
-							createdAt: data.createdAt || data.timestamp || new Date(),
-							...data,
-						})
-					}
-				})
-				approvedRef.current = approvedApps
-				updateCombinedApps()
-			},
-			(error) => console.error("Error fetching approved apps:", error),
-		)
-
-		// Real-time listener for rejected applications
-		const unsubscribeRejectedApps = onSnapshot(
-			collection(db, "rejected"),
-			(snapshot) => {
-				const rejectedApps = []
-				snapshot.forEach((d) => {
-					const data = d.data() || {}
-					rejectedApps.push({
-						id: d.id,
-						status: "rejected",
-						studentName: [data.fname, data.mname, data.lname]
-							.filter(Boolean)
-							.join(" "),
-						createdAt: data.createdAt || data.timestamp || new Date(),
-						...data,
-					})
-				})
-				rejectedRef.current = rejectedApps
-				updateCombinedApps()
-			},
-			(error) => console.error("Error fetching rejected apps:", error),
-		)
-
-		// Cleanup listeners
-		return () => {
-			unsubscribePendingApps()
-			unsubscribeApprovedApps()
-			unsubscribeRejectedApps()
-		}
-	}, [])
-
-	// Recalculate stats and scholarship distribution when applications change (real-time)
 	useEffect(() => {
-		// Always calculate stats regardless of array length
-		calculateStats(applications)
-		updateScholarshipDistribution(applications)
-	}, [applications])
-
-	// Calculate overview stats from applications
-	const calculateStats = (appData) => {
-		const stats = [
-			{
-				label: "Total Applications",
-				value: appData.length.toString(),
-				trend: "All applications in system",
-				trendUp: true,
-				icon: HiOutlineDocumentText,
-			},
-			{
-				label: "Approved",
-				value: appData.filter((a) => a.status === "approved").length.toString(),
-				trend: "Successfully approved",
-				trendUp: true,
-				icon: HiOutlineCheckCircle,
-			},
-			{
-				label: "Pending Review",
-				value: appData
-					.filter((a) => a.status === "pending" || a.status === "under review")
-					.length.toString(),
-				trend: "Awaiting action",
-				trendUp: false,
-				icon: HiOutlineClock,
-			},
-			{
-				label: "Rejected",
-				value: appData.filter((a) => a.status === "rejected").length.toString(),
-				trend: "Applications denied",
-				trendUp: false,
-				icon: HiOutlineXCircle,
-			},
+		const unsubs = [
+			onSnapshot(collection(db, "students"), (snap) => setStudentsRaw(snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) })))),
+			onSnapshot(collection(db, "scholarshipApplications"), (snap) => setApplicationsRaw(snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) })))),
+			onSnapshot(collection(db, "soeRequests"), (snap) => setSoeRequests(snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) })))),
+			onSnapshot(collection(db, "announcements"), (snap) => {
+				setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) })).sort((a, b) => (toJsDate(b.createdAt)?.getTime() || 0) - (toJsDate(a.createdAt)?.getTime() || 0)))
+			}),
 		]
-		setOverviewStats(stats)
-	}
+		return () => unsubs.forEach((u) => u())
+	}, [])
+	const studentRows = useMemo(() => mapStudents(studentsRaw), [studentsRaw])
+	const scholarshipRows = useMemo(() => mapScholarshipRows(studentsRaw, applicationsRaw), [studentsRaw, applicationsRaw])
+	const filteredStudents = useMemo(() => filterStudentRows(studentRows, { search: studentSearch, course: studentCourse, year: studentYear, validation: studentValidation }), [studentRows, studentSearch, studentCourse, studentYear, studentValidation])
+	const filteredScholarships = useMemo(() => filterScholarshipRows(scholarshipRows, { provider: scholarshipProvider, status: scholarshipStatus }), [scholarshipRows, scholarshipProvider, scholarshipStatus])
+	const studentsByCourse = useMemo(() => [...new Set(studentRows.map((item) => item.course).filter(Boolean))].sort(), [studentRows])
+	const studentsByYear = useMemo(() => [...new Set(studentRows.map((item) => item.yearLevel).filter(Boolean))].sort(), [studentRows])
 
-	// Update scholarship distribution from applications
-	const updateScholarshipDistribution = (appData) => {
-		const courseCounts = {}
-		const colors = [
-			"#3b82f6",
-			"#f59e0b",
-			"#ef4444",
-			"#8b5cf6",
-			"#10b981",
-			"#ec4899",
-			"#14b8a6",
-		]
-
-		appData.forEach((app) => {
-			const course = app.course || "Other"
-			courseCounts[course] = (courseCounts[course] || 0) + 1
+	const providerCounts = useMemo(() => {
+		const counts = { kuya_win: 0, tina_pancho: 0, morisson: 0, other: 0 }
+		studentsRaw.forEach((student) => {
+			const scholarships = Array.isArray(student.scholarships) ? student.scholarships : []
+			scholarships.forEach((sch) => {
+				if (!isScholarshipTrackable(sch.status)) return
+				const type = toProviderType(sch.providerType || sch.provider || sch.name)
+				if (type !== "none") counts[type] += 1
+			})
 		})
+		return counts
+	}, [studentsRaw])
+	const providerTotal = useMemo(() => Object.values(providerCounts).reduce((sum, value) => sum + value, 0), [providerCounts])
+	const providerLabels = ["Kuya Win", "Tina Pancho", "Morisson", "Other"]
+	const providerValues = [providerCounts.kuya_win, providerCounts.tina_pancho, providerCounts.morisson, providerCounts.other]
+	const providerPercentages = useMemo(() => providerValues.map((value) => (providerTotal > 0 ? Number(((value / providerTotal) * 100).toFixed(1)) : 0)), [providerValues, providerTotal])
 
-		const labels = Object.keys(courseCounts)
-		const data = Object.values(courseCounts)
-		const backgroundColor = colors.slice(0, labels.length)
+	const studentProfiles = useMemo(() => studentsRaw.map((student) => ({ ...student, fullName: [student.fname, student.mname, student.lname].filter(Boolean).join(" ") || "Student", scholarships: Array.isArray(student.scholarships) ? student.scholarships : [] })), [studentsRaw])
+	const selectedStudent = useMemo(() => studentProfiles.find((s) => s.id === selectedStudentId) || null, [selectedStudentId, studentProfiles])
+	const selectedStudentLastSoe = useMemo(() => {
+		if (!selectedStudent?.id) return "No SOE request yet"
+		const latest = soeRequests
+			.filter((row) => row.studentId === selectedStudent.id)
+			.sort((a, b) => (toJsDate(b.timestamp)?.getTime() || 0) - (toJsDate(a.timestamp)?.getTime() || 0))[0]
+		return latest ? formatDate(latest.timestamp) : "No SOE request yet"
+	}, [selectedStudent, soeRequests])
 
-		setScholarshipDistribution({
-			labels,
-			datasets: [
-				{
-					data,
-					backgroundColor,
-					borderWidth: 0,
-				},
-			],
-		})
-	}
-
-	// Filters for Analytics
-	const [analyticsCourseFilter, setAnalyticsCourseFilter] = useState("All")
-	const [analyticsMonthFilter, setAnalyticsMonthFilter] = useState("All")
-
-	// Filters for Applications
-	const [appStatusFilter, setAppStatusFilter] = useState("All Statuses")
-	const [appCourseFilter, setAppCourseFilter] = useState("All Courses")
-	const [appDateFilter, setAppDateFilter] = useState("All Dates")
-
-	// Filter Overview applications
-	const filteredOverviewApps = applications.filter((app) => {
-		if (overviewStatusFilter === "All") return true
-		const status = (app.status || "").toLowerCase()
-		const filter = overviewStatusFilter.toLowerCase()
-		return status.includes(filter)
-	})
-
-	// Filter Applications page
-	const filteredApplications = applications.filter((app) => {
-		let statusMatch = true
-		let courseMatch = true
-		let dateMatch = true
-
-		if (appStatusFilter !== "All Statuses") {
-			const statusMap = {
-				Submitted: "pending",
-				"In Review": "under review",
-				Approved: "approved",
-				Rejected: "rejected",
+	const providerRows = useMemo(() => {
+		const rows = { kuya_win: [], tina_pancho: [], morisson: [], other: [], none: [] }
+		studentProfiles.forEach((student) => {
+			if (student.scholarships.length === 0) {
+				rows.none.push({ studentId: student.id, fullName: student.fullName, scholarship: "-", status: "No Scholarship" })
+				return
 			}
-			statusMatch =
-				(app.status || "").toLowerCase() === statusMap[appStatusFilter]
-		}
+			student.scholarships.forEach((sch) => {
+				const type = toProviderType(sch.providerType || sch.provider || sch.name)
+				const key = rows[type] ? type : "other"
+				rows[key].push({ studentId: student.id, fullName: student.fullName, scholarship: sch.name || sch.provider || "Scholarship", status: sch.status || "Saved", scholarshipId: sch.id, adminBlocked: sch.adminBlocked === true })
+			})
+		})
+		return rows
+	}, [studentProfiles])
 
-		if (appCourseFilter !== "All Courses") {
-			courseMatch = (app.course || "").includes(appCourseFilter)
-		}
+	const warningRows = useMemo(() => {
+		const keyword = warningSearch.trim().toLowerCase()
+		return studentProfiles
+			.filter((student) => student.scholarships.filter((sch) => isScholarshipTrackable(sch.status)).length > 1)
+			.map((student) => ({ studentId: student.id, fullName: student.fullName, details: student.scholarships.map((sch) => sch.name || sch.provider || "Scholarship").join(", ") }))
+			.filter((row) => !keyword || row.studentId.toLowerCase().includes(keyword) || row.fullName.toLowerCase().includes(keyword) || row.details.toLowerCase().includes(keyword))
+	}, [studentProfiles, warningSearch])
 
-		if (appDateFilter !== "All Dates") {
-			const appDate = app.createdAt ? new Date(app.createdAt) : null
-			const today = new Date()
-			const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
-			const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
-			const threeMonthsAgo = new Date(
-				today.getTime() - 90 * 24 * 60 * 60 * 1000,
-			)
+	const soeFiltered = useMemo(() => {
+		const keyword = soeSearch.trim().toLowerCase()
+		return soeRequests.filter((row) => {
+			const matchesSearch = !keyword || String(row.studentId || "").toLowerCase().includes(keyword) || String(row.scholarshipName || "").toLowerCase().includes(keyword)
+			const matchesStatus = soeStatus === "All" || String(row.status || "") === soeStatus
+			return matchesSearch && matchesStatus
+		})
+	}, [soeRequests, soeSearch, soeStatus])
 
-			if (appDate) {
-				switch (appDateFilter) {
-					case "This Week":
-						dateMatch = appDate >= weekAgo && appDate <= today
-						break
-					case "This Month":
-						dateMatch = appDate.getMonth() === today.getMonth()
-						break
-					case "Last Month":
-						dateMatch = appDate.getMonth() === today.getMonth() - 1
-						break
-					case "Last 3 Months":
-						dateMatch = appDate >= threeMonthsAgo
-						break
-					default:
-						dateMatch = true
+	const soeCooldownWarnings = useMemo(() => {
+		const grouped = new Map()
+		soeRequests.forEach((row) => {
+			if (!row.studentId) return
+			if (!grouped.has(row.studentId)) grouped.set(row.studentId, [])
+			grouped.get(row.studentId).push(row)
+		})
+		const list = []
+		grouped.forEach((rows, studentId) => {
+			const sorted = rows.slice().sort((a, b) => (toJsDate(a.timestamp)?.getTime() || 0) - (toJsDate(b.timestamp)?.getTime() || 0))
+			for (let i = 1; i < sorted.length; i += 1) {
+				const prev = toJsDate(sorted[i - 1].timestamp)
+				const curr = toJsDate(sorted[i].timestamp)
+				if (!prev || !curr) continue
+				if (curr.getTime() - prev.getTime() < SIX_MONTHS_MS) {
+					list.push({ id: `${studentId}_${sorted[i].id}`, studentId, scholarship: sorted[i].scholarshipName || "-", previousDate: prev, requestDate: curr })
 				}
 			}
+		})
+		return list.sort((a, b) => b.requestDate.getTime() - a.requestDate.getTime())
+	}, [soeRequests])
+
+	const metrics = useMemo(() => ({ totalStudents: studentsRaw.length, activePrograms: providerTotal, issuedSoe: soeRequests.filter((row) => String(row.status || "").toLowerCase().includes("issued")).length, pendingSoe: soeRequests.filter((row) => String(row.status || "").toLowerCase().includes("pending")).length, conflicts: warningRows.length }), [studentsRaw.length, providerTotal, soeRequests, warningRows.length])
+
+	const applicationTrendData = useMemo(() => {
+		const now = new Date()
+		const buckets = []
+		const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+		if (applicationTrendRange === "daily") {
+			for (let i = 13; i >= 0; i -= 1) {
+				const d = new Date(now)
+				d.setDate(now.getDate() - i)
+				const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+				buckets.push({ key, label: `${d.getMonth() + 1}/${d.getDate()}` })
+			}
+		} else if (applicationTrendRange === "weekly") {
+			const end = new Date(now)
+			end.setDate(now.getDate() - now.getDay())
+			for (let i = 11; i >= 0; i -= 1) {
+				const weekStart = new Date(end)
+				weekStart.setDate(end.getDate() - i * 7)
+				const key = `${weekStart.getFullYear()}-W${String(Math.ceil(((weekStart - new Date(weekStart.getFullYear(), 0, 1)) / 86400000 + 1) / 7)).padStart(2, "0")}`
+				buckets.push({ key, label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}` })
+			}
+		} else if (applicationTrendRange === "yearly") {
+			for (let i = 5; i >= 0; i -= 1) {
+				const year = now.getFullYear() - i
+				buckets.push({ key: String(year), label: String(year) })
+			}
+		} else {
+			for (let i = 0; i < 12; i += 1) {
+				const key = `${now.getFullYear()}-${String(i + 1).padStart(2, "0")}`
+				buckets.push({ key, label: monthNames[i] })
+			}
 		}
 
-		return statusMatch && courseMatch && dateMatch
-	})
+		const totals = Object.fromEntries(buckets.map((b) => [b.key, 0]))
+		const approved = Object.fromEntries(buckets.map((b) => [b.key, 0]))
 
-	// Get chart data based on time period
-	const getChartData = () => {
-		const chartDataByPeriod = {
-			Daily: {
-				labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-				datasets: [
-					{
-						label: "Approved",
-						data: [12, 15, 18, 14, 20, 16, 22],
-						borderColor: "#16a34a",
-						backgroundColor: "rgba(22, 163, 74, 0.35)",
-						fill: true,
-						tension: 0.3,
-					},
-					{
-						label: "Total Applications",
-						data: [24, 28, 35, 32, 40, 30, 45],
-						borderColor: "#22c55e",
-						backgroundColor: "rgba(34, 197, 94, 0.3)",
-						fill: true,
-						tension: 0.3,
-					},
-				],
-			},
-			Weekly: {
-				labels: ["Week 1", "Week 2", "Week 3", "Week 4"],
-				datasets: [
-					{
-						label: "Approved",
-						data: [59, 72, 66, 78],
-						borderColor: "#16a34a",
-						backgroundColor: "rgba(22, 163, 74, 0.35)",
-						fill: true,
-						tension: 0.3,
-					},
-					{
-						label: "Total Applications",
-						data: [120, 145, 130, 165],
-						borderColor: "#22c55e",
-						backgroundColor: "rgba(34, 197, 94, 0.3)",
-						fill: true,
-						tension: 0.3,
-					},
-				],
-			},
-			Monthly: {
-				labels: [
-					"Jan",
-					"Feb",
-					"Mar",
-					"Apr",
-					"May",
-					"Jun",
-					"Jul",
-					"Aug",
-					"Sep",
-					"Oct",
-					"Nov",
-					"Dec",
-				],
-				datasets: [
-					{
-						label: "Approved",
-						data: [65, 78, 82, 85, 88, 92, 95, 98, 102, 105, 108, 112],
-						borderColor: "#16a34a",
-						backgroundColor: "rgba(22, 163, 74, 0.35)",
-						fill: true,
-						tension: 0.3,
-					},
-					{
-						label: "Total Applications",
-						data: [95, 110, 125, 140, 155, 170, 165, 180, 195, 200, 190, 210],
-						borderColor: "#22c55e",
-						backgroundColor: "rgba(34, 197, 94, 0.3)",
-						fill: true,
-						tension: 0.3,
-					},
-				],
-			},
-			Yearly: {
-				labels: ["2020", "2021", "2022", "2023", "2024"],
-				datasets: [
-					{
-						label: "Approved",
-						data: [420, 520, 615, 780, 1045],
-						borderColor: "#16a34a",
-						backgroundColor: "rgba(22, 163, 74, 0.35)",
-						fill: true,
-						tension: 0.3,
-					},
-					{
-						label: "Total Applications",
-						data: [680, 845, 1050, 1320, 1845],
-						borderColor: "#22c55e",
-						backgroundColor: "rgba(34, 197, 94, 0.3)",
-						fill: true,
-						tension: 0.3,
-					},
-				],
-			},
+		applicationsRaw.forEach((row) => {
+			const date = toJsDate(row.appliedAt || row.createdAt || row.timestamp)
+			if (!date) return
+			let key = ""
+			if (applicationTrendRange === "daily") {
+				key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+			} else if (applicationTrendRange === "weekly") {
+				const d = new Date(date)
+				d.setDate(d.getDate() - d.getDay())
+				key = `${d.getFullYear()}-W${String(Math.ceil(((d - new Date(d.getFullYear(), 0, 1)) / 86400000 + 1) / 7)).padStart(2, "0")}`
+			} else if (applicationTrendRange === "yearly") {
+				key = String(date.getFullYear())
+			} else {
+				key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+			}
+			if (!(key in totals)) return
+			totals[key] += 1
+			const statusText = String(row.status || row.applicationStatus || row.scholarshipStatus || row.decision || "").toLowerCase()
+			const approvedFlag = row.isApproved === true || statusText.includes("approved") || statusText.includes("issued")
+			if (approvedFlag) approved[key] += 1
+		})
+
+		return {
+			labels: buckets.map((b) => b.label),
+			datasets: [
+				{
+					label: "Approved",
+					data: buckets.map((b) => approved[b.key]),
+					borderColor: theme === "dark" ? "#16a34a" : "#15803d",
+					backgroundColor: theme === "dark" ? "rgba(22,163,74,0.22)" : "rgba(22,163,74,0.20)",
+					fill: true,
+					tension: 0.35,
+					pointRadius: 3,
+					pointHoverRadius: 5,
+					borderWidth: 3,
+				},
+				{
+					label: "Total Applications",
+					data: buckets.map((b) => totals[b.key]),
+					borderColor: theme === "dark" ? "#22c55e" : "#22c55e",
+					backgroundColor: theme === "dark" ? "rgba(34,197,94,0.28)" : "rgba(34,197,94,0.22)",
+					fill: true,
+					tension: 0.35,
+					pointRadius: 3,
+					pointHoverRadius: 5,
+					borderWidth: 3,
+				},
+			],
 		}
-		return chartDataByPeriod[chartTimePeriod]
+	}, [applicationsRaw, theme, applicationTrendRange])
+
+	const soeTrendData = useMemo(() => {
+		const now = new Date()
+		const buckets = []
+		const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+		if (soeTrendRange === "daily") {
+			for (let i = 13; i >= 0; i -= 1) {
+				const d = new Date(now)
+				d.setDate(now.getDate() - i)
+				const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+				buckets.push({ key, label: `${d.getMonth() + 1}/${d.getDate()}` })
+			}
+		} else if (soeTrendRange === "weekly") {
+			const end = new Date(now)
+			end.setDate(now.getDate() - now.getDay())
+			for (let i = 11; i >= 0; i -= 1) {
+				const weekStart = new Date(end)
+				weekStart.setDate(end.getDate() - i * 7)
+				const key = `${weekStart.getFullYear()}-W${String(Math.ceil(((weekStart - new Date(weekStart.getFullYear(), 0, 1)) / 86400000 + 1) / 7)).padStart(2, "0")}`
+				buckets.push({ key, label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}` })
+			}
+		} else if (soeTrendRange === "yearly") {
+			for (let i = 5; i >= 0; i -= 1) {
+				const year = now.getFullYear() - i
+				buckets.push({ key: String(year), label: String(year) })
+			}
+		} else {
+			for (let i = 0; i < 12; i += 1) {
+				const key = `${now.getFullYear()}-${String(i + 1).padStart(2, "0")}`
+				buckets.push({ key, label: monthNames[i] })
+			}
+		}
+
+		const counts = Object.fromEntries(buckets.map((b) => [b.key, 0]))
+		soeRequests.forEach((row) => {
+			const date = toJsDate(row.timestamp)
+			if (!date) return
+			let key = ""
+			if (soeTrendRange === "daily") {
+				key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+			} else if (soeTrendRange === "weekly") {
+				const d = new Date(date)
+				d.setDate(d.getDate() - d.getDay())
+				key = `${d.getFullYear()}-W${String(Math.ceil(((d - new Date(d.getFullYear(), 0, 1)) / 86400000 + 1) / 7)).padStart(2, "0")}`
+			} else if (soeTrendRange === "yearly") {
+				key = String(date.getFullYear())
+			} else {
+				key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+			}
+			if (key in counts) counts[key] += 1
+		})
+
+		return {
+			labels: buckets.map((b) => b.label),
+			datasets: [{ label: "SOE Requests", data: buckets.map((b) => counts[b.key]), backgroundColor: theme === "dark" ? "#0ea5e9" : "#1e3a8a", borderRadius: 8 }],
+		}
+	}, [soeRequests, theme, soeTrendRange])
+
+	const chartOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: theme === "dark" ? "#d1d5db" : "#1e293b", font: { size: 14, weight: 600 } } } }, scales: { x: { ticks: { color: theme === "dark" ? "#cbd5e1" : "#334155", font: { size: 13, weight: 600 } }, grid: { color: theme === "dark" ? "rgba(148, 163, 184, 0.2)" : "rgba(148, 163, 184, 0.25)" } }, y: { beginAtZero: true, ticks: { color: theme === "dark" ? "#cbd5e1" : "#334155", font: { size: 13, weight: 600 } }, grid: { color: theme === "dark" ? "rgba(148, 163, 184, 0.2)" : "rgba(148, 163, 184, 0.25)" } } } }), [theme])
+	const applicationTrendOptions = useMemo(() => ({
+		...chartOptions,
+		plugins: {
+			...chartOptions.plugins,
+			legend: {
+				position: "bottom",
+				labels: {
+					color: theme === "dark" ? "#d1d5db" : "#334155",
+					boxWidth: 38,
+					font: { size: 14, weight: 700 },
+				},
+			},
+		},
+	}), [chartOptions, theme])
+	const dashboardDoughnutOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { color: theme === "dark" ? "#e2e8f0" : "#1e293b", font: { size: 14, weight: 700 } } }, tooltip: { callbacks: { label: (context) => `${context.label}: ${providerPercentages[context.dataIndex] || 0}%` } } } }), [providerPercentages, theme])
+
+	const currentAnnouncements = useMemo(() => {
+		const now = Date.now()
+		return announcements.filter((item) => {
+			if (item.archived === true) return false
+			const endDate = toJsDate(item.endDate || item.scheduleEnd)
+			if (!endDate) return true
+			return endDate.getTime() >= now
+		})
+	}, [announcements])
+	const previousAnnouncements = useMemo(() => {
+		const now = Date.now()
+		return announcements.filter((item) => {
+			if (item.archived === true) return true
+			const endDate = toJsDate(item.endDate || item.scheduleEnd)
+			return endDate ? endDate.getTime() < now : false
+		})
+	}, [announcements])
+
+	const todayStart = useMemo(() => {
+		const d = new Date()
+		d.setHours(0, 0, 0, 0)
+		return d
+	}, [])
+
+	const currentMonthStart = useMemo(() => new Date(todayStart.getFullYear(), todayStart.getMonth(), 1), [todayStart])
+
+	const announcementCalendarDays = useMemo(() => {
+		const year = announcementCalendarMonth.getFullYear()
+		const month = announcementCalendarMonth.getMonth()
+		const firstDayIndex = new Date(year, month, 1).getDay()
+		const daysInMonth = new Date(year, month + 1, 0).getDate()
+		const cells = []
+		for (let i = 0; i < firstDayIndex; i += 1) {
+			cells.push({ key: `empty_${i}`, empty: true })
+		}
+		for (let day = 1; day <= daysInMonth; day += 1) {
+			const dateObj = new Date(year, month, day)
+			dateObj.setHours(0, 0, 0, 0)
+			const iso = toDateString(dateObj)
+			const disabled = dateObj < todayStart
+			const isStart = announcementStartDate === iso
+			const isEnd = announcementEndDate === iso
+			const inRange = Boolean(announcementStartDate && announcementEndDate && iso > announcementStartDate && iso < announcementEndDate)
+			cells.push({ key: iso, empty: false, day, iso, disabled, isStart, isEnd, inRange })
+		}
+		return cells
+	}, [announcementCalendarMonth, todayStart, announcementStartDate, announcementEndDate])
+
+	const handleAnnouncementDatePick = (iso, disabled) => {
+		if (disabled) return
+		if (!announcementStartDate || (announcementStartDate && announcementEndDate)) {
+			setAnnouncementStartDate(iso)
+			setAnnouncementEndDate("")
+			return
+		}
+		if (iso < announcementStartDate) {
+			setAnnouncementStartDate(iso)
+			return
+		}
+		setAnnouncementEndDate(iso)
 	}
 
+	const runAction = async (fn, success) => {
+		if (isBusy) return
+		setIsBusy(true)
+		try {
+			await fn()
+			toast.success(success)
+		} catch (error) {
+			console.error(error)
+			toast.error("Action failed.")
+		} finally {
+			setIsBusy(false)
+		}
+	}
+
+	const resetSoeTimer = async (studentId) => {
+		if (!studentId) return
+		await runAction(async () => {
+			await updateDoc(doc(db, "students", studentId), { soeLastExportAt: null, soeCooldownOverrideAt: serverTimestamp(), updatedAt: serverTimestamp() })
+			setSoeResetByStudent((prev) => ({ ...prev, [studentId]: Date.now() }))
+		}, "SOE cooldown reset.")
+	}
+
+	const isSoeResetDisabled = (studentId, requestTimestamp) => {
+		if (!studentId) return true
+		const resetAt = soeResetByStudent[studentId]
+		if (!resetAt) return false
+		const requestTime = toJsDate(requestTimestamp)?.getTime() || 0
+		return requestTime <= resetAt
+	}
+
+	const setAccountBlocked = async (studentId, blocked) => runAction(async () => {
+		await updateDoc(doc(db, "students", studentId), { isBlocked: blocked, accountStatus: blocked ? "blocked" : "active", updatedAt: serverTimestamp() })
+	}, blocked ? "Student blocked." : "Student unblocked.")
+
+	const setScholarshipBlocked = async (studentId, scholarshipId, blocked) => {
+		const target = studentProfiles.find((s) => s.id === studentId)
+		if (!target || !scholarshipId) return
+		const next = target.scholarships.map((sch) => sch.id === scholarshipId ? { ...sch, adminBlocked: blocked, adminBlockedAt: blocked ? new Date().toISOString() : null } : sch)
+		await runAction(async () => {
+			await updateDoc(doc(db, "students", studentId), { scholarships: next, updatedAt: serverTimestamp() })
+		}, blocked ? "Scholarship blocked." : "Scholarship unblocked.")
+	}
+
+	const removeStudent = async (studentId) => {
+		if (!window.confirm("Remove student and related records?")) return
+		await runAction(async () => {
+			const batch = writeBatch(db)
+			batch.delete(doc(db, "students", studentId))
+			const [apps, soes, warnings] = await Promise.all([
+				getDocs(query(collection(db, "scholarshipApplications"), where("studentId", "==", studentId))),
+				getDocs(query(collection(db, "soeRequests"), where("studentId", "==", studentId))),
+				getDocs(query(collection(db, "studentWarning"), where("studentId", "==", studentId))),
+			])
+			apps.docs.forEach((d) => batch.delete(d.ref))
+			soes.docs.forEach((d) => batch.delete(d.ref))
+			warnings.docs.forEach((d) => batch.delete(d.ref))
+			await batch.commit()
+			setSelectedStudentId("")
+		}, "Student removed.")
+	}
+	const postAnnouncement = async (e) => {
+		e.preventDefault()
+		if (!announcementTitle.trim() || !announcementDescription.trim()) {
+			toast.error("Title and description are required.")
+			return
+		}
+		if (announcementStartDate && announcementEndDate && announcementStartDate > announcementEndDate) {
+			toast.error("End date must be on or after start date.")
+			return
+		}
+		if (isPostingAnnouncement) return
+		setIsPostingAnnouncement(true)
+		try {
+			const uploads = await Promise.all(announcementImageFiles.map((file) => uploadToCloudinary(file)))
+			const imageUrls = uploads.map((uploaded) => uploaded.url).filter(Boolean)
+			await addDoc(collection(db, "announcements"), {
+				title: announcementTitle.trim(),
+				description: announcementDescription.trim(),
+				content: announcementDescription.trim(),
+				previewText: announcementDescription.trim().slice(0, 150),
+				type: announcementType,
+				imageUrl: imageUrls[0] || "",
+				imageUrls,
+				startDate: announcementStartDate ? new Date(`${announcementStartDate}T00:00:00`).toISOString() : null,
+				endDate: announcementEndDate ? new Date(`${announcementEndDate}T23:59:59`).toISOString() : null,
+				archived: false,
+				createdAt: serverTimestamp(),
+			})
+			setAnnouncementTitle("")
+			setAnnouncementDescription("")
+			setAnnouncementType("Update")
+			setAnnouncementImageFiles([])
+			setAnnouncementStartDate("")
+			setAnnouncementEndDate("")
+			setShowAnnouncementSchedule(false)
+			toast.success("Announcement posted.")
+		} catch (error) {
+			console.error(error)
+			toast.error("Failed to post announcement.")
+		} finally {
+			setIsPostingAnnouncement(false)
+		}
+	}
+
+	const archiveAnnouncement = async (announcementId) => {
+		await runAction(async () => {
+			await updateDoc(doc(db, "announcements", announcementId), { archived: true, archivedAt: serverTimestamp(), updatedAt: serverTimestamp() })
+		}, "Announcement moved to previous.")
+	}
+
+	const handleLogout = () => {
+		sessionStorage.removeItem("bulsuscholar_userId")
+		sessionStorage.removeItem("bulsuscholar_userType")
+		navigate("/", { replace: true })
+	}
+
+	const toggleTable = (key) => setCollapsedTables((prev) => ({ ...prev, [key]: !prev[key] }))
+
+	const filterProviderRows = (rows, key) => {
+		const keyword = (providerSearch[key] || "").trim().toLowerCase()
+		const status = providerStatus[key] || "All"
+		return rows.filter((row) => {
+			const matchesSearch = !keyword || row.studentId.toLowerCase().includes(keyword) || row.fullName.toLowerCase().includes(keyword) || row.scholarship.toLowerCase().includes(keyword)
+			const matchesStatus = status === "All" || row.status === status
+			return matchesSearch && matchesStatus
+		})
+	}
+
+	const renderCollapsibleBox = (key, title, count, controls, content) => {
+		const collapsed = collapsedTables[key]
+		return (
+			<article className="admin-subpanel admin-subpanel--spaced" key={key}>
+				<button type="button" className="admin-collapse-head" onClick={() => toggleTable(key)} aria-expanded={!collapsed}>
+					<div><h3>{title}</h3><span>{count} records</span></div>
+					{collapsed ? <HiChevronDown /> : <HiChevronUp />}
+				</button>
+				{collapsed ? null : <>{controls}{content}</>}
+			</article>
+		)
+	}
+
+	const renderProviderTable = (key, title, rows) => {
+		const filtered = filterProviderRows(rows, key)
+		const statuses = [...new Set(rows.map((r) => r.status).filter(Boolean))]
+		return renderCollapsibleBox(
+			key,
+			title,
+			filtered.length,
+			<div className="admin-filter-bar admin-filter-bar--compact">
+				<input type="text" placeholder="Search" value={providerSearch[key] || ""} onChange={(e) => setProviderSearch((prev) => ({ ...prev, [key]: e.target.value }))} />
+				<select value={providerStatus[key] || "All"} onChange={(e) => setProviderStatus((prev) => ({ ...prev, [key]: e.target.value }))}><option value="All">All Status</option>{statuses.map((status) => <option key={`${key}_${status}`} value={status}>{status}</option>)}</select>
+			</div>,
+			<div className="admin-table-wrap"><table className="admin-management-table"><thead><tr><th>Student ID</th><th>Full Name</th><th>Scholarship</th><th>Status</th><th>Action</th></tr></thead><tbody>{filtered.map((row) => <tr key={`${key}_${row.studentId}_${row.scholarshipId || row.scholarship}`}><td>{row.studentId}</td><td>{row.fullName}</td><td>{row.scholarship}</td><td><span className={toStatusClass(row.status)}>{row.status}</span>{row.adminBlocked ? <span className="admin-inline-chip">Blocked</span> : null}</td><td><button type="button" className="admin-table-btn" onClick={() => setSelectedStudentId(row.studentId)}>View Information</button></td></tr>)}</tbody></table></div>,
+		)
+	}
+
+	const renderDashboardHome = () => (
+		<section className="admin-management-panel">
+			<div className="admin-panel-head"><h2>Management Dashboard</h2></div>
+			<section className="admin-kpi-grid">
+				<article className="admin-kpi-card"><p>Total Students</p><strong>{metrics.totalStudents}</strong></article>
+				<article className="admin-kpi-card"><p>Active Programs</p><strong>{metrics.activePrograms}</strong></article>
+				<article className="admin-kpi-card"><p>Issued SOEs</p><strong>{metrics.issuedSoe}</strong></article>
+				<article className="admin-kpi-card"><p>Pending SOE</p><strong>{metrics.pendingSoe}</strong></article>
+			</section>
+			<section className="admin-analytics-grid admin-analytics-grid--primary">
+				<article className="admin-analytics-card admin-analytics-card--wide admin-trend-card">
+					<div className="admin-trend-head">
+						<div>
+							<h3>College Applications Overview</h3>
+							<p>Application trends for college students</p>
+						</div>
+						<div className="admin-trend-controls">
+							<button type="button" className={applicationTrendRange === "daily" ? "active" : ""} onClick={() => setApplicationTrendRange("daily")}>Daily</button>
+							<button type="button" className={applicationTrendRange === "weekly" ? "active" : ""} onClick={() => setApplicationTrendRange("weekly")}>Weekly</button>
+							<button type="button" className={applicationTrendRange === "monthly" ? "active" : ""} onClick={() => setApplicationTrendRange("monthly")}>Monthly</button>
+							<button type="button" className={applicationTrendRange === "yearly" ? "active" : ""} onClick={() => setApplicationTrendRange("yearly")}>Yearly</button>
+						</div>
+					</div>
+					<div className="admin-chart-wrap admin-chart-wrap--lg"><Line data={applicationTrendData} options={applicationTrendOptions} /></div>
+				</article>
+				<article className="admin-analytics-card">
+					<h3>Scholarship Distribution (%)</h3>
+					<div className="admin-chart-wrap"><Doughnut data={{ labels: providerLabels, datasets: [{ data: providerValues, backgroundColor: ["#0b572b", "#1e3a8a", "#b45309", "#14532d"], borderColor: theme === "dark" ? "#1f2937" : "#ffffff", borderWidth: 3 }] }} options={dashboardDoughnutOptions} /></div>
+					<div className="admin-distribution-legend">{providerLabels.map((label, index) => <p key={label}><span className="admin-distribution-name">{label}</span><span className="admin-distribution-bar" role="presentation"><span className="admin-distribution-fill" style={{ width: `${providerPercentages[index]}%` }} /></span><strong>{providerPercentages[index]}%</strong></p>)}</div>
+				</article>
+				<article className="admin-analytics-card">
+					<div className="admin-trend-head admin-trend-head--compact">
+						<div>
+							<h3>SOE Volume</h3>
+						</div>
+						<div className="admin-trend-controls admin-trend-controls--compact">
+							<button type="button" className={soeTrendRange === "daily" ? "active" : ""} onClick={() => setSoeTrendRange("daily")}>Daily</button>
+							<button type="button" className={soeTrendRange === "weekly" ? "active" : ""} onClick={() => setSoeTrendRange("weekly")}>Weekly</button>
+							<button type="button" className={soeTrendRange === "monthly" ? "active" : ""} onClick={() => setSoeTrendRange("monthly")}>Monthly</button>
+							<button type="button" className={soeTrendRange === "yearly" ? "active" : ""} onClick={() => setSoeTrendRange("yearly")}>Yearly</button>
+						</div>
+					</div>
+					<div className="admin-chart-wrap"><Bar data={soeTrendData} options={chartOptions} /></div>
+				</article>
+			</section>
+		</section>
+	)
+
+	const renderSection = () => {
+		if (activeSection === "students") {
+			return (
+				<section className="admin-management-panel">
+					<div className="admin-panel-head"><h2>Student Management</h2><button type="button" className="admin-export-btn" onClick={() => exportStudentsReportPdf(filteredStudents, `Course: ${studentCourse}, Year: ${studentYear}, Validation: ${studentValidation}, Search: ${studentSearch || "-"}`, logo2)}>Generate Report (PDF)</button></div>
+					<div className="admin-filter-bar"><input type="text" placeholder="Search Student ID or Name" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} /><select value={studentCourse} onChange={(e) => setStudentCourse(e.target.value)}><option value="All">All Courses</option>{studentsByCourse.map((course) => <option key={course} value={course}>{course}</option>)}</select><select value={studentYear} onChange={(e) => setStudentYear(e.target.value)}><option value="All">All Year Levels</option>{studentsByYear.map((year) => <option key={year} value={year}>{year}</option>)}</select><select value={studentValidation} onChange={(e) => setStudentValidation(e.target.value)}><option value="All">All Validation</option><option value="Validated">Validated</option><option value="Pending">Pending</option></select></div>
+					<div className="admin-table-wrap"><table className="admin-management-table admin-management-table--roomy"><thead><tr><th>Student ID</th><th>Full Name</th><th>Course</th><th>Year Level</th><th>Validation Status</th><th>Applied Scholarship</th><th>Action</th></tr></thead><tbody>{filteredStudents.map((row) => <tr key={row.id}><td>{row.id}</td><td>{row.fullName}</td><td>{row.course}</td><td>{row.yearLevel}</td><td><span className={toStatusClass(row.validationStatus)}>{row.validationStatus}</span></td><td>{row.appliedScholarship}</td><td><button type="button" className="admin-table-btn" onClick={() => setSelectedStudentId(row.id)}>View Information</button></td></tr>)}</tbody></table></div>
+				</section>
+			)
+		}
+		if (activeSection === "scholarships") {
+			return (
+				<section className="admin-management-panel">
+					<div className="admin-panel-head"><h2>Scholarship Programs</h2><button type="button" className="admin-export-btn" onClick={() => exportScholarshipsReportPdf(filteredScholarships, `Provider: ${scholarshipProvider}, Status: ${scholarshipStatus}`, logo2)}>Generate Report (PDF)</button></div>
+					<section className="admin-analytics-grid admin-analytics-grid--tight"><article className="admin-analytics-card"><h3>Scholarship Distribution by Provider (%)</h3><div className="admin-chart-wrap"><Doughnut data={{ labels: providerLabels, datasets: [{ data: providerValues, backgroundColor: ["#0b572b", "#1e3a8a", "#b45309", "#14532d"], borderColor: theme === "dark" ? "#1f2937" : "#ffffff", borderWidth: 3 }] }} options={dashboardDoughnutOptions} /></div></article><article className="admin-analytics-card"><h3>Grantor Volume</h3><div className="admin-chart-wrap"><Bar data={{ labels: providerLabels, datasets: [{ label: "Students", data: providerValues, backgroundColor: theme === "dark" ? "#34d399" : "#0b572b" }] }} options={chartOptions} /></div></article></section>
+					{renderCollapsibleBox("warning", "Warning Table: Multiple Scholarships", warningRows.length, <div className="admin-filter-bar admin-filter-bar--compact"><input type="text" placeholder="Search warning records" value={warningSearch} onChange={(e) => setWarningSearch(e.target.value)} /></div>, <div className="admin-table-wrap"><table className="admin-management-table admin-management-table--roomy"><thead><tr><th>Student ID</th><th>Full Name</th><th>Conflict Details</th><th>Action</th></tr></thead><tbody>{warningRows.map((row) => <tr key={`${row.studentId}_warn`}><td>{row.studentId}</td><td>{row.fullName}</td><td>{row.details}</td><td><button type="button" className="admin-table-btn" onClick={() => setSelectedStudentId(row.studentId)}>View Information</button></td></tr>)}</tbody></table></div>)}
+					<div className="admin-subpanel-grid">{renderProviderTable("kuya_win", "Kuya Win Table", providerRows.kuya_win)}{renderProviderTable("tina_pancho", "Tina Pancho Table", providerRows.tina_pancho)}{renderProviderTable("morisson", "Morisson Table", providerRows.morisson)}{renderProviderTable("other", "Other Table", providerRows.other)}{renderProviderTable("none", "None Table", providerRows.none)}</div>
+				</section>
+			)
+		}
+
+		if (activeSection === "soe") {
+			return (
+				<section className="admin-management-panel">
+					<div className="admin-panel-head"><h2>SOE Requests</h2><button type="button" className="admin-export-btn" onClick={() => exportSoeRequestsReportPdf(soeFiltered, `Status: ${soeStatus}, Search: ${soeSearch || "-"}`, logo2)}>Generate Report (PDF)</button></div>
+					<div className="admin-filter-bar"><input type="text" placeholder="Search by student or scholarship" value={soeSearch} onChange={(e) => setSoeSearch(e.target.value)} /><select value={soeStatus} onChange={(e) => setSoeStatus(e.target.value)}><option value="All">All Status</option><option value="Pending">Pending</option><option value="Issued">Issued</option><option value="Rejected">Rejected</option></select></div>
+					<div className="admin-table-wrap"><table className="admin-management-table admin-management-table--roomy"><thead><tr><th>Student ID</th><th>Scholarship</th><th>Status</th><th>Date Requested</th><th>Intervention</th></tr></thead><tbody>{soeFiltered.map((row) => { const disabled = isSoeResetDisabled(row.studentId, row.timestamp); return <tr key={row.id}><td>{row.studentId || "-"}</td><td>{row.scholarshipName || "-"}</td><td><span className={toStatusClass(row.status)}>{row.status || "-"}</span></td><td>{formatDate(row.timestamp)}</td><td><button type="button" className="admin-table-btn" disabled={disabled} onClick={() => resetSoeTimer(row.studentId)}>{disabled ? "Timer Reset" : "Reset Timer"}</button></td></tr> })}</tbody></table></div>
+					<article className="admin-subpanel admin-subpanel--spaced"><div className="admin-subpanel-head"><h3>Warning Table: Requests Within 6 Months</h3><span>{soeCooldownWarnings.length} warnings</span></div><div className="admin-table-wrap"><table className="admin-management-table admin-management-table--roomy"><thead><tr><th>Student ID</th><th>Scholarship</th><th>Previous Request</th><th>Current Request</th><th>Action</th></tr></thead><tbody>{soeCooldownWarnings.map((row) => { const disabled = isSoeResetDisabled(row.studentId, row.requestDate); return <tr key={row.id}><td>{row.studentId}</td><td>{row.scholarship}</td><td>{formatDate(row.previousDate)}</td><td>{formatDate(row.requestDate)}</td><td><button type="button" className="admin-table-btn" disabled={disabled} onClick={() => resetSoeTimer(row.studentId)}>{disabled ? "Timer Reset" : "Intervene / Reset Timer"}</button></td></tr> })}</tbody></table></div></article>
+				</section>
+			)
+		}
+
+		if (activeSection === "announcements") {
+			return (
+				<section className="admin-management-panel">
+					<div className="admin-panel-head"><h2>Announcements</h2></div>
+					<form className="admin-announcement-builder" onSubmit={postAnnouncement}>
+						<section className="admin-announcement-card"><h3>Content</h3><label htmlFor="announcement-title">Title</label><input id="announcement-title" type="text" value={announcementTitle} onChange={(e) => setAnnouncementTitle(e.target.value)} /><label htmlFor="announcement-description">Description</label><textarea id="announcement-description" value={announcementDescription} onChange={(e) => setAnnouncementDescription(e.target.value)} /><label htmlFor="announcement-type">Type</label><select id="announcement-type" value={announcementType} onChange={(e) => setAnnouncementType(e.target.value)}><option value="Deadline">Deadline</option><option value="Event">Event</option><option value="Update">Update</option></select></section>
+						<section className="admin-announcement-card"><h3>Media and Schedule</h3><label htmlFor="announcement-images">Upload Images</label><input id="announcement-images" className="admin-file-input-hidden" type="file" accept="image/*" multiple onChange={(e) => setAnnouncementImageFiles(Array.from(e.target.files || []))} /><label htmlFor="announcement-images" className="admin-upload-btn">{announcementImageFiles.length > 0 ? "Change Selected Images" : "Choose Images"}</label><p className="admin-announcement-help">{announcementImageFiles.length > 0 ? `${announcementImageFiles.length} image(s) selected` : "No images selected yet."}</p><button type="button" className="admin-calendar-btn" onClick={() => setShowAnnouncementSchedule((prev) => !prev)}>{announcementStartDate && announcementEndDate ? `${announcementStartDate} to ${announcementEndDate}` : "Set Date Range"}</button>{showAnnouncementSchedule ? <div className="admin-calendar-popover"><div className="admin-calendar-head"><button type="button" disabled={announcementCalendarMonth <= currentMonthStart} onClick={() => setAnnouncementCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}>Prev</button><strong>{announcementCalendarMonth.toLocaleString("en-US", { month: "long", year: "numeric" })}</strong><button type="button" onClick={() => setAnnouncementCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}>Next</button></div><div className="admin-calendar-weekdays">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div><div className="admin-calendar-grid">{announcementCalendarDays.map((cell) => cell.empty ? <span key={cell.key} className="admin-calendar-cell admin-calendar-cell--empty" /> : <button key={cell.key} type="button" className={`admin-calendar-cell ${cell.disabled ? "admin-calendar-cell--disabled" : ""} ${cell.isStart || cell.isEnd ? "admin-calendar-cell--selected" : ""} ${cell.inRange ? "admin-calendar-cell--inrange" : ""}`} disabled={cell.disabled} onClick={() => handleAnnouncementDatePick(cell.iso, cell.disabled)}>{cell.day}</button>)}</div><p className="admin-announcement-help">{announcementStartDate ? `Start: ${announcementStartDate}` : "Select start date"} {announcementEndDate ? `| End: ${announcementEndDate}` : "| Select end date"}</p></div> : null}<button type="submit" className="admin-export-btn" disabled={isPostingAnnouncement}>{isPostingAnnouncement ? "Posting..." : "Post Announcement"}</button></section>
+					</form>
+					<section className="admin-announcement-section"><h3>Current Announcements</h3><div className="admin-announcement-list">{currentAnnouncements.map((item) => <article key={item.id} className="admin-announcement-item"><h4>{item.title || "Announcement"}</h4><p>{item.content || item.description || "-"}</p><div className="admin-announcement-images">{(item.imageUrls || []).map((url) => <img key={`${item.id}_${url}`} src={url} alt={item.title || "Announcement"} className="admin-announcement-image" />)}{!Array.isArray(item.imageUrls) && item.imageUrl ? <img src={item.imageUrl} alt={item.title || "Announcement"} className="admin-announcement-image" /> : null}</div><span>{item.type || "Update"} | {formatDate(item.createdAt || item.date)}{item.startDate || item.endDate ? ` | ${toDateString(item.startDate)} to ${toDateString(item.endDate)}` : ""}</span><button type="button" className="admin-table-btn" onClick={() => archiveAnnouncement(item.id)}>Delete / Archive</button></article>)}</div></section>
+					<section className="admin-announcement-section"><h3>Previous Announcements</h3><div className="admin-announcement-list">{previousAnnouncements.map((item) => <article key={item.id} className="admin-announcement-item admin-announcement-item--previous"><h4>{item.title || "Announcement"}</h4><p>{item.content || item.description || "-"}</p><span>{item.type || "Update"} | {formatDate(item.createdAt || item.date)}</span></article>)}</div></section>
+				</section>
+			)
+		}
+		return renderDashboardHome()
+	}
+
+	const themeReturnIndicator = theme === "dark"
 	return (
-		<div
-			className={`admin-dashboard ${theme === "dark" ? "admin-dashboard--dark" : ""}`}
-		>
-			<header className="admin-header">
-				<div className="admin-header-top-stripe"></div>
-				<div className="admin-header-content">
-					<div className="admin-header-left">
-						<img src={logo2} alt="BulsuScholar" className="admin-header-logo" />
-						<h1 className="admin-header-brand">BulsuScholar</h1>
-					</div>
-					<div className="admin-header-right">
-						<button
-							type="button"
-							className="admin-header-notification-btn"
-							aria-label="Messages"
-						>
-							<HiOutlineMail
-								className="admin-header-notification-icon"
-								aria-hidden
-							/>
-							<span className="admin-header-badge">0</span>
-						</button>
-						<div className="admin-header-user-wrap" ref={userMenuRef}>
-							<button
-								type="button"
-								className="admin-header-user-btn"
-								onClick={() => setUserMenuOpen((o) => !o)}
-								aria-label="User menu"
-								aria-expanded={userMenuOpen}
-							>
-								<HiMenu className="admin-header-menu-icon" aria-hidden />
-								<div className="admin-header-avatar">AD</div>
-							</button>
-							{userMenuOpen && (
-								<div className="admin-verified-dropdown">
-									<div className="admin-verified-dropdown-user">
-										<div className="admin-verified-dropdown-avatar">AD</div>
-										<div className="admin-verified-dropdown-user-info">
-											<p className="admin-verified-dropdown-name">
-												{adminUser?.name || "Administrator"}
-											</p>
-											<p className="admin-verified-dropdown-email">
-												{adminUser?.uid || "Loading..."}
-											</p>
-										</div>
-									</div>
-									<nav className="admin-verified-dropdown-nav">
-										<button
-											type="button"
-											className="admin-verified-dropdown-item"
-										>
-											<HiOutlineUserCircle
-												className="admin-verified-dropdown-item-icon"
-												aria-hidden
-											/>
-											My Profile
-										</button>
-										<button
-											type="button"
-											className="admin-verified-dropdown-item"
-										>
-											<HiOutlineCog
-												className="admin-verified-dropdown-item-icon"
-												aria-hidden
-											/>
-											Settings
-										</button>
-									</nav>
-									<div className="admin-verified-dropdown-theme">
-										<span className="admin-verified-dropdown-theme-label">
-											THEME
-										</span>
-										<div className="admin-verified-dropdown-theme-btns">
-											<button
-												type="button"
-												className={`admin-verified-dropdown-theme-btn ${theme === "light" ? "active" : ""}`}
-												onClick={() => setTheme("light")}
-											>
-												<HiOutlineSun aria-hidden />
-												Light
-											</button>
-											<button
-												type="button"
-												className={`admin-verified-dropdown-theme-btn ${theme === "dark" ? "active" : ""}`}
-												onClick={() => setTheme("dark")}
-											>
-												<HiOutlineMoon aria-hidden />
-												Dark
-											</button>
-										</div>
-									</div>
-									<button
-										type="button"
-										className="admin-verified-dropdown-logout"
-										onClick={() => {
-											setUserMenuOpen(false)
-											// Add logout logic here
-										}}
-									>
-										<HiOutlineLogout
-											className="admin-verified-dropdown-logout-icon"
-											aria-hidden
-										/>
-										Logout
-									</button>
-								</div>
-							)}
-						</div>
-					</div>
+		<div className={`admin-portal ${theme === "dark" ? "admin-portal--dark" : ""}`}>
+			<aside className="admin-sidebar">
+				<div className="admin-sidebar-brand"><img src={logo2} alt="BulsuScholar" /><div><h1>BulsuScholar</h1><p>Admin Portal</p></div></div>
+				<nav className="admin-sidebar-nav">{ADMIN_SECTIONS.map((item) => { const Icon = item.icon; const isActive = activeSection === item.id; return <Link key={item.id} to={item.path} className={`admin-sidebar-link ${isActive ? "active" : ""}`}><Icon /><span>{item.label}</span></Link> })}</nav>
+				<div className="admin-sidebar-bottom">
+					<div className="admin-theme-switch admin-theme-switch--sidebar"><button type="button" className={`${theme === "light" ? "active" : ""} ${themeReturnIndicator ? "admin-theme-return" : ""}`} onClick={() => setTheme("light")}><HiOutlineSun /> Light</button><button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}><HiOutlineMoon /> Dark</button></div>
+					<div className="admin-sidebar-profile"><HiOutlineUserGroup /><div><strong>Administrator</strong><p>System Manager</p></div></div>
+					<button type="button" className="admin-sidebar-logout" onClick={handleLogout}><HiOutlineLogout /> Logout</button>
 				</div>
-			</header>
-
-			{/* Sidebar Navigation */}
-			<div
-				className={`dashboard-sidebar ${sidebarOpen ? "dashboard-sidebar--open" : ""}`}
-			>
-				<nav className="dashboard-sidebar-nav">
-					<a
-						href="#"
-						className="dashboard-sidebar-item dashboard-sidebar-item--active"
-					>
-						Overview
-					</a>
-					<a href="#" className="dashboard-sidebar-item">
-						Analytics
-					</a>
-					<a href="#" className="dashboard-sidebar-item">
-						Applications
-					</a>
-					<a href="#" className="dashboard-sidebar-item">
-						Settings
-					</a>
-					<a href="#" className="dashboard-sidebar-item">
-						Logout
-					</a>
-				</nav>
-			</div>
-
-			<main className="dashboard-main">
-				<div className="dashboard-content">
-					<div className="dashboard-page-title">
-						<h2 className="dashboard-page-heading">Dashboard Overview</h2>
-						<p className="dashboard-page-sub">
-							Monitor and manage college scholarship applications
-						</p>
-					</div>
-
-					{/* Tabs */}
-					<nav className="dashboard-tabs" aria-label="Dashboard sections">
-						<button
-							type="button"
-							className={`dashboard-tab ${activeTab === "Overview" ? "dashboard-tab--active" : ""}`}
-							onClick={() => setActiveTab("Overview")}
-						>
-							Overview
-						</button>
-						<button
-							type="button"
-							className={`dashboard-tab ${activeTab === "Registrations" ? "dashboard-tab--active" : ""}`}
-							onClick={() => setActiveTab("Registrations")}
-						>
-							Registrations
-						</button>
-					</nav>
-
-					{activeTab === "Overview" && (
-						<>
-							{/* stat cards from Firestore */}
-							<section className="dashboard-stats-grid">
-								{overviewStats.map(
-									({ label, value, trend, trendUp, icon: Icon }) => (
-										<div key={label} className="dashboard-stat-card">
-											<div className="dashboard-stat-card-header">
-												<span className="dashboard-stat-label">{label}</span>
-												<span className="dashboard-stat-icon-wrap">
-													{Icon && (
-														<Icon className="dashboard-stat-icon" aria-hidden />
-													)}
-												</span>
-											</div>
-											<div className="dashboard-stat-value">{value}</div>
-											<div
-												className={`dashboard-stat-trend ${trendUp ? "dashboard-stat-trend--up" : "dashboard-stat-trend--down"}`}
-											>
-												{trend}
-											</div>
-										</div>
-									),
-								)}
-							</section>
-
-							{/* Charts row */}
-							<section className="dashboard-charts-row">
-								<div className="dashboard-panel dashboard-panel--chart">
-									<div
-										style={{
-											display: "flex",
-											justifyContent: "space-between",
-											alignItems: "center",
-											marginBottom: "1rem",
-										}}
-									>
-										<div>
-											<h3 className="dashboard-panel-title">
-												College Applications Overview
-											</h3>
-											<p className="dashboard-panel-sub">
-												Application trends for college students
-											</p>
-										</div>
-										<div style={{ display: "flex", gap: "0.5rem" }}>
-											<button
-												onClick={() => setChartTimePeriod("Daily")}
-												style={{
-													padding: "0.5rem 1rem",
-													border:
-														chartTimePeriod === "Daily"
-															? "2px solid #22c55e"
-															: "1px solid #d1d5db",
-													background:
-														chartTimePeriod === "Daily"
-															? "rgba(34, 197, 94, 0.1)"
-															: "#fff",
-													borderRadius: "6px",
-													cursor: "pointer",
-													fontSize: "0.875rem",
-													fontWeight:
-														chartTimePeriod === "Daily" ? "600" : "400",
-													color:
-														chartTimePeriod === "Daily" ? "#22c55e" : "#6b7280",
-												}}
-											>
-												Daily
-											</button>
-											<button
-												onClick={() => setChartTimePeriod("Weekly")}
-												style={{
-													padding: "0.5rem 1rem",
-													border:
-														chartTimePeriod === "Weekly"
-															? "2px solid #22c55e"
-															: "1px solid #d1d5db",
-													background:
-														chartTimePeriod === "Weekly"
-															? "rgba(34, 197, 94, 0.1)"
-															: "#fff",
-													borderRadius: "6px",
-													cursor: "pointer",
-													fontSize: "0.875rem",
-													fontWeight:
-														chartTimePeriod === "Weekly" ? "600" : "400",
-													color:
-														chartTimePeriod === "Weekly"
-															? "#22c55e"
-															: "#6b7280",
-												}}
-											>
-												Weekly
-											</button>
-											<button
-												onClick={() => setChartTimePeriod("Monthly")}
-												style={{
-													padding: "0.5rem 1rem",
-													border:
-														chartTimePeriod === "Monthly"
-															? "2px solid #22c55e"
-															: "1px solid #d1d5db",
-													background:
-														chartTimePeriod === "Monthly"
-															? "rgba(34, 197, 94, 0.1)"
-															: "#fff",
-													borderRadius: "6px",
-													cursor: "pointer",
-													fontSize: "0.875rem",
-													fontWeight:
-														chartTimePeriod === "Monthly" ? "600" : "400",
-													color:
-														chartTimePeriod === "Monthly"
-															? "#22c55e"
-															: "#6b7280",
-												}}
-											>
-												Monthly
-											</button>
-											<button
-												onClick={() => setChartTimePeriod("Yearly")}
-												style={{
-													padding: "0.5rem 1rem",
-													border:
-														chartTimePeriod === "Yearly"
-															? "2px solid #22c55e"
-															: "1px solid #d1d5db",
-													background:
-														chartTimePeriod === "Yearly"
-															? "rgba(34, 197, 94, 0.1)"
-															: "#fff",
-													borderRadius: "6px",
-													cursor: "pointer",
-													fontSize: "0.875rem",
-													fontWeight:
-														chartTimePeriod === "Yearly" ? "600" : "400",
-													color:
-														chartTimePeriod === "Yearly"
-															? "#22c55e"
-															: "#6b7280",
-												}}
-											>
-												Yearly
-											</button>
-										</div>
-									</div>
-									<div className="dashboard-chart-wrap">
-										<Line data={getChartData()} options={lineChartOptions} />
-									</div>
-								</div>
-								<div className="dashboard-panel dashboard-panel--chart">
-									<h3 className="dashboard-panel-title">
-										Scholarship Distribution
-									</h3>
-									<p className="dashboard-panel-sub">
-										College applications by course/program
-									</p>
-									<div className="dashboard-pie-container">
-										<div className="dashboard-chart-wrap dashboard-chart-wrap--pie">
-											<Doughnut
-												data={scholarshipDistribution}
-												options={doughnutOptions}
-											/>
-										</div>
-										<div className="dashboard-pie-stats">
-											{scholarshipDistribution.labels.map((label, idx) => (
-												<div key={label} className="pie-stat-item">
-													<span
-														className="stat-color"
-														style={{
-															backgroundColor:
-																scholarshipDistribution.datasets[0]
-																	?.backgroundColor?.[idx],
-														}}
-													></span>
-													<span>{label}</span>
-												</div>
-											))}
-										</div>
-									</div>
-								</div>
-							</section>
-
-							{/* Pending Registrations Preview */}
-							<section className="dashboard-panel dashboard-panel--table">
-								<div className="dashboard-panel-header">
-									<div>
-										<h3 className="dashboard-panel-title">
-											Pending Registrations Preview
-										</h3>
-										<p className="dashboard-panel-sub">
-											Students awaiting verification and approval
-										</p>
-									</div>
-									<button
-										type="button"
-										style={{
-											padding: "0.5rem 1rem",
-											background: "#16a34a",
-											color: "#fff",
-											border: "none",
-											borderRadius: "6px",
-											cursor: "pointer",
-											fontSize: "0.875rem",
-											fontWeight: "600",
-											transition: "all 0.2s ease",
-										}}
-										onClick={() => setActiveTab("Registrations")}
-										onMouseEnter={(e) =>
-											(e.target.style.background = "#15803d")
-										}
-										onMouseLeave={(e) =>
-											(e.target.style.background = "#16a34a")
-										}
-									>
-										View All ({pendingStudents.length})
-									</button>
-								</div>
-								<div className="dashboard-table-wrap">
-									<table className="dashboard-table">
-										<thead>
-											<tr>
-												<th>Student Name</th>
-												<th>Student No.</th>
-												<th>Course</th>
-												<th>Year / Section</th>
-												<th>COR File</th>
-											</tr>
-										</thead>
-										<tbody>
-											{isLoadingPending ? (
-												<tr>
-													<td
-														colSpan="5"
-														style={{
-															textAlign: "center",
-															padding: "2rem",
-															color: "#6b7280",
-														}}
-													>
-														Loading pending students...
-													</td>
-												</tr>
-											) : pendingStudents.length === 0 ? (
-												<tr>
-													<td
-														colSpan="5"
-														style={{
-															textAlign: "center",
-															padding: "2rem",
-															color: "#6b7280",
-														}}
-													>
-														No pending registrations at the moment
-													</td>
-												</tr>
-											) : (
-												pendingStudents.slice(0, 5).map((student) => {
-													const fullName = [
-														student.fname,
-														student.mname,
-														student.lname,
-													]
-														.filter(Boolean)
-														.join(" ")
-													const studentNo = student.studentnumber || student.id
-													const fileMeta = student.corFile || null
-													return (
-														<tr key={student.id}>
-															<td>{fullName || "—"}</td>
-															<td>
-																<span className="dashboard-table-id">
-																	{studentNo || "—"}
-																</span>
-															</td>
-															<td>{student.course || "—"}</td>
-															<td>
-																Yr {student.year || "—"} / Sec{" "}
-																{student.section || "—"}
-															</td>
-															<td>
-																{fileMeta ? (
-																	<button
-																		type="button"
-																		className="dashboard-preview-btn"
-																		onClick={() => {
-																			setPreviewImgError(false)
-																			setPreviewFile({
-																				studentName: fullName || "Student",
-																				studentNo,
-																				file: fileMeta,
-																			})
-																		}}
-																	>
-																		Preview
-																	</button>
-																) : (
-																	<span
-																		style={{
-																			fontSize: "0.8rem",
-																			color: "#9ca3af",
-																		}}
-																	>
-																		No file
-																	</span>
-																)}
-															</td>
-														</tr>
-													)
-												})
-											)}
-										</tbody>
-									</table>
-								</div>
-							</section>
-						</>
-					)}
-
-					{activeTab === "Registrations" && (
-						<>
-							{/* Approvals Analytics KPI Cards */}
-							<section className="dashboard-stats-grid">
-								<div className="dashboard-stat-card dashboard-stat-card--blue">
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">
-											Pending Reviews
-										</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#3b82f6" }}
-										>
-											<HiOutlineClock
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">
-										{pendingStudents.length}
-									</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--neutral">
-										Waiting for approval
-									</div>
-								</div>
-								<div className="dashboard-stat-card dashboard-stat-card--green">
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">
-											Approved Students
-										</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#22c55e" }}
-										>
-											<HiOutlineCheckCircle
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">
-										{approvedStudents.length}
-									</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										Total approved
-									</div>
-								</div>
-								<div className="dashboard-stat-card dashboard-stat-card--red">
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">
-											Rejected Students
-										</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#ef4444" }}
-										>
-											<HiOutlineXCircle
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">
-										{rejectedStudents.length}
-									</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--down">
-										Total rejected
-									</div>
-								</div>
-							</section>
-
-							<section className="dashboard-panel dashboard-panel--table">
-								<div className="dashboard-panel-header">
-									<div>
-										<h3 className="dashboard-panel-title">
-											Student Registrations
-										</h3>
-										<p className="dashboard-panel-sub">
-											View and manage student registrations.
-										</p>
-									</div>
-								</div>
-
-								{/* Approval Status Filter Buttons */}
-								<div
-									style={{
-										display: "flex",
-										gap: "0.5rem",
-										marginBottom: "1.5rem",
-										padding: "0 0 1rem 0",
-										borderBottom: "1px solid #e5e7eb",
-									}}
-								>
-									{["Pending", "Approved", "Rejected"].map((status) => (
-										<button
-											type="button"
-											key={status}
-											onClick={() => setApprovalStatusFilter(status)}
-											style={{
-												padding: "0.5rem 1rem",
-												border:
-													approvalStatusFilter === status
-														? "2px solid #16a34a"
-														: "1px solid #d1d5db",
-												background:
-													approvalStatusFilter === status
-														? "rgba(22, 163, 74, 0.08)"
-														: "#fff",
-												borderRadius: "6px",
-												cursor: "pointer",
-												fontSize: "0.875rem",
-												fontWeight:
-													approvalStatusFilter === status ? "600" : "500",
-												color:
-													approvalStatusFilter === status
-														? "#16a34a"
-														: "#6b7280",
-												transition: "all 0.2s ease",
-											}}
-										>
-											{status} (
-											{status === "Pending"
-												? pendingStudents.length
-												: status === "Approved"
-													? approvedStudents.length
-													: rejectedStudents.length}
-											)
-										</button>
-									))}
-								</div>
-
-								{isLoadingPending ? (
-									<p className="dashboard-placeholder">Loading students…</p>
-								) : (approvalStatusFilter === "Pending" &&
-										pendingStudents.length === 0) ||
-								  (approvalStatusFilter === "Approved" &&
-										approvedStudents.length === 0) ||
-								  (approvalStatusFilter === "Rejected" &&
-										rejectedStudents.length === 0) ? (
-									<p className="dashboard-placeholder">
-										There are no {approvalStatusFilter.toLowerCase()} student
-										accounts at the moment.
-									</p>
-								) : (
-									<div className="dashboard-table-wrap">
-										<table className="dashboard-table">
-											<thead>
-												<tr>
-													<th>Student</th>
-													<th>Student No.</th>
-													<th>Course / Year &amp; Section</th>
-													<th>Registration No.</th>
-													<th>COR File</th>
-													<th>Actions</th>
-												</tr>
-											</thead>
-											<tbody>
-												{(() => {
-													let studentsToShow = []
-													if (approvalStatusFilter === "Pending") {
-														studentsToShow = pendingStudents
-													} else if (approvalStatusFilter === "Approved") {
-														studentsToShow = approvedStudents
-													} else if (approvalStatusFilter === "Rejected") {
-														studentsToShow = rejectedStudents
-													}
-													return studentsToShow.map((s) => {
-														const fullName = [s.fname, s.mname, s.lname]
-															.filter(Boolean)
-															.join(" ")
-														const studentNo = s.studentnumber || s.id
-														const fileMeta = s.corFile || null
-														return (
-															<tr key={s.id}>
-																<td>
-																	<div
-																		style={{
-																			display: "flex",
-																			flexDirection: "column",
-																		}}
-																	>
-																		<span style={{ fontWeight: 600 }}>
-																			{fullName || "Student"}
-																		</span>
-																	</div>
-																</td>
-																<td>
-																	<span className="dashboard-table-id">
-																		{studentNo || "—"}
-																	</span>
-																</td>
-																<td>
-																	<div
-																		style={{
-																			display: "flex",
-																			flexDirection: "column",
-																		}}
-																	>
-																		<span>{s.course || "—"}</span>
-																		<span
-																			style={{
-																				fontSize: "0.8rem",
-																				color: "#6b7280",
-																			}}
-																		>
-																			Year {s.year || "—"} / Sec{" "}
-																			{s.section || "—"}
-																		</span>
-																	</div>
-																</td>
-																<td>{s.registrationNumber || "—"}</td>
-																<td>
-																	{fileMeta ? (
-																		<button
-																			type="button"
-																			className="dashboard-preview-btn"
-																			onClick={() => {
-																				setPreviewImgError(false)
-																				setPreviewFile({
-																					studentName: fullName || "Student",
-																					studentNo,
-																					file: fileMeta,
-																				})
-																			}}
-																		>
-																			Preview
-																		</button>
-																	) : (
-																		<span
-																			style={{
-																				fontSize: "0.8rem",
-																				color: "#9ca3af",
-																			}}
-																		>
-																			No COR uploaded
-																		</span>
-																	)}
-																</td>
-																<td>
-																	<div className="dashboard-approval-actions">
-																		{approvalStatusFilter === "Pending" ? (
-																			<>
-																				<button
-																					type="button"
-																					className="dashboard-approval-btn dashboard-approval-btn--approve"
-																					onClick={async () => {
-																						try {
-																							const studentId = studentNo
-																							await setDoc(
-																								doc(db, "students", studentId),
-																								{
-																									fname: s.fname || "",
-																									mname: s.mname || "",
-																									lname: s.lname || "",
-																									course: s.course || "",
-																									year: s.year || "",
-																									section: s.section || "",
-																									studentnumber: studentId,
-																									userType: "student",
-																									isValidated: true,
-																									isPending: false,
-																									validatedAt:
-																										serverTimestamp(),
-																									registrationNumber:
-																										s.registrationNumber || "",
-																									corFile: s.corFile || null,
-																									password: s.password || "",
-																								},
-																								{ merge: true },
-																							)
-																							await deleteDoc(
-																								doc(db, "pendingStudent", s.id),
-																							)
-																							setPendingStudents((prev) =>
-																								prev.filter(
-																									(p) => p.id !== s.id,
-																								),
-																							)
-																							setApprovedStudents((prev) => [
-																								...prev,
-																								{
-																									id: studentNo,
-																									status: "approved",
-																									fname: s.fname || "",
-																									mname: s.mname || "",
-																									lname: s.lname || "",
-																									course: s.course || "",
-																									year: s.year || "",
-																									section: s.section || "",
-																									registrationNumber:
-																										s.registrationNumber || "",
-																									corFile: s.corFile || null,
-																									validatedAt: new Date(),
-																								},
-																							])
-																						} catch (err) {
-																							// eslint-disable-next-line no-console
-																							console.error(
-																								"Approve failed",
-																								err,
-																							)
-																						}
-																					}}
-																				>
-																					Approve
-																				</button>
-																				<button
-																					type="button"
-																					className="dashboard-approval-btn dashboard-approval-btn--reject"
-																					onClick={async () => {
-																						try {
-																							await setDoc(
-																								doc(db, "rejected", s.id),
-																								{
-																									...s,
-																									rejectedAt: serverTimestamp(),
-																								},
-																							)
-																							await deleteDoc(
-																								doc(db, "pendingStudent", s.id),
-																							)
-																							setPendingStudents((prev) =>
-																								prev.filter(
-																									(p) => p.id !== s.id,
-																								),
-																							)
-																							setRejectedStudents((prev) => [
-																								...prev,
-																								{
-																									id: s.id,
-																									status: "rejected",
-																									fname: s.fname || "",
-																									mname: s.mname || "",
-																									lname: s.lname || "",
-																									course: s.course || "",
-																									year: s.year || "",
-																									section: s.section || "",
-																									registrationNumber:
-																										s.registrationNumber || "",
-																									corFile: s.corFile || null,
-																									rejectedAt: new Date(),
-																								},
-																							])
-																						} catch (err) {
-																							// eslint-disable-next-line no-console
-																							console.error(
-																								"Reject failed",
-																								err,
-																							)
-																						}
-																					}}
-																				>
-																					Reject
-																				</button>
-																			</>
-																		) : (
-																			<span
-																				className={`dashboard-status-pill ${
-																					approvalStatusFilter === "Approved"
-																						? "dashboard-status-pill--approved"
-																						: "dashboard-status-pill--rejected"
-																				}`}
-																				style={{
-																					padding: "0.5rem 1rem",
-																					borderRadius: "9999px",
-																					fontSize: "0.875rem",
-																					fontWeight: "600",
-																					backgroundColor:
-																						approvalStatusFilter === "Approved"
-																							? "rgba(22, 163, 74, 0.1)"
-																							: "rgba(220, 38, 38, 0.1)",
-																					color:
-																						approvalStatusFilter === "Approved"
-																							? "#16a34a"
-																							: "#dc2626",
-																				}}
-																			>
-																				{approvalStatusFilter === "Approved"
-																					? "✓ Approved"
-																					: "✕ Rejected"}
-																			</span>
-																		)}
-																	</div>
-																</td>
-															</tr>
-														)
-													})
-												})()}
-											</tbody>
-										</table>
-									</div>
-								)}
-							</section>
-						</>
-					)}
-
-					{activeTab === "Analytics" && (
-						<>
-							{/* Analytics KPI Cards */}
-							<section className="dashboard-stats-grid">
-								<div className="dashboard-stat-card dashboard-stat-card--blue">
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">
-											Scholarship Approval Rate
-										</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#3b82f6" }}
-										>
-											<HiOutlineCheckCircle
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">78.4%</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										↑ 6.3% from last month
-									</div>
-								</div>
-								<div className="dashboard-stat-card dashboard-stat-card--purple">
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">
-											Avg Review Time
-										</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#8b5cf6" }}
-										>
-											<HiOutlineClock
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">3.5 days</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--down">
-										↓ 0.8 days from last month
-									</div>
-								</div>
-								<div className="dashboard-stat-card dashboard-stat-card--pink">
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">
-											Active Recipients
-										</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#ec4899" }}
-										>
-											<HiOutlineUserGroup
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">1,256</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										↑ 89 new recipients
-									</div>
-								</div>
-							</section>
-
-							{/* Analytics Charts */}
-							<section className="dashboard-charts-row">
-								<div className="dashboard-panel dashboard-panel--chart">
-									<div
-										style={{
-											display: "flex",
-											justifyContent: "space-between",
-											alignItems: "center",
-											marginBottom: "1rem",
-										}}
-									>
-										<div>
-											<h3 className="dashboard-panel-title">
-												Scholarship Completion Rates
-											</h3>
-											<p className="dashboard-panel-sub">
-												Percentage of scholarships disbursed by period
-											</p>
-										</div>
-										<div style={{ display: "flex", gap: "0.5rem" }}>
-											<button
-												onClick={() => setChartTimePeriod("Daily")}
-												style={{
-													padding: "0.5rem 1rem",
-													border:
-														chartTimePeriod === "Daily"
-															? "2px solid #22c55e"
-															: "1px solid #d1d5db",
-													background:
-														chartTimePeriod === "Daily"
-															? "rgba(34, 197, 94, 0.1)"
-															: "#fff",
-													borderRadius: "6px",
-													cursor: "pointer",
-													fontSize: "0.875rem",
-													fontWeight:
-														chartTimePeriod === "Daily" ? "600" : "400",
-													color:
-														chartTimePeriod === "Daily" ? "#22c55e" : "#6b7280",
-												}}
-											>
-												Daily
-											</button>
-											<button
-												onClick={() => setChartTimePeriod("Weekly")}
-												style={{
-													padding: "0.5rem 1rem",
-													border:
-														chartTimePeriod === "Weekly"
-															? "2px solid #22c55e"
-															: "1px solid #d1d5db",
-													background:
-														chartTimePeriod === "Weekly"
-															? "rgba(34, 197, 94, 0.1)"
-															: "#fff",
-													borderRadius: "6px",
-													cursor: "pointer",
-													fontSize: "0.875rem",
-													fontWeight:
-														chartTimePeriod === "Weekly" ? "600" : "400",
-													color:
-														chartTimePeriod === "Weekly"
-															? "#22c55e"
-															: "#6b7280",
-												}}
-											>
-												Weekly
-											</button>
-											<button
-												onClick={() => setChartTimePeriod("Monthly")}
-												style={{
-													padding: "0.5rem 1rem",
-													border:
-														chartTimePeriod === "Monthly"
-															? "2px solid #22c55e"
-															: "1px solid #d1d5db",
-													background:
-														chartTimePeriod === "Monthly"
-															? "rgba(34, 197, 94, 0.1)"
-															: "#fff",
-													borderRadius: "6px",
-													cursor: "pointer",
-													fontSize: "0.875rem",
-													fontWeight:
-														chartTimePeriod === "Monthly" ? "600" : "400",
-													color:
-														chartTimePeriod === "Monthly"
-															? "#22c55e"
-															: "#6b7280",
-												}}
-											>
-												Monthly
-											</button>
-											<button
-												onClick={() => setChartTimePeriod("Yearly")}
-												style={{
-													padding: "0.5rem 1rem",
-													border:
-														chartTimePeriod === "Yearly"
-															? "2px solid #22c55e"
-															: "1px solid #d1d5db",
-													background:
-														chartTimePeriod === "Yearly"
-															? "rgba(34, 197, 94, 0.1)"
-															: "#fff",
-													borderRadius: "6px",
-													cursor: "pointer",
-													fontSize: "0.875rem",
-													fontWeight:
-														chartTimePeriod === "Yearly" ? "600" : "400",
-													color:
-														chartTimePeriod === "Yearly"
-															? "#22c55e"
-															: "#6b7280",
-												}}
-											>
-												Yearly
-											</button>
-										</div>
-									</div>
-									<div className="dashboard-chart-wrap">
-										<Bar data={getChartData()} options={lineChartOptions} />
-									</div>
-								</div>
-							</section>
-
-							{/* Analytics Metrics Table */}
-							<section className="dashboard-panel">
-								<h3 className="dashboard-panel-title">Performance Metrics</h3>
-								<p className="dashboard-panel-sub">
-									Key performance indicators for the scholarship program
-								</p>
-								<div className="dashboard-table-wrap">
-									<table className="dashboard-table">
-										<thead>
-											<tr>
-												<th>Metric</th>
-												<th>Current Month</th>
-												<th>Previous Month</th>
-												<th>Change</th>
-												<th>Target</th>
-											</tr>
-										</thead>
-										<tbody>
-											<tr>
-												<td>
-													<strong>Applications Received</strong>
-												</td>
-												<td>284</td>
-												<td>256</td>
-												<td>
-													<span style={{ color: "#22c55e" }}>↑ 10.9%</span>
-												</td>
-												<td>250</td>
-											</tr>
-											<tr>
-												<td>
-													<strong>Approval Rate</strong>
-												</td>
-												<td>71.8%</td>
-												<td>68.5%</td>
-												<td>
-													<span style={{ color: "#22c55e" }}>↑ 3.3%</span>
-												</td>
-												<td>70%</td>
-											</tr>
-											<tr>
-												<td>
-													<strong>Avg Review Time</strong>
-												</td>
-												<td>3.2 days</td>
-												<td>4.1 days</td>
-												<td>
-													<span style={{ color: "#ef4444" }}>↓ 0.9 days</span>
-												</td>
-												<td>3 days</td>
-											</tr>
-											<tr>
-												<td>
-													<strong>Student Satisfaction</strong>
-												</td>
-												<td>4.6/5</td>
-												<td>4.4/5</td>
-												<td>
-													<span style={{ color: "#22c55e" }}>↑ 0.2</span>
-												</td>
-												<td>4.5/5</td>
-											</tr>
-										</tbody>
-									</table>
-								</div>
-							</section>
-						</>
-					)}
-
-					{activeTab === "Applications" && (
-						<>
-							{/* Applications Status Cards - Dynamic from Firestore */}
-							<section className="dashboard-stats-grid">
-								<div
-									className="dashboard-stat-card dashboard-stat-card--red"
-									style={{ cursor: "pointer", transition: "all 0.3s ease" }}
-									onClick={() => setAppStatusFilter("Submitted")}
-									onMouseEnter={(e) =>
-										(e.currentTarget.style.transform = "translateY(-4px)")
-									}
-									onMouseLeave={(e) =>
-										(e.currentTarget.style.transform = "translateY(0)")
-									}
-								>
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">Pending</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#ef4444" }}
-										>
-											<HiOutlineDocumentText
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">
-										{
-											applications.filter(
-												(a) => (a.status || "").toLowerCase() === "pending",
-											).length
-										}
-									</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										Awaiting review
-									</div>
-								</div>
-								<div
-									className="dashboard-stat-card dashboard-stat-card--yellow"
-									style={{ cursor: "pointer", transition: "all 0.3s ease" }}
-									onClick={() => setAppStatusFilter("In Review")}
-									onMouseEnter={(e) =>
-										(e.currentTarget.style.transform = "translateY(-4px)")
-									}
-									onMouseLeave={(e) =>
-										(e.currentTarget.style.transform = "translateY(0)")
-									}
-								>
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">In Review</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#eab308" }}
-										>
-											<HiOutlineClock
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">
-										{
-											applications.filter(
-												(a) =>
-													(a.status || "").toLowerCase() === "under review",
-											).length
-										}
-									</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										Being processed
-									</div>
-								</div>
-								<div
-									className="dashboard-stat-card dashboard-stat-card--teal"
-									style={{ cursor: "pointer", transition: "all 0.3s ease" }}
-									onClick={() => setAppStatusFilter("Approved")}
-									onMouseEnter={(e) =>
-										(e.currentTarget.style.transform = "translateY(-4px)")
-									}
-									onMouseLeave={(e) =>
-										(e.currentTarget.style.transform = "translateY(0)")
-									}
-								>
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">Approved</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#14b8a6" }}
-										>
-											<HiOutlineCheckCircle
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">
-										{
-											applications.filter(
-												(a) => (a.status || "").toLowerCase() === "approved",
-											).length
-										}
-									</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--up">
-										Scholarships granted
-									</div>
-								</div>
-								<div
-									className="dashboard-stat-card dashboard-stat-card--darkred"
-									style={{ cursor: "pointer", transition: "all 0.3s ease" }}
-									onClick={() => setAppStatusFilter("Rejected")}
-									onMouseEnter={(e) =>
-										(e.currentTarget.style.transform = "translateY(-4px)")
-									}
-									onMouseLeave={(e) =>
-										(e.currentTarget.style.transform = "translateY(0)")
-									}
-								>
-									<div className="dashboard-stat-card-header">
-										<span className="dashboard-stat-label">Rejected</span>
-										<span
-											className="dashboard-stat-icon-wrap"
-											style={{ color: "#dc2626" }}
-										>
-											<HiOutlineXCircle
-												className="dashboard-stat-icon"
-												aria-hidden
-											/>
-										</span>
-									</div>
-									<div className="dashboard-stat-value">
-										{
-											applications.filter(
-												(a) => (a.status || "").toLowerCase() === "rejected",
-											).length
-										}
-									</div>
-									<div className="dashboard-stat-trend dashboard-stat-trend--down">
-										Applications denied
-									</div>
-								</div>
-							</section>
-
-							{/* Filter Section */}
-							<section className="dashboard-panel">
-								<h3 className="dashboard-panel-title">Application Filters</h3>
-								<div className="dashboard-filters">
-									<select
-										className="dashboard-filter-select"
-										value={appStatusFilter}
-										onChange={(e) => setAppStatusFilter(e.target.value)}
-									>
-										<option>All Statuses</option>
-										<option>Submitted</option>
-										<option>In Review</option>
-										<option>Approved</option>
-										<option>Rejected</option>
-									</select>
-									<select
-										className="dashboard-filter-select"
-										value={appCourseFilter}
-										onChange={(e) => setAppCourseFilter(e.target.value)}
-									>
-										<option>All Courses</option>
-										<option>Engineering</option>
-										<option>Business Administration</option>
-										<option>Education</option>
-										<option>Nursing</option>
-										<option>Computer Science</option>
-									</select>
-									<select
-										className="dashboard-filter-select"
-										value={appDateFilter}
-										onChange={(e) => setAppDateFilter(e.target.value)}
-									>
-										<option>All Dates</option>
-										<option>This Week</option>
-										<option>This Month</option>
-										<option>Last Month</option>
-										<option>Last 3 Months</option>
-									</select>
-								</div>
-							</section>
-
-							{/* Applications Table */}
-							<section className="dashboard-panel">
-								<h3 className="dashboard-panel-title">All Applications</h3>
-								<p className="dashboard-panel-sub">
-									Complete list of all scholarship applications
-								</p>
-								<div className="dashboard-table-wrap">
-									<table className="dashboard-table">
-										<thead>
-											<tr>
-												<th>Application ID</th>
-												<th>Student Name</th>
-												<th>Course</th>
-												<th>Scholarship</th>
-												<th>Date</th>
-												<th>Status</th>
-											</tr>
-										</thead>
-										<tbody>
-											{isLoadingApplications ? (
-												<tr>
-													<td
-														colSpan="6"
-														style={{
-															textAlign: "center",
-															padding: "2rem",
-															color: "#6b7280",
-														}}
-													>
-														Loading applications...
-													</td>
-												</tr>
-											) : filteredApplications.length === 0 ? (
-												<tr>
-													<td
-														colSpan="6"
-														style={{
-															textAlign: "center",
-															padding: "2rem",
-															color: "#6b7280",
-														}}
-													>
-														No applications match the selected filters
-													</td>
-												</tr>
-											) : (
-												filteredApplications.map((row) => (
-													<tr key={row.id}>
-														<td>
-															<span className="dashboard-table-id">
-																{row.id || "—"}
-															</span>
-														</td>
-														<td>{row.studentName || row.fname || "—"}</td>
-														<td>{row.course || "—"}</td>
-														<td>{row.scholarship || "—"}</td>
-														<td>
-															{row.createdAt
-																? new Date(row.createdAt).toLocaleDateString()
-																: row.date || "—"}
-														</td>
-														<td>
-															<span
-																className={`dashboard-status-pill ${statusClass(row.status)}`}
-															>
-																{row.status || "pending"}
-															</span>
-														</td>
-													</tr>
-												))
-											)}
-										</tbody>
-									</table>
-								</div>
-							</section>
-						</>
-					)}
-				</div>
-			</main>
-
-			{previewFile && (
-				<div
-					className="dashboard-preview-backdrop"
-					onClick={() => setPreviewFile(null)}
-					role="presentation"
-				>
-					<div
-						className="dashboard-preview-modal"
-						onClick={(e) => e.stopPropagation()}
-						role="dialog"
-						aria-modal="true"
-						aria-label="Preview COR file"
-					>
-						<div className="dashboard-preview-header">
-							<div>
-								<h3 className="dashboard-preview-title">
-									{previewFile.studentName}
-								</h3>
-								<p className="dashboard-preview-sub">
-									Student No. {previewFile.studentNo || "—"}
-								</p>
-							</div>
-							<button
-								type="button"
-								className="dashboard-preview-close"
-								onClick={() => setPreviewFile(null)}
-								aria-label="Close preview"
-							>
-								×
-							</button>
-						</div>
-
-						<div className="dashboard-preview-body">
-							{previewFile.file?.url && !previewImgError ? (
-								<img
-									src={previewFile.file.url}
-									alt={previewFile.file.name || "COR"}
-									className="dashboard-preview-image"
-									onError={() => setPreviewImgError(true)}
-								/>
-							) : previewFile.file?.url && previewImgError ? (
-								<p className="dashboard-placeholder">
-									Image could not be loaded. The URL may have expired.
-								</p>
-							) : (
-								<p className="dashboard-placeholder">
-									Preview is not available because no file URL was stored.
-								</p>
-							)}
-						</div>
-					</div>
-				</div>
-			)}
+			</aside>
+			<main className="admin-workspace">{renderSection()}</main>
+			{selectedStudent ? <div className="admin-detail-backdrop" role="presentation"><div className="admin-detail-modal" role="dialog" aria-modal="true" aria-label="Student details"><button type="button" className="admin-detail-close" onClick={() => setSelectedStudentId("")}><HiX /></button><div className="admin-detail-header"><img src={selectedStudent.profileImageUrl || selectedStudent.imageUrl || logo2} alt={selectedStudent.fullName} className="admin-detail-avatar" /><div><h3>{selectedStudent.fullName}</h3><p className="admin-detail-meta">Student ID: {selectedStudent.id}</p></div></div><div className="admin-detail-grid"><p className="admin-detail-meta">Course: {selectedStudent.course || "-"}</p><p className="admin-detail-meta">Year & Section: {[selectedStudent.year || "-", selectedStudent.section || selectedStudent.yearSection || "-"].join(" / ")}</p><p className="admin-detail-meta">Last SOE Request: {selectedStudentLastSoe}</p><p className="admin-detail-meta">Account: {selectedStudent.accountStatus || "active"}</p></div><div className="admin-detail-docs"><strong>Documents</strong><a href={selectedStudent.corFile?.url || "#"} target="_blank" rel="noreferrer">View COR</a><a href={selectedStudent.cogFile?.url || "#"} target="_blank" rel="noreferrer">View COG</a><a href={selectedStudent.schoolIdFile?.url || selectedStudent.studentIdFile?.url || "#"} target="_blank" rel="noreferrer">View School ID</a></div><div className="admin-detail-scholarships"><strong>Scholarships (Saved/Applied)</strong>{selectedStudent.scholarships.length === 0 ? <p className="dashboard-placeholder">No scholarship entries.</p> : selectedStudent.scholarships.map((sch) => <div key={sch.id || `${sch.name}_${sch.provider}`} className="admin-detail-scholarship-row"><div><p>{sch.name || sch.provider || "Scholarship"}</p><span>{sch.status || "Saved"}</span></div><button type="button" className="admin-table-btn admin-table-btn--muted" onClick={() => setScholarshipBlocked(selectedStudent.id, sch.id, !(sch.adminBlocked === true))}>{sch.adminBlocked === true ? "Unblock Scholarship" : "Block Scholarship"}</button></div>)}</div><div className="admin-detail-actions"><button type="button" className="admin-danger-btn" disabled={isBusy} onClick={() => setAccountBlocked(selectedStudent.id, true)}><HiOutlineShieldCheck /> Block Account</button><button type="button" className="admin-safe-btn" disabled={isBusy} onClick={() => setAccountBlocked(selectedStudent.id, false)}>Unblock Account</button><button type="button" className="admin-danger-btn admin-danger-btn--hard" disabled={isBusy} onClick={() => removeStudent(selectedStudent.id)}><HiOutlineTrash /> Remove Entirely</button></div></div></div> : null}
 		</div>
 	)
 }

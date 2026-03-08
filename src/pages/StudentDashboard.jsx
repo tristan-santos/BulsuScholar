@@ -1,23 +1,28 @@
 /**
- * Student Dashboard - Scholarship system overview for students.
+ * Student Dashboard - Professional bento-style scholarship portal.
  */
-import { useState, useEffect, useRef } from "react"
-import { useNavigate, useLocation } from "react-router-dom"
-import { doc, getDoc } from "firebase/firestore"
-import { toast } from "react-toastify"
-import { db } from "../../firebase"
-import useThemeMode from "../hooks/useThemeMode"
+import { useEffect, useMemo, useState } from "react"
+import { Link, useNavigate } from "react-router-dom"
 import {
-	HiOutlineUserCircle,
+	collection,
+	doc,
+	getDoc,
+	getDocs,
+	limit,
+	orderBy,
+	query,
+} from "firebase/firestore"
+import {
 	HiOutlineAcademicCap,
 	HiOutlineCheckCircle,
 	HiOutlineClock,
-	HiOutlineDocumentText,
-	HiOutlineSun,
 	HiOutlineMoon,
-	HiOutlineLogout,
-	HiMenu,
+	HiOutlineSun,
 } from "react-icons/hi"
+import { db } from "../../firebase"
+import useThemeMode from "../hooks/useThemeMode"
+import { normalizeScholarshipList } from "../services/scholarshipService"
+import MagicBento from "../components/MagicBento"
 import logo2 from "../assets/logo2.png"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
@@ -26,58 +31,57 @@ function checkValidated(userData) {
 	if (!userData) return false
 	return Boolean(
 		userData.isValidated === true ||
-		userData.isValidated === "true" ||
-		userData.validated === true ||
-		userData.validated === "true" ||
-		(userData.validatedAt != null && userData.validatedAt !== ""),
+			userData.isValidated === "true" ||
+			userData.validated === true ||
+			userData.validated === "true" ||
+			(userData.validatedAt != null && userData.validatedAt !== ""),
 	)
+}
+
+function formatAnnouncementDate(value) {
+	if (!value) return ""
+	const date = value?.toDate ? value.toDate() : new Date(value)
+	if (Number.isNaN(date.getTime())) return ""
+	return date.toLocaleDateString("en-PH", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	})
+}
+
+function iconForAnnouncement(type = "") {
+	const normalized = type.toLowerCase()
+	if (normalized.includes("deadline")) return "Deadline"
+	if (normalized.includes("event")) return "Event"
+	if (normalized.includes("policy")) return "Policy"
+	return "Update"
 }
 
 export default function StudentDashboard() {
 	const navigate = useNavigate()
-	const location = useLocation()
-	const [user, setUser] = useState(location.state?.user ?? null)
-	const [userLoaded, setUserLoaded] = useState(!!location.state?.user)
+	const [user, setUser] = useState(null)
+	const [userLoaded, setUserLoaded] = useState(false)
+	const [announcements, setAnnouncements] = useState([])
+	const { theme, setTheme } = useThemeMode()
 
 	useEffect(() => {
-		if (user != null) {
+		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
+		const storedType = sessionStorage.getItem("bulsuscholar_userType")
+
+		if (!storedUserId || storedType !== "student") {
 			setUserLoaded(true)
 			return
 		}
-		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
-		const storedType = sessionStorage.getItem("bulsuscholar_userType")
-		if (storedUserId && storedType === "student") {
-			getDoc(doc(db, "students", storedUserId))
-				.then((snap) => {
-					if (snap.exists()) setUser(snap.data())
-					setUserLoaded(true)
-				})
-				.catch(() => setUserLoaded(true))
-		} else {
-			setUserLoaded(true)
-		}
+
+		getDoc(doc(db, "students", storedUserId))
+			.then((snap) => {
+				if (snap.exists()) {
+					setUser(snap.data())
+				}
+				setUserLoaded(true)
+			})
+			.catch(() => setUserLoaded(true))
 	}, [])
-
-	const isValidated = checkValidated(user)
-	const scholarships = Array.isArray(user?.scholarships)
-		? user.scholarships
-		: []
-	const [userMenuOpen, setUserMenuOpen] = useState(false)
-	const { theme, setTheme } = useThemeMode()
-	const userMenuRef = useRef(null)
-	const welcomeRef = useRef(null)
-
-	useEffect(() => {
-		function handleClickOutside(e) {
-			if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
-				setUserMenuOpen(false)
-			}
-		}
-		if (userMenuOpen) {
-			document.addEventListener("mousedown", handleClickOutside)
-			return () => document.removeEventListener("mousedown", handleClickOutside)
-		}
-	}, [userMenuOpen])
 
 	useEffect(() => {
 		if (userLoaded && !user) {
@@ -85,21 +89,278 @@ export default function StudentDashboard() {
 		}
 	}, [userLoaded, user, navigate])
 
-	const stats = { validated: isValidated }
-	// Get user initials for avatar
+	useEffect(() => {
+		let isMounted = true
+		const run = async () => {
+			try {
+				const ordered = await getDocs(
+					query(collection(db, "announcements"), orderBy("createdAt", "desc"), limit(8)),
+				)
+				if (!isMounted) return
+				setAnnouncements(
+					ordered.docs.map((item) => ({ id: item.id, ...(item.data() || {}) })),
+				)
+			} catch {
+				const fallback = await getDocs(collection(db, "announcements"))
+				if (!isMounted) return
+				const sorted = fallback.docs
+					.map((item) => ({ id: item.id, ...(item.data() || {}) }))
+					.sort((a, b) => {
+						const aDate = a.createdAt?.toDate
+							? a.createdAt.toDate().getTime()
+							: new Date(a.createdAt || a.date || 0).getTime()
+						const bDate = b.createdAt?.toDate
+							? b.createdAt.toDate().getTime()
+							: new Date(b.createdAt || b.date || 0).getTime()
+						return bDate - aDate
+					})
+					.slice(0, 8)
+				setAnnouncements(sorted)
+			}
+		}
+
+		run().catch(() => {})
+		return () => {
+			isMounted = false
+		}
+	}, [])
+
+	const isValidated = checkValidated(user)
+	const scholarships = useMemo(
+		() => normalizeScholarshipList(user?.scholarships || []),
+		[user?.scholarships],
+	)
+	const scholarshipPreview = scholarships.slice(0, 6)
+	const avatarUrl = user?.profileImageUrl || ""
+
 	const getUserInitials = () => {
-		if (!user) return "ST"
-		const f = user.fname?.[0]?.toUpperCase() || ""
-		const l = user.lname?.[0]?.toUpperCase() || ""
+		const f = user?.fname?.[0]?.toUpperCase() || ""
+		const l = user?.lname?.[0]?.toUpperCase() || ""
 		return f + l || "ST"
 	}
 
-	// Student number (document id / login id)
-	const studentNumber =
-		location.state?.userId ??
-		sessionStorage.getItem("bulsuscholar_userId") ??
-		""
-	const avatarUrl = user?.profileImageUrl || ""
+	const handleContactSupport = () => {
+		window.location.href =
+			"mailto:scholarships@bulsu.edu.ph?subject=BulsuScholar%20Student%20Support"
+	}
+
+	const handleLogout = () => {
+		sessionStorage.removeItem("bulsuscholar_userId")
+		sessionStorage.removeItem("bulsuscholar_userType")
+		navigate("/", { replace: true })
+	}
+
+	const fullName =
+		[user?.fname, user?.mname, user?.lname].filter(Boolean).join(" ") || "Student"
+
+	const bentoItems = useMemo(
+		() => [
+			{
+				id: "workspace",
+				label: "Student Workspace",
+				className: "student-magic-card student-magic-card--workspace",
+				color: theme === "dark" ? "rgba(6, 78, 59, 0.82)" : "rgba(255, 255, 255, 0.92)",
+				render: () => (
+					<div className="student-workspace-hero">
+						<div className="student-workspace-avatar">
+							{avatarUrl ? (
+								<img
+									src={avatarUrl}
+									alt="Profile"
+									className="student-header-avatar-image-mini"
+								/>
+							) : (
+								<span>{getUserInitials()}</span>
+							)}
+						</div>
+						<div>
+							<p className="student-bento-eyebrow">Student Workspace</p>
+							<h2 className="student-welcome-title">
+								Welcome back{user?.fname ? `, ${user.fname}` : ""}
+							</h2>
+							<p className="student-welcome-user-name">{fullName}</p>
+							<p className="student-welcome-sub">
+								Track applications, request SOE, and keep your scholarship profile up to date.
+							</p>
+						</div>
+					</div>
+				),
+			},
+			{
+				id: "announcements",
+				label: "Announcements",
+				className: "student-magic-card student-magic-card--announcements",
+				color: theme === "dark" ? "rgba(6, 78, 59, 0.82)" : "rgba(255, 255, 255, 0.92)",
+				render: () => (
+					<>
+						<div className="student-bento-headline-row">
+							<h3 className="student-bento-title">Announcements</h3>
+							<span>{announcements.length} items</span>
+						</div>
+						{announcements.length === 0 ? (
+							<p className="dashboard-placeholder">No announcements published yet.</p>
+						) : (
+							<div className="student-announcement-feed">
+								{announcements.map((announcement) => (
+									<article key={announcement.id} className="student-announcement-card">
+										<div className="student-announcement-type">
+											{iconForAnnouncement(announcement.type || "")}
+										</div>
+										<div className="student-announcement-content">
+											<h4>{announcement.title || "Announcement"}</h4>
+											<p>
+												{formatAnnouncementDate(
+													announcement.date || announcement.createdAt,
+												) || "Date unavailable"}
+											</p>
+											<p>
+												{announcement.previewText ||
+													announcement.content ||
+													announcement.description ||
+													"No preview text provided."}
+											</p>
+										</div>
+									</article>
+								))}
+							</div>
+						)}
+					</>
+				),
+			},
+			{
+				id: "scholarships-preview",
+				label: "Scholarships Preview",
+				className: "student-magic-card student-magic-card--scholarships",
+				color: theme === "dark" ? "rgba(6, 78, 59, 0.82)" : "rgba(255, 255, 255, 0.92)",
+				render: () => (
+					<>
+						<div className="student-bento-headline-row">
+							<h3 className="student-bento-title">Scholarships Preview</h3>
+							<button
+								type="button"
+								className="student-bento-inline-link"
+								onClick={() =>
+									navigate("/student-dashboard/scholarships", { state: { user } })
+								}
+							>
+								Open Scholarships
+							</button>
+						</div>
+						{scholarshipPreview.length === 0 ? (
+							<p className="dashboard-placeholder">No scholarship records yet.</p>
+						) : (
+							<div className="student-dashboard-scholarship-preview-list">
+								{scholarshipPreview.map((entry) => (
+									<article key={entry.id} className="student-dashboard-scholarship-preview-item">
+										<HiOutlineAcademicCap
+											className="student-dashboard-scholarship-preview-icon"
+											aria-hidden
+										/>
+										<div className="student-dashboard-scholarship-preview-meta">
+											<h4>{entry.name}</h4>
+											<p>{entry.status || "Applied"}</p>
+										</div>
+										<span className="student-dashboard-scholarship-preview-term">
+											{entry.semesterTag || "Current Semester"}
+										</span>
+									</article>
+								))}
+							</div>
+						)}
+					</>
+				),
+			},
+			{
+				id: "quick-actions",
+				label: "Quick Actions",
+				className: "student-magic-card student-magic-card--actions",
+				color: theme === "dark" ? "rgba(6, 78, 59, 0.82)" : "rgba(255, 255, 255, 0.92)",
+				render: () => (
+					<>
+						<h3 className="student-bento-title">Quick Actions</h3>
+						<div className="student-action-grid">
+							<button
+								type="button"
+								className="student-action-card"
+								onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+							>
+								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
+									<path
+										d="M3 6.5 12 2l9 4.5-9 4.5L3 6.5Zm2 4.5v4.7L12 20l7-4.3V11"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.7"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									/>
+								</svg>
+								<span>Scholarships</span>
+							</button>
+							<button
+								type="button"
+								className="student-action-card"
+								onClick={() => navigate("/student-dashboard/profile", { state: { user } })}
+							>
+								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
+									<circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+									<path
+										d="M5 19c1.6-3 4.1-4.5 7-4.5s5.4 1.5 7 4.5"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.7"
+										strokeLinecap="round"
+									/>
+								</svg>
+								<span>My Profile</span>
+							</button>
+							<button type="button" className="student-action-card" onClick={handleContactSupport}>
+								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
+									<path
+										d="M4 6h16v12H4zM4 7l8 6 8-6"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.7"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									/>
+								</svg>
+								<span>Contact Support</span>
+							</button>
+							<button
+								type="button"
+								className="student-action-card student-action-card--logout"
+								onClick={handleLogout}
+							>
+								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
+									<path
+										d="M9 4h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H9M14 12H4m0 0 3-3m-3 3 3 3"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.7"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									/>
+								</svg>
+								<span>Logout</span>
+							</button>
+						</div>
+					</>
+				),
+			},
+		],
+		[
+			announcements,
+			avatarUrl,
+			handleContactSupport,
+			handleLogout,
+			getUserInitials,
+			navigate,
+			scholarshipPreview,
+			theme,
+			user,
+			fullName,
+		],
+	)
 
 	if (!userLoaded) {
 		return (
@@ -107,7 +368,7 @@ export default function StudentDashboard() {
 				className={`admin-dashboard student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}
 			>
 				<main className="dashboard-main">
-					<div className="dashboard-content">
+					<div className="dashboard-content student-dashboard-surface">
 						<div className="dashboard-panel student-dashboard-loading-panel">
 							<p className="dashboard-placeholder">Loading student dashboard...</p>
 						</div>
@@ -125,12 +386,10 @@ export default function StudentDashboard() {
 				<div className="student-header-top-stripe"></div>
 				<div className="student-header-content">
 					<div className="student-header-left">
-						<img
-							src={logo2}
-							alt="BulsuScholar"
-							className="student-header-logo"
-						/>
-						<h1 className="student-header-brand">BulsuScholar</h1>
+						<Link to="/student-dashboard" className="student-header-home-link" aria-label="Go to dashboard">
+							<img src={logo2} alt="BulsuScholar" className="student-header-logo" />
+							<h1 className="student-header-brand">BulsuScholar</h1>
+						</Link>
 					</div>
 					<div className="student-header-right">
 						<div className="student-header-verified-wrap">
@@ -141,265 +400,51 @@ export default function StudentDashboard() {
 								title={isValidated ? "Verified" : "Pending"}
 							>
 								{isValidated ? (
-									<HiOutlineCheckCircle
-										className="student-header-verified-icon"
-										aria-hidden
-									/>
+									<HiOutlineCheckCircle className="student-header-verified-icon" aria-hidden />
 								) : (
-									<HiOutlineClock
-										className="student-header-verified-icon"
-										aria-hidden
-									/>
+									<HiOutlineClock className="student-header-verified-icon" aria-hidden />
 								)}
 								<span className="student-header-verified-tooltip-below">
 									{isValidated ? "Verified" : "Pending"}
 								</span>
 							</button>
 						</div>
-						<div className="student-header-user-wrap" ref={userMenuRef}>
+						<div className="student-header-theme-switch" role="group" aria-label="Theme switcher">
 							<button
 								type="button"
-								className="student-header-user-btn"
-								onClick={() => setUserMenuOpen((o) => !o)}
-								aria-label="User menu"
-								aria-expanded={userMenuOpen}
+								className={`student-header-theme-btn ${theme === "light" ? "active" : ""}`}
+								onClick={() => setTheme("light")}
 							>
-								<HiMenu className="student-header-menu-icon" aria-hidden />
-								<div className="student-header-avatar">
-									{avatarUrl ? (
-										<img
-											src={avatarUrl}
-											alt="Profile"
-											className="student-header-avatar-image-mini"
-										/>
-									) : (
-										getUserInitials()
-									)}
-								</div>
+								<HiOutlineSun aria-hidden />
+								Light
 							</button>
-							{userMenuOpen && (
-								<div className="student-verified-dropdown">
-									<div className="student-verified-dropdown-user">
-										<div className="student-verified-dropdown-avatar">
-											{avatarUrl ? (
-												<img
-													src={avatarUrl}
-													alt="Profile"
-													className="student-header-avatar-image-mini"
-												/>
-											) : (
-												getUserInitials()
-											)}
-										</div>
-										<div className="student-verified-dropdown-user-info">
-											<p className="student-verified-dropdown-name">
-												{user?.fname && user?.lname
-													? `${user.fname} ${user.mname || ""} ${user.lname}`.trim()
-													: "Student"}
-											</p>
-											<p className="student-verified-dropdown-email">
-												{studentNumber || "-"}
-											</p>
-										</div>
-									</div>
-									<nav className="student-verified-dropdown-nav">
-										<button
-											type="button"
-											className="student-verified-dropdown-item"
-											onClick={() => {
-												setUserMenuOpen(false)
-												navigate("/student-dashboard/profile", {
-													state: { user },
-												})
-											}}
-										>
-											<HiOutlineUserCircle
-												className="student-verified-dropdown-item-icon"
-												aria-hidden
-											/>
-											My Profile
-										</button>
-										<button
-											type="button"
-											className="student-verified-dropdown-item"
-											onClick={() => {
-												setUserMenuOpen(false)
-												navigate("/student-dashboard/scholarships", {
-													state: { user },
-												})
-											}}
-										>
-											<HiOutlineAcademicCap
-												className="student-verified-dropdown-item-icon"
-												aria-hidden
-											/>
-											Scholarship
-										</button>
-									</nav>
-									<div className="student-verified-dropdown-theme">
-										<span className="student-verified-dropdown-theme-label">
-											THEME
-										</span>
-										<div className="student-verified-dropdown-theme-btns">
-											<button
-												type="button"
-												className={`student-verified-dropdown-theme-btn ${theme === "light" ? "active" : ""}`}
-												onClick={() => setTheme("light")}
-											>
-												<HiOutlineSun aria-hidden />
-												Light
-											</button>
-											<button
-												type="button"
-												className={`student-verified-dropdown-theme-btn ${theme === "dark" ? "active" : ""}`}
-												onClick={() => setTheme("dark")}
-											>
-												<HiOutlineMoon aria-hidden />
-												Dark
-											</button>
-										</div>
-									</div>
-									<button
-										type="button"
-										className="student-verified-dropdown-logout"
-										onClick={() => {
-											sessionStorage.removeItem("bulsuscholar_userId")
-											sessionStorage.removeItem("bulsuscholar_userType")
-											setUserMenuOpen(false)
-											navigate("/", { replace: true })
-										}}
-									>
-										<HiOutlineLogout
-											className="student-verified-dropdown-logout-icon"
-											aria-hidden
-										/>
-										Logout
-									</button>
-								</div>
-							)}
+							<button
+								type="button"
+								className={`student-header-theme-btn ${theme === "dark" ? "active" : ""}`}
+								onClick={() => setTheme("dark")}
+							>
+								<HiOutlineMoon aria-hidden />
+								Dark
+							</button>
 						</div>
 					</div>
 				</div>
 			</header>
 
 			<main className="dashboard-main">
-				<div className="dashboard-content">
-					{/* Welcome banner */}
-					<div className="student-welcome" ref={welcomeRef}>
-						<div className="student-welcome-text">
-							<h2 className="student-welcome-title">
-								Welcome back{user?.fname ? `, ${user.fname}` : ""}
-							</h2>
-							<p className="student-welcome-sub">
-								Track your scholarships and application status in one place.
-							</p>
-						</div>
-						<div className="student-welcome-icon">
-							<HiOutlineAcademicCap aria-hidden />
-						</div>
-					</div>
-
-					{/* Account validation status - only show when loaded and not validated */}
-					{userLoaded && !stats.validated && (
-						<div className="student-validation-banner">
-							<HiOutlineClock className="student-validation-icon" aria-hidden />
-							<div>
-								<p className="student-validation-title">
-									Account pending verification
-								</p>
-								<p className="student-validation-desc">
-									Your registration is under review. This usually takes 1-3
-									business days.
-								</p>
-							</div>
-						</div>
-					)}
-
-					{/* My Scholarships section */}
-					<div className="dashboard-page-title">
-						<h2 className="dashboard-page-heading">My Scholarships</h2>
-						<p className="dashboard-page-sub">
-							Your scholarship applications and their status
-						</p>
-					</div>
-
-					{scholarships.length === 0 ? (
-						<div className="dashboard-panel student-empty student-dashboard-empty-scholarships">
-							<HiOutlineAcademicCap
-								className="student-dashboard-empty-scholarships-icon"
-								aria-hidden
-							/>
-							<p className="dashboard-placeholder student-dashboard-empty-scholarships-text">
-								You have no scholarships listed yet. Declare existing
-								scholarships during registration or apply through the
-								scholarship office.
-							</p>
-							<p className="student-dashboard-empty-scholarships-hint">
-								Go to <strong>Scholarship</strong> in the menu to view your
-								applications or apply.
-							</p>
-							<button
-								type="button"
-								className="student-dashboard-empty-scholarships-btn"
-								onClick={() =>
-									navigate("/student-dashboard/scholarships", {
-										state: { user },
-									})
-								}
-							>
-								View scholarships
-							</button>
-						</div>
-					) : (
-						<div className="student-scholarship-cards">
-							{scholarships.map((s, i) => (
-								<article key={s.id ?? i} className="student-scholarship-card">
-									<div className="student-scholarship-card-left">
-										<HiOutlineAcademicCap
-											className="student-scholarship-card-icon"
-											aria-hidden
-										/>
-									</div>
-									<div className="student-scholarship-card-info">
-										<h3 className="student-scholarship-card-name">
-											{s.name || "Scholarship"}
-										</h3>
-										<p className="student-scholarship-card-provider">
-											{s.provider || "-"}
-										</p>
-									</div>
-									<div className="student-scholarship-card-action">
-										<button
-											type="button"
-											className="student-scholarship-request-soe"
-											onClick={() => toast.info("SOE request is coming soon.")}
-										>
-											<HiOutlineDocumentText />
-											Request SOE
-										</button>
-									</div>
-								</article>
-							))}
-						</div>
-					)}
-
-					{/* Quick info */}
-					<div className="student-info-cards">
-						<div className="student-info-card">
-							<h3 className="student-info-card-title">Need help?</h3>
-							<p className="student-info-card-desc">
-								Contact the Office of the Scholarships for application support
-								or questions about your status.
-							</p>
-						</div>
-						<div className="student-info-card">
-							<h3 className="student-info-card-title">COR & Registration</h3>
-							<p className="student-info-card-desc">
-								Keep your Certificate of Registration and registration number
-								updated for scholarship validation.
-							</p>
-						</div>
-					</div>
+				<div className="dashboard-content student-dashboard-surface">
+					<MagicBento
+						items={bentoItems}
+						className="student-dashboard-magic"
+						enableStars={true}
+						enableSpotlight={true}
+						enableBorderGlow={true}
+						enableTilt={false}
+						enableMagnetism={false}
+						clickEffect={false}
+						glowColor={theme === "dark" ? "16, 185, 129" : "0, 99, 60"}
+						spotlightRadius={340}
+					/>
 
 					<footer className="student-footer">
 						<div className="student-footer-grid">
@@ -407,8 +452,7 @@ export default function StudentDashboard() {
 								<h3>BulsuScholar</h3>
 								<p>
 									Institutional Student Programs and Services scholarship portal.
-									Manage your records, documents, and application updates in one
-									place.
+									Manage your records, documents, and application updates in one place.
 								</p>
 							</div>
 							<div className="student-footer-col">
@@ -429,21 +473,16 @@ export default function StudentDashboard() {
 								<button
 									type="button"
 									className="student-footer-link"
-									onClick={() =>
-										navigate("/student-dashboard/scholarships", { state: { user } })
-									}
+									onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
 								>
 									My Scholarships
 								</button>
 							</div>
 						</div>
-						<p className="student-footer-bottom">
-							© {new Date().getFullYear()} BulsuScholar. All rights reserved.
-						</p>
+						<p className="student-footer-bottom">(c) {new Date().getFullYear()} BulsuScholar. All rights reserved.</p>
 					</footer>
 				</div>
 			</main>
 		</div>
 	)
 }
-

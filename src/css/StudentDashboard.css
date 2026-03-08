@@ -2,12 +2,28 @@
 
 .student-dashboard .dashboard-main {
 	max-width: 1100px;
+	padding-top: 0;
+}
+
+.student-dashboard-surface {
+	background:
+		linear-gradient(135deg, rgba(248, 250, 252, 0.88), rgba(236, 253, 245, 0.88)),
+		repeating-linear-gradient(
+			45deg,
+			rgba(2, 132, 199, 0.03) 0,
+			rgba(2, 132, 199, 0.03) 1px,
+			transparent 1px,
+			transparent 14px
+		);
+	border-radius: 14px;
+	padding: 0 0.85rem 0.85rem;
 }
 
 /* ----- Modern header design ----- */
 .student-header {
 	background: #fff;
 	color: #1a1a1a;
+	margin-top: 0;
 	padding: 0;
 	position: relative;
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -40,6 +56,20 @@
 	flex-grow: 0;
 }
 
+.student-header-home-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.75rem;
+	text-decoration: none;
+	border-radius: 10px;
+	padding: 0.15rem 0.25rem;
+	transition: background 0.2s ease;
+}
+
+.student-header-home-link:hover {
+	background: rgba(0, 99, 60, 0.08);
+}
+
 .student-header-logo {
 	width: 40px;
 	height: 40px;
@@ -62,6 +92,44 @@
 	flex-shrink: 0;
 	margin-left: auto;
 	margin-right: 0;
+}
+
+.student-header-theme-switch {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	padding: 0.35rem;
+	border-radius: 999px;
+	border: 1px solid #d1d5db;
+	background: #f8fafc;
+}
+
+.student-header-theme-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	min-height: 34px;
+	padding: 0.35rem 0.7rem;
+	border-radius: 999px;
+	border: 1px solid transparent;
+	background: transparent;
+	color: #374151;
+	font-size: 0.82rem;
+	font-weight: 700;
+	cursor: pointer;
+	transition:
+		background 0.18s ease,
+		color 0.18s ease;
+}
+
+.student-header-theme-btn.active {
+	background: #0b572b;
+	color: #fff;
+}
+
+.student-header-theme-btn svg {
+	width: 17px;
+	height: 17px;
 }
 
 .student-header-notification-btn {
@@ -503,7 +571,7 @@
 	border-radius: 12px;
 	padding: 1rem;
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-	border: 1px solid #e5e7eb;
+	border: 2px solid #e2e8f0;
 	transition:
 		box-shadow 0.2s,
 		border-color 0.2s;
@@ -513,8 +581,10 @@
 }
 
 .student-scholarship-card:hover {
-	box-shadow: 0 4px 12px rgba(11, 87, 43, 0.08);
-	border-color: rgba(11, 87, 43, 0.2);
+	box-shadow:
+		0 8px 18px rgba(11, 87, 43, 0.12),
+		0 0 0 2px rgba(0, 99, 60, 0.08);
+	border-color: #00633c;
 }
 
 .student-scholarship-card-left {
@@ -782,11 +852,34 @@
 	box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
+.student-profile-panel--modern {
+	background:
+		radial-gradient(circle at top right, rgba(110, 231, 183, 0.2), transparent 42%),
+		#ffffff;
+	border-color: #dbe9e0;
+	box-shadow: 0 16px 38px rgba(11, 87, 43, 0.08);
+}
+
 .student-profile-media {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	gap: 0.85rem;
+	padding: 1rem;
+	border-radius: 14px;
+	background: linear-gradient(180deg, #f8fffb 0%, #f3f9f5 100%);
+	border: 1px solid #e1efe6;
+}
+
+.student-profile-badge {
+	padding: 0.35rem 0.7rem;
+	border-radius: 999px;
+	background: rgba(11, 87, 43, 0.1);
+	color: #0b572b;
+	font-size: 0.74rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 }
 
 .student-profile-avatar-wrap {
@@ -852,6 +945,30 @@
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 0.85rem 1rem;
+	align-content: start;
+}
+
+.student-profile-form-header {
+	grid-column: 1 / -1;
+	margin-bottom: 0.15rem;
+}
+
+.student-profile-form-header h3 {
+	margin: 0;
+	font-size: 1.03rem;
+	color: #0f172a;
+}
+
+.student-profile-form-header p {
+	margin: 0.35rem 0 0;
+	font-size: 0.83rem;
+	color: #64748b;
+}
+
+.student-profile-form-header--secondary {
+	margin-top: 0.35rem;
+	padding-top: 0.65rem;
+	border-top: 1px dashed #d5e4da;
 }
 
 .student-profile-label {
@@ -861,6 +978,10 @@
 	font-size: 0.82rem;
 	font-weight: 600;
 	color: #334155;
+}
+
+.student-profile-label--full {
+	grid-column: 1 / -1;
 }
 
 .student-profile-input {
@@ -876,6 +997,11 @@
 .student-profile-input[readonly] {
 	background: #f8fafc;
 	color: #475569;
+}
+
+.student-profile-input:disabled {
+	opacity: 0.85;
+	cursor: not-allowed;
 }
 
 .student-profile-input:focus {
@@ -922,7 +1048,7 @@
 	margin-top: 2rem;
 	padding: 1.4rem 1.25rem 1rem;
 	background: linear-gradient(135deg, #f8fafc 0%, #ecfdf3 100%);
-	border: 1px solid #d8e5dd;
+	border: 2px solid #e2e8f0;
 	border-radius: 14px;
 }
 
@@ -1001,6 +1127,20 @@
 	background: #1f2937;
 	border-color: #374151;
 	color: #e5e7eb;
+}
+
+.student-dashboard--dark .student-header-theme-switch {
+	background: #111827;
+	border-color: #374151;
+}
+
+.student-dashboard--dark .student-header-theme-btn {
+	color: #cbd5e1;
+}
+
+.student-dashboard--dark .student-header-theme-btn.active {
+	background: #0b572b;
+	color: #ffffff;
 }
 
 .student-dashboard--dark .student-header-notification-btn:hover,
@@ -1104,8 +1244,38 @@
 	border-color: #374151;
 }
 
+.student-dashboard--dark .student-profile-panel--modern {
+	background:
+		radial-gradient(circle at top right, rgba(16, 185, 129, 0.14), transparent 46%),
+		#111827;
+	border-color: #334155;
+	box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+}
+
+.student-dashboard--dark .student-profile-media {
+	background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+	border-color: #334155;
+}
+
+.student-dashboard--dark .student-profile-badge {
+	background: rgba(110, 231, 183, 0.15);
+	color: #a7f3d0;
+}
+
 .student-dashboard--dark .student-profile-label {
 	color: #cbd5e1;
+}
+
+.student-dashboard--dark .student-profile-form-header h3 {
+	color: #f1f5f9;
+}
+
+.student-dashboard--dark .student-profile-form-header p {
+	color: #94a3b8;
+}
+
+.student-dashboard--dark .student-profile-form-header--secondary {
+	border-top-color: #334155;
 }
 
 .student-dashboard--dark .student-profile-input {
@@ -1174,5 +1344,1247 @@
 	.student-footer-grid {
 		grid-template-columns: 1fr;
 	}
+}
+
+/* ----- Bento Dashboard ----- */
+.student-bento-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	margin-bottom: 2rem;
+}
+
+.student-bento-card {
+	border-radius: 16px;
+	border: 1px solid rgba(0, 99, 60, 0.14);
+	background:
+		linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.64)),
+		radial-gradient(circle at top right, rgba(34, 197, 94, 0.16), transparent 42%);
+	backdrop-filter: blur(12px);
+	padding: 1.15rem;
+	box-shadow: 0 10px 24px rgba(0, 99, 60, 0.16);
+	transition:
+		box-shadow 0.2s ease,
+		transform 0.2s ease;
+}
+
+.student-bento-card:hover {
+	box-shadow:
+		0 14px 30px rgba(0, 99, 60, 0.24),
+		0 0 0 1px rgba(0, 99, 60, 0.1);
+	transform: translateY(-1px);
+}
+
+.student-bento-welcome {
+	width: 100%;
+	min-height: 172px;
+	display: flex;
+	align-items: flex-end;
+}
+
+.student-workspace-hero {
+	display: flex;
+	align-items: center;
+	gap: 0.9rem;
+}
+
+.student-workspace-avatar {
+	width: 68px;
+	height: 68px;
+	border-radius: 999px;
+	overflow: hidden;
+	border: 2px solid rgba(0, 99, 60, 0.2);
+	background: linear-gradient(135deg, #84cc16 0%, #65a30d 100%);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #ffffff;
+	font-size: 1.05rem;
+	font-weight: 700;
+	flex-shrink: 0;
+}
+
+.student-bento-profile {
+	width: 100%;
+}
+
+.student-bento-actions {
+	width: 100%;
+}
+
+.student-bento-status {
+	width: 100%;
+}
+
+.student-bento-announcements {
+	width: 100%;
+}
+
+.student-bento-scholarships {
+	width: 100%;
+}
+
+.student-bento-eyebrow {
+	margin: 0 0 0.45rem;
+	font-size: 0.78rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: #166534;
+}
+
+.student-bento-title {
+	margin: 0 0 0.65rem;
+	font-size: 1rem;
+	color: #14532d;
+}
+
+.student-bento-headline-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.8rem;
+	margin-bottom: 0.8rem;
+}
+
+.student-bento-headline-row span {
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: #166534;
+}
+
+.student-bento-inline-link {
+	border: none;
+	background: transparent;
+	color: #0b572b;
+	font-size: 0.8rem;
+	font-weight: 700;
+	cursor: pointer;
+	text-decoration: underline;
+}
+
+.student-dashboard-scholarship-preview-list {
+	display: grid;
+	gap: 0.6rem;
+	max-height: 230px;
+	overflow-y: auto;
+	padding-right: 0.2rem;
+}
+
+.student-dashboard-scholarship-preview-item {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.7rem;
+	border-radius: 12px;
+	border: 1px solid rgba(0, 99, 60, 0.12);
+	background: rgba(255, 255, 255, 0.8);
+	box-shadow: 0 6px 14px rgba(0, 99, 60, 0.1);
+}
+
+.student-dashboard-scholarship-preview-icon {
+	width: 22px;
+	height: 22px;
+	color: #0b572b;
+}
+
+.student-dashboard-scholarship-preview-meta h4 {
+	margin: 0;
+	font-size: 0.88rem;
+	color: #14532d;
+}
+
+.student-dashboard-scholarship-preview-meta p {
+	margin: 0.2rem 0 0;
+	font-size: 0.76rem;
+	color: #64748b;
+}
+
+.student-dashboard-scholarship-preview-term {
+	font-size: 0.72rem;
+	font-weight: 700;
+	color: #334155;
+}
+
+.student-action-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 0.75rem;
+}
+
+.student-action-card {
+	display: grid;
+	place-items: center;
+	gap: 0.5rem;
+	min-height: 120px;
+	border-radius: 14px;
+	border: 1px solid rgba(0, 99, 60, 0.12);
+	background: linear-gradient(160deg, #f4fff8 0%, #ebfff5 100%);
+	color: #14532d;
+	font-size: 0.82rem;
+	font-weight: 700;
+	cursor: pointer;
+	transition:
+		transform 0.18s ease,
+		box-shadow 0.18s ease,
+		border-color 0.18s ease;
+	text-align: center;
+	padding: 0.65rem;
+}
+
+.student-action-card:hover {
+	transform: translateY(-2px);
+	box-shadow:
+		0 10px 22px rgba(0, 99, 60, 0.22),
+		0 0 0 1px rgba(0, 99, 60, 0.1);
+	border-color: rgba(0, 99, 60, 0.2);
+}
+
+.student-action-card--logout {
+	color: #b91c1c;
+	background: linear-gradient(160deg, #fff7f7 0%, #fef2f2 100%);
+}
+
+.student-action-icon {
+	width: 34px;
+	height: 34px;
+}
+
+.student-bento-metric {
+	margin: 0;
+	font-size: 2rem;
+	font-weight: 800;
+	color: #0f5132;
+}
+
+.student-bento-meta {
+	margin: 0.3rem 0 0;
+	font-size: 0.85rem;
+	color: #3f5f4f;
+}
+
+.student-bento-note {
+	margin: 0.75rem 0 0;
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: #14532d;
+}
+
+.student-mini-profile {
+	display: flex;
+	align-items: center;
+	gap: 0.85rem;
+	padding: 0.75rem;
+	border-radius: 12px;
+	border: 2px solid #e2e8f0;
+	background: linear-gradient(145deg, #f8fafc 0%, #f0fdf4 100%);
+}
+
+.student-mini-profile-avatar {
+	width: 56px;
+	height: 56px;
+	border-radius: 999px;
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: linear-gradient(135deg, #84cc16 0%, #65a30d 100%);
+	color: #fff;
+	font-weight: 700;
+	font-size: 1rem;
+	flex-shrink: 0;
+}
+
+.student-mini-profile-meta {
+	min-width: 0;
+}
+
+.student-mini-profile-name {
+	margin: 0;
+	font-size: 0.92rem;
+	font-weight: 700;
+	color: #14532d;
+}
+
+.student-mini-profile-year,
+.student-mini-profile-course {
+	margin: 0.18rem 0 0;
+	font-size: 0.78rem;
+	color: #4b5563;
+}
+
+.student-announcement-feed {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 0.7rem;
+	max-height: 220px;
+	overflow-y: auto;
+	padding-right: 0.2rem;
+}
+
+.student-announcement-card {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 0.65rem;
+	padding: 0.75rem;
+	border-radius: 12px;
+	border: 1px solid rgba(0, 99, 60, 0.12);
+	background: rgba(255, 255, 255, 0.8);
+	transition:
+		border-color 0.18s ease,
+		box-shadow 0.18s ease;
+}
+
+.student-announcement-card:hover {
+	border-color: rgba(0, 99, 60, 0.22);
+	box-shadow: 0 8px 18px rgba(0, 99, 60, 0.2);
+}
+
+.student-announcement-type {
+	min-width: 58px;
+	height: 26px;
+	padding: 0 0.5rem;
+	border-radius: 999px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(22, 163, 74, 0.14);
+	color: #166534;
+	font-size: 0.66rem;
+	font-weight: 700;
+	text-transform: uppercase;
+}
+
+.student-announcement-content h4 {
+	margin: 0;
+	font-size: 0.9rem;
+	color: #1f2937;
+}
+
+.student-announcement-content p {
+	margin: 0.2rem 0 0;
+	font-size: 0.76rem;
+	line-height: 1.35;
+	color: #4b5563;
+}
+
+/* ----- Scholarships Workspace ----- */
+.student-scholarship-workspace {
+	display: grid;
+	grid-template-columns: 1.25fr 1fr;
+	gap: 1rem;
+	margin-bottom: 1.6rem;
+}
+
+.student-scholarship-board {
+	border-radius: 16px;
+	border: 2px solid #e2e8f0;
+	background: #ffffff;
+	padding: 1rem;
+	box-shadow: 0 10px 24px rgba(11, 87, 43, 0.08);
+	transition:
+		border-color 0.18s ease,
+		box-shadow 0.18s ease;
+}
+
+.student-scholarship-board:hover {
+	border-color: #00633c;
+	box-shadow: 0 12px 26px rgba(11, 87, 43, 0.12);
+}
+
+.student-scholarship-board h3 {
+	margin: 0 0 0.8rem;
+	color: #14532d;
+}
+
+.student-lock-banner {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.75rem;
+	padding: 0.9rem 1rem;
+	border-radius: 12px;
+	border: 2px solid #00633c;
+	background: linear-gradient(135deg, #ecfdf3 0%, #dcfce7 100%);
+	margin-bottom: 1rem;
+}
+
+.student-lock-banner svg {
+	width: 22px;
+	height: 22px;
+	color: #15803d;
+	margin-top: 0.1rem;
+}
+
+.student-lock-banner-title {
+	margin: 0;
+	font-size: 0.9rem;
+	font-weight: 700;
+	color: #14532d;
+}
+
+.student-lock-banner-sub {
+	margin: 0.2rem 0 0;
+	font-size: 0.82rem;
+	color: #3f5f4f;
+}
+
+.student-program-grid {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 0.7rem;
+}
+
+.student-program-card {
+	border-radius: 12px;
+	border: 2px solid #e2e8f0;
+	background: #fafffb;
+	padding: 0.85rem;
+	transition:
+		border-color 0.18s ease,
+		box-shadow 0.18s ease;
+}
+
+.student-program-card:hover {
+	border-color: #00633c;
+	box-shadow: 0 8px 18px rgba(11, 87, 43, 0.1);
+}
+
+.student-program-card h4 {
+	margin: 0;
+	font-size: 0.92rem;
+	color: #14532d;
+}
+
+.student-program-card p {
+	margin: 0.25rem 0 0;
+	font-size: 0.78rem;
+	color: #4b5563;
+}
+
+.student-program-actions {
+	display: flex;
+	gap: 0.55rem;
+	margin-top: 0.7rem;
+}
+
+.student-program-save-btn,
+.student-program-apply-btn {
+	flex: 1;
+	min-height: 38px;
+	border-radius: 10px;
+	border: 1px solid transparent;
+	font-size: 0.84rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.student-program-save-btn {
+	border-color: #bfd4c6;
+	background: #f8fafc;
+	color: #334155;
+}
+
+.student-program-apply-btn {
+	background: linear-gradient(135deg, #0b572b 0%, #06521f 100%);
+	color: #fff;
+}
+
+.student-program-save-btn:disabled,
+.student-program-apply-btn:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+.student-program-tooltip {
+	display: block;
+	margin-top: 0.45rem;
+	font-size: 0.72rem;
+	font-weight: 600;
+	color: #b45309;
+}
+
+/* ----- SOE Modal ----- */
+.student-soe-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgb(9 20 5 / 87%);
+	backdrop-filter: blur(2px);
+	display: grid;
+	place-items: center;
+	z-index: 70;
+	padding: 1rem;
+}
+
+.student-soe-modal {
+	width: min(560px, 100%);
+	border-radius: 14px;
+	background: #fff;
+	border: 1px solid #d9e4dc;
+	box-shadow: 0 20px 48px rgba(15, 23, 42, 0.24);
+	padding: 1rem 1rem 1.1rem;
+	position: relative;
+}
+
+.student-soe-modal h3 {
+	margin: 0;
+	color: #14532d;
+}
+
+.student-soe-modal p {
+	margin: 0.7rem 0 0;
+	line-height: 1.5;
+	color: #374151;
+	font-size: 0.9rem;
+}
+
+.student-soe-modal-close {
+	position: absolute;
+	top: 0.45rem;
+	right: 0.45rem;
+	width: 34px;
+	height: 34px;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	color: #374151;
+	cursor: pointer;
+}
+
+.student-soe-modal-actions {
+	margin-top: 1rem;
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.6rem;
+}
+
+.student-soe-expense-modal {
+	width: min(720px, 100%);
+}
+
+.student-soe-expense-rows {
+	margin-top: 0.9rem;
+	display: grid;
+	gap: 0.65rem;
+	max-height: 320px;
+	overflow-y: auto;
+	padding-right: 0.2rem;
+}
+
+.student-soe-expense-row {
+	display: grid;
+	grid-template-columns: 1.8fr 1fr auto;
+	gap: 0.55rem;
+	align-items: center;
+}
+
+.student-soe-expense-input {
+	min-height: 38px;
+	border-radius: 10px;
+	border: 1px solid #cbd5e1;
+	padding: 0.45rem 0.65rem;
+	font-size: 0.88rem;
+}
+
+.student-soe-expense-input:focus {
+	outline: 2px solid rgba(11, 87, 43, 0.2);
+	border-color: #0b572b;
+}
+
+.student-soe-expense-remove {
+	min-height: 38px;
+	border-radius: 10px;
+	border: 1px solid #fecaca;
+	background: #fef2f2;
+	color: #b91c1c;
+	font-size: 0.82rem;
+	font-weight: 700;
+	padding: 0.35rem 0.7rem;
+	cursor: pointer;
+}
+
+.student-soe-expense-remove:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.student-soe-expense-tools {
+	margin-top: 0.9rem;
+	display: flex;
+	justify-content: flex-start;
+	gap: 0.6rem;
+}
+
+.student-soe-expense-total {
+	margin: 0.75rem 0 0;
+	font-size: 0.9rem;
+	font-weight: 800;
+	color: #14532d;
+	text-align: right;
+}
+
+.student-soe-export-warning {
+	margin: 0.55rem 0 0;
+	padding: 0.55rem 0.7rem;
+	border-radius: 10px;
+	background: #fffbeb;
+	border: 1px solid #fde68a;
+	color: #92400e;
+	font-size: 0.82rem;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+/* ----- Modern Profile ----- */
+.student-profile-modern-wrap {
+	border-radius: 16px;
+	border: 2px solid #e2e8f0;
+	background: #fff;
+	box-shadow: 0 12px 32px rgba(11, 87, 43, 0.08);
+	padding: 1rem;
+	margin-bottom: 2rem;
+}
+
+.student-profile-cover {
+	position: relative;
+	min-height: 190px;
+	border-radius: 14px;
+	overflow: hidden;
+	background:
+		radial-gradient(circle at 22% 25%, rgba(74, 222, 128, 0.25), transparent 40%),
+		linear-gradient(120deg, #0b572b 0%, #0f766e 100%);
+}
+
+.student-profile-cover-overlay {
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(15, 23, 42, 0.24));
+}
+
+.student-profile-cover-content {
+	position: relative;
+	padding: 1rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.85rem;
+	min-height: 190px;
+	flex-direction: column;
+	text-align: center;
+}
+
+.student-profile-cover-avatar-wrap {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.65rem;
+}
+
+.student-profile-cover-text h3 {
+	margin: 0;
+	color: #ecfdf5;
+	font-size: 1.3rem;
+}
+
+.student-profile-cover-text p {
+	margin: 0.2rem 0 0;
+	color: #d1fae5;
+	font-size: 0.86rem;
+}
+
+.student-profile-photo-shell {
+	position: relative;
+	width: 146px;
+	height: 146px;
+	border-radius: 999px;
+	overflow: hidden;
+	border: 4px solid #d1fae5;
+	cursor: pointer;
+	box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
+}
+
+.student-profile-photo-shell .student-profile-avatar-image,
+.student-profile-photo-shell .student-profile-avatar-fallback {
+	width: 100%;
+	height: 100%;
+	border: none;
+}
+
+.student-profile-photo-shell:focus-visible {
+	outline: 3px solid rgba(134, 239, 172, 0.95);
+	outline-offset: 2px;
+}
+
+.student-profile-photo-overlay {
+	position: absolute;
+	inset: 0;
+	background: rgba(15, 23, 42, 0.58);
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 0.45rem;
+	padding: 0.55rem;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.2s ease;
+}
+
+.student-profile-photo-shell:hover .student-profile-photo-overlay,
+.student-profile-photo-shell:focus-within .student-profile-photo-overlay {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.student-profile-photo-action {
+	min-height: 32px;
+	border-radius: 8px;
+	border: 1px solid rgba(255, 255, 255, 0.4);
+	background: rgba(255, 255, 255, 0.94);
+	color: #0f172a;
+	font-size: 0.73rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.student-profile-photo-action--upload {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.25rem;
+}
+
+.student-profile-photo-action:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.student-profile-section-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.9rem;
+	margin-top: 1rem;
+}
+
+.student-profile-section-card {
+	border-radius: 12px;
+	border: 2px solid #e2e8f0;
+	background: #fcfffd;
+	padding: 0.9rem;
+}
+
+.student-profile-section-card--full {
+	grid-column: span 2;
+}
+
+.student-profile-section-card h3 {
+	margin: 0 0 0.65rem;
+	font-size: 1rem;
+	color: #14532d;
+}
+
+.student-profile-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.7rem 0.8rem;
+}
+
+.student-profile-vault-sub {
+	margin: -0.2rem 0 0.7rem;
+	font-size: 0.8rem;
+	color: #64748b;
+}
+
+.student-vault-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem;
+}
+
+.student-vault-card {
+	border-radius: 10px;
+	border: 2px solid #e2e8f0;
+	background: #f8fffb;
+	padding: 0.8rem;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+
+.student-vault-card h4 {
+	margin: 0;
+	font-size: 0.9rem;
+	color: #14532d;
+}
+
+.student-vault-card p {
+	margin: 0.2rem 0 0;
+	font-size: 0.76rem;
+	color: #4b5563;
+}
+
+.student-vault-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.45rem 0.7rem;
+	border-radius: 8px;
+	background: #0b572b;
+	color: #fff;
+	font-size: 0.78rem;
+	font-weight: 700;
+	text-decoration: none;
+}
+
+.student-vault-muted {
+	font-size: 0.76rem;
+	color: #6b7280;
+}
+
+.student-photo-lightbox {
+	position: fixed;
+	inset: 0;
+	z-index: 90;
+	background: rgba(2, 6, 23, 0.86);
+	display: grid;
+	place-items: center;
+	padding: 1rem;
+}
+
+.student-photo-lightbox-inner {
+	width: min(760px, 100%);
+	display: grid;
+	gap: 0.7rem;
+}
+
+.student-photo-lightbox-close {
+	justify-self: end;
+	min-height: 36px;
+	padding: 0.35rem 0.8rem;
+	border-radius: 8px;
+	border: 1px solid rgba(255, 255, 255, 0.35);
+	background: rgba(255, 255, 255, 0.16);
+	color: #f8fafc;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.student-photo-lightbox-image {
+	width: 100%;
+	max-height: calc(100vh - 110px);
+	object-fit: contain;
+	border-radius: 12px;
+	border: 2px solid rgba(255, 255, 255, 0.35);
+	background: #0f172a;
+}
+
+/* ----- Dark mode additions ----- */
+.student-dashboard--dark .student-bento-card,
+.student-dashboard--dark .student-scholarship-board,
+.student-dashboard--dark .student-program-card,
+.student-dashboard--dark .student-announcement-card,
+.student-dashboard--dark .student-soe-modal,
+.student-dashboard--dark .student-profile-modern-wrap,
+.student-dashboard--dark .student-profile-section-card,
+.student-dashboard--dark .student-vault-card {
+	background: #111827;
+	border-color: #334155;
+	color: #e5e7eb;
+}
+
+.student-dashboard--dark .student-header-home-link:hover {
+	background: rgba(16, 185, 129, 0.16);
+}
+
+.student-dashboard--dark .student-dashboard-surface {
+	background:
+		linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(17, 24, 39, 0.9)),
+		repeating-linear-gradient(
+			45deg,
+			rgba(148, 163, 184, 0.07) 0,
+			rgba(148, 163, 184, 0.07) 1px,
+			transparent 1px,
+			transparent 14px
+		);
+}
+
+.student-dashboard--dark .student-bento-eyebrow,
+.student-dashboard--dark .student-bento-title,
+.student-dashboard--dark .student-bento-note,
+.student-dashboard--dark .student-lock-banner-title,
+.student-dashboard--dark .student-program-card h4,
+.student-dashboard--dark .student-profile-section-card h3,
+.student-dashboard--dark .student-vault-card h4 {
+	color: #a7f3d0;
+}
+
+.student-dashboard--dark .student-bento-meta,
+.student-dashboard--dark .student-announcement-content p,
+.student-dashboard--dark .student-program-card p,
+.student-dashboard--dark .student-lock-banner-sub,
+.student-dashboard--dark .student-profile-vault-sub,
+.student-dashboard--dark .student-vault-card p,
+.student-dashboard--dark .student-vault-muted {
+	color: #94a3b8;
+}
+
+.student-dashboard--dark .student-bento-inline-link {
+	color: #a7f3d0;
+}
+
+.student-dashboard--dark .student-dashboard-scholarship-preview-item {
+	background: #0f172a;
+	border-color: #334155;
+}
+
+.student-dashboard--dark .student-dashboard-scholarship-preview-meta h4 {
+	color: #d1fae5;
+}
+
+.student-dashboard--dark .student-dashboard-scholarship-preview-meta p,
+.student-dashboard--dark .student-dashboard-scholarship-preview-term {
+	color: #94a3b8;
+}
+
+.student-dashboard--dark .student-mini-profile {
+	background: #0f172a;
+	border-color: #334155;
+}
+
+.student-dashboard--dark .student-mini-profile-name {
+	color: #d1fae5;
+}
+
+.student-dashboard--dark .student-mini-profile-year,
+.student-dashboard--dark .student-mini-profile-course {
+	color: #94a3b8;
+}
+
+.student-dashboard--dark .student-bento-metric {
+	color: #d1fae5;
+}
+
+.student-dashboard--dark .student-action-card {
+	background: linear-gradient(140deg, #0f172a 0%, #111827 100%);
+	color: #d1fae5;
+	border-color: #334155;
+}
+
+.student-dashboard--dark .student-action-card--logout {
+	background: linear-gradient(140deg, #2a1115 0%, #2f1717 100%);
+	color: #fca5a5;
+}
+
+.student-dashboard--dark .student-workspace-avatar {
+	border-color: rgba(52, 211, 153, 0.35);
+}
+
+.student-dashboard--dark .student-lock-banner {
+	background: linear-gradient(145deg, rgba(20, 83, 45, 0.2), rgba(5, 46, 22, 0.22));
+	border-color: #166534;
+}
+
+.student-dashboard--dark .student-program-save-btn {
+	background: #1f2937;
+	border-color: #334155;
+	color: #d1d5db;
+}
+
+.student-dashboard--dark .student-profile-cover {
+	background:
+		radial-gradient(circle at 22% 25%, rgba(74, 222, 128, 0.16), transparent 40%),
+		linear-gradient(120deg, #052e16 0%, #0f172a 100%);
+}
+
+.student-dashboard--dark .student-profile-photo-shell {
+	border-color: #14532d;
+}
+
+.student-dashboard--dark .student-profile-photo-action {
+	background: rgba(15, 23, 42, 0.9);
+	border-color: rgba(148, 163, 184, 0.35);
+	color: #e2e8f0;
+}
+
+@media (max-width: 980px) {
+	.student-bento-welcome,
+	.student-bento-actions,
+	.student-bento-status,
+	.student-bento-announcements {
+		grid-column: span 12;
+	}
+
+	.student-scholarship-workspace {
+		grid-template-columns: 1fr;
+	}
+
+	.student-profile-section-grid {
+		grid-template-columns: 1fr;
+		margin-top: 0.9rem;
+	}
+
+	.student-profile-section-card--full {
+		grid-column: auto;
+	}
+
+	.student-vault-grid,
+	.student-profile-form-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.student-action-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 640px) {
+	.student-action-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* ----- Student Dashboard Magic Bento (React Bits) ----- */
+.student-dashboard-magic {
+	margin-top: 1.5rem;
+	--purple-primary: rgba(0, 99, 60, 1);
+	--purple-glow: rgba(0, 99, 60, 0.18);
+	--purple-border: rgba(0, 99, 60, 0.65);
+	--border-color: rgba(0, 99, 60, 0.2);
+	--background-dark: rgba(255, 255, 255, 0.92);
+}
+
+.student-dashboard-magic .card-grid {
+	max-width: none;
+	width: 100%;
+	gap: 0.35em;
+	padding: 0;
+	grid-template-columns: 1fr;
+	font-size: 1rem;
+}
+
+.student-dashboard-magic .magic-bento-card {
+	aspect-ratio: auto;
+	border: 1px solid rgba(0, 99, 60, 0.14);
+	box-shadow: 0 10px 24px rgba(0, 99, 60, 0.16);
+	justify-content: center;
+	align-items: center;
+	padding: 0.95rem;
+	text-align: left;
+	overflow: hidden;
+}
+
+.student-dashboard-magic .magic-bento-card > * {
+	width: 100%;
+}
+
+.student-dashboard-magic .magic-bento-card:hover {
+	box-shadow:
+		0 14px 30px rgba(0, 99, 60, 0.24),
+		0 0 0 1px rgba(0, 99, 60, 0.1);
+}
+
+.student-dashboard-magic .student-magic-card--workspace {
+	min-height: 168px;
+}
+
+.student-dashboard-magic .student-magic-card--announcements {
+	min-height: 228px;
+}
+
+.student-dashboard-magic .student-magic-card--scholarships {
+	order: 4;
+	min-height: 204px;
+}
+
+.student-dashboard-magic .student-magic-card--actions {
+	order: 3;
+	min-height: 188px;
+}
+
+.student-welcome-user-name {
+	margin: 0.12rem 0 0;
+	font-size: 0.88rem;
+	font-weight: 700;
+	color: #166534;
+}
+
+.student-dashboard-magic .student-announcement-feed {
+	max-height: 180px;
+}
+
+.student-dashboard--dark .student-dashboard-magic {
+	--purple-primary: rgba(16, 185, 129, 1);
+	--purple-glow: rgba(16, 185, 129, 0.2);
+	--purple-border: rgba(52, 211, 153, 0.65);
+	--border-color: rgba(52, 211, 153, 0.2);
+	--background-dark: rgba(17, 24, 39, 0.85);
+}
+
+.student-dashboard--dark .student-dashboard-magic .magic-bento-card {
+	border-color: rgba(52, 211, 153, 0.35);
+	background: linear-gradient(160deg, rgba(6, 78, 59, 0.84), rgba(15, 23, 42, 0.9));
+	color: #dcfce7;
+	box-shadow: 0 10px 24px rgba(5, 46, 22, 0.35);
+}
+
+.student-dashboard--dark .student-dashboard-magic .student-bento-headline-row span,
+.student-dashboard--dark .student-dashboard-magic .student-announcement-content h4,
+.student-dashboard--dark .student-dashboard-magic .student-dashboard-scholarship-preview-icon,
+.student-dashboard--dark .student-dashboard-magic .student-action-icon {
+	color: #bbf7d0;
+}
+
+.student-dashboard--dark .student-welcome-user-name {
+	color: #a7f3d0;
+}
+
+/* ----- Implementation plan fixes ----- */
+.dashboard-header.student-header {
+	display: block;
+	margin: 0;
+}
+
+.student-dashboard-magic {
+	margin-top: 1.85rem;
+}
+
+.student-scholarship-card-action-buttons {
+	display: grid;
+	gap: 0.45rem;
+}
+
+.student-scholarship-download-soe {
+	padding: 0.48rem 0.9rem;
+	background: #f0fdf4;
+	color: #14532d;
+	border: 1px solid #86efac;
+	border-radius: 8px;
+	font-size: 0.82rem;
+	font-weight: 700;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+}
+
+.student-scholarship-download-soe:hover {
+	background: #dcfce7;
+}
+
+.student-profile-photo-shell {
+	border: 4px solid #d1fae5;
+	background: transparent;
+	padding: 0;
+}
+
+.student-vault-actions {
+	display: grid;
+	gap: 0.4rem;
+	justify-items: end;
+}
+
+.student-vault-upload-btn {
+	min-height: 32px;
+	padding: 0.35rem 0.65rem;
+	border-radius: 8px;
+	border: 1px solid #14532d;
+	background: #14532d;
+	color: #fff;
+	font-size: 0.74rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.student-vault-upload-btn:disabled {
+	opacity: 0.65;
+	cursor: not-allowed;
+}
+
+.student-dashboard--dark .student-verified-dropdown-logout {
+	background: #064e3b;
+	color: #d1fae5;
+	border-top-color: #166534;
+}
+
+.student-dashboard--dark .student-verified-dropdown-logout:hover {
+	background: #065f46;
+}
+
+.student-dashboard--dark .student-scholarship-download-soe {
+	background: #052e16;
+	border-color: #166534;
+	color: #bbf7d0;
+}
+
+.student-dashboard--dark .student-soe-expense-input {
+	background: #0f172a;
+	border-color: #334155;
+	color: #e5e7eb;
+}
+
+.student-dashboard--dark .student-soe-expense-remove {
+	background: #2a1115;
+	border-color: #7f1d1d;
+	color: #fca5a5;
+}
+
+.student-dashboard--dark .student-soe-expense-total {
+	color: #a7f3d0;
+}
+
+.student-dashboard--dark .student-soe-export-warning {
+	background: rgba(146, 64, 14, 0.18);
+	border-color: rgba(251, 191, 36, 0.5);
+	color: #fde68a;
+}
+
+.student-dashboard--dark .student-soe-modal-backdrop {
+	background: rgb(2 6 23 / 92%);
+}
+
+.student-soe-preview-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgb(2 6 23 / 86%);
+	display: grid;
+	place-items: center;
+	z-index: 80;
+	padding: 1rem;
+}
+
+.student-soe-preview-modal {
+	width: min(960px, 100%);
+	max-height: calc(100vh - 2rem);
+	overflow: auto;
+	border-radius: 14px;
+	background: #fff;
+	border: 1px solid #d9e4dc;
+	box-shadow: 0 20px 48px rgba(15, 23, 42, 0.24);
+	padding: 1rem;
+	position: relative;
+}
+
+.student-soe-preview-frame-wrap {
+	margin-top: 0.7rem;
+	border-radius: 10px;
+	border: 1px solid #d1d5db;
+	overflow: hidden;
+	background: #f8fafc;
+}
+
+.student-soe-preview-frame {
+	width: 100%;
+	height: min(70vh, 760px);
+	border: none;
+}
+
+.student-dashboard--dark .student-soe-preview-modal {
+	background: #111827;
+	border-color: #334155;
+}
+
+.student-dashboard--dark .student-soe-preview-frame-wrap {
+	background: #0f172a;
+	border-color: #334155;
 }
 

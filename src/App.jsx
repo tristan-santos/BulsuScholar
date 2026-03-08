@@ -16,7 +16,8 @@ function App() {
 			<Routes>
 				<Route path="/" element={<LoginPage />} />
 				<Route path="/signup" element={<SignupPage />} />
-				<Route path="/admin-dashboard" element={<AdminDashboard />} />
+				<Route path="/admin/*" element={<AdminDashboard />} />
+				<Route path="/admin-dashboard" element={<Navigate to="/admin/dashboard" replace />} />
 				<Route path="/student-dashboard" element={<StudentDashboard />} />
 				<Route path="/student-dashboard/scholarships" element={<StudentScholarshipsPage />} />
 				<Route path="/student-dashboard/profile" element={<StudentProfilePage />} />

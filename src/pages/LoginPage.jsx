@@ -90,10 +90,8 @@ export default function LoginPage() {
 
 			// Password is correct, proceed with login
 			toast.info("Logging in…", { autoClose: 1500 })
-			if (found.type === "student") {
-				sessionStorage.setItem("bulsuscholar_userId", id)
-				sessionStorage.setItem("bulsuscholar_userType", "student")
-			}
+			sessionStorage.setItem("bulsuscholar_userId", id)
+			sessionStorage.setItem("bulsuscholar_userType", found.type)
 			setTimeout(() => {
 				navigate(getDashboardPath(found.type), {
 					replace: true,
