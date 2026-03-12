@@ -10,10 +10,17 @@ import { toast } from "react-toastify"
 import { doc, getDoc } from "firebase/firestore"
 import { db } from "../../firebase"
 import { verifyPassword } from "../services/authService"
+import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import logo2 from "../assets/logo2.png"
+
+import {
+	sendEmailNotification,
+	getForgotPasswordEmailBody,
+} from "../services/emailService"
+import { HiX } from "react-icons/hi"
 
 const COLLECTIONS = [
 	{ type: "student", collection: "students" },
@@ -26,7 +33,61 @@ export default function LoginPage() {
 	const [password, setPassword] = useState("")
 	const [showPassword, setShowPassword] = useState(false)
 	const [isLoading, setIsLoading] = useState(false)
+	const [showForgotModal, setShowForgotModal] = useState(false)
+	const [forgotUserId, setForgotUserId] = useState("")
+	const [isSendingReset, setIsSendingReset] = useState(false)
 	const navigate = useNavigate()
+
+	const handleForgotPassword = async (e) => {
+		e.preventDefault()
+		const id = forgotUserId.trim()
+		if (!id) {
+			toast.error("Please enter your User ID")
+			return
+		}
+
+		setIsSendingReset(true)
+		try {
+			// Find user in any collection
+			const results = await Promise.all(
+				COLLECTIONS.map(({ collection }) =>
+					getDoc(doc(db, collection, id)).then((snap) => ({
+						exists: snap.exists(),
+						data: snap.exists() ? snap.data() : null,
+					})),
+				),
+			)
+			const found = results.find((r) => r.exists)
+
+			if (!found) {
+				toast.error("User ID not found.")
+				return
+			}
+
+			if (!found.data.email) {
+				toast.error("No email associated with this account. Please contact support.")
+				return
+			}
+
+			// In a real app, you'd generate a reset token. For this demo, we'll just send a mock link.
+			const resetLink = `${window.location.origin}/reset-password?userId=${id}`
+			await sendEmailNotification(
+				found.data.email,
+				found.data.fname || "User",
+				"Password Reset Request",
+				getForgotPasswordEmailBody(resetLink),
+			)
+
+			toast.success("Password reset instructions sent to your email!")
+			setShowForgotModal(false)
+			setForgotUserId("")
+		} catch (err) {
+			console.error(err)
+			toast.error("Failed to send reset email.")
+		} finally {
+			setIsSendingReset(false)
+		}
+	}
 
 	const getDashboardPath = (type) => {
 		switch (type) {
@@ -86,6 +147,14 @@ export default function LoginPage() {
 			if (!isPasswordCorrect) {
 				toast.error("Invalid password. Please try again.")
 				return
+			}
+
+			if (found.type === "student") {
+				const accessState = getStudentAccessState(found.data)
+				if (accessState.isPortalAccessBlocked) {
+					toast.error(getPortalAccessBlockMessage(found.data))
+					return
+				}
 			}
 
 			// Password is correct, proceed with login
@@ -210,9 +279,13 @@ export default function LoginPage() {
 								)}
 							</button>
 						</div>
-						<a href="#forgot" className="login-forgot">
+						<button
+							type="button"
+							className="login-forgot-btn"
+							onClick={() => setShowForgotModal(true)}
+						>
 							Forgot password?
-						</a>
+						</button>
 
 						<button type="submit" className="login-submit" disabled={isLoading}>
 							{isLoading ? "Logging in…" : "Enter"}
@@ -233,6 +306,54 @@ export default function LoginPage() {
 					</form>
 				</div>
 			</div>
+
+			{showForgotModal && (
+				<div
+					className="admin-modal-overlay"
+					style={{ zIndex: 9999 }}
+					onClick={() => setShowForgotModal(false)}
+				>
+					<div
+						className="admin-modal-card"
+						style={{ maxWidth: "400px", padding: "2rem" }}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<button
+							className="admin-modal-close"
+							onClick={() => setShowForgotModal(false)}
+						>
+							<HiX />
+						</button>
+						<h3 className="admin-modal-title">Reset Password</h3>
+						<p className="admin-modal-copy">
+							Enter your User ID and we'll send password reset instructions to
+							your registered email.
+						</p>
+						<form onSubmit={handleForgotPassword} style={{ marginTop: "1rem" }}>
+							<label className="login-label">User ID</label>
+							<div className="login-input-wrap" style={{ marginBottom: "1.5rem" }}>
+								<HiOutlineMail className="login-input-icon" />
+								<input
+									type="text"
+									className="login-input"
+									placeholder="Enter User ID"
+									value={forgotUserId}
+									onChange={(e) => setForgotUserId(e.target.value)}
+									required
+								/>
+							</div>
+							<button
+								type="submit"
+								className="login-submit"
+								disabled={isSendingReset}
+								style={{ width: "100%" }}
+							>
+								{isSendingReset ? "Sending…" : "Send Reset Email"}
+							</button>
+						</form>
+					</div>
+				</div>
+			)}
 		</div>
 	)
 }

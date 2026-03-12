@@ -75,9 +75,34 @@ export function getCurrentSemesterTag(date = new Date()) {
 	return `${getCurrentAcademicYear(date)}-${semester}`
 }
 
+function getStudentNumberSuffix(studentId = "") {
+	const digits = String(studentId ?? "").replace(/\D/g, "")
+	if (!digits) return "000"
+	return digits.slice(-3).padStart(3, "0")
+}
+
+function buildRandomLowercaseAlphaNumeric(length = 6) {
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+	let value = ""
+	for (let index = 0; index < length; index += 1) {
+		value += chars[Math.floor(Math.random() * chars.length)]
+	}
+	return value
+}
+
+export function generateScholarshipRequestNumber(studentId = "") {
+	return `${getStudentNumberSuffix(studentId)}-${buildRandomLowercaseAlphaNumeric(6)}`
+}
+
+export function isScholarshipFinalized(record = {}) {
+	const status = String(record?.status || "").toLowerCase()
+	return record?.isLocked === true || status.includes("finalized")
+}
+
 export function buildScholarshipRecord({
 	name,
 	provider,
+	studentId = "",
 	type = "Scholarship",
 	mode = "saved",
 	documentUrls = {},
@@ -88,9 +113,11 @@ export function buildScholarshipRecord({
 	const policy = getScholarshipPolicy(providerName)
 	const isApply = mode === "applied"
 	const nowIso = new Date().toISOString()
+	const requestNumber = generateScholarshipRequestNumber(studentId)
 
 	return {
-		id: `sch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+		id: requestNumber,
+		requestNumber,
 		name: displayName,
 		provider: providerName,
 		type,
@@ -115,18 +142,30 @@ export function buildScholarshipRecord({
 export function normalizeScholarshipRecord(raw = {}, index = 0) {
 	const provider = (raw.provider || raw.name || "Other").trim()
 	const policy = getScholarshipPolicy(provider)
+	const requestNumber =
+		raw.requestNumber ||
+		(typeof raw.id === "string" && /^[a-z0-9]{9}$/.test(raw.id) ? raw.id : "")
+	const baseStatus =
+		raw.status ||
+		(policy.providerType === SCHOLARSHIP_TYPE.KUYA_WIN
+			? "Application Submitted"
+			: "Saved")
+	const finalized = isScholarshipFinalized({ ...raw, status: baseStatus })
+	const finalizedState =
+		raw.finalizedState || (finalized && !String(baseStatus).toLowerCase().includes("finalized") ? baseStatus : "")
+	const status = finalized ? "Finalized" : baseStatus
 	return {
-		id: raw.id || `legacy_sch_${index}_${provider.replace(/\s+/g, "_").toLowerCase()}`,
+		id: requestNumber || raw.id || `legacy_sch_${index}_${provider.replace(/\s+/g, "_").toLowerCase()}`,
+		requestNumber:
+			requestNumber ||
+			(typeof raw.id === "string" ? raw.id : `legacy_sch_${index}_${provider.replace(/\s+/g, "_").toLowerCase()}`),
 		name: raw.name || provider || "Scholarship",
 		provider,
 		type: raw.type || "Scholarship",
 		providerType: raw.providerType || policy.providerType,
-		status:
-			raw.status ||
-			(policy.providerType === SCHOLARSHIP_TYPE.KUYA_WIN
-				? "Application Submitted"
-				: "Saved"),
-		isLocked: raw.isLocked === true,
+		status,
+		isLocked: finalized,
+		finalizedState,
 		isFastTrack: typeof raw.isFastTrack === "boolean" ? raw.isFastTrack : policy.isFastTrack,
 		minGwa:
 			typeof raw.minGwa === "number" ? raw.minGwa : policy.minGwa,

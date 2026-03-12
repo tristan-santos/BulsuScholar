@@ -264,21 +264,93 @@
 	opacity: 0.6;
 }
 
-.login-forgot {
+.login-forgot-btn {
+	background: none;
+	border: none;
+	padding: 0;
 	display: block;
 	font-size: 0.875rem;
 	font-weight: 500;
 	color: #0b572b;
 	text-decoration: none;
 	margin-top: 0.35rem;
+	cursor: pointer;
+	text-align: left;
 	transition:
 		color 0.2s,
 		text-decoration 0.2s;
 }
 
-.login-forgot:hover {
+.login-forgot-btn:hover {
 	color: #084320;
 	text-decoration: underline;
+}
+
+/* Modal Styles for Login Page (matching AdminDashboard) */
+.admin-modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(4px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	z-index: 1000;
+}
+
+.admin-modal-card {
+	background: #fff;
+	border-radius: 12px;
+	box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+	width: 100%;
+	position: relative;
+	animation: modalSlideUp 0.3s ease-out;
+}
+
+@keyframes modalSlideUp {
+	from { transform: translateY(20px); opacity: 0; }
+	to { transform: translateY(0); opacity: 1; }
+}
+
+.admin-modal-close {
+	position: absolute;
+	top: 1rem;
+	right: 1rem;
+	background: #f3f4f6;
+	border: none;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #4b5563;
+	cursor: pointer;
+	transition: all 0.2s;
+}
+
+.admin-modal-close:hover {
+	background: #e5e7eb;
+	color: #1f2937;
+	transform: rotate(90deg);
+}
+
+.admin-modal-title {
+	font-size: 1.5rem;
+	font-weight: 700;
+	color: #111827;
+	margin-bottom: 0.5rem;
+}
+
+.admin-modal-copy {
+	font-size: 0.95rem;
+	color: #4b5563;
+	line-height: 1.5;
+	margin-bottom: 1.5rem;
 }
 
 .login-input-wrap {

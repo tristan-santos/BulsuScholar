@@ -1,5 +1,5 @@
 /**
- * Student Scholarships Page - Apply-only scholarship flow with SOE request locking rules.
+ * Student Scholarships Page - Apply-only scholarship flow with gated material requests.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
@@ -10,9 +10,11 @@ import {
 	doc,
 	getDoc,
 	getDocs,
+	onSnapshot,
 	query,
 	serverTimestamp,
 	setDoc,
+	updateDoc,
 	where,
 } from "firebase/firestore"
 import { toast } from "react-toastify"
@@ -22,6 +24,7 @@ import {
 	HiOutlineCheckCircle,
 	HiOutlineClock,
 	HiOutlineDocumentText,
+	HiOutlineExclamation,
 	HiOutlineLogout,
 	HiOutlineMoon,
 	HiOutlineSun,
@@ -30,7 +33,6 @@ import {
 } from "react-icons/hi"
 import { db } from "../../firebase"
 import logo2 from "../assets/logo2.png"
-import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
 import useThemeMode from "../hooks/useThemeMode"
 import {
@@ -39,7 +41,6 @@ import {
 	getCurrentSemesterTag,
 	getDocumentUrlsForStudent,
 	getScholarshipCatalog,
-	getSoeStatusForScholarship,
 	normalizeScholarshipList,
 	shouldWarnMultipleScholarships,
 	shouldWarnZeroScholarships,
@@ -47,6 +48,27 @@ import {
 	validateScholarshipDocuments,
 	withCurrentSemesterTag,
 } from "../services/scholarshipService"
+import {
+	getPortalAccessBlockMessage,
+	getScholarshipActionBlockMessage,
+	getStudentBlockedBannerMessage,
+	getStudentAccessState,
+} from "../services/studentAccessService"
+import {
+	getMaterialEntry,
+	getMaterialRequestDocumentId,
+	getMaterialRequestState,
+	getMaterialRequestType,
+	isMaterialApproved,
+	isMaterialPending,
+	isMaterialRejected,
+	normalizeMaterialRequest,
+	toMaterialLabel,
+} from "../services/materialRequestService"
+import {
+	downloadApplicationFormPdfBytes,
+	exportApplicationFormPdfDocument,
+} from "../services/applicationFormService"
 import { downloadSoePdfBytes, exportSoePdfDocument } from "../services/soeService"
 
 const SOE_EXPORT_LOCK_MONTHS = 6
@@ -74,6 +96,7 @@ function isScholarshipActiveOrPending(status = "") {
 	const normalized = String(status).toLowerCase()
 	if (!normalized) return true
 	return ![
+		"finalized",
 		"rejected",
 		"denied",
 		"cancelled",
@@ -98,6 +121,22 @@ function addMonths(date, months) {
 	return next
 }
 
+function toStudentMaterialRequestLabel(materialKey = "", state = "none") {
+	const config = getMaterialRequestType(materialKey)
+	if (state === "approved") return config.approvedLabel
+	if (state === "rejected") return `${config.label} Rejected`
+	if (state === "pending") return "Pending Admin Approval"
+	return `${config.label} Not Requested`
+}
+
+function getMultipleScholarshipBannerCopy(user, scholarships) {
+	if (user?.scholarshipConflictMessage) return user.scholarshipConflictMessage
+	if (Array.isArray(scholarships) && scholarships.length > 1) {
+		return "Your scholarship eligibility is temporarily on hold. Choose one scholarship only to comply with the one scholarship per student policy."
+	}
+	return "Your scholarship eligibility is temporarily on hold until you choose one scholarship only."
+}
+
 export default function StudentScholarshipsPage() {
 	const navigate = useNavigate()
 	const [user, setUser] = useState(null)
@@ -107,26 +146,31 @@ export default function StudentScholarshipsPage() {
 	const [isMutating, setIsMutating] = useState(false)
 	const [confirmTarget, setConfirmTarget] = useState(null)
 	const [expenseModalTarget, setExpenseModalTarget] = useState(null)
+	const [studentSoeRequests, setStudentSoeRequests] = useState([])
 	const [soeExpenses, setSoeExpenses] = useState([{ label: "", amount: "" }])
 	const [isExportingSoe, setIsExportingSoe] = useState(false)
 	const [isDownloadingSoe, setIsDownloadingSoe] = useState(false)
+	const [isDownloadingApplicationForm, setIsDownloadingApplicationForm] = useState(false)
 	const [isSavingExpensePreset, setIsSavingExpensePreset] = useState(false)
 	const [isSoePreviewOpen, setIsSoePreviewOpen] = useState(false)
+	const [soePreviewTargetId, setSoePreviewTargetId] = useState("")
 	const [soePreviewUrl, setSoePreviewUrl] = useState("")
 	const [soePreviewBytes, setSoePreviewBytes] = useState(null)
-	const [soePreviewRegistration, setSoePreviewRegistration] = useState("")
+	const [soePreviewRequestNumber, setSoePreviewRequestNumber] = useState("")
 	const { theme, setTheme } = useThemeMode()
 	const userMenuRef = useRef(null)
+	const forcedLogoutRef = useRef(false)
 
 	const scholarshipCatalog = useMemo(() => getScholarshipCatalog(), [])
 	const scholarships = useMemo(
 		() => normalizeScholarshipList(user?.scholarships || []),
 		[user?.scholarships],
 	)
+	const hasMultipleScholarshipChoices = scholarships.length >= 2
 	const hasLockedScholarship = scholarships.some((item) => item.isLocked)
 	const lockedScholarship = scholarships.find((item) => item.isLocked) || null
 	const activeOrPendingScholarships = scholarships.filter((item) =>
-		isScholarshipActiveOrPending(item.status),
+		!item.isLocked && isScholarshipActiveOrPending(item.status),
 	)
 	const hasActiveOrPendingScholarship = activeOrPendingScholarships.length > 0
 	const activeOrPendingProviderTypes = new Set(
@@ -137,12 +181,59 @@ export default function StudentScholarshipsPage() {
 	const isValidated = checkValidated(user)
 	const avatarUrl = user?.profileImageUrl || ""
 	const studentNumber = userId
+	const studentAccessState = useMemo(() => getStudentAccessState(user || {}), [user])
+	const hasComplianceBlock = studentAccessState.soeComplianceBlocked
+	const hasScholarshipActionBlock = studentAccessState.isScholarshipActionBlocked
+	const scholarshipActionBlockMessage = getScholarshipActionBlockMessage(user || {})
+	const portalAccessBlockMessage = getPortalAccessBlockMessage(user || {})
+	const hasBlockedScholarshipBanner =
+		studentAccessState.scholarshipEligibilityBlocked || studentAccessState.soeComplianceBlocked
+	const blockedScholarshipBannerCopy = getStudentBlockedBannerMessage(user || {})
+	const hasMultipleScholarshipConflict =
+		user?.scholarshipConflictWarning === true ||
+		(user?.scholarshipRestrictionReason === "multiple_scholarships" && scholarships.length > 1)
+	const multipleScholarshipBannerCopy = getMultipleScholarshipBannerCopy(user, scholarships)
+	const canResolveMultipleScholarshipConflict =
+		hasMultipleScholarshipConflict &&
+		!studentAccessState.isPortalAccessBlocked &&
+		!studentAccessState.soeComplianceBlocked
 
 	const getUserInitials = () => {
 		const f = user?.fname?.[0]?.toUpperCase() || ""
 		const l = user?.lname?.[0]?.toUpperCase() || ""
 		return f + l || "ST"
 	}
+
+	const isScholarshipActionBlocked = useCallback(
+		(options = {}) => {
+			const { allowConflictResolution = false } = options
+			if (studentAccessState.isPortalAccessBlocked) {
+				toast.error(portalAccessBlockMessage || scholarshipActionBlockMessage)
+				return true
+			}
+			if (studentAccessState.soeComplianceBlocked) {
+				toast.error(scholarshipActionBlockMessage)
+				return true
+			}
+			if (
+				studentAccessState.scholarshipEligibilityBlocked &&
+				!(allowConflictResolution && canResolveMultipleScholarshipConflict)
+			) {
+				toast.error(scholarshipActionBlockMessage)
+				return true
+			}
+			return false
+		},
+		[
+			canResolveMultipleScholarshipConflict,
+			portalAccessBlockMessage,
+			scholarshipActionBlockMessage,
+			studentAccessState.accountAccessBlocked,
+			studentAccessState.isPortalAccessBlocked,
+			studentAccessState.scholarshipEligibilityBlocked,
+			studentAccessState.soeComplianceBlocked,
+		],
+	)
 
 	useEffect(() => {
 		function handleClickOutside(e) {
@@ -166,12 +257,15 @@ export default function StudentScholarshipsPage() {
 		}
 
 		setUserId(storedUserId)
-		getDoc(doc(db, "students", storedUserId))
-			.then(async (snap) => {
+		return onSnapshot(
+			doc(db, "students", storedUserId),
+			(snap) => {
 				if (!snap.exists()) {
+					setUser(null)
 					setUserLoaded(true)
 					return
 				}
+
 				const data = snap.data() || {}
 				const normalized = normalizeScholarshipList(data.scholarships || [])
 				const corFile = withCurrentSemesterTag(data.corFile)
@@ -182,9 +276,15 @@ export default function StudentScholarshipsPage() {
 				const shouldSyncDocs =
 					Boolean(data.corFile?.url && !data.corFile?.semesterTag) ||
 					Boolean(data.cogFile?.url && !data.cogFile?.semesterTag)
+				const nextUser = {
+					...data,
+					scholarships: normalized,
+					corFile,
+					cogFile,
+				}
 
 				if (shouldSyncScholarships || shouldSyncDocs) {
-					await setDoc(
+					void setDoc(
 						doc(db, "students", storedUserId),
 						{
 							scholarships: normalized,
@@ -193,25 +293,48 @@ export default function StudentScholarshipsPage() {
 							updatedAt: serverTimestamp(),
 						},
 						{ merge: true },
-					)
+					).catch(() => {})
 				}
 
-				setUser({
-					...data,
-					scholarships: normalized,
-					corFile,
-					cogFile,
-				})
+				setUser(nextUser)
 				setUserLoaded(true)
-			})
-			.catch(() => setUserLoaded(true))
-	}, [])
+
+				const accessState = getStudentAccessState(nextUser)
+				if (accessState.isPortalAccessBlocked && !forcedLogoutRef.current) {
+					forcedLogoutRef.current = true
+					sessionStorage.removeItem("bulsuscholar_userId")
+					sessionStorage.removeItem("bulsuscholar_userType")
+					toast.error(getPortalAccessBlockMessage(nextUser))
+					navigate("/", { replace: true })
+				}
+			},
+			() => setUserLoaded(true),
+		)
+	}, [navigate])
 
 	useEffect(() => {
 		if (userLoaded && (!user || !userId)) {
 			navigate("/", { replace: true })
 		}
 	}, [userLoaded, user, userId, navigate])
+
+	useEffect(() => {
+		if (!userId) {
+			setStudentSoeRequests([])
+			return undefined
+		}
+
+		const soeRequestQuery = query(collection(db, "soeRequests"), where("studentId", "==", userId))
+		return onSnapshot(
+			soeRequestQuery,
+			(snap) => {
+				setStudentSoeRequests(snap.docs.map((row) => ({ id: row.id, ...(row.data() || {}) })))
+			},
+			() => {
+				setStudentSoeRequests([])
+			},
+		)
+	}, [userId])
 
 	useEffect(() => {
 		return () => {
@@ -258,14 +381,14 @@ export default function StudentScholarshipsPage() {
 				query(collection(db, "soeRequests"), where("studentId", "==", userId)),
 			)
 			const hasDelayedPendingKuya = pendingRequests.docs.some((requestDoc) => {
-				const request = requestDoc.data() || {}
+				const request = normalizeMaterialRequest(requestDoc.data() || {})
 				const requestProviderType = toScholarshipProviderType(
 					request.providerType || request.scholarshipName || "",
 				)
 				return (
-					request.status === "Pending" &&
+					request.pendingMaterialKeys.length > 0 &&
 					requestProviderType === "kuya_win" &&
-					isOlderThanSevenDays(request.timestamp)
+					isOlderThanSevenDays(request.timestamp || getMaterialEntry(request, "soe").requestedAt)
 				)
 			})
 
@@ -287,6 +410,110 @@ export default function StudentScholarshipsPage() {
 		syncWarnings(scholarships).catch(() => {})
 	}, [userLoaded, user, userId, scholarships, syncWarnings])
 
+	const latestMaterialRequestsByScholarship = useMemo(() => {
+		const latestRequests = new Map()
+		studentSoeRequests
+			.slice()
+			.sort((a, b) => {
+				const aDate = toJsDate(a.timestamp || a.createdAt || a.dateRequested || a.updatedAt)?.getTime() || 0
+				const bDate = toJsDate(b.timestamp || b.createdAt || b.dateRequested || b.updatedAt)?.getTime() || 0
+				return bDate - aDate
+			})
+			.forEach((request) => {
+				const normalizedRequest = normalizeMaterialRequest(request)
+				const key = normalizedRequest.scholarshipId || normalizedRequest.requestNumber || ""
+				if (!key || latestRequests.has(key)) return
+				latestRequests.set(key, normalizedRequest)
+			})
+		return latestRequests
+	}, [studentSoeRequests])
+
+	const getLatestMaterialRequest = useCallback(
+		(scholarshipId = "") => latestMaterialRequestsByScholarship.get(scholarshipId) || null,
+		[latestMaterialRequestsByScholarship],
+	)
+
+	const getMaterialLabelForScholarship = useCallback(
+		(entry, materialKey) => {
+			const latestRequest = getLatestMaterialRequest(entry?.id)
+			const approvalState = latestRequest
+				? getMaterialRequestState(latestRequest, materialKey)
+				: "none"
+			return toStudentMaterialRequestLabel(materialKey, approvalState)
+		},
+		[getLatestMaterialRequest],
+	)
+
+	const getMaterialStateForScholarship = useCallback(
+		(entry, materialKey) => {
+			const latestRequest = getLatestMaterialRequest(entry?.id)
+			return latestRequest
+				? getMaterialRequestState(latestRequest, materialKey)
+				: "none"
+		},
+		[getLatestMaterialRequest],
+	)
+
+	const getMaterialRequestButtonState = useCallback(
+		(entry, materialKey) => {
+			const config = getMaterialRequestType(materialKey)
+			const requestState = getMaterialStateForScholarship(entry, materialKey)
+			if (requestState === "approved") {
+				return { disabled: true, label: "Approved" }
+			}
+			if (requestState === "pending") {
+				return { disabled: true, label: "Requested" }
+			}
+			if (requestState === "rejected") {
+				return { disabled: false, label: config.requestAgainLabel }
+			}
+			return { disabled: false, label: config.requestLabel }
+		},
+		[getMaterialStateForScholarship],
+	)
+
+	const getMaterialDownloadGate = useCallback(
+		(entry = null, materialKey = "soe") => {
+			const config = getMaterialRequestType(materialKey)
+			const latestRequest = getLatestMaterialRequest(entry?.id || "")
+			const approvalState = latestRequest
+				? getMaterialRequestState(latestRequest, materialKey)
+				: "none"
+
+			if (approvalState === "approved") {
+				const materialEntry = latestRequest ? getMaterialEntry(latestRequest, materialKey) : null
+				return {
+					canDownload: true,
+					label: materialEntry?.downloadedAt ? config.downloadedLabel : config.downloadLabel,
+					reason: "",
+				}
+			}
+
+			if (approvalState === "rejected") {
+				return {
+					canDownload: false,
+					label: `${config.label} Rejected`,
+					reason: `Your latest ${config.label.toLowerCase()} request was not approved. Please coordinate with the scholarship office first.`,
+				}
+			}
+
+			if (approvalState === "pending") {
+				return {
+					canDownload: false,
+					label: "Pending Approval",
+					reason: `Your ${config.label.toLowerCase()} request is still waiting for admin approval.`,
+				}
+			}
+
+			return {
+				canDownload: false,
+				label: `${config.label} Not Requested`,
+				reason: `Request ${config.label.toLowerCase()} first before downloading the form.`,
+			}
+		},
+		[getLatestMaterialRequest],
+	)
+
 	const persistScholarships = async (nextScholarships, message = "") => {
 		await setDoc(
 			doc(db, "students", userId),
@@ -305,6 +532,7 @@ export default function StudentScholarshipsPage() {
 
 	const applyScholarship = async (catalogItem) => {
 		if (!user || !userId || isMutating) return
+		if (isScholarshipActionBlocked()) return
 		if (hasLockedScholarship) {
 			toast.info("Your scholarship selection is already locked for this semester.")
 			return
@@ -343,6 +571,7 @@ export default function StudentScholarshipsPage() {
 			const nextRecord = buildScholarshipRecord({
 				name: catalogItem.name,
 				provider: catalogItem.name,
+				studentId: userId,
 				type: "Scholarship",
 				mode: "applied",
 				documentUrls: getDocumentUrlsForStudent(user),
@@ -371,8 +600,10 @@ export default function StudentScholarshipsPage() {
 		}
 	}
 
-	const requestSoe = async (target) => {
+	const chooseScholarship = async (target) => {
 		if (!user || !userId || isMutating || !target) return
+		if (isScholarshipActionBlocked({ allowConflictResolution: true })) return
+
 		setIsMutating(true)
 		try {
 			const selected = scholarships.find((item) => item.id === target.id)
@@ -380,8 +611,89 @@ export default function StudentScholarshipsPage() {
 				toast.error("Scholarship record not found.")
 				return
 			}
-			if (selected.isLocked) {
-				toast.info("This scholarship is already finalized for this semester.")
+			const isResolvingMultipleScholarshipConflict =
+				user?.scholarshipRestrictionReason === "multiple_scholarships" ||
+				user?.scholarshipConflictWarning === true
+			if (selected.adminBlocked === true && !isResolvingMultipleScholarshipConflict) {
+				toast.warning(
+					"This scholarship is blocked by the scholarship office. Please visit the office for unblocking.",
+				)
+				return
+			}
+
+			const nextScholarships = [
+				{
+					...selected,
+					adminBlocked: false,
+					adminBlockedAt: null,
+				},
+			]
+			const shouldClearConflictRestriction = isResolvingMultipleScholarshipConflict
+			const nextRestrictions = shouldClearConflictRestriction
+				? {
+						...(user.restrictions || {}),
+						scholarshipEligibility: user?.soeComplianceBlocked === true,
+						complianceHold: user?.soeComplianceBlocked === true,
+					}
+				: user?.restrictions
+			await setDoc(
+				doc(db, "students", userId),
+				{
+					scholarships: nextScholarships,
+					scholarshipConflictWarning: shouldClearConflictRestriction ? false : user?.scholarshipConflictWarning === true,
+					scholarshipConflictMessage: shouldClearConflictRestriction ? "" : user?.scholarshipConflictMessage || "",
+					scholarshipRestrictionReason: shouldClearConflictRestriction ? null : user?.scholarshipRestrictionReason || null,
+					...(nextRestrictions ? { restrictions: nextRestrictions } : {}),
+					updatedAt: serverTimestamp(),
+				},
+				{ merge: true },
+			)
+
+			setUser((prev) => ({
+				...(prev || {}),
+				scholarships: nextScholarships,
+				scholarshipConflictWarning: shouldClearConflictRestriction ? false : prev?.scholarshipConflictWarning === true,
+				scholarshipConflictMessage: shouldClearConflictRestriction ? "" : prev?.scholarshipConflictMessage || "",
+				scholarshipRestrictionReason: shouldClearConflictRestriction ? null : prev?.scholarshipRestrictionReason || null,
+				...(nextRestrictions ? { restrictions: nextRestrictions } : {}),
+			}))
+			await syncWarnings(nextScholarships)
+			toast.success(
+				shouldClearConflictRestriction
+					? `${selected.name} selected. Your multiple scholarship warning has been cleared.`
+					: `${selected.name} selected. You can now request your scholarship materials.`,
+			)
+		} catch (error) {
+			console.error("Failed to choose scholarship:", error)
+			toast.error("Failed to save your scholarship choice. Please try again.")
+		} finally {
+			setIsMutating(false)
+			setConfirmTarget(null)
+		}
+	}
+
+	const requestMaterial = async (target, materialKey) => {
+		if (!user || !userId || isMutating || !target) return
+		if (isScholarshipActionBlocked()) return
+		const materialConfig = getMaterialRequestType(materialKey)
+		setIsMutating(true)
+		try {
+			const selected = scholarships.find((item) => item.id === target.id)
+			if (!selected) {
+				toast.error("Scholarship record not found.")
+				return
+			}
+
+			const latestRequest = getLatestMaterialRequest(selected.id)
+			const currentRequestState = latestRequest
+				? getMaterialRequestState(latestRequest, materialKey)
+				: "none"
+			if (currentRequestState === "pending") {
+				toast.info(`Your ${materialConfig.label.toLowerCase()} request is already pending admin approval.`)
+				return
+			}
+			if (currentRequestState === "approved") {
+				toast.info(`This ${materialConfig.label.toLowerCase()} request is already approved. You can download it now.`)
 				return
 			}
 			if (selected.adminBlocked === true) {
@@ -391,12 +703,31 @@ export default function StudentScholarshipsPage() {
 				return
 			}
 
-			const soeStatus = getSoeStatusForScholarship(selected)
+			const requestedAt = new Date().toISOString()
+			const requestDocId = getMaterialRequestDocumentId(userId, selected.id)
+			const normalizedExistingRequest = latestRequest
+				? normalizeMaterialRequest(latestRequest)
+				: null
+			const existingSoeEntry = getMaterialEntry(normalizedExistingRequest || {}, "soe")
+			const existingApplicationFormEntry = getMaterialEntry(
+				normalizedExistingRequest || {},
+				"application_form",
+			)
 			const finalizedRecord = {
 				...selected,
 				isLocked: true,
-				status: soeStatus === "Issued" ? "SOE Issued" : "Pending",
-				requestedSoeAt: new Date().toISOString(),
+				status: "Finalized",
+				finalizedState: "Pending Approval",
+				requestedSoeAt:
+					materialKey === "soe"
+						? requestedAt
+						: selected.requestedSoeAt || normalizedExistingRequest?.materials?.soe?.requestedAt || null,
+				requestedApplicationFormAt:
+					materialKey === "application_form"
+						? requestedAt
+						: selected.requestedApplicationFormAt ||
+						  normalizedExistingRequest?.materials?.application_form?.requestedAt ||
+						  null,
 			}
 
 			const shouldCollapse = scholarships.length >= 2
@@ -411,45 +742,169 @@ export default function StudentScholarshipsPage() {
 				{
 					scholarships: nextScholarships,
 					updatedAt: serverTimestamp(),
-					lastSoeStatus: soeStatus,
+					lastSoeStatus: materialKey === "soe" ? "Pending" : user?.lastSoeStatus || "",
 				},
 				{ merge: true },
 			)
 
-			await addDoc(collection(db, "soeRequests"), {
-				studentId: userId,
-				scholarshipId: selected.id,
-				scholarshipName: selected.name,
-				providerType: selected.providerType,
-				timestamp: serverTimestamp(),
-				status: soeStatus,
-				academicYear: getCurrentAcademicYear(),
-				semesterTag: selected.semesterTag || getCurrentSemesterTag(),
-			})
+			await setDoc(
+				doc(db, "soeRequests", requestDocId),
+				{
+					requestNumber: selected.requestNumber || selected.id,
+					studentId: userId,
+					scholarshipId: selected.id,
+					scholarshipName: selected.name,
+					providerType: selected.providerType,
+					timestamp: serverTimestamp(),
+					status: "Pending",
+					reviewState: "incoming",
+					requestedMaterials: {
+						soe:
+							materialKey === "soe"
+								? true
+								: normalizedExistingRequest?.materials?.soe?.requested === true,
+						application_form:
+							materialKey === "application_form"
+								? true
+								: normalizedExistingRequest?.materials?.application_form?.requested === true,
+					},
+					materials: {
+						soe:
+							materialKey === "soe"
+								? {
+										requested: true,
+										status: "pending",
+										requestedAt: serverTimestamp(),
+										approvedAt: null,
+										rejectedAt: null,
+										downloadedAt: existingSoeEntry.downloadedAt || null,
+									}
+								: existingSoeEntry.requested
+									? {
+											requested: true,
+											status: existingSoeEntry.status,
+											requestedAt: existingSoeEntry.requestedAt || null,
+											approvedAt: existingSoeEntry.approvedAt || null,
+											rejectedAt: existingSoeEntry.rejectedAt || null,
+											downloadedAt: existingSoeEntry.downloadedAt || null,
+										}
+									: {
+											requested: false,
+											status: "none",
+											requestedAt: null,
+											approvedAt: null,
+											rejectedAt: null,
+											downloadedAt: null,
+										},
+						application_form:
+							materialKey === "application_form"
+								? {
+										requested: true,
+										status: "pending",
+										requestedAt: serverTimestamp(),
+										approvedAt: null,
+										rejectedAt: null,
+										downloadedAt: existingApplicationFormEntry.downloadedAt || null,
+									}
+								: existingApplicationFormEntry.requested
+									? {
+											requested: true,
+											status: existingApplicationFormEntry.status,
+											requestedAt: existingApplicationFormEntry.requestedAt || null,
+											approvedAt: existingApplicationFormEntry.approvedAt || null,
+											rejectedAt: existingApplicationFormEntry.rejectedAt || null,
+											downloadedAt: existingApplicationFormEntry.downloadedAt || null,
+										}
+									: {
+											requested: false,
+											status: "none",
+											requestedAt: null,
+											approvedAt: null,
+											rejectedAt: null,
+											downloadedAt: null,
+										},
+					},
+					academicYear: getCurrentAcademicYear(),
+					semesterTag: selected.semesterTag || getCurrentSemesterTag(),
+					updatedAt: serverTimestamp(),
+					createdAt: normalizedExistingRequest?.createdAt || serverTimestamp(),
+				},
+				{ merge: true },
+			)
 
+			setStudentSoeRequests((prev) => [
+				normalizeMaterialRequest({
+					id: requestDocId,
+					requestNumber: selected.requestNumber || selected.id,
+					studentId: userId,
+					scholarshipId: selected.id,
+					scholarshipName: selected.name,
+					providerType: selected.providerType,
+					timestamp: requestedAt,
+					status: "Pending",
+					reviewState: "incoming",
+					academicYear: getCurrentAcademicYear(),
+					semesterTag: selected.semesterTag || getCurrentSemesterTag(),
+					materials: {
+						soe:
+							materialKey === "soe"
+								? {
+										requested: true,
+										status: "pending",
+										requestedAt,
+										approvedAt: null,
+										rejectedAt: null,
+										downloadedAt: existingSoeEntry.downloadedAt || null,
+									}
+								: existingSoeEntry,
+						application_form:
+							materialKey === "application_form"
+								? {
+										requested: true,
+										status: "pending",
+										requestedAt,
+										approvedAt: null,
+										rejectedAt: null,
+										downloadedAt: existingApplicationFormEntry.downloadedAt || null,
+									}
+								: existingApplicationFormEntry,
+					},
+				}),
+				...prev.filter(
+					(request) =>
+						(request.scholarshipId || request.requestNumber) !==
+						(selected.id || selected.requestNumber),
+				),
+			])
 			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
 			await syncWarnings(nextScholarships)
 
-			if (soeStatus === "Pending") {
-				toast.success(
-					"SOE request submitted and marked as Pending. Wait for scholarship office verification.",
-				)
-			} else {
-				toast.success("SOE was issued and your scholarship is now locked.")
-			}
+			toast.success(
+				`${materialConfig.label} request submitted. Wait for admin approval before downloading.`,
+			)
 		} catch (error) {
-			console.error("Failed to request SOE:", error)
-			toast.error("SOE request failed. Please try again.")
+			console.error(`Failed to request ${materialKey}:`, error)
+			toast.error(`${materialConfig?.label || "Material"} request failed. Please try again.`)
 		} finally {
 			setIsMutating(false)
 			setConfirmTarget(null)
 		}
 	}
 
-	const handleRequestSoe = (target) => {
+	const handleRequestMaterial = (target, materialKey) => {
 		if (!target) return
-		if (target.isLocked) {
-			toast.info("This scholarship is already finalized for this semester.")
+		if (isScholarshipActionBlocked()) return
+		if (hasMultipleScholarshipChoices) {
+			toast.info(`Choose one scholarship first before requesting ${toMaterialLabel(materialKey).toLowerCase()}.`)
+			return
+		}
+		const currentRequestState = getMaterialStateForScholarship(target, materialKey)
+		if (currentRequestState === "pending") {
+			toast.info(`Your ${toMaterialLabel(materialKey).toLowerCase()} request is already pending admin approval.`)
+			return
+		}
+		if (currentRequestState === "approved") {
+			toast.info(`This ${toMaterialLabel(materialKey).toLowerCase()} request is already approved. You can download it now.`)
 			return
 		}
 		if (target.adminBlocked === true) {
@@ -462,7 +917,7 @@ export default function StudentScholarshipsPage() {
 			setConfirmTarget(target)
 			return
 		}
-		requestSoe(target)
+		requestMaterial(target, materialKey)
 	}
 
 	const getExportWindow = () => {
@@ -497,6 +952,16 @@ export default function StudentScholarshipsPage() {
 
 	const handleDownloadSoe = (target) => {
 		if (!target) return
+		if (isScholarshipActionBlocked()) return
+		if (hasMultipleScholarshipChoices) {
+			toast.info("Choose one scholarship first before downloading SOE.")
+			return
+		}
+		const downloadGate = getMaterialDownloadGate(target, "soe")
+		if (!downloadGate.canDownload) {
+			toast.warning(downloadGate.reason)
+			return
+		}
 		if (!requireExportWindowOpen()) return
 		setExpenseModalTarget(target)
 		const savedExpenses =
@@ -533,7 +998,8 @@ export default function StudentScholarshipsPage() {
 
 	const closeSoePreview = () => {
 		setIsSoePreviewOpen(false)
-		setSoePreviewRegistration("")
+		setSoePreviewRequestNumber("")
+		setSoePreviewTargetId("")
 		setSoePreviewBytes(null)
 		if (soePreviewUrl) {
 			URL.revokeObjectURL(soePreviewUrl)
@@ -543,6 +1009,7 @@ export default function StudentScholarshipsPage() {
 
 	const handleExportSoeWithExpenses = async () => {
 		if (!expenseModalTarget || isExportingSoe) return
+		if (isScholarshipActionBlocked()) return
 		if (!requireExportWindowOpen()) return
 
 		const hasPartialRow = soeExpenses.some((row) => {
@@ -571,11 +1038,12 @@ export default function StudentScholarshipsPage() {
 
 		setIsExportingSoe(true)
 		try {
-			const { registrationNumber, pdfBytes } = await exportSoePdfDocument({
+			const { requestNumber, pdfBytes } = await exportSoePdfDocument({
 				student: user || {},
 				studentId: userId,
 				expenses: preparedExpenses,
 				autoDownload: false,
+				requestNumber: expenseModalTarget?.requestNumber || expenseModalTarget?.id || "",
 			})
 
 			const previewBlob = new Blob([pdfBytes], { type: "application/pdf" })
@@ -585,7 +1053,8 @@ export default function StudentScholarshipsPage() {
 			}
 
 			setSoePreviewBytes(pdfBytes)
-			setSoePreviewRegistration(registrationNumber)
+			setSoePreviewRequestNumber(requestNumber)
+			setSoePreviewTargetId(expenseModalTarget.id || "")
 			setSoePreviewUrl(nextUrl)
 			setIsSoePreviewOpen(true)
 			setExpenseModalTarget(null)
@@ -597,8 +1066,114 @@ export default function StudentScholarshipsPage() {
 		}
 	}
 
+	const handleDownloadApplicationForm = async (target) => {
+		if (!target || !userId || isDownloadingApplicationForm) return
+		if (isScholarshipActionBlocked()) return
+		if (hasMultipleScholarshipChoices) {
+			toast.info("Choose one scholarship first before downloading the application form.")
+			return
+		}
+
+		const downloadGate = getMaterialDownloadGate(target, "application_form")
+		if (!downloadGate.canDownload) {
+			toast.warning(downloadGate.reason)
+			return
+		}
+
+		setIsDownloadingApplicationForm(true)
+		try {
+			const { pdfBytes } = await exportApplicationFormPdfDocument({
+				student: user || {},
+				studentId: userId,
+				scholarship: target,
+				autoDownload: false,
+			})
+
+			downloadApplicationFormPdfBytes(
+				pdfBytes,
+				`Application_Form_${userId}_${target.requestNumber || target.id}.pdf`,
+			)
+
+			const approvedRequest = getLatestMaterialRequest(target.id)
+			if (approvedRequest?.id) {
+				await updateDoc(doc(db, "soeRequests", approvedRequest.id), {
+					"materials.application_form.requested": true,
+					"materials.application_form.status": "approved",
+					"materials.application_form.downloadedAt": serverTimestamp(),
+					applicationFormDownloadedAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				})
+
+				setStudentSoeRequests((prev) =>
+					prev.map((request) =>
+						request.id === approvedRequest.id
+							? normalizeMaterialRequest({
+									...request,
+									materials: {
+										...(request.materials || normalizeMaterialRequest(request).materials),
+										application_form: {
+											...getMaterialEntry(request, "application_form"),
+											requested: true,
+											status: "approved",
+											downloadedAt: new Date().toISOString(),
+										},
+									},
+									applicationFormDownloadedAt: new Date().toISOString(),
+								})
+							: request,
+					),
+				)
+			}
+
+			toast.success("Application form downloaded.")
+		} catch (error) {
+			console.error("Failed to download application form:", error)
+			toast.error("Unable to download the application form. Please try again.")
+		} finally {
+			setIsDownloadingApplicationForm(false)
+		}
+	}
+
 	const handleConfirmDownloadSoe = async () => {
 		if (!soePreviewBytes || !userId || isDownloadingSoe) return
+		if (isScholarshipActionBlocked()) return
+
+		const latestStudentSnap = await getDoc(doc(db, "students", userId))
+		if (!latestStudentSnap.exists()) {
+			toast.error("Student record not found. Please log in again.")
+			closeSoePreview()
+			return
+		}
+		const latestStudentData = latestStudentSnap.data() || {}
+		const latestStudent = {
+			...latestStudentData,
+			scholarships: normalizeScholarshipList(latestStudentData.scholarships || []),
+			corFile: withCurrentSemesterTag(latestStudentData.corFile),
+			cogFile: withCurrentSemesterTag(latestStudentData.cogFile),
+		}
+		const latestAccessState = getStudentAccessState(latestStudent)
+		if (latestAccessState.isPortalAccessBlocked) {
+			sessionStorage.removeItem("bulsuscholar_userId")
+			sessionStorage.removeItem("bulsuscholar_userType")
+			setUser(latestStudent)
+			toast.error(getPortalAccessBlockMessage(latestStudent))
+			closeSoePreview()
+			navigate("/", { replace: true })
+			return
+		}
+		if (latestAccessState.isScholarshipActionBlocked) {
+			setUser(latestStudent)
+			toast.error(getScholarshipActionBlockMessage(latestStudent))
+			closeSoePreview()
+			return
+		}
+		const previewTarget = latestStudent.scholarships.find((entry) => entry.id === soePreviewTargetId) || null
+		const downloadGate = getMaterialDownloadGate(previewTarget, "soe")
+		if (!downloadGate.canDownload) {
+			toast.warning(downloadGate.reason)
+			closeSoePreview()
+			return
+		}
 		if (!requireExportWindowOpen()) {
 			closeSoePreview()
 			return
@@ -606,10 +1181,98 @@ export default function StudentScholarshipsPage() {
 
 		setIsDownloadingSoe(true)
 		try {
+			const approvedRequest = previewTarget ? getLatestMaterialRequest(previewTarget.id) : null
+			const soeRequestNumber =
+				soePreviewRequestNumber ||
+				previewTarget?.requestNumber ||
+				approvedRequest?.requestNumber ||
+				approvedRequest?.scholarshipId ||
+				previewTarget?.id ||
+				""
 			downloadSoePdfBytes(
 				soePreviewBytes,
 				`SOE_${userId}.pdf`,
 			)
+
+			if (approvedRequest?.id) {
+				await updateDoc(doc(db, "soeRequests", approvedRequest.id), {
+					"materials.soe.requested": true,
+					"materials.soe.status": "approved",
+					"materials.soe.downloadedAt": serverTimestamp(),
+					downloadStatus: "Downloaded",
+					downloadedAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				})
+				setStudentSoeRequests((prev) =>
+					prev.map((request) =>
+						request.id === approvedRequest.id
+							? normalizeMaterialRequest({
+									...request,
+									downloadStatus: "Downloaded",
+									downloadedAt: new Date().toISOString(),
+									materials: {
+										...(request.materials || normalizeMaterialRequest(request).materials),
+										soe: {
+											...getMaterialEntry(request, "soe"),
+											requested: true,
+											status: "approved",
+											downloadedAt: new Date().toISOString(),
+										},
+									},
+								})
+							: request,
+					),
+				)
+			}
+			await addDoc(collection(db, "soeDownloads"), {
+				requestRecordId: approvedRequest?.id || "",
+				requestNumber: soeRequestNumber,
+				studentId: userId,
+				studentNumber: userId,
+				studentName:
+					[latestStudent.fname, latestStudent.mname, latestStudent.lname]
+						.filter(Boolean)
+						.join(" ")
+						.trim() || "Student",
+				scholarshipId: previewTarget?.id || approvedRequest?.scholarshipId || "",
+				scholarshipName:
+					previewTarget?.name ||
+					approvedRequest?.scholarshipName ||
+					"SCHOLARSHIP",
+				providerType:
+					previewTarget?.providerType ||
+					approvedRequest?.providerType ||
+					"",
+				status: "Pending",
+				reviewState: "incoming",
+				downloadedAt: serverTimestamp(),
+				createdAt: serverTimestamp(),
+				updatedAt: serverTimestamp(),
+				studentSnapshot: {
+					studentId: userId,
+					studentNumber: userId,
+					fullName:
+						[latestStudent.fname, latestStudent.mname, latestStudent.lname]
+							.filter(Boolean)
+							.join(" ")
+							.trim() || "Student",
+					fname: latestStudent.fname || "",
+					mname: latestStudent.mname || "",
+					lname: latestStudent.lname || "",
+					email: latestStudent.email || "",
+					course: latestStudent.course || "",
+					year: latestStudent.year || "",
+					section: latestStudent.section || "",
+				},
+				soeSnapshot: {
+					requestNumber: soeRequestNumber,
+					semesterTag: previewTarget?.semesterTag || "",
+					academicYear: approvedRequest?.academicYear || "",
+					expenseItems: Array.isArray(latestStudent.soeExpenseItems)
+						? latestStudent.soeExpenseItems
+						: [],
+				},
+			})
 			await setDoc(
 				doc(db, "students", userId),
 				{
@@ -624,7 +1287,7 @@ export default function StudentScholarshipsPage() {
 			}))
 			const nextAllowedDate = addMonths(new Date(), SOE_EXPORT_LOCK_MONTHS)
 			toast.success(
-				`SOE downloaded. Registration Number: ${soePreviewRegistration}. Next export available after ${
+				`SOE downloaded. SOE Request Number: ${soeRequestNumber}. Next export available after ${
 					nextAllowedDate
 						? nextAllowedDate.toLocaleDateString("en-PH", {
 								month: "long",
@@ -645,6 +1308,7 @@ export default function StudentScholarshipsPage() {
 
 	const handleSaveExpensePreset = async () => {
 		if (!userId || isSavingExpensePreset) return
+		if (isScholarshipActionBlocked()) return
 
 		const hasPartialRow = soeExpenses.some((row) => {
 			const hasLabel = Boolean(row.label?.trim())
@@ -699,12 +1363,10 @@ export default function StudentScholarshipsPage() {
 
 	if (!userLoaded) {
 		return (
-			<div
-				className={`admin-dashboard student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}
-			>
-				<main className="dashboard-main">
-					<div className="dashboard-content">
-						<div className="dashboard-panel student-dashboard-loading-panel">
+			<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+				<main className="student-shell">
+					<div className="student-shell-content">
+						<div className="student-loading-panel student-dashboard-loading-panel">
 							<p className="dashboard-placeholder">Loading scholarships...</p>
 						</div>
 					</div>
@@ -714,10 +1376,8 @@ export default function StudentScholarshipsPage() {
 	}
 
 	return (
-		<div
-			className={`admin-dashboard student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}
-		>
-			<header className="dashboard-header student-header">
+		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+			<header className="student-header">
 				<div className="student-header-top-stripe"></div>
 				<div className="student-header-content">
 					<div className="student-header-left">
@@ -870,14 +1530,34 @@ export default function StudentScholarshipsPage() {
 				</div>
 			</header>
 
-			<main className="dashboard-main">
-				<div className="dashboard-content">
-					<div className="dashboard-page-title">
-						<h2 className="dashboard-page-heading">Scholarship Control Center</h2>
-						<p className="dashboard-page-sub">
+			<main className="student-shell">
+				<div className="student-shell-content">
+					<div className="student-page-title">
+						<h2 className="student-page-heading">Scholarship Control Center</h2>
+						<p className="student-page-sub">
 							Submit one active scholarship application at a time. Apply locks out other programs until resolved.
 						</p>
 					</div>
+
+					{hasBlockedScholarshipBanner ? (
+						<div className="student-block-banner" role="alert">
+							<HiOutlineExclamation className="student-block-icon" aria-hidden />
+							<div className="student-block-copy">
+								<p className="student-block-title">You have been blocked from scholarship actions</p>
+								<p className="student-block-desc">{blockedScholarshipBannerCopy}</p>
+							</div>
+						</div>
+					) : null}
+
+					{!hasBlockedScholarshipBanner && hasMultipleScholarshipConflict ? (
+						<div className="student-compliance-banner" role="alert">
+							<HiOutlineExclamation className="student-compliance-icon" aria-hidden />
+							<div className="student-compliance-copy">
+								<p className="student-compliance-title">Scholarship compliance required</p>
+								<p className="student-compliance-desc">{multipleScholarshipBannerCopy}</p>
+							</div>
+						</div>
+					) : null}
 
 					{lockedScholarship && (
 						<div className="student-lock-banner">
@@ -894,51 +1574,207 @@ export default function StudentScholarshipsPage() {
 					<section className="student-scholarship-workspace">
 						<div className="student-scholarship-board">
 							<h3>My Scholarship Applications</h3>
+							{hasMultipleScholarshipChoices ? (
+								<p className="dashboard-placeholder">
+									One scholarship per student policy: choose one scholarship first before SOE and application form actions become available.
+								</p>
+							) : null}
 							{scholarships.length === 0 ? (
 								<p className="dashboard-placeholder">
 									No scholarship application yet. Apply from the available programs below.
 								</p>
 							) : (
 								<div className="student-scholarship-cards">
-									{scholarships.map((entry) => (
-										<article key={entry.id} className="student-scholarship-card">
+									{scholarships.map((entry) => {
+										const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
+										const applicationFormRequestLabel = getMaterialLabelForScholarship(
+											entry,
+											"application_form",
+										)
+										const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
+										const applicationFormRequestButtonState = getMaterialRequestButtonState(
+											entry,
+											"application_form",
+										)
+										const soeDownloadGate = getMaterialDownloadGate(entry, "soe")
+										const applicationFormDownloadGate = getMaterialDownloadGate(
+											entry,
+											"application_form",
+										)
+
+										return (
+											<article
+												key={entry.id}
+												className={`student-scholarship-card ${
+													entry.adminBlocked === true || hasScholarshipActionBlock
+														? "student-scholarship-card--blocked"
+														: ""
+												}`.trim()}
+											>
 											<div className="student-scholarship-card-left">
 												<HiOutlineAcademicCap className="student-scholarship-card-icon" aria-hidden />
 											</div>
 											<div className="student-scholarship-card-info">
 												<h3 className="student-scholarship-card-name">{entry.name}</h3>
-												<p className="student-scholarship-card-provider">{entry.status}</p>
+												<p className="student-scholarship-card-provider">
+													{entry.status}
+													{entry.finalizedState ? ` • ${entry.finalizedState}` : ""}
+												</p>
 												<p className="student-scholarship-card-provider">
 													Semester: {entry.semesterTag}
+												</p>
+												<p className="student-scholarship-card-note">
+													SOE: {hasMultipleScholarshipChoices ? "Choose one scholarship first" : soeRequestLabel}
 												</p>
 											</div>
 											<div className="student-scholarship-card-action">
 												<div className="student-scholarship-card-action-buttons">
-													<button
-														type="button"
-														className="student-scholarship-request-soe"
-														disabled={isMutating || entry.isLocked || entry.adminBlocked === true}
-														onClick={() => handleRequestSoe(entry)}
-													>
-														<HiOutlineDocumentText />
-														{entry.adminBlocked === true
-															? "Blocked by Office"
-															: entry.isLocked
-																? "Finalized"
-																: "Request SOE"}
-													</button>
-													<button
-														type="button"
-														className="student-scholarship-download-soe"
-														onClick={() => handleDownloadSoe(entry)}
-													>
-														<HiOutlineDocumentText />
-														Download SOE
-													</button>
+													{hasMultipleScholarshipChoices ? (
+														<button
+															type="button"
+															className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
+															disabled={
+																isMutating ||
+																studentAccessState.isPortalAccessBlocked ||
+																studentAccessState.soeComplianceBlocked ||
+																(entry.adminBlocked === true && !canResolveMultipleScholarshipConflict)
+															}
+															onClick={() => setConfirmTarget(entry)}
+														>
+															<HiOutlineCheckCircle />
+															{studentAccessState.isPortalAccessBlocked
+																? "Access Blocked"
+																: hasComplianceBlock
+																? "Compliance Hold"
+																: entry.adminBlocked === true && !canResolveMultipleScholarshipConflict
+																? "Blocked by Office"
+																: "Choose Scholarship"}
+														</button>
+													) : (
+														<>
+															<button
+																type="button"
+																className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
+																disabled={
+																	isMutating ||
+																	entry.adminBlocked === true ||
+																	hasScholarshipActionBlock ||
+																	soeRequestButtonState.disabled
+																}
+																onClick={() => handleRequestMaterial(entry, "soe")}
+															>
+																<HiOutlineDocumentText />
+																{studentAccessState.isPortalAccessBlocked
+																	? "Access Blocked"
+																	: hasComplianceBlock
+																		? "Compliance Hold"
+																		: entry.adminBlocked === true
+																			? "Blocked by Office"
+																			: soeRequestButtonState.label}
+															</button>
+															<button
+																type="button"
+																className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
+																disabled={
+																	hasScholarshipActionBlock ||
+																	isExportingSoe ||
+																	isDownloadingSoe ||
+																	!soeDownloadGate.canDownload
+																}
+																title={
+																	soeDownloadGate.canDownload
+																		? "Download your approved SOE"
+																		: soeDownloadGate.reason
+																}
+																onClick={() => handleDownloadSoe(entry)}
+															>
+																<HiOutlineDocumentText />
+																{studentAccessState.isPortalAccessBlocked
+																	? "Access Blocked"
+																	: hasComplianceBlock
+																		? "Compliance Hold"
+																		: isExportingSoe || isDownloadingSoe
+																			? "Processing..."
+																			: soeDownloadGate.label}
+															</button>
+														</>
+													)}
 												</div>
 											</div>
-										</article>
-									))}
+											{!hasMultipleScholarshipChoices ? (
+												<div className="student-scholarship-card-material-row">
+													<div className="student-scholarship-material-box student-scholarship-material-box--application">
+														<div className="student-scholarship-material-head">
+															<div className="student-scholarship-material-intro">
+																<p className="student-scholarship-material-label">
+																	Application Material
+																</p>
+																<h4 className="student-scholarship-material-title">
+																	Application Form
+																</h4>
+															</div>
+															<span
+																className="student-scholarship-material-icon-wrap"
+																aria-hidden="true"
+															>
+																<HiOutlineDocumentText />
+															</span>
+														</div>
+														<p className="student-scholarship-material-status student-scholarship-material-status--application">
+															{applicationFormRequestLabel}
+														</p>
+														<div className="student-scholarship-material-actions">
+															<button
+																type="button"
+																className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
+																disabled={
+																	isMutating ||
+																	entry.adminBlocked === true ||
+																	hasScholarshipActionBlock ||
+																	applicationFormRequestButtonState.disabled
+																}
+																onClick={() => handleRequestMaterial(entry, "application_form")}
+															>
+																<HiOutlineDocumentText />
+																{studentAccessState.isPortalAccessBlocked
+																	? "Access Blocked"
+																	: hasComplianceBlock
+																		? "Compliance Hold"
+																		: entry.adminBlocked === true
+																			? "Blocked by Office"
+																			: applicationFormRequestButtonState.label}
+															</button>
+															<button
+																type="button"
+																className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
+																disabled={
+																	hasScholarshipActionBlock ||
+																	isDownloadingApplicationForm ||
+																	!applicationFormDownloadGate.canDownload
+																}
+																title={
+																	applicationFormDownloadGate.canDownload
+																		? "Download your approved application form"
+																		: applicationFormDownloadGate.reason
+																}
+																onClick={() => handleDownloadApplicationForm(entry)}
+															>
+																<HiOutlineDocumentText />
+																{studentAccessState.isPortalAccessBlocked
+																	? "Access Blocked"
+																	: hasComplianceBlock
+																		? "Compliance Hold"
+																		: isDownloadingApplicationForm
+																			? "Processing..."
+																			: applicationFormDownloadGate.label}
+															</button>
+														</div>
+													</div>
+												</div>
+											) : null}
+											</article>
+										)
+									})}
 								</div>
 							)}
 						</div>
@@ -959,12 +1795,15 @@ export default function StudentScholarshipsPage() {
 										hasLockedScholarship ||
 										hasThisActiveApplication ||
 										blockedByExclusivity ||
+										hasScholarshipActionBlock ||
 										isMutating
-									const tooltip = blockedByExclusivity
-										? applicationLockTooltip
-										: hasThisActiveApplication
-											? "Application already submitted for this scholarship."
-											: ""
+									const tooltip = hasScholarshipActionBlock
+										? scholarshipActionBlockMessage
+										: blockedByExclusivity
+											? applicationLockTooltip
+											: hasThisActiveApplication
+												? "Application already submitted for this scholarship."
+												: ""
 
 									return (
 										<article key={catalogItem.providerType} className="student-program-card">
@@ -977,12 +1816,16 @@ export default function StudentScholarshipsPage() {
 											<div className="student-program-actions">
 												<button
 													type="button"
-													className="student-program-apply-btn"
+													className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
 													disabled={applyDisabled}
 													title={tooltip}
 													onClick={() => applyScholarship(catalogItem)}
 												>
-													Apply
+													{hasScholarshipActionBlock
+														? "Blocked"
+														: hasLockedScholarship
+															? "Finalized"
+															: "Apply"}
 												</button>
 											</div>
 											{tooltip && <span className="student-program-tooltip">{tooltip}</span>}
@@ -1039,7 +1882,7 @@ export default function StudentScholarshipsPage() {
 						className="student-soe-modal"
 						role="dialog"
 						aria-modal="true"
-						aria-label="SOE final confirmation"
+						aria-label="Scholarship selection confirmation"
 					>
 						<button
 							type="button"
@@ -1048,25 +1891,25 @@ export default function StudentScholarshipsPage() {
 						>
 							<HiX aria-hidden />
 						</button>
-						<h3>Final Confirmation</h3>
+						<h3>Choose Scholarship</h3>
 						<p>
-							Requesting an SOE for [{confirmTarget.name}] will finalize your choice and clear any other scholarship entries for this semester. Do you wish to proceed?
+							Choosing [{confirmTarget.name}] will keep only this scholarship in your list and remove the others, based on the one scholarship per student policy. {hasMultipleScholarshipConflict ? "This will also clear your current multiple scholarship warning. " : ""}Do you want to continue?
 						</p>
 						<div className="student-soe-modal-actions">
 							<button
 								type="button"
-								className="student-program-save-btn"
+								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
 								onClick={() => setConfirmTarget(null)}
 							>
 								Cancel
 							</button>
 							<button
 								type="button"
-								className="student-program-apply-btn"
-								onClick={() => requestSoe(confirmTarget)}
+								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
+								onClick={() => chooseScholarship(confirmTarget)}
 								disabled={isMutating}
 							>
-								Confirm SOE Request
+								Confirm Choice
 							</button>
 						</div>
 					</div>
@@ -1118,7 +1961,7 @@ export default function StudentScholarshipsPage() {
 									/>
 									<button
 										type="button"
-										className="student-soe-expense-remove"
+										className="student-soe-expense-remove student-mini-btn student-mini-btn--danger"
 										onClick={() => handleRemoveExpenseRow(index)}
 										disabled={soeExpenses.length <= 1}
 									>
@@ -1131,14 +1974,14 @@ export default function StudentScholarshipsPage() {
 						<div className="student-soe-expense-tools">
 							<button
 								type="button"
-								className="student-program-save-btn"
+								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
 								onClick={handleAddExpenseRow}
 							>
 								Add Expense
 							</button>
 							<button
 								type="button"
-								className="student-program-save-btn"
+								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
 								onClick={handleSaveExpensePreset}
 								disabled={isSavingExpensePreset}
 							>
@@ -1161,14 +2004,14 @@ export default function StudentScholarshipsPage() {
 						<div className="student-soe-modal-actions">
 							<button
 								type="button"
-								className="student-program-save-btn"
+								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
 								onClick={closeExpenseModal}
 							>
 								Cancel
 							</button>
 							<button
 								type="button"
-								className="student-program-apply-btn"
+								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
 								onClick={handleExportSoeWithExpenses}
 								disabled={isExportingSoe}
 							>
@@ -1198,12 +2041,16 @@ export default function StudentScholarshipsPage() {
 							/>
 						</div>
 						<div className="student-soe-modal-actions">
-							<button type="button" className="student-program-save-btn" onClick={closeSoePreview}>
+							<button
+								type="button"
+								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
+								onClick={closeSoePreview}
+							>
 								Cancel
 							</button>
 							<button
 								type="button"
-								className="student-program-apply-btn"
+								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
 								onClick={handleConfirmDownloadSoe}
 								disabled={isDownloadingSoe}
 							>

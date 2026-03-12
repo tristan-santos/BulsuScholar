@@ -1,14 +1,14 @@
 /**
  * Student Dashboard - Professional bento-style scholarship portal.
  */
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import {
 	collection,
 	doc,
-	getDoc,
 	getDocs,
 	limit,
+	onSnapshot,
 	orderBy,
 	query,
 } from "firebase/firestore"
@@ -16,15 +16,20 @@ import {
 	HiOutlineAcademicCap,
 	HiOutlineCheckCircle,
 	HiOutlineClock,
+	HiOutlineExclamation,
 	HiOutlineMoon,
 	HiOutlineSun,
 } from "react-icons/hi"
+import { toast } from "react-toastify"
 import { db } from "../../firebase"
 import useThemeMode from "../hooks/useThemeMode"
 import { normalizeScholarshipList } from "../services/scholarshipService"
-import MagicBento from "../components/MagicBento"
+import {
+	getPortalAccessBlockMessage,
+	getStudentAccessState,
+	getStudentBlockedBannerMessage,
+} from "../services/studentAccessService"
 import logo2 from "../assets/logo2.png"
-import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
 
 function checkValidated(userData) {
@@ -57,31 +62,60 @@ function iconForAnnouncement(type = "") {
 	return "Update"
 }
 
+function getMultipleScholarshipBannerCopy(user, scholarships) {
+	if (user?.scholarshipConflictMessage) return user.scholarshipConflictMessage
+	if (Array.isArray(scholarships) && scholarships.length > 1) {
+		return "Your scholarship eligibility is temporarily on hold. Choose one scholarship only to comply with the one scholarship per student policy."
+	}
+	return "Your scholarship eligibility is temporarily on hold until you choose one scholarship only."
+}
+
 export default function StudentDashboard() {
 	const navigate = useNavigate()
-	const [user, setUser] = useState(null)
-	const [userLoaded, setUserLoaded] = useState(false)
-	const [announcements, setAnnouncements] = useState([])
-	const { theme, setTheme } = useThemeMode()
-
-	useEffect(() => {
+	const [sessionState] = useState(() => {
 		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
 		const storedType = sessionStorage.getItem("bulsuscholar_userType")
+		return {
+			storedUserId,
+			isStudent: Boolean(storedUserId) && storedType === "student",
+		}
+	})
+	const [user, setUser] = useState(null)
+	const [userLoaded, setUserLoaded] = useState(() => !sessionState.isStudent)
+	const [announcements, setAnnouncements] = useState([])
+	const { theme, setTheme } = useThemeMode()
+	const forcedLogoutRef = useRef(false)
 
-		if (!storedUserId || storedType !== "student") {
-			setUserLoaded(true)
+	useEffect(() => {
+		if (!sessionState.isStudent || !sessionState.storedUserId) {
 			return
 		}
 
-		getDoc(doc(db, "students", storedUserId))
-			.then((snap) => {
-				if (snap.exists()) {
-					setUser(snap.data())
+		return onSnapshot(
+			doc(db, "students", sessionState.storedUserId),
+			(snap) => {
+				if (!snap.exists()) {
+					setUser(null)
+					setUserLoaded(true)
+					return
 				}
+
+				const nextUser = snap.data() || {}
+				setUser(nextUser)
 				setUserLoaded(true)
-			})
-			.catch(() => setUserLoaded(true))
-	}, [])
+
+				const accessState = getStudentAccessState(nextUser)
+				if (accessState.isPortalAccessBlocked && !forcedLogoutRef.current) {
+					forcedLogoutRef.current = true
+					sessionStorage.removeItem("bulsuscholar_userId")
+					sessionStorage.removeItem("bulsuscholar_userType")
+					toast.error(getPortalAccessBlockMessage(nextUser))
+					navigate("/", { replace: true })
+				}
+			},
+			() => setUserLoaded(true),
+		)
+	}, [navigate, sessionState.isStudent, sessionState.storedUserId])
 
 	useEffect(() => {
 		if (userLoaded && !user) {
@@ -132,23 +166,29 @@ export default function StudentDashboard() {
 	)
 	const scholarshipPreview = scholarships.slice(0, 6)
 	const avatarUrl = user?.profileImageUrl || ""
+	const studentAccessState = useMemo(() => getStudentAccessState(user || {}), [user])
+	const hasComplianceWarning = user?.soeComplianceWarning === true
+	const hasComplianceBlock = studentAccessState.soeComplianceBlocked
+	const hasMultipleScholarshipConflict =
+		user?.scholarshipConflictWarning === true ||
+		(user?.scholarshipRestrictionReason === "multiple_scholarships" && scholarships.length > 1)
+	const multipleScholarshipBannerCopy = getMultipleScholarshipBannerCopy(user, scholarships)
+	const hasBlockedScholarshipBanner =
+		studentAccessState.scholarshipEligibilityBlocked || studentAccessState.soeComplianceBlocked
+	const blockedScholarshipBannerCopy = getStudentBlockedBannerMessage(user || {})
 
-	const getUserInitials = () => {
-		const f = user?.fname?.[0]?.toUpperCase() || ""
-		const l = user?.lname?.[0]?.toUpperCase() || ""
-		return f + l || "ST"
-	}
+	const userInitials = `${user?.fname?.[0]?.toUpperCase() || ""}${user?.lname?.[0]?.toUpperCase() || ""}` || "ST"
 
-	const handleContactSupport = () => {
+	const handleContactSupport = useCallback(() => {
 		window.location.href =
 			"mailto:scholarships@bulsu.edu.ph?subject=BulsuScholar%20Student%20Support"
-	}
+	}, [])
 
-	const handleLogout = () => {
+	const handleLogout = useCallback(() => {
 		sessionStorage.removeItem("bulsuscholar_userId")
 		sessionStorage.removeItem("bulsuscholar_userType")
 		navigate("/", { replace: true })
-	}
+	}, [navigate])
 
 	const fullName =
 		[user?.fname, user?.mname, user?.lname].filter(Boolean).join(" ") || "Student"
@@ -170,7 +210,7 @@ export default function StudentDashboard() {
 									className="student-header-avatar-image-mini"
 								/>
 							) : (
-								<span>{getUserInitials()}</span>
+								<span>{userInitials}</span>
 							)}
 						</div>
 						<div>
@@ -180,8 +220,16 @@ export default function StudentDashboard() {
 							</h2>
 							<p className="student-welcome-user-name">{fullName}</p>
 							<p className="student-welcome-sub">
-								Track applications, request SOE, and keep your scholarship profile up to date.
+								Track applications, request SOE, and keep your scholarship profile up to
+								date.
 							</p>
+							{hasComplianceWarning ? (
+								<p className="student-bento-note">
+									{hasComplianceBlock
+										? "Scholarship blocking alert is active. SOE changes are temporarily restricted."
+										: "Your latest SOE submission is under scholarship office review."}
+								</p>
+							) : null}
 						</div>
 					</div>
 				),
@@ -239,9 +287,7 @@ export default function StudentDashboard() {
 							<button
 								type="button"
 								className="student-bento-inline-link"
-								onClick={() =>
-									navigate("/student-dashboard/scholarships", { state: { user } })
-								}
+								onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
 							>
 								Open Scholarships
 							</button>
@@ -251,7 +297,14 @@ export default function StudentDashboard() {
 						) : (
 							<div className="student-dashboard-scholarship-preview-list">
 								{scholarshipPreview.map((entry) => (
-									<article key={entry.id} className="student-dashboard-scholarship-preview-item">
+									<article
+										key={entry.id}
+										className={`student-dashboard-scholarship-preview-item ${
+											entry.adminBlocked === true || hasBlockedScholarshipBanner
+												? "student-dashboard-scholarship-preview-item--blocked"
+												: ""
+										}`.trim()}
+									>
 										<HiOutlineAcademicCap
 											className="student-dashboard-scholarship-preview-icon"
 											aria-hidden
@@ -259,6 +312,7 @@ export default function StudentDashboard() {
 										<div className="student-dashboard-scholarship-preview-meta">
 											<h4>{entry.name}</h4>
 											<p>{entry.status || "Applied"}</p>
+											<p>Request No. {entry.requestNumber || entry.id}</p>
 										</div>
 										<span className="student-dashboard-scholarship-preview-term">
 											{entry.semesterTag || "Current Semester"}
@@ -281,7 +335,7 @@ export default function StudentDashboard() {
 						<div className="student-action-grid">
 							<button
 								type="button"
-								className="student-action-card"
+								className="student-action-card student-mini-btn student-mini-btn--primary"
 								onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
 							>
 								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
@@ -298,7 +352,7 @@ export default function StudentDashboard() {
 							</button>
 							<button
 								type="button"
-								className="student-action-card"
+								className="student-action-card student-mini-btn student-mini-btn--secondary"
 								onClick={() => navigate("/student-dashboard/profile", { state: { user } })}
 							>
 								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
@@ -313,7 +367,11 @@ export default function StudentDashboard() {
 								</svg>
 								<span>My Profile</span>
 							</button>
-							<button type="button" className="student-action-card" onClick={handleContactSupport}>
+							<button
+								type="button"
+								className="student-action-card student-mini-btn student-mini-btn--secondary"
+								onClick={handleContactSupport}
+							>
 								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
 									<path
 										d="M4 6h16v12H4zM4 7l8 6 8-6"
@@ -328,7 +386,7 @@ export default function StudentDashboard() {
 							</button>
 							<button
 								type="button"
-								className="student-action-card student-action-card--logout"
+								className="student-action-card student-action-card--logout student-mini-btn student-mini-btn--danger"
 								onClick={handleLogout}
 							>
 								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
@@ -351,25 +409,26 @@ export default function StudentDashboard() {
 		[
 			announcements,
 			avatarUrl,
+			fullName,
 			handleContactSupport,
 			handleLogout,
-			getUserInitials,
+			hasBlockedScholarshipBanner,
+			hasComplianceBlock,
+			hasComplianceWarning,
 			navigate,
 			scholarshipPreview,
 			theme,
 			user,
-			fullName,
+			userInitials,
 		],
 	)
 
 	if (!userLoaded) {
 		return (
-			<div
-				className={`admin-dashboard student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}
-			>
-				<main className="dashboard-main">
-					<div className="dashboard-content student-dashboard-surface">
-						<div className="dashboard-panel student-dashboard-loading-panel">
+			<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+				<main className="student-shell">
+					<div className="student-shell-content student-dashboard-surface">
+						<div className="student-loading-panel student-dashboard-loading-panel">
 							<p className="dashboard-placeholder">Loading student dashboard...</p>
 						</div>
 					</div>
@@ -379,10 +438,8 @@ export default function StudentDashboard() {
 	}
 
 	return (
-		<div
-			className={`admin-dashboard student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}
-		>
-			<header className="dashboard-header student-header">
+		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+			<header className="student-header">
 				<div className="student-header-top-stripe"></div>
 				<div className="student-header-content">
 					<div className="student-header-left">
@@ -431,20 +488,52 @@ export default function StudentDashboard() {
 				</div>
 			</header>
 
-			<main className="dashboard-main">
-				<div className="dashboard-content student-dashboard-surface">
-					<MagicBento
-						items={bentoItems}
-						className="student-dashboard-magic"
-						enableStars={true}
-						enableSpotlight={true}
-						enableBorderGlow={true}
-						enableTilt={false}
-						enableMagnetism={false}
-						clickEffect={false}
-						glowColor={theme === "dark" ? "16, 185, 129" : "0, 99, 60"}
-						spotlightRadius={340}
-					/>
+			<main className="student-shell">
+				<div className="student-shell-content student-dashboard-surface">
+					{hasBlockedScholarshipBanner ? (
+						<div className="student-block-banner" role="alert">
+							<HiOutlineExclamation className="student-block-icon" aria-hidden />
+							<div className="student-block-copy">
+								<p className="student-block-title">You have been blocked from scholarship actions</p>
+								<p className="student-block-desc">{blockedScholarshipBannerCopy}</p>
+							</div>
+							{hasMultipleScholarshipConflict ? (
+								<button
+									type="button"
+									className="student-mini-btn student-mini-btn--primary student-compliance-action"
+									onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+								>
+									Choose Scholarship
+								</button>
+							) : null}
+						</div>
+					) : null}
+					{!hasBlockedScholarshipBanner && hasMultipleScholarshipConflict ? (
+						<div className="student-compliance-banner" role="alert">
+							<HiOutlineExclamation className="student-compliance-icon" aria-hidden />
+							<div className="student-compliance-copy">
+								<p className="student-compliance-title">Choose one scholarship to restore eligibility</p>
+								<p className="student-compliance-desc">{multipleScholarshipBannerCopy}</p>
+							</div>
+							<button
+								type="button"
+								className="student-mini-btn student-mini-btn--primary student-compliance-action"
+								onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+							>
+								Choose Scholarship
+							</button>
+						</div>
+					) : null}
+					<section className="student-dashboard-layout" aria-label="Student dashboard overview">
+						{bentoItems.map((item) => (
+							<article
+								key={item.id}
+								className={`student-dashboard-card ${item.className || ""}`}
+							>
+								{item.render()}
+							</article>
+						))}
+					</section>
 
 					<footer className="student-footer">
 						<div className="student-footer-grid">
@@ -479,7 +568,9 @@ export default function StudentDashboard() {
 								</button>
 							</div>
 						</div>
-						<p className="student-footer-bottom">(c) {new Date().getFullYear()} BulsuScholar. All rights reserved.</p>
+						<p className="student-footer-bottom">
+							(c) {new Date().getFullYear()} BulsuScholar. All rights reserved.
+						</p>
 					</footer>
 				</div>
 			</main>

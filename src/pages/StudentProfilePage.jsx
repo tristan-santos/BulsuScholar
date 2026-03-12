@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore"
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore"
 import {
 	HiMenu,
 	HiOutlineAcademicCap,
@@ -17,8 +17,8 @@ import { toast } from "react-toastify"
 import { db } from "../../firebase"
 import { uploadToCloudinary } from "../services/cloudinaryService"
 import { getCurrentSemesterTag } from "../services/scholarshipService"
+import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
 import logo2 from "../assets/logo2.png"
-import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
 import useThemeMode from "../hooks/useThemeMode"
 
@@ -61,6 +61,7 @@ export default function StudentProfilePage() {
 	})
 	const [isLightboxOpen, setIsLightboxOpen] = useState(false)
 	const userMenuRef = useRef(null)
+	const forcedLogoutRef = useRef(false)
 	const fileInputRef = useRef(null)
 	const cogFileInputRef = useRef(null)
 	const schoolIdFileInputRef = useRef(null)
@@ -87,15 +88,31 @@ export default function StudentProfilePage() {
 		}
 
 		setUserId(storedUserId)
-		getDoc(doc(db, "students", storedUserId))
-			.then((snap) => {
-				if (snap.exists()) {
-					setUser(snap.data())
+		return onSnapshot(
+			doc(db, "students", storedUserId),
+			(snap) => {
+				if (!snap.exists()) {
+					setUser(null)
+					setUserLoaded(true)
+					return
 				}
+
+				const nextUser = snap.data() || {}
+				setUser(nextUser)
 				setUserLoaded(true)
-			})
-			.catch(() => setUserLoaded(true))
-	}, [])
+
+				const accessState = getStudentAccessState(nextUser)
+				if (accessState.isPortalAccessBlocked && !forcedLogoutRef.current) {
+					forcedLogoutRef.current = true
+					sessionStorage.removeItem("bulsuscholar_userId")
+					sessionStorage.removeItem("bulsuscholar_userType")
+					toast.error(getPortalAccessBlockMessage(nextUser))
+					navigate("/", { replace: true })
+				}
+			},
+			() => setUserLoaded(true),
+		)
+	}, [navigate])
 
 	useEffect(() => {
 		function handleClickOutside(e) {
@@ -309,12 +326,10 @@ export default function StudentProfilePage() {
 
 	if (!userLoaded) {
 		return (
-			<div
-				className={`admin-dashboard student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}
-			>
-				<main className="dashboard-main">
-					<div className="dashboard-content">
-						<div className="dashboard-panel student-dashboard-loading-panel">
+			<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+				<main className="student-shell">
+					<div className="student-shell-content">
+						<div className="student-loading-panel student-dashboard-loading-panel">
 							<p className="dashboard-placeholder">Loading profile...</p>
 						</div>
 					</div>
@@ -324,10 +339,8 @@ export default function StudentProfilePage() {
 	}
 
 	return (
-		<div
-			className={`admin-dashboard student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}
-		>
-			<header className="dashboard-header student-header">
+		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+			<header className="student-header">
 				<div className="student-header-top-stripe"></div>
 				<div className="student-header-content">
 					<div className="student-header-left">
@@ -455,11 +468,11 @@ export default function StudentProfilePage() {
 				</div>
 			</header>
 
-			<main className="dashboard-main">
-				<div className="dashboard-content">
-					<div className="dashboard-page-title">
-						<h2 className="dashboard-page-heading">My Profile</h2>
-						<p className="dashboard-page-sub">
+			<main className="student-shell">
+				<div className="student-shell-content">
+					<div className="student-page-title">
+						<h2 className="student-page-heading">My Profile</h2>
+						<p className="student-page-sub">
 							Keep your information, documents, and semester records current.
 						</p>
 					</div>
@@ -482,14 +495,14 @@ export default function StudentProfilePage() {
 										<div className="student-profile-photo-overlay">
 											<button
 												type="button"
-												className="student-profile-photo-action"
+												className="student-profile-photo-action student-mini-btn student-mini-btn--secondary"
 												onClick={openPhotoLightbox}
 											>
 												Show Profile
 											</button>
 											<button
 												type="button"
-												className="student-profile-photo-action student-profile-photo-action--upload"
+												className="student-profile-photo-action student-profile-photo-action--upload student-mini-btn student-mini-btn--primary"
 												onClick={triggerPhotoUpload}
 												disabled={isPhotoUploading}
 											>
@@ -636,7 +649,7 @@ export default function StudentProfilePage() {
 											)}
 											<button
 												type="button"
-												className="student-vault-upload-btn"
+												className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
 												onClick={() => triggerDocumentUpload("cog")}
 												disabled={isDocumentUploading.cog}
 											>
@@ -675,7 +688,7 @@ export default function StudentProfilePage() {
 											)}
 											<button
 												type="button"
-												className="student-vault-upload-btn"
+												className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
 												onClick={() => triggerDocumentUpload("schoolId")}
 												disabled={isDocumentUploading.schoolId}
 											>
@@ -703,14 +716,14 @@ export default function StudentProfilePage() {
 						<div className="student-profile-actions">
 							<button
 								type="button"
-								className="student-profile-cancel-btn"
+								className="student-profile-cancel-btn student-mini-btn student-mini-btn--secondary"
 								onClick={() => navigate("/student-dashboard", { state: { user } })}
 							>
 								Back to Dashboard
 							</button>
 							<button
 								type="button"
-								className="student-profile-save-btn"
+								className="student-profile-save-btn student-mini-btn student-mini-btn--primary"
 								onClick={handleSaveProfile}
 								disabled={isSaving}
 							>

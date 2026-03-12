@@ -117,6 +117,11 @@ function getPasswordRequirements(pwd) {
 	}
 }
 
+import {
+	sendEmailNotification,
+	getWelcomeEmailBody,
+} from "../services/emailService"
+
 export default function SignupPage() {
 	const navigate = useNavigate()
 	const [userId, setUserId] = useState("")
@@ -649,6 +654,14 @@ export default function SignupPage() {
 					},
 					{ merge: true },
 				)
+				// Send Welcome Email for auto-verified students
+				sendEmailNotification(
+					email.trim(),
+					`${fname.trim()} ${lname.trim()}`,
+					"Welcome to BulsuScholar!",
+					getWelcomeEmailBody(`${fname.trim()} ${lname.trim()}`),
+				).catch((err) => console.error("Welcome email failed:", err))
+
 				toast.success(
 					"🎉 Congratulations! Your account has been automatically verified based on your scholarship selections.",
 				)

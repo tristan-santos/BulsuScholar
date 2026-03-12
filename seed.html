@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>BulsuScholar Material Checking Seeder</title>
+		<style>
+			:root {
+				color-scheme: light;
+				font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+				background: #f4f8f6;
+				color: #0f172a;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				min-height: 100vh;
+				background:
+					radial-gradient(circle at top left, rgba(187, 247, 208, 0.55), transparent 28%),
+					linear-gradient(180deg, #f8fafc 0%, #eefbf3 100%);
+				color: #0f172a;
+			}
+
+			.seed-shell {
+				width: min(1180px, calc(100% - 32px));
+				margin: 32px auto 48px;
+				display: grid;
+				gap: 20px;
+			}
+
+			.seed-panel {
+				background: rgba(255, 255, 255, 0.94);
+				border: 1px solid #dbe7e4;
+				border-radius: 24px;
+				box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+				padding: 24px;
+			}
+
+			.seed-hero {
+				display: grid;
+				grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.8fr);
+				gap: 20px;
+				align-items: start;
+			}
+
+			.seed-eyebrow {
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				padding: 8px 12px;
+				border-radius: 999px;
+				background: #ecfdf5;
+				color: #166534;
+				font-size: 12px;
+				font-weight: 800;
+				letter-spacing: 0.12em;
+				text-transform: uppercase;
+			}
+
+			h1,
+			h2,
+			h3,
+			p {
+				margin: 0;
+			}
+
+			.seed-hero h1 {
+				margin-top: 14px;
+				font-size: clamp(30px, 3vw, 44px);
+				line-height: 1.02;
+			}
+
+			.seed-hero p {
+				margin-top: 12px;
+				max-width: 68ch;
+				line-height: 1.7;
+				color: #475569;
+			}
+
+			.seed-badges,
+			.seed-info-stack,
+			.seed-actions,
+			.seed-mini-actions {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 10px;
+			}
+
+			.seed-badges {
+				margin-top: 16px;
+			}
+
+			.seed-badge,
+			.seed-info-chip {
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				padding: 10px 14px;
+				border-radius: 999px;
+				border: 1px solid #d7e4df;
+				background: #ffffff;
+				font-size: 14px;
+				font-weight: 700;
+				color: #1e293b;
+			}
+
+			.seed-side {
+				display: grid;
+				gap: 14px;
+			}
+
+			.seed-side-card {
+				padding: 18px;
+				border-radius: 20px;
+				border: 1px solid #dbe7e4;
+				background:
+					radial-gradient(circle at top right, rgba(186, 230, 253, 0.45), transparent 30%),
+					linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+			}
+
+			.seed-side-card h2 {
+				font-size: 14px;
+				font-weight: 800;
+				letter-spacing: 0.1em;
+				text-transform: uppercase;
+				color: #166534;
+			}
+
+			.seed-side-card p {
+				margin-top: 10px;
+				line-height: 1.6;
+				color: #475569;
+			}
+
+			.seed-stat-grid {
+				display: grid;
+				grid-template-columns: repeat(4, minmax(0, 1fr));
+				gap: 14px;
+			}
+
+			.seed-stat {
+				padding: 18px;
+				border-radius: 20px;
+				border: 1px solid #dbe7e4;
+				background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+				box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+			}
+
+			.seed-stat span {
+				display: block;
+				font-size: 12px;
+				font-weight: 800;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: #166534;
+			}
+
+			.seed-stat strong {
+				display: block;
+				margin-top: 8px;
+				font-size: 30px;
+				line-height: 1;
+			}
+
+			.seed-stat small {
+				display: block;
+				margin-top: 8px;
+				line-height: 1.5;
+				color: #64748b;
+			}
+
+			.seed-layout {
+				display: grid;
+				grid-template-columns: minmax(0, 1fr) minmax(320px, 0.84fr);
+				gap: 20px;
+				align-items: start;
+			}
+
+			.seed-control-grid {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 14px;
+				margin-top: 18px;
+			}
+
+			.seed-field {
+				display: grid;
+				gap: 8px;
+			}
+
+			.seed-field label {
+				font-size: 14px;
+				font-weight: 700;
+				color: #334155;
+			}
+
+			.seed-field input,
+			.seed-field textarea {
+				width: 100%;
+				padding: 12px 14px;
+				border-radius: 14px;
+				border: 1px solid #cbd5e1;
+				background: #ffffff;
+				font: inherit;
+				color: #0f172a;
+			}
+
+			.seed-field input:focus,
+			.seed-field textarea:focus {
+				outline: none;
+				border-color: #16a34a;
+				box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+			}
+
+			.seed-actions,
+			.seed-mini-actions {
+				margin-top: 18px;
+			}
+
+			button {
+				border: 0;
+				border-radius: 14px;
+				padding: 12px 16px;
+				font: inherit;
+				font-weight: 800;
+				cursor: pointer;
+				transition:
+					transform 0.18s ease,
+					box-shadow 0.18s ease,
+					background 0.18s ease;
+			}
+
+			button:hover:not(:disabled) {
+				transform: translateY(-1px);
+				box-shadow: 0 16px 28px rgba(15, 23, 42, 0.12);
+			}
+
+			button:disabled {
+				cursor: not-allowed;
+				opacity: 0.65;
+				box-shadow: none;
+			}
+
+			.seed-btn-primary {
+				background: linear-gradient(180deg, #166534 0%, #14532d 100%);
+				color: #ffffff;
+			}
+
+			.seed-btn-secondary {
+				background: #ffffff;
+				color: #14532d;
+				border: 1px solid #bbf7d0;
+			}
+
+			.seed-btn-danger {
+				background: #fff1f2;
+				color: #b91c1c;
+				border: 1px solid #fecdd3;
+			}
+
+			.seed-note-list {
+				display: grid;
+				gap: 10px;
+				margin-top: 16px;
+			}
+
+			.seed-note {
+				padding: 14px 16px;
+				border-radius: 16px;
+				border: 1px solid #dbe7e4;
+				background: #f8fafc;
+				line-height: 1.6;
+				color: #475569;
+			}
+
+			.seed-status {
+				padding: 14px 16px;
+				border-radius: 16px;
+				background: #ecfdf5;
+				border: 1px solid #bbf7d0;
+				color: #166534;
+				font-weight: 700;
+				line-height: 1.6;
+			}
+
+			.seed-status[data-tone="warning"] {
+				background: #fffbeb;
+				border-color: #fde68a;
+				color: #92400e;
+			}
+
+			.seed-status[data-tone="danger"] {
+				background: #fff1f2;
+				border-color: #fecdd3;
+				color: #b91c1c;
+			}
+
+			.seed-table-wrap {
+				margin-top: 18px;
+				border-radius: 18px;
+				border: 1px solid #dbe7e4;
+				overflow: auto;
+				background: #ffffff;
+			}
+
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				min-width: 780px;
+			}
+
+			th,
+			td {
+				padding: 12px 14px;
+				text-align: left;
+				border-bottom: 1px solid #eef2f7;
+				font-size: 14px;
+				vertical-align: top;
+			}
+
+			th {
+				background: #f8fafc;
+				font-size: 12px;
+				font-weight: 800;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: #475569;
+			}
+
+			tbody tr:last-child td {
+				border-bottom: 0;
+			}
+
+			.seed-pill {
+				display: inline-flex;
+				align-items: center;
+				padding: 6px 10px;
+				border-radius: 999px;
+				font-size: 12px;
+				font-weight: 800;
+			}
+
+			.seed-pill--request {
+				background: #dcfce7;
+				color: #166534;
+			}
+
+			.seed-pill--fallback {
+				background: #eff6ff;
+				color: #1d4ed8;
+			}
+
+			.seed-log {
+				margin-top: 18px;
+				padding: 16px;
+				border-radius: 18px;
+				border: 1px solid #dbe7e4;
+				background: #0f172a;
+				color: #d1fae5;
+				font-family: Consolas, "Courier New", monospace;
+				font-size: 13px;
+				line-height: 1.6;
+				min-height: 220px;
+				white-space: pre-wrap;
+			}
+
+			code {
+				padding: 2px 6px;
+				border-radius: 8px;
+				background: #f1f5f9;
+				color: #0f172a;
+			}
+
+			@media (max-width: 960px) {
+				.seed-hero,
+				.seed-layout,
+				.seed-stat-grid {
+					grid-template-columns: 1fr;
+				}
+			}
+
+			@media (max-width: 720px) {
+				.seed-shell {
+					width: min(100% - 20px, 1180px);
+					margin: 20px auto 28px;
+				}
+
+				.seed-panel {
+					padding: 18px;
+					border-radius: 20px;
+				}
+
+				.seed-control-grid {
+					grid-template-columns: 1fr;
+				}
+
+				.seed-actions button,
+				.seed-mini-actions button {
+					width: 100%;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="seed-shell">
+			<section class="seed-panel seed-hero">
+				<div>
+					<span class="seed-eyebrow">Material Checking Seeder</span>
+					<h1>Seed 50 pending SOE checking records from live student data.</h1>
+					<p>
+						This tool reads the current <code>students</code>, <code>soeRequests</code>, and
+						<code>soeDownloads</code> collections, then creates pending
+						<code>soeDownloads</code> records that match actual student snapshots and scholarship
+						data for the Materials Checking section.
+					</p>
+					<div class="seed-badges">
+						<span class="seed-badge">Uses real student snapshots</span>
+						<span class="seed-badge">Prefers approved SOE requests</span>
+						<span class="seed-badge">Writes to <code>soeDownloads</code></span>
+					</div>
+				</div>
+				<div class="seed-side">
+					<div class="seed-side-card">
+						<h2>Usage</h2>
+						<p>
+							Run <code>npm run dev</code>, open <code>/seed.html</code>, then sign in as an
+							admin if your Firestore rules require it.
+						</p>
+						<div class="seed-info-stack" style="margin-top: 14px">
+							<span class="seed-info-chip" id="authState">Checking auth...</span>
+							<span class="seed-info-chip" id="projectState">Loading project...</span>
+						</div>
+					</div>
+					<div class="seed-side-card">
+						<h2>Seeder Scope</h2>
+						<p>
+							New records are marked with seed metadata so you can delete the latest batch or
+							clear all rows created by this page without touching manual data.
+						</p>
+					</div>
+				</div>
+			</section>
+
+			<section class="seed-stat-grid">
+				<article class="seed-panel seed-stat">
+					<span>Students Loaded</span>
+					<strong id="studentsCount">0</strong>
+					<small>Live student records pulled from Firestore.</small>
+				</article>
+				<article class="seed-panel seed-stat">
+					<span>Eligible Pairs</span>
+					<strong id="candidateCount">0</strong>
+					<small>Student and scholarship pairs suitable for SOE checking seed data.</small>
+				</article>
+				<article class="seed-panel seed-stat">
+					<span>Request-Backed</span>
+					<strong id="requestBackedCount">0</strong>
+					<small>Pairs that already have a matching SOE request to reuse.</small>
+				</article>
+				<article class="seed-panel seed-stat">
+					<span>Existing Checking Rows</span>
+					<strong id="downloadCount">0</strong>
+					<small>Current documents already inside <code>soeDownloads</code>.</small>
+				</article>
+			</section>
+
+			<div class="seed-layout">
+				<section class="seed-panel">
+					<h2>Seed Controls</h2>
+					<p style="margin-top: 10px; color: #475569; line-height: 1.7">
+						Preview the generated rows first, then seed them into Materials Checking. If the
+						database has fewer than 50 unique candidates, the tool reuses real students and
+						scholarships with unique SOE request numbers to still reach the target.
+					</p>
+					<div class="seed-control-grid">
+						<div class="seed-field">
+							<label for="seedCount">Rows to Seed</label>
+							<input id="seedCount" type="number" min="1" max="200" value="50" />
+						</div>
+						<div class="seed-field">
+							<label for="seedWindow">Download Window Notes</label>
+							<input id="seedWindow" type="text" value="Generates recent pending download reviews over the last 30 days." readonly />
+						</div>
+					</div>
+					<div class="seed-actions">
+						<button id="refreshBtn" type="button" class="seed-btn-secondary">Refresh Live Data</button>
+						<button id="previewBtn" type="button" class="seed-btn-secondary">Build Preview</button>
+						<button id="seedBtn" type="button" class="seed-btn-primary">Seed Materials Checking</button>
+					</div>
+					<div class="seed-mini-actions">
+						<button id="deleteLastBtn" type="button" class="seed-btn-danger">Delete Latest Seed Batch</button>
+						<button id="deleteAllBtn" type="button" class="seed-btn-danger">Delete All Seeded Rows</button>
+					</div>
+					<div id="statusBanner" class="seed-status" style="margin-top: 18px">
+						Waiting for database load.
+					</div>
+					<div class="seed-note-list">
+						<div class="seed-note">
+							Rows are created with <strong>Pending</strong> status and
+							<strong>incoming</strong> review state so they land in
+							<strong>Materials Checking &gt; Pending</strong>.
+						</div>
+						<div class="seed-note">
+							Student name, course, year, section, email, scholarship, and provider values come
+							from the live <code>students</code> collection.
+						</div>
+						<div class="seed-note">
+							When a matching approved SOE request exists, its request number and record ID are
+							reused first.
+						</div>
+					</div>
+				</section>
+
+				<section class="seed-panel">
+					<h2>Activity Log</h2>
+					<p style="margin-top: 10px; color: #475569; line-height: 1.7">
+						This log shows what the seeder loaded, what it plans to write, and what cleanup
+						actions were executed.
+					</p>
+					<pre id="activityLog" class="seed-log">Seeder ready.</pre>
+				</section>
+			</div>
+
+			<section class="seed-panel">
+				<h2>Preview Rows</h2>
+				<p style="margin-top: 10px; color: #475569; line-height: 1.7">
+					Preview of the next seed batch that will be written into <code>soeDownloads</code>.
+				</p>
+				<div class="seed-table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>SOE Request No.</th>
+								<th>Student No.</th>
+								<th>Student Name</th>
+								<th>Scholarship</th>
+								<th>Provider</th>
+								<th>Source</th>
+								<th>Downloaded</th>
+							</tr>
+						</thead>
+						<tbody id="previewTableBody">
+							<tr>
+								<td colspan="7">No preview rows yet.</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+		</div>
+		<script type="module" src="/src/tools/materialCheckingSeed.js"></script>
+	</body>
+</html>

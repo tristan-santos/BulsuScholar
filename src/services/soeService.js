@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts } from "pdf-lib"
+import { resolveSoeRequestNumber } from "./soeRequestNumberService"
 
 function safeText(value, fallback = "N/A") {
 	const text = String(value ?? "").trim()
@@ -49,18 +50,6 @@ function mapCourseToCollege(course = "") {
 	return "BulSU Bustos Campus"
 }
 
-function generateRegistrationNumber(studentId = "") {
-	const normalizedId = safeText(studentId, "student")
-		.toLowerCase()
-		.replace(/[^a-z0-9]/g, "")
-	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-	let suffix = ""
-	for (let i = 0; i < 8; i += 1) {
-		suffix += chars[Math.floor(Math.random() * chars.length)]
-	}
-	return `${normalizedId}-${suffix}`
-}
-
 async function fetchTemplateBytes() {
 	const response = await fetch("/soe-template-fields.pdf")
 	if (!response.ok) {
@@ -74,6 +63,7 @@ export async function exportSoePdfDocument({
 	studentId = "",
 	expenses = [],
 	autoDownload = true,
+	requestNumber = "",
 } = {}) {
 	const templateBytes = await fetchTemplateBytes()
 	const pdfDoc = await PDFDocument.load(templateBytes)
@@ -86,7 +76,7 @@ export async function exportSoePdfDocument({
 	const program = safeText(student?.course)
 	const pointOfOrigination = mapCourseToCollege(program)
 	const studentNumber = studentId || student?.studentnumber
-	const registrationNumber = generateRegistrationNumber(studentNumber)
+	const soeRequestNumber = resolveSoeRequestNumber(requestNumber, studentNumber)
 
 	const hasField = (fieldName) =>
 		form.getFields().some((field) => field.getName() === fieldName)
@@ -113,7 +103,7 @@ export async function exportSoePdfDocument({
 	setTextField("text_1siso", fullName) // Name of scholar
 	setTextField("text_4rhuf", studentNumber) // Student number
 	setTextField("text_5pwyp", program) // Program
-	setTextField("text_7bm", registrationNumber) // Request/registration number
+	setTextField("text_7bm", soeRequestNumber) // SOE request number
 	const expenseRows = (Array.isArray(expenses) ? expenses : [])
 		.map((item) => ({
 			label: safeText(item?.label, ""),
@@ -207,7 +197,10 @@ export async function exportSoePdfDocument({
 		)
 	}
 
-	return { registrationNumber, pdfBytes }
+	return {
+		requestNumber: soeRequestNumber,
+		pdfBytes,
+	}
 }
 
 export function downloadSoePdfBytes(pdfBytes, fileName = "SOE.pdf") {

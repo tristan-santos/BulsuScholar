@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BulsuScholar Notification</title>
+    <style>
+        /* Base Styles */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f4f7f6;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        table {
+            border-spacing: 0;
+            width: 100%;
+        }
+        td {
+            padding: 0;
+        }
+        img {
+            border: 0;
+        }
+
+        /* Container */
+        .wrapper {
+            width: 100%;
+            table-layout: fixed;
+            background-color: #f4f7f6;
+            padding-top: 20px;
+            padding-bottom: 40px;
+        }
+
+        .main-content {
+            background-color: #ffffff;
+            margin: 0 auto;
+            width: 100%;
+            max-width: 600px;
+            border-spacing: 0;
+            color: #333333;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            border-top: 6px solid #00633C; /* BulSU Green accent at the very top */
+        }
+
+        /* Header Design (White background for logo visibility) */
+        .header {
+            background-color: #ffffff;
+            padding: 25px 20px;
+            text-align: center;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .header-table {
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .logo-cell {
+            width: 70px;
+            vertical-align: middle;
+        }
+
+        .title-cell {
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 10px;
+        }
+
+        .header-logo {
+            width: 65px;
+            height: 65px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .header h1 {
+            color: #00633C; /* Title is now Green */
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 1px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .header p {
+            color: #4a5568; /* Subtitle is Dark Gray */
+            margin: 4px 0 0;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        /* Body Section */
+        .body-container {
+            padding: 40px 35px;
+            line-height: 1.7;
+            font-size: 16px;
+            color: #2d3748;
+        }
+
+        /* Footer */
+        .footer {
+            background-color: #f8fafc;
+            padding: 30px;
+            text-align: center;
+            color: #718096;
+            font-size: 13px;
+            border-top: 1px solid #edf2f7;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+        .footer-brand {
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 8px !important;
+        }
+        .footer-links {
+            margin-top: 15px;
+        }
+        .footer-links a {
+            color: #00633C;
+            text-decoration: none;
+            margin: 0 10px;
+            font-weight: 600;
+        }
+
+        /* Utilities */
+        .button {
+            display: inline-block;
+            padding: 12px 28px;
+            background-color: #00633C;
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            margin-top: 25px;
+            box-shadow: 0 4px 6px rgba(0, 99, 60, 0.2);
+        }
+
+        /* Responsive */
+        @media screen and (max-width: 600px) {
+            .main-content {
+                width: 100% !important;
+                border-radius: 0 !important;
+            }
+            .body-container {
+                padding: 30px 20px !important;
+            }
+            .header h1 {
+                font-size: 19px !important;
+            }
+            .header-logo {
+                width: 50px !important;
+                height: 50px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <center class="wrapper">
+        <table class="main-content" role="presentation">
+            <!-- Header -->
+            <tr>
+                <td class="header">
+                    <table class="header-table" role="presentation">
+                        <tr>
+                            <td class="logo-cell">
+                                <!-- Your Cloudinary BulSU Logo URL -->
+                                <img src="https://res.cloudinary.com/dtlwaofz6/image/upload/v1741271178/bulsuscholar/vsmv9eak8fub6pgh688p.png" alt="BulSU Logo" class="header-logo">
+                            </td>
+                            <td class="title-cell">
+                                <h1>BulsuScholar</h1>
+                                <p>Office of Student Programs and Services</p>
+                            </td>
+                            <td class="logo-cell">
+                                <!-- Your Cloudinary ISPS Logo URL -->
+                                <img src="https://res.cloudinary.com/dtlwaofz6/image/upload/v1741271178/bulsuscholar/vsmv9eak8fub6pgh688p.png" alt="ISPS Logo" class="header-logo">
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+
+            <!-- DYNAMIC BODY CONTENT -->
+            <tr>
+                <td class="body-container">
+                    <!-- 
+                        CRITICAL: In your EmailJS Template Editor, 
+                        use TRIPLE curly braces like this: {{{message_body}}} 
+                    -->
+                    {{{message_body}}}
+                </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+                <td class="footer">
+                    <p class="footer-brand">Bulacan State University</p>
+                    <p>Scholarship Office - Malolos City, Bulacan</p>
+                    <div class="footer-links">
+                        <a href="#">Support</a>
+                        <a href="#">Portal</a>
+                    </div>
+                    <p style="margin-top: 20px; font-size: 11px; color: #a0aec0;">
+                        &copy; 2026 BulsuScholar. All rights reserved.
+                    </p>
+                </td>
+            </tr>
+        </table>
+    </center>
+</body>
+</html>

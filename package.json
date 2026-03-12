@@ -12,6 +12,7 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
+		"@emailjs/browser": "^4.4.1",
 		"@imagekit/react": "^5.0.2",
 		"chart.js": "^4.5.1",
 		"cloudinary": "^2.9.0",

@@ -31,17 +31,39 @@ export function mapStudents(rawStudents = []) {
 	return rawStudents.map((item) => {
 		const fullName = [item.fname, item.mname, item.lname].filter(Boolean).join(" ").trim()
 		const scholarships = Array.isArray(item.scholarships) ? item.scholarships : []
-		const appliedScholarship = scholarships[0]?.name || scholarships[0]?.provider || "-"
+		const accountBlocked =
+			item.restrictions?.accountAccess === true ||
+			item.isBlocked === true ||
+			String(item.accountStatus || "").toLowerCase() === "blocked"
+		const scholarshipBlocked =
+			item.restrictions?.scholarshipEligibility === true ||
+			item.soeComplianceBlocked === true ||
+			scholarships.some((entry) => entry?.adminBlocked === true)
+		const isArchived = item.archived === true
+		const restrictionSummary = [
+			accountBlocked ? "Account Access" : "",
+			scholarshipBlocked ? "Scholarship Eligibility" : "",
+		]
+			.filter(Boolean)
+			.join(", ")
 		return {
 			id: item.id || item.studentnumber || "-",
 			fullName: fullName || "Student",
+			email: item.email || "",
+			fname: item.fname || "",
+			scholarships,
 			course: item.course || "-",
 			yearLevel: item.year || "-",
 			validationStatus:
 				item.isValidated === true || item.isValidated === "true"
 					? "Validated"
 					: "Pending",
-			appliedScholarship,
+			recordStatus: isArchived
+				? "Archived"
+				: accountBlocked || scholarshipBlocked
+					? "Blocked"
+					: "Active",
+			restrictionSummary: restrictionSummary || "-",
 		}
 	})
 }
@@ -78,13 +100,10 @@ export function mapScholarshipRows(rawStudents = [], rawApplications = []) {
 	}
 
 	rawApplications.forEach((application) => {
-		const row = ensureProgram(
+		ensureProgram(
 			application.scholarshipName || application.provider || application.providerType,
 			application.providerType,
 		)
-		if (isScholarshipActive(application.status)) {
-			row.activeRecipients += 1
-		}
 	})
 
 	rawStudents.forEach((student) => {
@@ -101,13 +120,19 @@ export function mapScholarshipRows(rawStudents = [], rawApplications = []) {
 }
 
 export function filterScholarshipRows(rows = [], filters = {}) {
-	const { provider = "All", status = "All" } = filters
+	const { provider = "All", status = "All", search = "" } = filters
+	const keyword = search.trim().toLowerCase()
 	return rows.filter((row) => {
+		const matchesSearch =
+			!keyword ||
+			String(row.programName || "").toLowerCase().includes(keyword) ||
+			String(row.providerType || "").toLowerCase().includes(keyword) ||
+			String(row.status || "").toLowerCase().includes(keyword)
 		const providerMatch =
 			provider === "All" ||
 			String(row.providerType || "").toLowerCase() === provider.toLowerCase()
 		const statusMatch = status === "All" || row.status === status
-		return providerMatch && statusMatch
+		return matchesSearch && providerMatch && statusMatch
 	})
 }
 
@@ -164,7 +189,8 @@ export async function exportStudentsReportPdf(rows = [], filterLabel = "", logoU
 			"Course",
 			"Year Level",
 			"Validation",
-			"Applied Scholarship",
+			"Record Status",
+			"Restrictions",
 		]],
 		body: rows.map((row) => [
 			row.id,
@@ -172,36 +198,30 @@ export async function exportStudentsReportPdf(rows = [], filterLabel = "", logoU
 			row.course,
 			row.yearLevel,
 			row.validationStatus,
-			row.appliedScholarship,
+			row.recordStatus || "Active",
+			row.restrictionSummary || "-",
 		]),
 		styles: { fontSize: 8 },
 	})
 	doc.save(`students-report-${Date.now()}.pdf`)
 }
 
-export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", logoUrl = "") {
+export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", logoUrl = "", columns = null, bodyRows = null, title = "Scholarship Programs Report") {
 	const doc = new jsPDF()
-	await drawPdfHeader(doc, "Scholarship Programs Report", logoUrl)
+	await drawPdfHeader(doc, title, logoUrl)
 	if (filterLabel) {
 		doc.setFontSize(9)
 		doc.text(`Filters: ${filterLabel}`, 14, 42)
 	}
+	const tableColumns = Array.isArray(columns) && columns.length > 0 ? columns : ["Program Name", "Provider Type", "Total Slots", "Active Recipients", "Status"]
+	const tableBodyRows =
+		Array.isArray(bodyRows) && bodyRows.length >= 0
+			? bodyRows
+			: rows.map((row) => [row.programName, row.providerType, String(row.totalSlots), String(row.activeRecipients), row.status])
 	autoTable(doc, {
 		startY: 46,
-		head: [[
-			"Program Name",
-			"Provider Type",
-			"Total Slots",
-			"Active Recipients",
-			"Status",
-		]],
-		body: rows.map((row) => [
-			row.programName,
-			row.providerType,
-			String(row.totalSlots),
-			String(row.activeRecipients),
-			row.status,
-		]),
+		head: [tableColumns],
+		body: tableBodyRows,
 		styles: { fontSize: 8 },
 	})
 	doc.save(`scholarships-report-${Date.now()}.pdf`)
@@ -209,7 +229,7 @@ export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", l
 
 export async function exportSoeRequestsReportPdf(rows = [], filterLabel = "", logoUrl = "") {
 	const doc = new jsPDF()
-	await drawPdfHeader(doc, "SOE Requests Report", logoUrl)
+	await drawPdfHeader(doc, "Materials Request Report", logoUrl)
 	if (filterLabel) {
 		doc.setFontSize(9)
 		doc.text(`Filters: ${filterLabel}`, 14, 42)
@@ -218,19 +238,78 @@ export async function exportSoeRequestsReportPdf(rows = [], filterLabel = "", lo
 		startY: 46,
 		head: [[
 			"Student ID",
+			"Student Name",
 			"Scholarship",
+			"Materials",
 			"Provider",
 			"Status",
 			"Date Requested",
+			"Next Eligible",
+			"Review State",
 		]],
 		body: rows.map((row) => [
 			row.studentId || "-",
+			row.fullName || "-",
 			row.scholarshipName || "-",
+			row.requestedMaterialsSummary || "-",
 			row.providerType || "-",
 			row.status || "-",
-			formatDate(row.timestamp || row.dateRequested || row.createdAt),
+			formatDate(row.requestDate || row.timestamp || row.dateRequested || row.createdAt),
+			row.nextEligibleLabel || "-",
+			row.reviewStateLabel || row.reviewState || "-",
 		]),
 		styles: { fontSize: 8 },
 	})
-	doc.save(`soe-requests-report-${Date.now()}.pdf`)
+	doc.save(`materials-request-report-${Date.now()}.pdf`)
+}
+
+export async function exportComplianceReportPdf(rows = [], filterLabel = "", logoUrl = "") {
+	const doc = new jsPDF()
+	await drawPdfHeader(doc, "Compliance Monitoring Report", logoUrl)
+	if (filterLabel) {
+		doc.setFontSize(9)
+		doc.text(`Filters: ${filterLabel}`, 14, 42)
+	}
+	autoTable(doc, {
+		startY: 46,
+		head: [[
+			"Student ID",
+			"Full Name",
+			"Status",
+			"Violations",
+			"Scholarship Block",
+			"Last Reviewed",
+		]],
+		body: rows.map((row) => [
+			row.studentId || row.id || "-",
+			row.fullName || "-",
+			row.complianceStatus || "-",
+			String(row.violationCount || 0),
+			row.isBlocked ? "Yes" : "No",
+			row.lastReviewed || "-",
+		]),
+		styles: { fontSize: 8 },
+	})
+	doc.save(`compliance-report-${Date.now()}.pdf`)
+}
+
+export function downloadCsvReport(filename, headers = [], rows = []) {
+	const headerLine = headers.map((value) => escapeCsvValue(value)).join(",")
+	const bodyLines = rows.map((row) => row.map((value) => escapeCsvValue(value)).join(","))
+	const csv = [headerLine, ...bodyLines].join("\n")
+	const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+	const url = URL.createObjectURL(blob)
+	const link = document.createElement("a")
+	link.href = url
+	link.download = filename
+	document.body.appendChild(link)
+	link.click()
+	document.body.removeChild(link)
+	URL.revokeObjectURL(url)
+}
+
+function escapeCsvValue(value) {
+	const raw = String(value ?? "")
+	const escaped = raw.replaceAll('"', '""')
+	return `"${escaped}"`
 }
