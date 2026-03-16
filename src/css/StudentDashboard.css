@@ -1171,6 +1171,15 @@
 	font-size: 0.92rem;
 }
 
+.student-profile-input--textarea {
+	height: auto;
+	min-height: 100px;
+	resize: vertical;
+	padding-top: 0.75rem;
+	padding-bottom: 0.75rem;
+	line-height: 1.5;
+}
+
 .student-profile-input[readonly] {
 	background: #f8fafc;
 	color: #475569;
@@ -2067,6 +2076,284 @@
 }
 
 /* ----- Scholarships Workspace ----- */
+.student-kwsp-tracker-shell {
+	margin-bottom: 1rem;
+}
+
+.student-kwsp-tracker-board {
+	background:
+		radial-gradient(circle at top right, rgba(34, 197, 94, 0.09), transparent 34%),
+		linear-gradient(180deg, #ffffff 0%, #f8fff9 100%);
+}
+
+.student-kwsp-tracker-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	margin-bottom: 1rem;
+}
+
+.student-kwsp-tracker-eyebrow {
+	margin: 0 0 0.3rem;
+	font-size: 0.74rem;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: #0b572b;
+}
+
+.student-kwsp-tracker-head h3 {
+	margin: 0;
+}
+
+.student-kwsp-tracker-copy {
+	margin: 0.35rem 0 0;
+	font-size: 0.88rem;
+	line-height: 1.5;
+	color: #475569;
+}
+
+.student-kwsp-tracker-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 40px;
+	padding: 0.55rem 0.9rem;
+	border-radius: 999px;
+	border: 1px solid #d1fae5;
+	background: #ecfdf3;
+	font-size: 0.8rem;
+	font-weight: 700;
+	color: #166534;
+	text-align: center;
+}
+
+.student-kwsp-tracker-badge--current {
+	border-color: #bbf7d0;
+	background: #f0fdf4;
+	color: #166534;
+}
+
+.student-kwsp-tracker-badge--attention {
+	border-color: #fcd34d;
+	background: #fffbeb;
+	color: #b45309;
+}
+
+.student-kwsp-tracker-badge--complete {
+	border-color: #86efac;
+	background: #dcfce7;
+	color: #166534;
+}
+
+.student-kwsp-tracker-grid {
+	display: grid;
+	grid-template-columns: minmax(280px, 0.95fr) minmax(0, 1.45fr);
+	gap: 1rem;
+	align-items: start;
+}
+
+.student-kwsp-next-panel {
+	border-radius: 16px;
+	border: 1px solid #d7e6dd;
+	background:
+		linear-gradient(145deg, rgba(236, 253, 243, 0.88), rgba(255, 255, 255, 0.98)),
+		radial-gradient(circle at top right, rgba(34, 197, 94, 0.12), transparent 42%);
+	padding: 1rem;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.student-kwsp-next-kicker {
+	display: inline-flex;
+	margin-bottom: 0.55rem;
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: #0b572b;
+}
+
+.student-kwsp-next-panel h4 {
+	margin: 0;
+	font-size: 1.05rem;
+	color: #14532d;
+}
+
+.student-kwsp-next-panel p {
+	margin: 0.55rem 0 0;
+	font-size: 0.9rem;
+	line-height: 1.6;
+	color: #475569;
+}
+
+.student-kwsp-next-meta {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.75rem;
+	margin-top: 1rem;
+}
+
+.student-kwsp-next-meta-card {
+	border-radius: 12px;
+	border: 1px solid #d7e6dd;
+	background: rgba(255, 255, 255, 0.88);
+	padding: 0.8rem 0.85rem;
+}
+
+.student-kwsp-next-meta-card span {
+	display: block;
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: #64748b;
+}
+
+.student-kwsp-next-meta-card strong {
+	display: block;
+	margin-top: 0.35rem;
+	font-size: 0.92rem;
+	line-height: 1.45;
+	color: #14532d;
+	word-break: break-word;
+}
+
+.student-kwsp-step-list {
+	display: grid;
+	gap: 0.7rem;
+}
+
+.student-kwsp-step {
+	display: grid;
+	grid-template-columns: 58px minmax(0, 1fr);
+	gap: 0.85rem;
+	align-items: stretch;
+	padding: 0.9rem;
+	border-radius: 16px;
+	border: 1px solid #e2e8f0;
+	background: #ffffff;
+	box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.student-kwsp-step-marker {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 14px;
+	background: #f8fafc;
+	border: 1px solid #d7e6dd;
+	font-size: 0.88rem;
+	font-weight: 800;
+	color: #0b572b;
+}
+
+.student-kwsp-step-content {
+	min-width: 0;
+}
+
+.student-kwsp-step-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 0.8rem;
+}
+
+.student-kwsp-step-head h4 {
+	margin: 0;
+	font-size: 0.92rem;
+	color: #14532d;
+}
+
+.student-kwsp-step-content p {
+	margin: 0.45rem 0 0;
+	font-size: 0.82rem;
+	line-height: 1.55;
+	color: #475569;
+}
+
+.student-kwsp-step-state {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.35rem 0.65rem;
+	border-radius: 999px;
+	font-size: 0.72rem;
+	font-weight: 700;
+	white-space: nowrap;
+}
+
+.student-kwsp-step-state--complete {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.student-kwsp-step-state--current {
+	background: #f1f5f9;
+	color: #475569;
+	border: 1px solid #cbd5e1;
+}
+
+.student-kwsp-step-state--upcoming {
+	background: #f1f5f9;
+	color: #475569;
+	border: 1px solid #cbd5e1;
+}
+
+.student-kwsp-step-state--attention {
+	background: #f1f5f9;
+	color: #475569;
+	border: 1px solid #cbd5e1;
+}
+
+.student-kwsp-step--complete {
+	border-color: #bbf7d0;
+}
+
+.student-kwsp-step--complete .student-kwsp-step-marker {
+	background: #dcfce7;
+	border-color: #86efac;
+	color: #166534;
+}
+
+.student-kwsp-step--current {
+	border-color: #e2e8f0;
+	box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+}
+
+.student-kwsp-step--current .student-kwsp-step-marker {
+	background: #f8fafc;
+	border-color: #d7e6dd;
+	color: #64748b;
+}
+
+.student-kwsp-step--attention {
+	border-color: #e2e8f0;
+	background: #ffffff;
+}
+
+.student-kwsp-step--attention .student-kwsp-step-marker {
+	background: #f8fafc;
+	border-color: #d7e6dd;
+	color: #64748b;
+}
+
+.student-kwsp-step--upcoming .student-kwsp-step-marker {
+	color: #64748b;
+}
+
+.student-kwsp-step--focus {
+	border-color: #94a3b8;
+	box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+	transform: translateY(-2px);
+}
+
+.student-kwsp-step--focus .student-kwsp-step-marker {
+	background: #e2e8f0;
+	border-color: #94a3b8;
+	color: #334155;
+}
+
 .student-scholarship-workspace {
 	display: grid;
 	grid-template-columns: 1.25fr 1fr;
@@ -2626,6 +2913,8 @@
 
 .student-dashboard--dark .student-bento-eyebrow,
 .student-dashboard--dark .student-bento-title,
+.student-dashboard--dark .student-kwsp-tracker-eyebrow,
+.student-dashboard--dark .student-kwsp-next-kicker,
 .student-dashboard--dark .student-bento-note,
 .student-dashboard--dark .student-lock-banner-title,
 .student-dashboard--dark .student-program-card h4,
@@ -2635,6 +2924,9 @@
 }
 
 .student-dashboard--dark .student-bento-meta,
+.student-dashboard--dark .student-kwsp-tracker-copy,
+.student-dashboard--dark .student-kwsp-next-panel p,
+.student-dashboard--dark .student-kwsp-step-content p,
 .student-dashboard--dark .student-announcement-content p,
 .student-dashboard--dark .student-program-card p,
 .student-dashboard--dark .student-lock-banner-sub,
@@ -2651,6 +2943,72 @@
 .student-dashboard--dark .student-dashboard-scholarship-preview-item {
 	background: #0f172a;
 	border-color: #334155;
+}
+
+.student-dashboard--dark .student-kwsp-tracker-board {
+	background:
+		radial-gradient(circle at top right, rgba(16, 185, 129, 0.14), transparent 34%),
+		linear-gradient(180deg, #111827 0%, #0f172a 100%);
+}
+
+.student-dashboard--dark .student-kwsp-next-panel,
+.student-dashboard--dark .student-kwsp-step,
+.student-dashboard--dark .student-kwsp-next-meta-card {
+	background: #0f172a;
+	border-color: #334155;
+	color: #e5e7eb;
+}
+
+.student-dashboard--dark .student-kwsp-next-panel h4,
+.student-dashboard--dark .student-kwsp-step-head h4,
+.student-dashboard--dark .student-kwsp-next-meta-card strong {
+	color: #d1fae5;
+}
+
+.student-dashboard--dark .student-kwsp-tracker-badge--current,
+.student-dashboard--dark .student-kwsp-step--current .student-kwsp-step-marker {
+	background: rgba(16, 185, 129, 0.14);
+	border-color: rgba(52, 211, 153, 0.34);
+	color: #a7f3d0;
+}
+
+.student-dashboard--dark .student-kwsp-tracker-badge--complete,
+.student-dashboard--dark .student-kwsp-step--complete .student-kwsp-step-marker {
+	background: rgba(34, 197, 94, 0.16);
+	border-color: rgba(74, 222, 128, 0.3);
+	color: #bbf7d0;
+}
+
+.student-dashboard--dark .student-kwsp-step-state--complete {
+	background: rgba(34, 197, 94, 0.16);
+	border: 1px solid rgba(74, 222, 128, 0.3);
+	color: #bbf7d0;
+}
+
+.student-dashboard--dark .student-kwsp-step-state--current,
+.student-dashboard--dark .student-kwsp-step-state--attention,
+.student-dashboard--dark .student-kwsp-step-state--upcoming,
+.student-dashboard--dark .student-kwsp-step--current .student-kwsp-step-marker,
+.student-dashboard--dark .student-kwsp-step--attention .student-kwsp-step-marker,
+.student-dashboard--dark .student-kwsp-step--upcoming .student-kwsp-step-marker {
+	background: rgba(51, 65, 85, 0.88);
+	border: 1px solid #475569;
+	color: #cbd5e1;
+}
+
+.student-dashboard--dark .student-kwsp-step--focus {
+	border-color: #64748b;
+	box-shadow: 0 18px 34px rgba(2, 6, 23, 0.45);
+}
+
+.student-dashboard--dark .student-kwsp-step--focus .student-kwsp-step-marker {
+	background: rgba(71, 85, 105, 0.96);
+	border-color: #94a3b8;
+	color: #f8fafc;
+}
+
+.student-dashboard--dark .student-kwsp-next-meta-card span {
+	color: #94a3b8;
 }
 
 .student-dashboard--dark .student-dashboard-scholarship-preview-item--blocked {
@@ -2804,6 +3162,10 @@
 		grid-template-columns: 1fr;
 	}
 
+	.student-kwsp-tracker-grid {
+		grid-template-columns: 1fr;
+	}
+
 	.student-profile-section-grid {
 		grid-template-columns: 1fr;
 		margin-top: 0.9rem;
@@ -2841,6 +3203,23 @@
 @media (max-width: 640px) {
 	.student-action-grid {
 		grid-template-columns: 1fr;
+	}
+
+	.student-kwsp-tracker-head,
+	.student-kwsp-step-head {
+		flex-direction: column;
+	}
+
+	.student-kwsp-next-meta {
+		grid-template-columns: 1fr;
+	}
+
+	.student-kwsp-step {
+		grid-template-columns: 1fr;
+	}
+
+	.student-kwsp-step-marker {
+		min-height: 44px;
 	}
 }
 
@@ -3323,3 +3702,98 @@
 	border-color: #334155;
 }
 
+/* ----- Student Announcement Board ----- */
+.student-announcement-card--action {
+	width: 100%;
+	text-align: left;
+	font: inherit;
+	cursor: pointer;
+}
+
+.student-announcement-content__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.45rem 0.75rem;
+}
+
+.student-announcement-page-hero {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem 0;
+}
+
+.student-announcement-page-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.65rem;
+	justify-content: flex-end;
+}
+
+.student-announcement-page-section {
+	display: grid;
+	gap: 0.85rem;
+}
+
+.student-announcement-page-section__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.student-announcement-page-section__head h3 {
+	margin: 0;
+	color: #14532d;
+}
+
+.student-announcement-page-section__head p {
+	margin: 0.2rem 0 0;
+	color: #4b5563;
+	font-size: 0.86rem;
+}
+
+.student-announcement-page-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.85rem;
+}
+
+.student-announcement-page-card {
+	min-height: 140px;
+	align-content: flex-start;
+}
+
+.student-announcement-page-card--previous {
+	opacity: 0.78;
+}
+
+.student-program-card--highlight {
+	border-color: rgba(21, 128, 61, 0.46);
+	box-shadow: 0 16px 32px rgba(21, 128, 61, 0.16);
+}
+
+.student-dashboard--dark .student-announcement-page-section__head h3 {
+	color: #d1fae5;
+}
+
+.student-dashboard--dark .student-announcement-page-section__head p {
+	color: #cbd5e1;
+}
+
+@media (max-width: 860px) {
+	.student-announcement-page-hero,
+	.student-announcement-page-section__head {
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.student-announcement-page-actions {
+		justify-content: flex-start;
+	}
+
+	.student-announcement-page-grid {
+		grid-template-columns: 1fr;
+	}
+}

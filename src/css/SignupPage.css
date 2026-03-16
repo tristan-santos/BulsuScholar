@@ -31,6 +31,10 @@
 	min-width: 0;
 }
 
+.signup-field--small {
+	flex: 0 0 120px;
+}
+
 /* Stepper: circles + lines with fill animation */
 .signup-stepper {
 	display: flex;
@@ -1151,6 +1155,16 @@
 	margin: 0;
 }
 
+.signup-form-subtitle-small {
+	font-size: 0.95rem;
+	font-weight: 600;
+	color: #374151;
+	margin: 1.5rem 0 0.75rem;
+	padding-bottom: 0.5rem;
+	border-bottom: 1px solid #e5e7eb;
+	grid-column: 1 / -1;
+}
+
 .required {
 	color: #dc2626;
 	font-weight: 600;
@@ -1351,6 +1365,18 @@
 	transform: scale(0.95);
 }
 
+.login-input--textarea {
+	resize: vertical;
+	min-height: 100px;
+	padding-top: 0.75rem;
+	padding-bottom: 0.75rem;
+	line-height: 1.5;
+}
+
+.login-input-wrap--textarea {
+	height: auto;
+}
+
 /* Animations */
 @keyframes fadeIn {
 	from {
@@ -1383,4 +1409,17 @@
 		height: 32px;
 		font-size: 1.25rem;
 	}
+}
+
+.login-input--textarea {
+	resize: vertical;
+	min-height: 100px;
+	padding-top: 0.75rem !important;
+	padding-bottom: 0.75rem !important;
+	line-height: 1.5;
+}
+
+.login-input-wrap--textarea {
+	height: auto !important;
+	min-height: 100px;
 }

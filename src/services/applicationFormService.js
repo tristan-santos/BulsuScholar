@@ -30,7 +30,10 @@ export async function exportApplicationFormPdfDocument({
 		[student?.fname, student?.mname, student?.lname].filter(Boolean).join(" ") || "Student"
 	const scholarshipName = safeText(scholarship?.name || scholarship?.provider, "Scholarship")
 	const provider = safeText(scholarship?.provider || scholarship?.name, "Scholarship Office")
-	const requestNumber = safeText(scholarship?.requestNumber || scholarship?.id, "Pending")
+	const applicationNumber = safeText(
+		scholarship?.applicationNumber || scholarship?.requestNumber || scholarship?.id,
+		"Pending",
+	)
 	const course = safeText(student?.course)
 	const yearLevel = safeText(student?.year)
 	const section = safeText(student?.section)
@@ -59,7 +62,7 @@ export async function exportApplicationFormPdfDocument({
 		["Student ID", safeText(studentId || student?.studentnumber)],
 		["Scholarship", scholarshipName],
 		["Provider", provider],
-		["Request Number", requestNumber],
+		["Application Number", applicationNumber],
 		["Course", course],
 		["Year / Section", `${yearLevel} / ${section}`],
 		["Email", email],

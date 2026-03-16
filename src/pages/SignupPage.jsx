@@ -19,6 +19,7 @@ import { toast } from "react-toastify"
 import { db } from "../../firebase"
 import { uploadToCloudinary } from "../services/cloudinaryService"
 import { encryptPasswordAES256 } from "../services/authService"
+import { findMatchingGrantorScholars } from "../services/grantorService"
 import {
 	MAX_SCHOLARSHIP_SAVES,
 	buildScholarshipRecord,
@@ -90,14 +91,6 @@ const COURSES = [
 	},
 ]
 
-const SCHOLARSHIP_PROVIDERS = [
-	"Cong. Tina Pancho",
-	"Morisson",
-	"Kuya Win Scholarship Program",
-	"Other",
-]
-
-const SCHOLARSHIP_TYPES = ["Scholarship", "Educational Assistance"]
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function isPasswordStrong(pwd) {
@@ -122,6 +115,51 @@ import {
 	getWelcomeEmailBody,
 } from "../services/emailService"
 
+function buildGrantorMatchScholarships(matches = [], studentDraft = {}, studentId = "", semesterTag = "") {
+	const hasMultipleMatches = matches.length >= 2
+	return matches.map((match) => {
+		const nextRecord = buildScholarshipRecord({
+			name: match.scholarshipName || match.grantorName || "Scholarship",
+			provider: match.grantorName || match.scholarshipName || "Grantor",
+			studentId,
+			type: "Scholarship",
+			mode: "applied",
+			documentUrls: getDocumentUrlsForStudent(studentDraft),
+			semesterTag,
+		})
+
+		return {
+			...nextRecord,
+			name: match.scholarshipName || match.grantorName || nextRecord.name,
+			provider: match.grantorName || match.scholarshipName || nextRecord.provider,
+			providerType: match.providerType || nextRecord.providerType,
+			status: hasMultipleMatches ? "Pending Selection" : "Matched",
+			adminBlocked: hasMultipleMatches,
+			adminBlockedAt: hasMultipleMatches ? new Date().toISOString() : null,
+			matchSource: "grantor_roster",
+			matchedGrantorId: match.grantorId || "",
+			matchedGrantorName: match.grantorName || "",
+			matchedScholarId: match.id || "",
+			documentRequirementLabel: match.requiresFullDocs
+				? "Requires COR, COG, and School ID"
+				: "Requires COR",
+		}
+	})
+}
+
+function toGrantorMatchMetadata(matches = []) {
+	return matches.map((match) => ({
+		id: match.id || "",
+		grantorId: match.grantorId || "",
+		grantorName: match.grantorName || "",
+		providerType: match.providerType || "",
+		scholarshipName: match.scholarshipName || match.grantorName || "Scholarship",
+		documentRequirementLabel: match.requiresFullDocs
+			? "Requires COR, COG, and School ID"
+			: "Requires COR",
+	}))
+}
+
 export default function SignupPage() {
 	const navigate = useNavigate()
 	const [userId, setUserId] = useState("")
@@ -134,23 +172,17 @@ export default function SignupPage() {
 	const [fname, setFname] = useState("")
 	const [mname, setMname] = useState("")
 	const [lname, setLname] = useState("")
+	const [cpNumber, setCpNumber] = useState("")
+	const [houseNumber, setHouseNumber] = useState("")
+	const [street, setStreet] = useState("")
+	const [city, setCity] = useState("")
+	const [province, setProvince] = useState("")
+	const [postalCode, setPostalCode] = useState("")
 	const [course, setCourse] = useState("")
 	const [major, setMajor] = useState("")
 	const [year, setYear] = useState("")
 	const [section, setSection] = useState("")
-	const [hasExistingScholarship, setHasExistingScholarship] = useState(null)
-	const [showAddScholarshipForm, setShowAddScholarshipForm] = useState(false)
-	const [editingScholarshipIndex, setEditingScholarshipIndex] = useState(null)
-	const [scholarships, setScholarships] = useState([])
-	const [scholarshipProvider, setScholarshipProvider] = useState("")
-	const [scholarshipProviderOther, setScholarshipProviderOther] = useState("")
-	const [scholarshipType, setScholarshipType] = useState("")
-	const [kuyaWinCor, setKuyaWinCor] = useState(null)
-	const [kuyaWinCog, setKuyaWinCog] = useState(null)
-	const [kuyaWinSchoolId, setKuyaWinSchoolId] = useState(null)
 	const [corFile, setCorFile] = useState(null)
-	const [cogFile, setCogFile] = useState(null)
-	const [schoolIdFile, setSchoolIdFile] = useState(null)
 	const [showImagePreview, setShowImagePreview] = useState(false)
 	const [previewFile, setPreviewFile] = useState(null)
 	const [isPending, setIsPending] = useState(false)
@@ -160,7 +192,7 @@ export default function SignupPage() {
 	const sectionCompletionRef = useRef({
 		account: false,
 		personal: false,
-		scholarship: false,
+		school: false,
 	})
 
 	// Get selected course to check for majors
@@ -206,47 +238,49 @@ export default function SignupPage() {
 		}
 
 		// Validate Personal Info
-		if (!fname.trim() || !lname.trim() || !course || !year || !section.trim()) {
+		if (!fname.trim() || !lname.trim() || !cpNumber.trim()) {
 			toast.error("Please fill in all required personal information")
 			scrollToSection("section-personal")
+			return
+		}
+
+		// Validate CP Number
+		if (cpNumber.trim().length < 11) {
+			toast.error("Please enter a valid 11-digit CP Number")
+			scrollToSection("section-personal")
+			return
+		}
+
+		// Validate Address components
+		if (
+			!houseNumber.trim() ||
+			!street.trim() ||
+			!city.trim() ||
+			!province.trim() ||
+			!postalCode.trim()
+		) {
+			toast.error("Please complete your home address details")
+			scrollToSection("section-personal")
+			return
+		}
+
+		// Validate School Info
+		if (!course || !year || !section.trim()) {
+			toast.error("Please complete your school information")
+			scrollToSection("section-school")
 			return
 		}
 
 		// Validate Major (if course has majors)
 		if (courseHasMajors && !major.trim()) {
 			toast.error("Please select a major for your course")
-			scrollToSection("section-personal")
+			scrollToSection("section-school")
 			return
 		}
 
-		// Validate Scholarship
-		if (hasExistingScholarship === null) {
-			toast.error("Please indicate if you have an existing scholarship")
-			scrollToSection("section-scholarship")
-			return
-		}
-
-		if (hasExistingScholarship === true && scholarships.length === 0) {
-			toast.error("Please add your scholarship details or select 'No'")
-			scrollToSection("section-scholarship")
-			return
-		}
-
-		// Validate Documents based on scholarship
-		if (requireCog && !cogFile) {
-			toast.error("Please upload your Last Semester Certificate of Grades")
-			scrollToSection("section-cor")
-			return
-		}
-
-		if (requireCor && !corFile) {
+		// Validate Documents (COR is mandatory)
+		if (!corFile) {
 			toast.error("Please upload your Certificate of Registration (COR)")
-			scrollToSection("section-cor")
-			return
-		}
-
-		if (requireSchoolId && !schoolIdFile) {
-			toast.error("Please upload your School ID or Valid ID")
 			scrollToSection("section-cor")
 			return
 		}
@@ -256,48 +290,10 @@ export default function SignupPage() {
 		setShowReview(true)
 	}
 
-	// Determine required documents based on added scholarships
-	const getRequiredDocuments = () => {
-		// If user has no scholarship, only require COR
-		if (hasExistingScholarship === false) {
-			return { requireCor: true, requireCog: false, requireSchoolId: false }
-		}
-
-		// If user said yes to scholarship but hasn't added any, don't require documents yet
-		if (!hasExistingScholarship || scholarships.length === 0) {
-			return { requireCor: false, requireCog: false, requireSchoolId: false }
-		}
-
-		const requiresFullDocs = scholarships.some((s) => {
-			const provider = s.provider.toLowerCase()
-			return (
-				provider.includes("kuya win") ||
-				provider.includes("other") ||
-				!["cong. tina pancho", "morisson"].some((p) =>
-					provider.includes(p.toLowerCase()),
-				)
-			)
-		})
-
-		const requiresCorOnly = scholarships.some((s) => {
-			const provider = s.provider.toLowerCase()
-			return provider === "cong. tina pancho" || provider === "morisson"
-		})
-
-		// If any scholarship requires full docs, show all
-		if (requiresFullDocs) {
-			return { requireCor: true, requireCog: true, requireSchoolId: true }
-		}
-
-		// If any scholarship requires COR only
-		if (requiresCorOnly) {
-			return { requireCor: true, requireCog: false, requireSchoolId: false }
-		}
-
-		return { requireCor: false, requireCog: false, requireSchoolId: false }
-	}
-
-	const { requireCor, requireCog, requireSchoolId } = getRequiredDocuments()
+	// Always require COR only now
+	const requireCor = true
+	const requireCog = false
+	const requireSchoolId = false
 
 	const isAccountSectionComplete = useMemo(() => {
 		return (
@@ -312,56 +308,22 @@ export default function SignupPage() {
 		return (
 			!!fname.trim() &&
 			!!lname.trim() &&
-			!!course &&
-			(!courseHasMajors || !!major.trim()) &&
-			!!year &&
-			!!section.trim()
+			!!cpNumber.trim() &&
+			cpNumber.trim().length >= 11 &&
+			!!street.trim() &&
+			!!city.trim() &&
+			!!province.trim() &&
+			!!postalCode.trim()
 		)
-	}, [fname, lname, course, courseHasMajors, major, year, section])
+	}, [fname, lname, cpNumber, street, city, province, postalCode])
 
-	const isScholarshipSectionComplete = useMemo(() => {
+	const isSchoolSectionComplete = useMemo(() => {
 		return (
-			hasExistingScholarship === false ||
-			(hasExistingScholarship === true && scholarships.length > 0)
+			!!course && (!courseHasMajors || !!major.trim()) && !!year && !!section.trim()
 		)
-	}, [hasExistingScholarship, scholarships.length])
+	}, [course, courseHasMajors, major, year, section])
 
-	// Keep uploaded files in sync with current scholarship requirements.
-	// If a document is no longer required, clear it so it won't appear in review.
-	useEffect(() => {
-		if (!requireCor && corFile) {
-			setCorFile(null)
-			if (previewFile === corFile) {
-				setPreviewFile(null)
-				setShowImagePreview(false)
-			}
-		}
-
-		if (!requireCog && cogFile) {
-			setCogFile(null)
-			if (previewFile === cogFile) {
-				setPreviewFile(null)
-				setShowImagePreview(false)
-			}
-		}
-
-		if (!requireSchoolId && schoolIdFile) {
-			setSchoolIdFile(null)
-			if (previewFile === schoolIdFile) {
-				setPreviewFile(null)
-				setShowImagePreview(false)
-			}
-		}
-	}, [
-		requireCor,
-		requireCog,
-		requireSchoolId,
-		corFile,
-		cogFile,
-		schoolIdFile,
-		previewFile,
-	])
-
+	// Automatically move to next sections if complete
 	useEffect(() => {
 		if (showReview || isPending || hasStartedReview) return
 
@@ -380,39 +342,13 @@ export default function SignupPage() {
 
 		if (isPersonalSectionComplete && !sectionCompletionRef.current.personal) {
 			sectionCompletionRef.current.personal = true
-			scrollToSection("section-scholarship")
+			scrollToSection("section-cor")
 		}
 
 		if (!isPersonalSectionComplete) {
 			sectionCompletionRef.current.personal = false
 		}
 	}, [isPersonalSectionComplete, showReview, isPending, hasStartedReview])
-
-	useEffect(() => {
-		if (showReview || isPending || hasStartedReview) return
-
-		const hasDocumentSection = requireCor || requireCog || requireSchoolId
-		if (
-			hasDocumentSection &&
-			isScholarshipSectionComplete &&
-			!sectionCompletionRef.current.scholarship
-		) {
-			sectionCompletionRef.current.scholarship = true
-			scrollToSection("section-cor")
-		}
-
-		if (!isScholarshipSectionComplete) {
-			sectionCompletionRef.current.scholarship = false
-		}
-	}, [
-		isScholarshipSectionComplete,
-		requireCor,
-		requireCog,
-		requireSchoolId,
-		showReview,
-		isPending,
-		hasStartedReview,
-	])
 
 	// Helper function to determine if student should be auto-verified based on scholarships
 	const shouldAutoVerify = (scholarshipList) => {
@@ -476,47 +412,49 @@ export default function SignupPage() {
 		}
 
 		// Validate Personal Info
-		if (!fname.trim() || !lname.trim() || !course || !year || !section.trim()) {
+		if (!fname.trim() || !lname.trim() || !cpNumber.trim()) {
 			toast.error("Please fill in all required personal information")
 			scrollToSection("section-personal")
+			return
+		}
+
+		// Validate CP Number
+		if (cpNumber.trim().length < 11) {
+			toast.error("Please enter a valid 11-digit CP Number")
+			scrollToSection("section-personal")
+			return
+		}
+
+		// Validate Address components
+		if (
+			!houseNumber.trim() ||
+			!street.trim() ||
+			!city.trim() ||
+			!province.trim() ||
+			!postalCode.trim()
+		) {
+			toast.error("Please complete your home address details")
+			scrollToSection("section-personal")
+			return
+		}
+
+		// Validate School Info
+		if (!course || !year || !section.trim()) {
+			toast.error("Please complete your school information")
+			scrollToSection("section-school")
 			return
 		}
 
 		// Validate Major (if course has majors)
 		if (courseHasMajors && !major.trim()) {
 			toast.error("Please select a major for your course")
-			scrollToSection("section-personal")
+			scrollToSection("section-school")
 			return
 		}
 
-		// Validate Scholarship
-		if (hasExistingScholarship === null) {
-			toast.error("Please indicate if you have an existing scholarship")
-			scrollToSection("section-scholarship")
-			return
-		}
-
-		if (hasExistingScholarship === true && scholarships.length === 0) {
-			toast.error("Please add your scholarship details or select 'No'")
-			scrollToSection("section-scholarship")
-			return
-		}
-
-		// Validate Documents based on scholarship
-		if (requireCog && !cogFile) {
-			toast.error("Please upload your Last Semester Certificate of Grades")
-			scrollToSection("section-cor")
-			return
-		}
-
-		if (requireCor && !corFile) {
+		// Validate COR (Mandatory)
+		if (!corFile) {
 			toast.error("Please upload your Certificate of Registration (COR)")
-			scrollToSection("section-cor")
-			return
-		}
-
-		if (requireSchoolId && !schoolIdFile) {
-			toast.error("Please upload your School ID or Valid ID")
 			scrollToSection("section-cor")
 			return
 		}
@@ -565,84 +503,67 @@ export default function SignupPage() {
 				}
 			}
 
-			let cogFilePayload = null
-			if (cogFile) {
-				try {
-					const imageData = await uploadToCloudinary(cogFile)
-					cogFilePayload = {
-						name: imageData.name,
-						type: imageData.type,
-						size: imageData.size,
-						url: imageData.url,
-						semesterTag,
-					}
-				} catch (uploadErr) {
-					toast.error(
-						"Failed to upload Certificate of Grades file: " + uploadErr.message,
-					)
-					console.error("Failed to upload COG file:", uploadErr)
-					return
-				}
-			}
-
-			let schoolIdFilePayload = null
-			if (schoolIdFile) {
-				try {
-					const imageData = await uploadToCloudinary(schoolIdFile)
-					schoolIdFilePayload = {
-						name: imageData.name,
-						type: imageData.type,
-						size: imageData.size,
-						url: imageData.url,
-					}
-				} catch (uploadErr) {
-					toast.error("Failed to upload School ID file: " + uploadErr.message)
-					console.error("Failed to upload School ID file:", uploadErr)
-					return
-				}
-			}
-
-			const normalizedScholarships = scholarships
-				.slice(0, MAX_SCHOLARSHIP_SAVES)
-				.map((entry) =>
-					buildScholarshipRecord({
-						name: entry.provider,
-						provider: entry.provider,
-						type: entry.type,
-						mode: "applied",
-						semesterTag,
-						documentUrls: getDocumentUrlsForStudent({
-							corFile: corFilePayload,
-							cogFile: cogFilePayload,
-							schoolIdFile: schoolIdFilePayload,
-						}),
-					}),
-				)
-
-			const baseData = {
+			const registrationDraft = {
 				course,
 				major: major.trim(),
 				email: email.trim(),
 				fname: fname.trim(),
 				lname: lname.trim(),
 				mname: mname.trim(),
+				cpNumber: cpNumber.trim(),
+				houseNumber: houseNumber.trim(),
+				street: street.trim(),
+				city: city.trim(),
+				province: province.trim(),
+				postalCode: postalCode.trim(),
 				studentnumber: studentId,
 				userType: "student",
 				year,
 				section: section.trim(),
 				corFile: corFilePayload,
-				cogFile: cogFilePayload,
-				schoolIdFile: schoolIdFilePayload,
 				password: encryptedPassword,
-				hasExistingScholarship,
-				scholarships: normalizedScholarships,
+			}
+			const matchedGrantors = await findMatchingGrantorScholars(db, registrationDraft)
+			const matchedScholarships = buildGrantorMatchScholarships(
+				matchedGrantors,
+				registrationDraft,
+				studentId,
+				semesterTag,
+			)
+			const hasMultipleMatchedGrantors = matchedScholarships.length >= 2
+			const grantorConflictMessage = hasMultipleMatchedGrantors
+				? "Multiple grantor matches were found based on your name and address. Choose one matched grantor first before requesting scholarship materials."
+				: ""
+			const baseData = {
+				...registrationDraft,
+				scholarships: matchedScholarships,
+				grantorMatches: toGrantorMatchMetadata(matchedGrantors),
+				scholarshipConflictWarning: hasMultipleMatchedGrantors,
+				scholarshipConflictMessage: grantorConflictMessage,
+				scholarshipRestrictionReason: hasMultipleMatchedGrantors
+					? "multiple_scholarships"
+					: null,
+				...(hasMultipleMatchedGrantors
+					? {
+							restrictions: {
+								accountAccess: false,
+								scholarshipEligibility: true,
+								complianceHold: false,
+							},
+						}
+					: {}),
 			}
 
-			// Determine if student should be auto-verified based on scholarships
-			const isAutoVerified = shouldAutoVerify(normalizedScholarships)
+			// All new students now go to pending review by default or auto-verified if no scholarship is needed
+			// Since scholarships are removed from signup, we can auto-verify or keep them pending.
+			// The user said "Student Creation of Account: Login and Reviewing of information", 
+			// usually this implies an admin review or just a simpler signup.
+			// Given the previous logic, I'll set them to pending for safety, or auto-verify if that's the new standard.
+			// Let's stick to auto-verify for now as there are no "blocking" scholarship requirements anymore during signup.
+			
+			const isAutoVerified = true 
 
 			if (isAutoVerified) {
-				// Auto-verified students go directly to students collection
 				await setDoc(
 					doc(db, "students", studentId),
 					{
@@ -654,7 +575,6 @@ export default function SignupPage() {
 					},
 					{ merge: true },
 				)
-				// Send Welcome Email for auto-verified students
 				sendEmailNotification(
 					email.trim(),
 					`${fname.trim()} ${lname.trim()}`,
@@ -663,10 +583,18 @@ export default function SignupPage() {
 				).catch((err) => console.error("Welcome email failed:", err))
 
 				toast.success(
-					"🎉 Congratulations! Your account has been automatically verified based on your scholarship selections.",
+					"🎉 Congratulations! Your account has been successfully created.",
 				)
+				if (matchedScholarships.length === 1) {
+					toast.info(
+						`Matched grantor found: ${matchedScholarships[0].name}. Upload the required documents first before requesting materials.`,
+					)
+				} else if (matchedScholarships.length >= 2) {
+					toast.info(
+						"Multiple grantor matches were found. Choose one matched grantor in the scholarship section before requesting materials.",
+					)
+				}
 			} else {
-				// Students requiring approval go to pendingStudent collection
 				await setDoc(doc(db, "pendingStudent", studentId), {
 					...baseData,
 					isValidated: false,
@@ -675,14 +603,14 @@ export default function SignupPage() {
 					createdAt: serverTimestamp(),
 				})
 				toast.success(
-					"📋 Your application has been submitted for review. We'll contact you for the next steps.",
+					"📋 Your application has been submitted for review.",
 				)
 			}
 
 			setVerificationStatus(isAutoVerified ? "auto-verified" : "pending-review")
 			setIsPending(true)
 		} catch (err) {
-			console.error("Error saving pending student:", err)
+			console.error("Error saving student:", err)
 			toast.error("Failed to create account. Please try again.")
 		}
 	}
@@ -1134,22 +1062,23 @@ export default function SignupPage() {
 									<h3 className="signup-section-title">Personal Information</h3>
 								</div>
 
-								<label className="login-label" htmlFor="signup-fname">
-									First Name <span className="required">*</span>
-								</label>
-								<div className="login-input-wrap">
-									<input
-										id="signup-fname"
-										type="text"
-										className="login-input"
-										placeholder="Enter first name"
-										value={fname}
-										onChange={(e) => setFname(e.target.value)}
-										autoCapitalize="words"
-									/>
-								</div>
-
 								<div className="signup-row">
+									<div className="signup-field">
+										<label className="login-label" htmlFor="signup-fname">
+											First Name <span className="required">*</span>
+										</label>
+										<div className="login-input-wrap">
+											<input
+												id="signup-fname"
+												type="text"
+												className="login-input"
+												placeholder="First name"
+												value={fname}
+												onChange={(e) => setFname(e.target.value)}
+												autoCapitalize="words"
+											/>
+										</div>
+									</div>
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-mname">
 											Middle Name
@@ -1166,6 +1095,9 @@ export default function SignupPage() {
 											/>
 										</div>
 									</div>
+								</div>
+
+								<div className="signup-row">
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-lname">
 											Last Name <span className="required">*</span>
@@ -1182,6 +1114,121 @@ export default function SignupPage() {
 											/>
 										</div>
 									</div>
+								</div>
+
+								<div className="signup-row">
+									<div className="signup-field">
+										<label className="login-label" htmlFor="signup-cp">
+											CP Number <span className="required">*</span>
+										</label>
+										<div className="login-input-wrap">
+											<input
+												id="signup-cp"
+												type="text"
+												className="login-input"
+												placeholder="09XXXXXXXXX"
+												maxLength={11}
+												value={cpNumber}
+												onChange={(e) =>
+													setCpNumber(e.target.value.replace(/\D/g, ""))
+												}
+											/>
+										</div>
+									</div>
+								</div>
+
+								<h4 className="signup-form-subtitle-small">Home Address</h4>
+								<div className="signup-row">
+									<div className="signup-field signup-field--small">
+										<label className="login-label" htmlFor="signup-house">
+											House No. <span className="required">*</span>
+										</label>
+										<div className="login-input-wrap">
+											<input
+												id="signup-house"
+												type="text"
+												className="login-input"
+												placeholder="No."
+												value={houseNumber}
+												onChange={(e) => setHouseNumber(e.target.value)}
+											/>
+										</div>
+									</div>
+									<div className="signup-field">
+										<label className="login-label" htmlFor="signup-street">
+											Street / Subdivision <span className="required">*</span>
+										</label>
+										<div className="login-input-wrap">
+											<input
+												id="signup-street"
+												type="text"
+												className="login-input"
+												placeholder="Street name / Subdivision"
+												value={street}
+												onChange={(e) => setStreet(e.target.value)}
+											/>
+										</div>
+									</div>
+								</div>
+
+								<label className="login-label" htmlFor="signup-province">
+									Province <span className="required">*</span>
+								</label>
+								<div className="login-input-wrap">
+									<input
+										id="signup-province"
+										type="text"
+										className="login-input"
+										placeholder="Province"
+										value={province}
+										onChange={(e) => setProvince(e.target.value)}
+									/>
+								</div>
+
+								<div className="signup-row">
+									<div className="signup-field">
+										<label className="login-label" htmlFor="signup-city">
+											City / Municipality <span className="required">*</span>
+										</label>
+										<div className="login-input-wrap">
+											<input
+												id="signup-city"
+												type="text"
+												className="login-input"
+												placeholder="City"
+												value={city}
+												onChange={(e) => setCity(e.target.value)}
+											/>
+										</div>
+									</div>
+									<div className="signup-field signup-field--small">
+										<label className="login-label" htmlFor="signup-postal">
+											Postal Code <span className="required">*</span>
+										</label>
+										<div className="login-input-wrap">
+											<input
+												id="signup-postal"
+												type="text"
+												className="login-input"
+												placeholder="XXXX"
+												maxLength={4}
+												value={postalCode}
+												onChange={(e) =>
+													setPostalCode(e.target.value.replace(/\D/g, ""))
+												}
+											/>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							{/* School Information Section */}
+							<div id="section-school" className="signup-form-section">
+								<div className="signup-section-header">
+									<div className="signup-section-icon">
+										<HiOutlineAcademicCap />
+									</div>
+									<h3 className="signup-section-title">School Information</h3>
 								</div>
 
 								<label className="login-label" htmlFor="signup-course">
@@ -1270,454 +1317,80 @@ export default function SignupPage() {
 								</div>
 							</div>
 
-							{/* Scholarship Section */}
-							<div id="section-scholarship" className="signup-form-section">
+							{/* COR Section */}
+							<div id="section-cor" className="signup-form-section">
 								<div className="signup-section-header">
 									<div className="signup-section-icon">
-										<HiOutlineAcademicCap />
+										<HiOutlineCloudUpload />
 									</div>
-									<h3 className="signup-section-title">
-										Scholarship Information
-									</h3>
+									<h3 className="signup-section-title">Document Upload</h3>
 								</div>
 
-								{hasExistingScholarship === null && (
-									<>
-										<p className="signup-question">
-											Do you have an existing scholarship?{" "}
-											<span className="required">*</span>
-										</p>
-										<div className="signup-yes-no">
-											<button
-												type="button"
-												className={`signup-choice-btn signup-choice-btn--yes ${hasExistingScholarship === true ? "signup-choice-btn--active" : ""}`}
-												onClick={() => setHasExistingScholarship(true)}
-											>
-												<HiOutlineCheckCircle /> Yes
-											</button>
-											<button
-												type="button"
-												className={`signup-choice-btn signup-choice-btn--no ${hasExistingScholarship === false ? "signup-choice-btn--active" : ""}`}
-												onClick={() => {
-													setHasExistingScholarship(false)
-													setScholarships([])
-												}}
-											>
-												No
-											</button>
-										</div>
-									</>
-								)}
+								{/* Certificate of Registration (COR) Upload */}
+								<label className="login-label" htmlFor="signup-cor-upload">
+									Certificate of Registration (COR){" "}
+									<span className="required">*</span>
+								</label>
+								<label
+									className="signup-upload-wrap"
+									htmlFor="signup-cor-upload"
+								>
+									<input
+										id="signup-cor-upload"
+										type="file"
+										className="signup-file-input"
+										accept=".png,.jpg,image/png,image/jpeg"
+										onChange={(e) => {
+											const file = e.target.files?.[0] ?? null
+											if (file) {
+												const validExtensions = ["png", "jpg"]
+												const fileExtension = file.name
+													.split(".")
+													.pop()
+													?.toLowerCase()
 
-								{hasExistingScholarship === true && (
-									<div className="signup-scholarship-section">
-										{!showAddScholarshipForm ? (
-											<>
-												<button
-													type="button"
-													className="signup-add-btn"
-													disabled={scholarships.length >= MAX_SCHOLARSHIP_SAVES}
-													onClick={() => {
-														setScholarshipProvider("")
-														setScholarshipProviderOther("")
-														setScholarshipType("")
-														setShowAddScholarshipForm(true)
-													}}
-												>
-													{scholarships.length >= MAX_SCHOLARSHIP_SAVES
-														? `Scholarship limit reached (${MAX_SCHOLARSHIP_SAVES})`
-														: "+ Add Scholarship"}
-												</button>
-												{scholarships.length === 0 && (
-													<button
-														type="button"
-														className="signup-no-scholarship-btn"
-														onClick={() => {
-															setHasExistingScholarship(false)
-															scrollToSection("section-cor")
-														}}
-													>
-														Skip & continue to COR upload
-													</button>
-												)}
-												{scholarships.length > 0 && (
-													<ul className="scholarship-list">
-														{scholarships.map((s, i) => (
-															<li key={i} className="scholarship-item">
-																<HiOutlineAcademicCap
-																	className="scholarship-item-icon"
-																	aria-hidden
-																/>
-																<div className="scholarship-item-content">
-																	<span className="scholarship-item-name">
-																		{s.provider}
-																	</span>
-																	<span className="scholarship-item-type">
-																		{s.type}
-																	</span>
-																</div>
-																<div className="scholarship-item-actions">
-																	<button
-																		type="button"
-																		className="scholarship-item-btn scholarship-item-btn--edit"
-																		onClick={() => handleEditScholarship(i)}
-																		aria-label="Edit scholarship"
-																	>
-																		<HiOutlinePencil
-																			className="scholarship-item-btn-icon"
-																			aria-hidden
-																		/>
-																	</button>
-																	<button
-																		type="button"
-																		className="scholarship-item-btn scholarship-item-btn--delete"
-																		onClick={() => handleDeleteScholarship(i)}
-																		aria-label="Delete scholarship"
-																	>
-																		<HiOutlineTrash
-																			className="scholarship-item-btn-icon"
-																			aria-hidden
-																		/>
-																	</button>
-																</div>
-															</li>
-														))}
-													</ul>
-												)}
-											</>
-										) : (
-											<div className="scholarship-form">
-												<label
-													className="login-label"
-													htmlFor="scholarship-provider"
-												>
-													Scholarship Provider
-												</label>
-												<select
-													id="scholarship-provider"
-													className="login-select"
-													value={scholarshipProvider}
-													onChange={(e) =>
-														setScholarshipProvider(e.target.value)
-													}
-												>
-													<option value="" disabled>
-														Select provider
-													</option>
-													{SCHOLARSHIP_PROVIDERS.map((p) => {
-														const allSavedProviders = scholarships.map(
-															(s) => s.provider,
-														)
-														const isAlreadySaved =
-															allSavedProviders.includes(p) &&
-															editingScholarshipIndex === null
-														return (
-															<option
-																key={p}
-																value={p}
-																disabled={isAlreadySaved}
-															>
-																{p}
-															</option>
-														)
-													})}
-												</select>
-
-												{scholarshipProvider === "Other" && (
-													<>
-														<label
-															className="login-label"
-															htmlFor="scholarship-provider-other"
-														>
-															Specify Provider
-														</label>
-														<div className="login-input-wrap">
-															<input
-																id="scholarship-provider-other"
-																type="text"
-																className="login-input"
-																placeholder="Enter provider name"
-																value={scholarshipProviderOther}
-																onChange={(e) =>
-																	setScholarshipProviderOther(e.target.value)
-																}
-															/>
-														</div>
-													</>
-												)}
-
-												<label
-													className="login-label"
-													htmlFor="scholarship-type"
-												>
-													Type of Scholarship
-												</label>
-												<select
-													id="scholarship-type"
-													className="login-select"
-													value={scholarshipType}
-													onChange={(e) => setScholarshipType(e.target.value)}
-												>
-													<option value="" disabled>
-														Select type
-													</option>
-													{SCHOLARSHIP_TYPES.map((t) => (
-														<option key={t} value={t}>
-															{t}
-														</option>
-													))}
-												</select>
-
-												<div className="scholarship-form-actions">
-													<button
-														type="button"
-														className="signup-back-btn"
-														onClick={handleCancelScholarshipForm}
-													>
-														Cancel
-													</button>
-													<button
-														type="button"
-														className="login-submit"
-														onClick={handleSaveScholarship}
-														disabled={
-															!scholarshipProvider.trim() ||
-															(scholarshipProvider === "Other" &&
-																!scholarshipProviderOther.trim()) ||
-															!scholarshipType
-														}
-													>
-														{editingScholarshipIndex !== null
-															? "Update"
-															: "Save"}
-													</button>
-												</div>
-											</div>
-										)}
-									</div>
-								)}
-
-								{hasExistingScholarship === false && (
-									<p className="signup-step-content">
-										No existing scholarship. Please continue to upload your COR.
-									</p>
-								)}
+												if (!validExtensions.includes(fileExtension)) {
+													toast.error(
+														"Only PNG and JPG image files are allowed.",
+													)
+													e.target.value = ""
+													setCorFile(null)
+													return
+												}
+											}
+											setCorFile(file)
+										}}
+									/>
+									{corFile ? (
+										<>
+											<HiOutlineAcademicCap
+												className="signup-upload-icon signup-upload-icon--success"
+												aria-hidden
+											/>
+											<span className="signup-upload-filename">
+												{corFile.name}
+											</span>
+										</>
+									) : (
+										<>
+											<HiOutlineCloudUpload
+												className="signup-upload-icon"
+												aria-hidden
+											/>
+											<span className="signup-upload-hint">
+												Drop file here or click to browse
+											</span>
+											<span className="signup-upload-formats">
+												PNG or JPG only
+											</span>
+										</>
+									)}
+								</label>
+								<div className="signup-cor-note">
+									Note: Your Certificate of Registration (COR) is required to
+									verify your current enrollment status.
+								</div>
 							</div>
-
-							{/* COR Section */}
-							{(requireCor || requireCog || requireSchoolId) && (
-								<div id="section-cor" className="signup-form-section">
-									<div className="signup-section-header">
-										<div className="signup-section-icon">
-											<HiOutlineCloudUpload />
-										</div>
-										<h3 className="signup-section-title">Document Upload</h3>
-									</div>
-
-									{/* Certificate of Grades Upload */}
-									{requireCog && (
-										<>
-											<label
-												className="login-label"
-												htmlFor="signup-cog-upload"
-											>
-												Last Semester - Certificate of Grades{" "}
-												<span className="required">*</span>
-											</label>
-											<label
-												className="signup-upload-wrap"
-												htmlFor="signup-cog-upload"
-											>
-												<input
-													id="signup-cog-upload"
-													type="file"
-													className="signup-file-input"
-													accept=".png,.jpg,image/png,image/jpeg"
-													onChange={(e) => {
-														const file = e.target.files?.[0] ?? null
-														if (file) {
-															const validExtensions = ["png", "jpg"]
-															const fileExtension = file.name
-																.split(".")
-																.pop()
-																?.toLowerCase()
-
-															if (!validExtensions.includes(fileExtension)) {
-																toast.error(
-																	"Only PNG and JPG image files are allowed.",
-																)
-																e.target.value = ""
-																setCogFile(null)
-																return
-															}
-														}
-														setCogFile(file)
-													}}
-												/>
-												{cogFile ? (
-													<>
-														<HiOutlineAcademicCap
-															className="signup-upload-icon signup-upload-icon--success"
-															aria-hidden
-														/>
-														<span className="signup-upload-filename">
-															{cogFile.name}
-														</span>
-													</>
-												) : (
-													<>
-														<HiOutlineCloudUpload
-															className="signup-upload-icon"
-															aria-hidden
-														/>
-														<span className="signup-upload-hint">
-															Drop file here or click to browse
-														</span>
-														<span className="signup-upload-formats">
-															PNG or JPG only
-														</span>
-													</>
-												)}
-											</label>
-										</>
-									)}
-
-									{/* Certificate of Registration (COR) Upload */}
-									{requireCor && (
-										<>
-											<label
-												className="login-label"
-												htmlFor="signup-cor-upload"
-											>
-												Certificate of Registration (COR){" "}
-												<span className="required">*</span>
-											</label>
-											<label
-												className="signup-upload-wrap"
-												htmlFor="signup-cor-upload"
-											>
-												<input
-													id="signup-cor-upload"
-													type="file"
-													className="signup-file-input"
-													accept=".png,.jpg,image/png,image/jpeg"
-													onChange={(e) => {
-														const file = e.target.files?.[0] ?? null
-														if (file) {
-															const validExtensions = ["png", "jpg"]
-															const fileExtension = file.name
-																.split(".")
-																.pop()
-																?.toLowerCase()
-
-															if (!validExtensions.includes(fileExtension)) {
-																toast.error(
-																	"Only PNG and JPG image files are allowed.",
-																)
-																e.target.value = ""
-																setCorFile(null)
-																return
-															}
-														}
-														setCorFile(file)
-													}}
-												/>
-												{corFile ? (
-													<>
-														<HiOutlineAcademicCap
-															className="signup-upload-icon signup-upload-icon--success"
-															aria-hidden
-														/>
-														<span className="signup-upload-filename">
-															{corFile.name}
-														</span>
-													</>
-												) : (
-													<>
-														<HiOutlineCloudUpload
-															className="signup-upload-icon"
-															aria-hidden
-														/>
-														<span className="signup-upload-hint">
-															Drop file here or click to browse
-														</span>
-														<span className="signup-upload-formats">
-															PNG or JPG only
-														</span>
-													</>
-												)}
-											</label>
-										</>
-									)}
-
-									{/* School ID / Valid ID Upload */}
-									{requireSchoolId && (
-										<>
-											<label
-												className="login-label"
-												htmlFor="signup-schoolid-upload"
-											>
-												School ID / Valid ID <span className="required">*</span>
-											</label>
-											<label
-												className="signup-upload-wrap"
-												htmlFor="signup-schoolid-upload"
-											>
-												<input
-													id="signup-schoolid-upload"
-													type="file"
-													className="signup-file-input"
-													accept=".png,.jpg,image/png,image/jpeg"
-													onChange={(e) => {
-														const file = e.target.files?.[0] ?? null
-														if (file) {
-															const validExtensions = ["png", "jpg"]
-															const fileExtension = file.name
-																.split(".")
-																.pop()
-																?.toLowerCase()
-
-															if (!validExtensions.includes(fileExtension)) {
-																toast.error(
-																	"Only PNG and JPG image files are allowed.",
-																)
-																e.target.value = ""
-																setSchoolIdFile(null)
-																return
-															}
-														}
-														setSchoolIdFile(file)
-													}}
-												/>
-												{schoolIdFile ? (
-													<>
-														<HiOutlineAcademicCap
-															className="signup-upload-icon signup-upload-icon--success"
-															aria-hidden
-														/>
-														<span className="signup-upload-filename">
-															{schoolIdFile.name}
-														</span>
-													</>
-												) : (
-													<>
-														<HiOutlineCloudUpload
-															className="signup-upload-icon"
-															aria-hidden
-														/>
-														<span className="signup-upload-hint">
-															Drop file here or click to browse
-														</span>
-														<span className="signup-upload-formats">
-															PNG or JPG only
-														</span>
-													</>
-												)}
-											</label>
-										</>
-									)}
-								</div>
-							)}
 
 							{/* Submit Button */}
 							<div className="signup-form-submit">
@@ -1728,7 +1401,6 @@ export default function SignupPage() {
 									Review & Submit
 								</button>
 							</div>
-
 							<div className="login-create-account">
 								<span className="login-create-text">
 									Already have an account?
@@ -1842,6 +1514,51 @@ export default function SignupPage() {
 									<div className="signup-review-row">
 										<span className="signup-review-label signup-review-label-group">
 											<span className="signup-review-row-icon" aria-hidden>
+												<HiOutlineUser />
+											</span>
+											<span>CP Number:</span>
+										</span>
+										<span className="signup-review-value">{cpNumber}</span>
+									</div>
+									<div className="signup-review-row">
+										<span className="signup-review-label signup-review-label-group">
+											<span className="signup-review-row-icon" aria-hidden>
+												<HiOutlineIdentification />
+											</span>
+											<span>Home Address:</span>
+										</span>
+										<span className="signup-review-value">
+											#{houseNumber}, {street}, {city}, {province}{" "}
+											{postalCode}
+										</span>
+									</div>
+								</div>
+							</div>
+
+							{/* School Information Review */}
+							<div className="signup-review-card signup-review-card--school">
+								<div className="signup-review-card-header">
+									<h3 className="signup-review-card-title">
+										<span className="signup-review-card-title-icon" aria-hidden>
+											<HiOutlineAcademicCap />
+										</span>
+										School Information
+									</h3>
+									<button
+										type="button"
+										className="signup-review-edit-btn"
+										onClick={() => {
+											setShowReview(false)
+											scrollToSection("section-school")
+										}}
+									>
+										<HiOutlinePencil /> Edit
+									</button>
+								</div>
+								<div className="signup-review-content">
+									<div className="signup-review-row">
+										<span className="signup-review-label signup-review-label-group">
+											<span className="signup-review-row-icon" aria-hidden>
 												<HiOutlineAcademicCap />
 											</span>
 											<span>Course:</span>
@@ -1873,54 +1590,8 @@ export default function SignupPage() {
 								</div>
 							</div>
 
-							{/* Scholarship Information Review */}
-							<div className="signup-review-card signup-review-card--scholarship">
-								<div className="signup-review-card-header">
-									<h3 className="signup-review-card-title">
-										<span className="signup-review-card-title-icon" aria-hidden>
-											<HiOutlineAcademicCap />
-										</span>
-										Scholarship Information
-									</h3>
-									<button
-										type="button"
-										className="signup-review-edit-btn"
-										onClick={() => {
-											setShowReview(false)
-											scrollToSection("section-scholarship")
-										}}
-									>
-										<HiOutlinePencil /> Edit
-									</button>
-								</div>
-								<div className="signup-review-content">
-									{scholarships.length > 0 && (
-										<div className="signup-review-scholarships">
-											<span className="signup-review-label signup-review-label-group">
-												<span className="signup-review-row-icon" aria-hidden>
-													<HiOutlineAcademicCap />
-												</span>
-												<span>Scholarships:</span>
-											</span>
-											<div className="signup-review-scholarship-list">
-												{scholarships.map((scholarship, index) => (
-													<div
-														key={index}
-														className="signup-review-scholarship-item"
-													>
-														<span className="signup-review-scholarship-name">
-															{scholarship.provider} - {scholarship.type}
-														</span>
-													</div>
-												))}
-											</div>
-										</div>
-									)}
-								</div>
-							</div>
-
 							{/* Document Upload Review */}
-							{(corFile || cogFile || schoolIdFile) && (
+							{corFile && (
 								<div className="signup-review-card signup-review-card--documents">
 									<div className="signup-review-card-header">
 										<h3 className="signup-review-card-title">
@@ -1944,145 +1615,50 @@ export default function SignupPage() {
 										</button>
 									</div>
 									<div className="signup-review-documents">
-										{corFile && (
-											<div className="signup-review-document">
-												<div className="signup-review-document-info">
-													<span className="signup-review-document-label signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineCloudUpload />
-														</span>
-														<span>Certificate of Registration (COR):</span>
+										<div className="signup-review-document">
+											<div className="signup-review-document-info">
+												<span className="signup-review-document-label signup-review-label-group">
+													<span
+														className="signup-review-row-icon"
+														aria-hidden
+													>
+														<HiOutlineCloudUpload />
 													</span>
-													<span className="signup-review-document-name signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineIdentification />
-														</span>
-														<span>{corFile.name}</span>
+													<span>Certificate of Registration (COR):</span>
+												</span>
+												<span className="signup-review-document-name signup-review-label-group">
+													<span
+														className="signup-review-row-icon"
+														aria-hidden
+													>
+														<HiOutlineIdentification />
 													</span>
-													<span className="signup-review-document-size signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineCheckCircle />
-														</span>
-														<span>
-															({(corFile.size / 1024 / 1024).toFixed(2)} MB)
-														</span>
+													<span>{corFile.name}</span>
+												</span>
+												<span className="signup-review-document-size signup-review-label-group">
+													<span
+														className="signup-review-row-icon"
+														aria-hidden
+													>
+														<HiOutlineCheckCircle />
 													</span>
-												</div>
-												<div className="signup-review-document-preview">
-													<img
-														src={URL.createObjectURL(corFile)}
-														alt="COR Preview"
-														className="signup-review-document-image"
-														onClick={() => {
-															setPreviewFile(corFile)
-															setShowImagePreview(true)
-														}}
-													/>
-												</div>
+													<span>
+														({(corFile.size / 1024 / 1024).toFixed(2)} MB)
+													</span>
+												</span>
 											</div>
-										)}
-										{cogFile && (
-											<div className="signup-review-document">
-												<div className="signup-review-document-info">
-													<span className="signup-review-document-label signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineCloudUpload />
-														</span>
-														<span>Certificate of Grades (COG):</span>
-													</span>
-													<span className="signup-review-document-name signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineIdentification />
-														</span>
-														<span>{cogFile.name}</span>
-													</span>
-													<span className="signup-review-document-size signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineCheckCircle />
-														</span>
-														<span>
-															({(cogFile.size / 1024 / 1024).toFixed(2)} MB)
-														</span>
-													</span>
-												</div>
-												<div className="signup-review-document-preview">
-													<img
-														src={URL.createObjectURL(cogFile)}
-														alt="COG Preview"
-														className="signup-review-document-image"
-														onClick={() => {
-															setPreviewFile(cogFile)
-															setShowImagePreview(true)
-														}}
-													/>
-												</div>
+											<div className="signup-review-document-preview">
+												<img
+													src={URL.createObjectURL(corFile)}
+													alt="COR Preview"
+													className="signup-review-document-image"
+													onClick={() => {
+														setPreviewFile(corFile)
+														setShowImagePreview(true)
+													}}
+												/>
 											</div>
-										)}
-										{schoolIdFile && (
-											<div className="signup-review-document">
-												<div className="signup-review-document-info">
-													<span className="signup-review-document-label signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineCloudUpload />
-														</span>
-														<span>School ID:</span>
-													</span>
-													<span className="signup-review-document-name signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineIdentification />
-														</span>
-														<span>{schoolIdFile.name}</span>
-													</span>
-													<span className="signup-review-document-size signup-review-label-group">
-														<span
-															className="signup-review-row-icon"
-															aria-hidden
-														>
-															<HiOutlineCheckCircle />
-														</span>
-														<span>
-															({(schoolIdFile.size / 1024 / 1024).toFixed(2)}{" "}
-															MB)
-														</span>
-													</span>
-												</div>
-												<div className="signup-review-document-preview">
-													<img
-														src={URL.createObjectURL(schoolIdFile)}
-														alt="School ID Preview"
-														className="signup-review-document-image"
-														onClick={() => {
-															setPreviewFile(schoolIdFile)
-															setShowImagePreview(true)
-														}}
-													/>
-												</div>
-											</div>
-										)}
+										</div>
 									</div>
 								</div>
 							)}

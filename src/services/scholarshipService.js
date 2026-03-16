@@ -1,3 +1,8 @@
+import {
+	createScholarshipTrackingState,
+	normalizeScholarshipTrackingState,
+} from "./scholarshipTrackingService"
+
 const SCHOLARSHIP_TYPE = {
 	KUYA_WIN: "kuya_win",
 	TINA_PANCHO: "tina_pancho",
@@ -113,11 +118,12 @@ export function buildScholarshipRecord({
 	const policy = getScholarshipPolicy(providerName)
 	const isApply = mode === "applied"
 	const nowIso = new Date().toISOString()
-	const requestNumber = generateScholarshipRequestNumber(studentId)
+	const applicationNumber = generateScholarshipRequestNumber(studentId)
 
 	return {
-		id: requestNumber,
-		requestNumber,
+		id: applicationNumber,
+		applicationNumber,
+		requestNumber: applicationNumber,
 		name: displayName,
 		provider: providerName,
 		type,
@@ -136,13 +142,18 @@ export function buildScholarshipRecord({
 		semesterTag,
 		appliedAt: nowIso,
 		documentUrls,
+		tracking: createScholarshipTrackingState({
+			providerType: policy.providerType,
+			scholarshipName: displayName,
+		}),
 	}
 }
 
 export function normalizeScholarshipRecord(raw = {}, index = 0) {
 	const provider = (raw.provider || raw.name || "Other").trim()
 	const policy = getScholarshipPolicy(provider)
-	const requestNumber =
+	const applicationNumber =
+		raw.applicationNumber ||
 		raw.requestNumber ||
 		(typeof raw.id === "string" && /^[a-z0-9]{9}$/.test(raw.id) ? raw.id : "")
 	const baseStatus =
@@ -155,9 +166,14 @@ export function normalizeScholarshipRecord(raw = {}, index = 0) {
 		raw.finalizedState || (finalized && !String(baseStatus).toLowerCase().includes("finalized") ? baseStatus : "")
 	const status = finalized ? "Finalized" : baseStatus
 	return {
-		id: requestNumber || raw.id || `legacy_sch_${index}_${provider.replace(/\s+/g, "_").toLowerCase()}`,
+		...raw,
+		id: applicationNumber || raw.id || `legacy_sch_${index}_${provider.replace(/\s+/g, "_").toLowerCase()}`,
+		applicationNumber:
+			applicationNumber ||
+			(typeof raw.id === "string" ? raw.id : `legacy_sch_${index}_${provider.replace(/\s+/g, "_").toLowerCase()}`),
 		requestNumber:
-			requestNumber ||
+			raw.requestNumber ||
+			applicationNumber ||
 			(typeof raw.id === "string" ? raw.id : `legacy_sch_${index}_${provider.replace(/\s+/g, "_").toLowerCase()}`),
 		name: raw.name || provider || "Scholarship",
 		provider,
@@ -177,6 +193,10 @@ export function normalizeScholarshipRecord(raw = {}, index = 0) {
 		semesterTag: raw.semesterTag || getCurrentSemesterTag(),
 		appliedAt: raw.appliedAt || raw.date || new Date().toISOString(),
 		documentUrls: raw.documentUrls || {},
+		tracking: normalizeScholarshipTrackingState(raw.tracking, {
+			providerType: raw.providerType || policy.providerType,
+			scholarshipName: raw.name || provider || "Scholarship",
+		}),
 	}
 }
 

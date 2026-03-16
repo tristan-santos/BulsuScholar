@@ -375,6 +375,30 @@
 				color: #0f172a;
 			}
 
+			.seed-section-title {
+				font-size: clamp(26px, 2.3vw, 34px);
+				line-height: 1.08;
+			}
+
+			.seed-subtitle {
+				margin-top: 10px;
+				max-width: 74ch;
+				line-height: 1.7;
+				color: #475569;
+			}
+
+			.seed-credential {
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				padding: 8px 12px;
+				border-radius: 12px;
+				background: #ecfeff;
+				color: #155e75;
+				font-size: 13px;
+				font-weight: 800;
+			}
+
 			@media (max-width: 960px) {
 				.seed-hero,
 				.seed-layout,
@@ -551,7 +575,204 @@
 					</table>
 				</div>
 			</section>
+
+			<section class="seed-panel">
+				<span class="seed-eyebrow">Grantor Seeder</span>
+				<h2 class="seed-section-title" style="margin-top: 14px">
+					Seed grantor login and portal data for Cong. Tina, Morisson, and Kuya Win.
+				</h2>
+				<p class="seed-subtitle">
+					This tool creates provider login records in <code>providers</code>, grantor portal
+					roots in <code>grantorPortals</code>, scholar rosters, grantor announcements,
+					grantor-side application snapshots, and matching system
+					<code>scholarshipApplications</code> records so the new grantor dashboard has live
+					data immediately.
+				</p>
+				<div class="seed-badges">
+					<span class="seed-badge">Seeds <code>providers</code> login records</span>
+					<span class="seed-badge">Seeds <code>grantorPortals/*/scholars</code></span>
+					<span class="seed-badge">Seeds <code>scholarshipApplications</code> matches</span>
+				</div>
+				<div class="seed-info-stack" style="margin-top: 16px">
+					<span class="seed-info-chip" id="grantorAuthState">Checking auth...</span>
+					<span class="seed-info-chip" id="grantorProjectState">Loading project...</span>
+					<span class="seed-credential">Default password: <code>Grantor@123</code></span>
+				</div>
+			</section>
+
+			<section class="seed-stat-grid">
+				<article class="seed-panel seed-stat">
+					<span>Grantor Profiles</span>
+					<strong id="grantorProfileCount">0</strong>
+					<small>Seeded login/profile records ready under <code>providers</code>.</small>
+				</article>
+				<article class="seed-panel seed-stat">
+					<span>Scholar Rows</span>
+					<strong id="grantorScholarCount">0</strong>
+					<small>Grantor-specific scholar roster rows inside portal subcollections.</small>
+				</article>
+				<article class="seed-panel seed-stat">
+					<span>Applications</span>
+					<strong id="grantorApplicationCount">0</strong>
+					<small>Matched application rows for both grantor and system views.</small>
+				</article>
+				<article class="seed-panel seed-stat">
+					<span>Announcements</span>
+					<strong id="grantorAnnouncementCount">0</strong>
+					<small>Scholarship opening announcements created per grantor portal.</small>
+				</article>
+			</section>
+
+			<div class="seed-layout">
+				<section class="seed-panel">
+					<h2>Grantor Seed Controls</h2>
+					<p style="margin-top: 10px; color: #475569; line-height: 1.7">
+						Use this to create baseline portal data for the three grantors already recognized
+						by the system. It writes deterministic document IDs so reseeding updates the same
+						demo accounts instead of multiplying them.
+					</p>
+					<div class="seed-actions">
+						<button id="grantorRefreshBtn" type="button" class="seed-btn-secondary">Refresh Grantor Seed State</button>
+						<button id="grantorPreviewBtn" type="button" class="seed-btn-secondary">Build Grantor Preview</button>
+						<button id="grantorSeedBtn" type="button" class="seed-btn-primary">Seed Grantor Data</button>
+					</div>
+					<div class="seed-mini-actions">
+						<button id="grantorDeleteLastBtn" type="button" class="seed-btn-danger">Delete Latest Grantor Batch</button>
+						<button id="grantorDeleteAllBtn" type="button" class="seed-btn-danger">Delete All Grantor Seed Data</button>
+					</div>
+					<div id="grantorStatusBanner" class="seed-status" style="margin-top: 18px">
+						Waiting for grantor seeder initialization.
+					</div>
+					<div class="seed-note-list">
+						<div class="seed-note">
+							Seeded login IDs are <strong>grantor_tina</strong>,
+							<strong>grantor_morisson</strong>, and
+							<strong>grantor_kuya_win</strong>.
+						</div>
+						<div class="seed-note">
+							Each grantor gets active and archived scholars so the dashboard charts,
+							analytics, and archived table have immediate data.
+						</div>
+						<div class="seed-note">
+							System application rows are also written so the Grantor
+							<strong>Applications</strong> table stays connected to the actual system flow.
+						</div>
+					</div>
+				</section>
+
+				<section class="seed-panel">
+					<h2>Grantor Activity Log</h2>
+					<p style="margin-top: 10px; color: #475569; line-height: 1.7">
+						This log shows grantor seed writes, conflict checks, refresh state, and cleanup
+						actions for Cong. Tina, Morisson, and Kuya Win.
+					</p>
+					<pre id="grantorActivityLog" class="seed-log">Grantor seeder ready.</pre>
+				</section>
+			</div>
+
+			<section class="seed-panel">
+				<h2>Grantor Preview (Scholars)</h2>
+				<p style="margin-top: 10px; color: #475569; line-height: 1.7">
+					Preview of the deterministic grantor records (scholars and applications) that will be written by this seed tool.
+				</p>
+				<div class="seed-table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>Cp Number</th>
+								<th>Name</th>
+								<th>Status</th>
+								<th>Updated</th>
+								<th>Grantor</th>
+							</tr>
+						</thead>
+						<tbody id="grantorPreviewTableBody">
+							<tr>
+								<td colspan="5">No grantor preview loaded yet.</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+			<section class="seed-panel">
+				<span class="seed-eyebrow">Student Seeder</span>
+				<h2 class="seed-section-title" style="margin-top: 14px">
+					Seed 10 new students with 2 active scholarships.
+				</h2>
+				<p class="seed-subtitle">
+					This tool creates 10 unique student records in the <code>students</code> collection.
+					Each student is automatically assigned "Cong. Tina Pancho" and "Morisson" scholarships
+					so they appear in grantor portals immediately.
+				</p>
+				<div class="seed-info-stack" style="margin-top: 16px">
+					<span class="seed-info-chip" id="studentAuthState">Checking auth...</span>
+					<span class="seed-info-chip" id="studentProjectState">Loading project...</span>
+				</div>
+			</section>
+
+			<div class="seed-layout">
+				<section class="seed-panel">
+					<h2>Student Seed Controls</h2>
+					<div class="seed-actions">
+						<button id="studentRefreshBtn" type="button" class="seed-btn-secondary">Refresh Students</button>
+						<button id="studentPreviewBtn" type="button" class="seed-btn-secondary">Build Preview</button>
+						<button id="studentSeedBtn" type="button" class="seed-btn-primary">Seed 10 Students</button>
+					</div>
+					<div class="seed-mini-actions">
+						<button id="studentDeleteLastBtn" type="button" class="seed-btn-danger">Delete Last Student Batch</button>
+						<button id="studentDeleteAllBtn" type="button" class="seed-btn-danger">Delete All Seeded Students</button>
+					</div>
+					<div id="studentStatusBanner" class="seed-status" style="margin-top: 18px">
+						Ready to seed students.
+					</div>
+					<div class="seed-note-list">
+						<div class="seed-note">
+							Students are created with IDs like <code>2024-1000</code> to <code>2024-1009</code>.
+						</div>
+						<div class="seed-note">
+							If a student with the same <strong>Student Number</strong> already exists, it will be skipped (deduplication).
+						</div>
+						<div class="seed-note">
+							Each student gets <strong>2 active scholarships</strong>: Cong. Tina and Morisson.
+						</div>
+					</div>
+				</section>
+
+				<section class="seed-panel">
+					<h2>Student Activity Log</h2>
+					<pre id="studentActivityLog" class="seed-log">Student seeder ready.</pre>
+				</section>
+			</div>
+
+			<section class="seed-panel">
+				<h2>Student Preview</h2>
+				<p style="margin-top: 10px; color: #475569; line-height: 1.7">
+					Preview of the deterministic students that will be written into <code>students</code> collection.
+				</p>
+				<div class="seed-table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>Name</th>
+								<th>Student Number</th>
+								<th>Email</th>
+								<th>Password</th>
+								<th>Course</th>
+								<th>Year</th>
+							</tr>
+						</thead>
+						<tbody id="studentPreviewTableBody">
+							<tr>
+								<td colspan="6">No student preview loaded yet.</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
 		</div>
 		<script type="module" src="/src/tools/materialCheckingSeed.js"></script>
+		<script type="module" src="/src/tools/grantorSeed.js"></script>
+		<script type="module" src="/src/tools/studentSeed.js"></script>
 	</body>
 </html>

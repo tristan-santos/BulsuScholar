@@ -38,6 +38,8 @@ export function mapStudents(rawStudents = []) {
 		const scholarshipBlocked =
 			item.restrictions?.scholarshipEligibility === true ||
 			item.soeComplianceBlocked === true ||
+			item.scholarshipConflictWarning === true ||
+			item.scholarshipRestrictionReason === "multiple_scholarships" ||
 			scholarships.some((entry) => entry?.adminBlocked === true)
 		const isArchived = item.archived === true
 		const restrictionSummary = [

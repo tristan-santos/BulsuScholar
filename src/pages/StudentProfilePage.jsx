@@ -66,25 +66,146 @@ export default function StudentProfilePage() {
 	const cogFileInputRef = useRef(null)
 	const schoolIdFileInputRef = useRef(null)
 	const { theme, setTheme } = useThemeMode()
+	const isValidated = checkValidated(user)
+	const currentSemesterTag = getCurrentSemesterTag()
+	const profileImageUrl = user?.profileImageUrl || ""
 
 	const [formData, setFormData] = useState({
 		fname: "",
 		mname: "",
 		lname: "",
 		email: "",
-		contact: "",
+		cpNumber: "",
+		houseNumber: "",
+		street: "",
+		city: "",
+		province: "",
+		postalCode: "",
 		course: "",
 		major: "",
 		year: "",
 		section: "",
 	})
+	const courseHasMajors = COURSES_WITH_MAJORS.has(formData.course || user?.course || "")
+
+	const getUserInitials = () => {
+		const first = user?.fname?.[0]?.toUpperCase() || formData.fname?.[0]?.toUpperCase() || ""
+		const last = user?.lname?.[0]?.toUpperCase() || formData.lname?.[0]?.toUpperCase() || ""
+		return first + last || "ST"
+	}
+
+	const openPhotoLightbox = () => {
+		if (!profileImageUrl) return
+		setIsLightboxOpen(true)
+	}
+
+	const triggerPhotoUpload = () => {
+		fileInputRef.current?.click()
+	}
+
+	const triggerDocumentUpload = (type) => {
+		if (type === "cog") {
+			cogFileInputRef.current?.click()
+			return
+		}
+		schoolIdFileInputRef.current?.click()
+	}
+
+	const handlePhotoChange = async (event) => {
+		const file = event.target.files?.[0]
+		event.target.value = ""
+		if (!file || !userId) return
+
+		if (!String(file.type || "").startsWith("image/")) {
+			toast.error("Profile photo must be an image file.")
+			return
+		}
+
+		setIsPhotoUploading(true)
+		try {
+			const uploadResult = await uploadToCloudinary(file)
+			await setDoc(
+				doc(db, "students", userId),
+				{
+					profileImageUrl: uploadResult.url,
+					updatedAt: serverTimestamp(),
+				},
+				{ merge: true },
+			)
+			setUser((prev) => ({ ...(prev || {}), profileImageUrl: uploadResult.url }))
+			toast.success("Profile photo updated.")
+		} catch (error) {
+			console.error("Failed to upload profile photo:", error)
+			toast.error("Failed to upload profile photo. Please try again.")
+		} finally {
+			setIsPhotoUploading(false)
+		}
+	}
+
+	const handleDocumentUpload = async (type, file) => {
+		if (!file || !userId) return
+
+		const mimeType = String(file.type || "").toLowerCase()
+		const isAllowedFile =
+			mimeType.startsWith("image/") ||
+			mimeType === "application/pdf" ||
+			/\.(png|jpe?g|pdf)$/i.test(file.name || "")
+		if (!isAllowedFile) {
+			toast.error("Only PNG, JPG, JPEG, and PDF files are allowed.")
+			return
+		}
+
+		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
+		try {
+			const uploadResult = await uploadToCloudinary(file)
+			const fieldName = type === "cog" ? "cogFile" : "schoolIdFile"
+			const nextFileValue = {
+				url: uploadResult.url,
+				name: uploadResult.name || file.name,
+				type: uploadResult.type || file.type,
+				size: uploadResult.size || file.size,
+				uploadedAt: new Date().toISOString(),
+				...(type === "cog" ? { semesterTag: currentSemesterTag } : {}),
+			}
+
+			await setDoc(
+				doc(db, "students", userId),
+				{
+					[fieldName]: nextFileValue,
+					updatedAt: serverTimestamp(),
+				},
+				{ merge: true },
+			)
+
+			setUser((prev) => ({ ...(prev || {}), [fieldName]: nextFileValue }))
+			toast.success(type === "cog" ? "COG uploaded successfully." : "Student ID uploaded successfully.")
+		} catch (error) {
+			console.error(`Failed to upload ${type}:`, error)
+			toast.error("Failed to upload document. Please try again.")
+		} finally {
+			setIsDocumentUploading((prev) => ({ ...prev, [type]: false }))
+		}
+	}
+
+	useEffect(() => {
+		function handleClickOutside(event) {
+			if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+				setUserMenuOpen(false)
+			}
+		}
+
+		if (!userMenuOpen) return undefined
+		document.addEventListener("mousedown", handleClickOutside)
+		return () => document.removeEventListener("mousedown", handleClickOutside)
+	}, [userMenuOpen])
 
 	useEffect(() => {
 		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
 		const storedType = sessionStorage.getItem("bulsuscholar_userType")
+
 		if (!storedUserId || storedType !== "student") {
 			setUserLoaded(true)
-			return
+			return undefined
 		}
 
 		setUserId(storedUserId)
@@ -115,22 +236,10 @@ export default function StudentProfilePage() {
 	}, [navigate])
 
 	useEffect(() => {
-		function handleClickOutside(e) {
-			if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
-				setUserMenuOpen(false)
-			}
-		}
-		if (userMenuOpen) {
-			document.addEventListener("mousedown", handleClickOutside)
-			return () => document.removeEventListener("mousedown", handleClickOutside)
-		}
-	}, [userMenuOpen])
-
-	useEffect(() => {
-		if (userLoaded && !user) {
+		if (userLoaded && (!user || !userId)) {
 			navigate("/", { replace: true })
 		}
-	}, [userLoaded, user, navigate])
+	}, [navigate, user, userId, userLoaded])
 
 	useEffect(() => {
 		if (!user) return
@@ -139,7 +248,12 @@ export default function StudentProfilePage() {
 			mname: user.mname || "",
 			lname: user.lname || "",
 			email: user.email || "",
-			contact: user.contact || user.mobile || "",
+			cpNumber: user.cpNumber || user.contact || user.mobile || "",
+			houseNumber: user.houseNumber || "",
+			street: user.street || "",
+			city: user.city || "",
+			province: user.province || "",
+			postalCode: user.postalCode || "",
 			course: user.course || "",
 			major: user.major || "",
 			year: user.year || "",
@@ -147,150 +261,24 @@ export default function StudentProfilePage() {
 		})
 	}, [user])
 
-	const isValidated = checkValidated(user)
-	const courseHasMajors = COURSES_WITH_MAJORS.has(formData.course)
-	const currentSemesterTag = getCurrentSemesterTag()
-
-	const getUserInitials = () => {
-		const f = formData.fname?.[0]?.toUpperCase() || user?.fname?.[0]?.toUpperCase() || ""
-		const l = formData.lname?.[0]?.toUpperCase() || user?.lname?.[0]?.toUpperCase() || ""
-		return f + l || "ST"
-	}
-
-	const profileImageUrl = user?.profileImageUrl || ""
-
-	const triggerPhotoUpload = () => {
-		if (fileInputRef.current) {
-			fileInputRef.current.value = ""
-			fileInputRef.current.click()
-		}
-	}
-
-	const openPhotoLightbox = () => {
-		if (!profileImageUrl) {
-			toast.info("No profile photo available yet.")
-			return
-		}
-		setIsLightboxOpen(true)
-	}
-
-	const handlePhotoChange = async (e) => {
-		const file = e.target.files?.[0]
-		if (!file) return
-		if (!file.type.startsWith("image/")) {
-			toast.error("Please upload an image file.")
-			return
-		}
-		if (file.size > 5 * 1024 * 1024) {
-			toast.error("Image must be 5MB or less.")
-			return
-		}
-
-		if (!userId) {
-			toast.error("Missing student ID. Please login again.")
-			return
-		}
-
-		setIsPhotoUploading(true)
-		try {
-			const uploaded = await uploadToCloudinary(file)
-			if (!uploaded?.url) {
-				throw new Error("Cloudinary upload did not return an image URL.")
-			}
-
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					profileImageUrl: uploaded.url,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
-
-			setUser((prev) => ({ ...(prev || {}), profileImageUrl: uploaded.url }))
-			toast.success("Profile photo updated successfully.")
-		} catch (error) {
-			console.error("Failed to upload profile photo:", error)
-			toast.error("Failed to upload profile photo. Please try again.")
-		} finally {
-			setIsPhotoUploading(false)
-			e.target.value = ""
-		}
-	}
-
-	const triggerDocumentUpload = (type) => {
-		if (type === "cog" && cogFileInputRef.current) {
-			cogFileInputRef.current.value = ""
-			cogFileInputRef.current.click()
-			return
-		}
-		if (type === "schoolId" && schoolIdFileInputRef.current) {
-			schoolIdFileInputRef.current.value = ""
-			schoolIdFileInputRef.current.click()
-		}
-	}
-
-	const handleDocumentUpload = async (type, file) => {
-		if (!file || !userId) return
-
-		const isAllowedType =
-			file.type.startsWith("image/") || file.type === "application/pdf"
-		if (!isAllowedType) {
-			toast.error("Only image or PDF files are allowed.")
-			return
-		}
-		if (file.size > 10 * 1024 * 1024) {
-			toast.error("Document must be 10MB or less.")
-			return
-		}
-
-		const docField = type === "cog" ? "cogFile" : "schoolIdFile"
-		const docLabel = type === "cog" ? "COG" : "Student ID"
-		const extraPayload =
-			type === "cog" ? { semesterTag: getCurrentSemesterTag() } : {}
-
-		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
-		try {
-			const uploaded = await uploadToCloudinary(file)
-			if (!uploaded?.url) {
-				throw new Error("Cloudinary upload did not return a URL.")
-			}
-
-			const payload = {
-				name: uploaded.name || file.name,
-				type: uploaded.type || file.type,
-				size: uploaded.size || file.size,
-				url: uploaded.url,
-				...extraPayload,
-			}
-
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					[docField]: payload,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
-
-			setUser((prev) => ({ ...(prev || {}), [docField]: payload }))
-			toast.success(`${docLabel} uploaded successfully.`)
-		} catch (error) {
-			console.error(`Failed to upload ${docLabel}:`, error)
-			toast.error(`Failed to upload ${docLabel}. Please try again.`)
-		} finally {
-			setIsDocumentUploading((prev) => ({ ...prev, [type]: false }))
-		}
-	}
-
 	const handleSaveProfile = async () => {
 		if (!userId) {
 			toast.error("Missing student ID. Please login again.")
 			return
 		}
 
-		if (!formData.fname.trim() || !formData.lname.trim() || !formData.email.trim()) {
-			toast.error("First name, last name, and email are required.")
+		if (
+			!formData.fname.trim() ||
+			!formData.lname.trim() ||
+			!formData.email.trim() ||
+			!formData.cpNumber.trim() ||
+			!formData.houseNumber.trim() ||
+			!formData.street.trim() ||
+			!formData.city.trim() ||
+			!formData.province.trim() ||
+			!formData.postalCode.trim()
+		) {
+			toast.error("All name, contact, and address details are required.")
 			return
 		}
 
@@ -301,7 +289,12 @@ export default function StudentProfilePage() {
 				mname: formData.mname.trim(),
 				lname: formData.lname.trim(),
 				email: formData.email.trim(),
-				contact: formData.contact.trim(),
+				cpNumber: formData.cpNumber.trim(),
+				houseNumber: formData.houseNumber.trim(),
+				street: formData.street.trim(),
+				city: formData.city.trim(),
+				province: formData.province.trim(),
+				postalCode: formData.postalCode.trim(),
 				course: formData.course,
 				major: courseHasMajors ? formData.major : "",
 				year: formData.year,
@@ -322,20 +315,6 @@ export default function StudentProfilePage() {
 		} finally {
 			setIsSaving(false)
 		}
-	}
-
-	if (!userLoaded) {
-		return (
-			<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
-				<main className="student-shell">
-					<div className="student-shell-content">
-						<div className="student-loading-panel student-dashboard-loading-panel">
-							<p className="dashboard-placeholder">Loading profile...</p>
-						</div>
-					</div>
-				</main>
-			</div>
-		)
 	}
 
 	return (
@@ -566,13 +545,66 @@ export default function StudentProfilePage() {
 											onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
 										/>
 									</label>
-									<label className="student-profile-label student-profile-label--full">
+									<label className="student-profile-label">
 										Contact Number
 										<input
 											type="text"
 											className="student-profile-input"
-											value={formData.contact}
-											onChange={(e) => setFormData((prev) => ({ ...prev, contact: e.target.value }))}
+											value={formData.cpNumber}
+											onChange={(e) => setFormData((prev) => ({ ...prev, cpNumber: e.target.value.replace(/\D/g, "") }))}
+											maxLength={11}
+										/>
+									</label>
+								</div>
+							</section>
+
+							<section className="student-profile-section-card">
+								<h3>Home Address</h3>
+								<div className="student-profile-form-grid">
+									<label className="student-profile-label">
+										House No.
+										<input
+											type="text"
+											className="student-profile-input"
+											value={formData.houseNumber}
+											onChange={(e) => setFormData((prev) => ({ ...prev, houseNumber: e.target.value }))}
+										/>
+									</label>
+									<label className="student-profile-label">
+										Street / Subdivision
+										<input
+											type="text"
+											className="student-profile-input"
+											value={formData.street}
+											onChange={(e) => setFormData((prev) => ({ ...prev, street: e.target.value }))}
+										/>
+									</label>
+									<label className="student-profile-label student-profile-label--full">
+										Province
+										<input
+											type="text"
+											className="student-profile-input"
+											value={formData.province}
+											onChange={(e) => setFormData((prev) => ({ ...prev, province: e.target.value }))}
+										/>
+									</label>
+									<label className="student-profile-label">
+										City / Municipality
+										<input
+											type="text"
+											className="student-profile-input"
+											value={formData.city}
+											onChange={(e) => setFormData((prev) => ({ ...prev, city: e.target.value }))}
+										/>
+									</label>
+									<label className="student-profile-label">
+										Postal Code
+										<input
+											type="text"
+											className="student-profile-input"
+											value={formData.postalCode}
+											onChange={(e) => setFormData((prev) => ({ ...prev, postalCode: e.target.value.replace(/\D/g, "") }))}
+											maxLength={4}
 										/>
 									</label>
 								</div>

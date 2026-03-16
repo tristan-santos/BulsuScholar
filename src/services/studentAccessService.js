@@ -11,6 +11,8 @@ export function getStudentAccessState(student = {}) {
 		String(student?.accountStatus || "").toLowerCase() === "blocked"
 	const scholarshipEligibilityBlocked =
 		student?.restrictions?.scholarshipEligibility === true ||
+		student?.scholarshipConflictWarning === true ||
+		student?.scholarshipRestrictionReason === "multiple_scholarships" ||
 		hasScholarshipAdminBlock(student)
 	const soeComplianceBlocked = student?.soeComplianceBlocked === true
 	const multipleScholarshipConflict =

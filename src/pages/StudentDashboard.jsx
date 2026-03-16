@@ -5,12 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import {
 	collection,
+	collectionGroup,
 	doc,
-	getDocs,
-	limit,
 	onSnapshot,
-	orderBy,
-	query,
 } from "firebase/firestore"
 import {
 	HiOutlineAcademicCap,
@@ -24,6 +21,12 @@ import { toast } from "react-toastify"
 import { db } from "../../firebase"
 import useThemeMode from "../hooks/useThemeMode"
 import { normalizeScholarshipList } from "../services/scholarshipService"
+import {
+	isPreviousStudentAnnouncement,
+	normalizeStudentAnnouncement,
+	sortStudentAnnouncements,
+} from "../services/announcementService"
+import { GRANTOR_SUBCOLLECTIONS } from "../services/grantorService"
 import {
 	getPortalAccessBlockMessage,
 	getStudentAccessState,
@@ -124,38 +127,48 @@ export default function StudentDashboard() {
 	}, [userLoaded, user, navigate])
 
 	useEffect(() => {
-		let isMounted = true
-		const run = async () => {
-			try {
-				const ordered = await getDocs(
-					query(collection(db, "announcements"), orderBy("createdAt", "desc"), limit(8)),
-				)
-				if (!isMounted) return
-				setAnnouncements(
-					ordered.docs.map((item) => ({ id: item.id, ...(item.data() || {}) })),
-				)
-			} catch {
-				const fallback = await getDocs(collection(db, "announcements"))
-				if (!isMounted) return
-				const sorted = fallback.docs
-					.map((item) => ({ id: item.id, ...(item.data() || {}) }))
-					.sort((a, b) => {
-						const aDate = a.createdAt?.toDate
-							? a.createdAt.toDate().getTime()
-							: new Date(a.createdAt || a.date || 0).getTime()
-						const bDate = b.createdAt?.toDate
-							? b.createdAt.toDate().getTime()
-							: new Date(b.createdAt || b.date || 0).getTime()
-						return bDate - aDate
-					})
-					.slice(0, 8)
-				setAnnouncements(sorted)
-			}
+		let adminRows = []
+		let grantorRows = []
+
+		const updateAnnouncements = () => {
+			const merged = sortStudentAnnouncements([
+				...adminRows,
+				...grantorRows,
+			]).filter((item) => !isPreviousStudentAnnouncement(item))
+			setAnnouncements(merged.slice(0, 8))
 		}
 
-		run().catch(() => {})
+		const unsubscribeAdminAnnouncements = onSnapshot(
+			collection(db, "announcements"),
+			(snap) => {
+				adminRows = snap.docs.map((item) =>
+					normalizeStudentAnnouncement(item.data() || {}, item.id, "admin"),
+				)
+				updateAnnouncements()
+			},
+			() => {
+				adminRows = []
+				updateAnnouncements()
+			},
+		)
+
+		const unsubscribeGrantorAnnouncements = onSnapshot(
+			collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements),
+			(snap) => {
+				grantorRows = snap.docs.map((item) =>
+					normalizeStudentAnnouncement(item.data() || {}, item.id, "grantor"),
+				)
+				updateAnnouncements()
+			},
+			() => {
+				grantorRows = []
+				updateAnnouncements()
+			},
+		)
+
 		return () => {
-			isMounted = false
+			unsubscribeAdminAnnouncements()
+			unsubscribeGrantorAnnouncements()
 		}
 	}, [])
 
@@ -189,6 +202,20 @@ export default function StudentDashboard() {
 		sessionStorage.removeItem("bulsuscholar_userType")
 		navigate("/", { replace: true })
 	}, [navigate])
+
+	const handleAnnouncementRedirect = useCallback(
+		(announcement) => {
+			navigate("/student-dashboard/scholarships", {
+				state: {
+					user,
+					fromAnnouncement: true,
+					focusProviderType: announcement?.providerType || "",
+					focusSection: "available-programs",
+				},
+			})
+		},
+		[navigate, user],
+	)
 
 	const fullName =
 		[user?.fname, user?.mname, user?.lname].filter(Boolean).join(" ") || "Student"
@@ -243,23 +270,39 @@ export default function StudentDashboard() {
 					<>
 						<div className="student-bento-headline-row">
 							<h3 className="student-bento-title">Announcements</h3>
-							<span>{announcements.length} items</span>
+							<button
+								type="button"
+								className="student-bento-inline-link"
+								onClick={() => navigate("/student-dashboard/announcements", { state: { user } })}
+							>
+								View All
+							</button>
 						</div>
 						{announcements.length === 0 ? (
 							<p className="dashboard-placeholder">No announcements published yet.</p>
 						) : (
 							<div className="student-announcement-feed">
 								{announcements.map((announcement) => (
-									<article key={announcement.id} className="student-announcement-card">
+									<button
+										key={announcement.id}
+										type="button"
+										className="student-announcement-card student-announcement-card--action"
+										onClick={() => handleAnnouncementRedirect(announcement)}
+									>
 										<div className="student-announcement-type">
-											{iconForAnnouncement(announcement.type || "")}
+											{announcement.source === "grantor"
+												? "Grantor"
+												: iconForAnnouncement(announcement.type || "")}
 										</div>
 										<div className="student-announcement-content">
 											<h4>{announcement.title || "Announcement"}</h4>
-											<p>
-												{formatAnnouncementDate(
-													announcement.date || announcement.createdAt,
-												) || "Date unavailable"}
+											<p className="student-announcement-content__meta">
+												<span>{announcement.sourceLabel || "Scholarship Office"}</span>
+												<span>
+													{formatAnnouncementDate(
+														announcement.date || announcement.createdAt,
+													) || "Date unavailable"}
+												</span>
 											</p>
 											<p>
 												{announcement.previewText ||
@@ -268,7 +311,7 @@ export default function StudentDashboard() {
 													"No preview text provided."}
 											</p>
 										</div>
-									</article>
+									</button>
 								))}
 							</div>
 						)}
@@ -312,7 +355,7 @@ export default function StudentDashboard() {
 										<div className="student-dashboard-scholarship-preview-meta">
 											<h4>{entry.name}</h4>
 											<p>{entry.status || "Applied"}</p>
-											<p>Request No. {entry.requestNumber || entry.id}</p>
+											<p>Application No. {entry.applicationNumber || entry.requestNumber || entry.id}</p>
 										</div>
 										<span className="student-dashboard-scholarship-preview-term">
 											{entry.semesterTag || "Current Semester"}
@@ -411,6 +454,7 @@ export default function StudentDashboard() {
 			avatarUrl,
 			fullName,
 			handleContactSupport,
+			handleAnnouncementRedirect,
 			handleLogout,
 			hasBlockedScholarshipBanner,
 			hasComplianceBlock,
