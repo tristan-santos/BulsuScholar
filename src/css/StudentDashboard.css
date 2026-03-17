@@ -2194,6 +2194,15 @@
 	margin-top: 1rem;
 }
 
+.student-kwsp-next-actions {
+	margin-top: 1rem;
+}
+
+.student-kwsp-next-actions .student-mini-btn {
+	width: 100%;
+	justify-content: center;
+}
+
 .student-kwsp-next-meta-card {
 	border-radius: 12px;
 	border: 1px solid #d7e6dd;
@@ -3225,7 +3234,7 @@
 
 .student-dashboard-layout {
 	display: grid;
-	grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr);
+	grid-template-columns: 1fr;
 	gap: 1rem;
 	margin-top: 1.5rem;
 }
@@ -3246,24 +3255,11 @@
 	overflow: hidden;
 }
 
-.student-dashboard-layout .student-magic-card--workspace {
-	min-height: 160px;
-}
-
-.student-dashboard-layout .student-magic-card--announcements {
-	min-height: 160px;
-}
-
+.student-dashboard-layout .student-magic-card--workspace,
+.student-dashboard-layout .student-magic-card--announcements,
 .student-dashboard-layout .student-magic-card--scholarships,
 .student-dashboard-layout .student-magic-card--actions {
 	grid-column: 1 / -1;
-}
-
-.student-dashboard-layout .student-magic-card--scholarships {
-	min-height: 0;
-}
-
-.student-dashboard-layout .student-magic-card--actions {
 	min-height: 0;
 }
 

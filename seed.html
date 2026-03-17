@@ -694,16 +694,16 @@
 					</table>
 				</div>
 			</section>
-			<section class="seed-panel">
-				<span class="seed-eyebrow">Student Seeder</span>
-				<h2 class="seed-section-title" style="margin-top: 14px">
-					Seed 10 new students with 2 active scholarships.
-				</h2>
-				<p class="seed-subtitle">
-					This tool creates 10 unique student records in the <code>students</code> collection.
-					Each student is automatically assigned "Cong. Tina Pancho" and "Morisson" scholarships
-					so they appear in grantor portals immediately.
-				</p>
+				<section class="seed-panel">
+					<span class="seed-eyebrow">Student Seeder</span>
+					<h2 class="seed-section-title" style="margin-top: 14px">
+						Seed 100 complete student records aligned to grantor data.
+					</h2>
+					<p class="seed-subtitle">
+						This tool creates 100 deterministic student records in the <code>students</code> collection.
+						Each student gets a complete profile and scholarship assignments aligned to the seeded
+						grantors: Cong. Tina Pancho, Morisson, and Kuya Win Scholarship Program.
+					</p>
 				<div class="seed-info-stack" style="margin-top: 16px">
 					<span class="seed-info-chip" id="studentAuthState">Checking auth...</span>
 					<span class="seed-info-chip" id="studentProjectState">Loading project...</span>
@@ -716,7 +716,7 @@
 					<div class="seed-actions">
 						<button id="studentRefreshBtn" type="button" class="seed-btn-secondary">Refresh Students</button>
 						<button id="studentPreviewBtn" type="button" class="seed-btn-secondary">Build Preview</button>
-						<button id="studentSeedBtn" type="button" class="seed-btn-primary">Seed 10 Students</button>
+						<button id="studentSeedBtn" type="button" class="seed-btn-primary">Seed 100 Students</button>
 					</div>
 					<div class="seed-mini-actions">
 						<button id="studentDeleteLastBtn" type="button" class="seed-btn-danger">Delete Last Student Batch</button>
@@ -727,13 +727,13 @@
 					</div>
 					<div class="seed-note-list">
 						<div class="seed-note">
-							Students are created with IDs like <code>2024-1000</code> to <code>2024-1009</code>.
+							Students are created with IDs like <code>20243000</code> to <code>20243099</code>.
 						</div>
 						<div class="seed-note">
 							If a student with the same <strong>Student Number</strong> already exists, it will be skipped (deduplication).
 						</div>
 						<div class="seed-note">
-							Each student gets <strong>2 active scholarships</strong>: Cong. Tina and Morisson.
+							Scholarship assignments are distributed across <strong>Cong. Tina Pancho</strong>, <strong>Morisson</strong>, and <strong>Kuya Win Scholarship Program</strong>, with a smaller set of controlled multi-scholarship conflict records.
 						</div>
 					</div>
 				</section>

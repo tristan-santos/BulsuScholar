@@ -31,23 +31,7 @@ export function mapStudents(rawStudents = []) {
 	return rawStudents.map((item) => {
 		const fullName = [item.fname, item.mname, item.lname].filter(Boolean).join(" ").trim()
 		const scholarships = Array.isArray(item.scholarships) ? item.scholarships : []
-		const accountBlocked =
-			item.restrictions?.accountAccess === true ||
-			item.isBlocked === true ||
-			String(item.accountStatus || "").toLowerCase() === "blocked"
-		const scholarshipBlocked =
-			item.restrictions?.scholarshipEligibility === true ||
-			item.soeComplianceBlocked === true ||
-			item.scholarshipConflictWarning === true ||
-			item.scholarshipRestrictionReason === "multiple_scholarships" ||
-			scholarships.some((entry) => entry?.adminBlocked === true)
 		const isArchived = item.archived === true
-		const restrictionSummary = [
-			accountBlocked ? "Account Access" : "",
-			scholarshipBlocked ? "Scholarship Eligibility" : "",
-		]
-			.filter(Boolean)
-			.join(", ")
 		return {
 			id: item.id || item.studentnumber || "-",
 			fullName: fullName || "Student",
@@ -56,22 +40,14 @@ export function mapStudents(rawStudents = []) {
 			scholarships,
 			course: item.course || "-",
 			yearLevel: item.year || "-",
-			validationStatus:
-				item.isValidated === true || item.isValidated === "true"
-					? "Validated"
-					: "Pending",
-			recordStatus: isArchived
-				? "Archived"
-				: accountBlocked || scholarshipBlocked
-					? "Blocked"
-					: "Active",
-			restrictionSummary: restrictionSummary || "-",
+			recordStatus: isArchived ? "Archived" : "Active",
+			restrictionSummary: "-",
 		}
 	})
 }
 
 export function filterStudentRows(rows = [], filters = {}) {
-	const { search = "", course = "All", year = "All", validation = "All" } = filters
+	const { search = "", course = "All", year = "All" } = filters
 	const keyword = search.trim().toLowerCase()
 	return rows.filter((row) => {
 		const matchesSearch =
@@ -80,8 +56,7 @@ export function filterStudentRows(rows = [], filters = {}) {
 			row.fullName.toLowerCase().includes(keyword)
 		const matchesCourse = course === "All" || row.course === course
 		const matchesYear = year === "All" || row.yearLevel === year
-		const matchesValidation = validation === "All" || row.validationStatus === validation
-		return matchesSearch && matchesCourse && matchesYear && matchesValidation
+		return matchesSearch && matchesCourse && matchesYear
 	})
 }
 
@@ -190,7 +165,6 @@ export async function exportStudentsReportPdf(rows = [], filterLabel = "", logoU
 			"Full Name",
 			"Course",
 			"Year Level",
-			"Validation",
 			"Record Status",
 			"Restrictions",
 		]],
@@ -199,7 +173,6 @@ export async function exportStudentsReportPdf(rows = [], filterLabel = "", logoU
 			row.fullName,
 			row.course,
 			row.yearLevel,
-			row.validationStatus,
 			row.recordStatus || "Active",
 			row.restrictionSummary || "-",
 		]),
@@ -279,7 +252,6 @@ export async function exportComplianceReportPdf(rows = [], filterLabel = "", log
 			"Full Name",
 			"Status",
 			"Violations",
-			"Scholarship Block",
 			"Last Reviewed",
 		]],
 		body: rows.map((row) => [
@@ -287,7 +259,6 @@ export async function exportComplianceReportPdf(rows = [], filterLabel = "", log
 			row.fullName || "-",
 			row.complianceStatus || "-",
 			String(row.violationCount || 0),
-			row.isBlocked ? "Yes" : "No",
 			row.lastReviewed || "-",
 		]),
 		styles: { fontSize: 8 },

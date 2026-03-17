@@ -1,24 +1,16 @@
 import { initializeApp } from "firebase/app"
 import { getAuth, onAuthStateChanged } from "firebase/auth"
-import {
-	Timestamp,
-	collection,
-	doc,
-	getDocs,
-	getFirestore,
-	writeBatch,
-	query,
-	where,
-} from "firebase/firestore"
+import { collection, doc, getDocs, getFirestore, writeBatch, query, where, serverTimestamp } from "firebase/firestore"
 import {
 	getCurrentAcademicYear,
 	getCurrentSemesterTag,
 } from "../services/scholarshipService"
+import { encryptPasswordAES256 } from "../services/authService"
 
 const SEED_SOURCE = "student-seed-html"
 const LAST_BATCH_STORAGE_KEY = "bulsuscholar_student_seed_last_batch"
 const DEFAULT_STUDENT_PASSWORD = "Student@123"
-const REQUIRED_FIREBASE_FIELDS = ["apiKey", "authDomain", "projectId", "messagingSenderId", "appId"]
+const STUDENT_SEED_COUNT = 100
 
 const firebaseConfig = {
 	apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -52,18 +44,179 @@ const state = {
 	isBusy: false,
 }
 
-const DETERMINISTIC_STUDENTS = [
-	{ studentNumber: "20241000", fname: "Juan", lname: "Dela Cruz", email: "juan.delacruz@bulsu.seed", course: "BS Information Technology", year: "1" },
-	{ studentNumber: "20241001", fname: "Maria", lname: "Santos", email: "maria.santos@bulsu.seed", course: "BS Computer Science", year: "2" },
-	{ studentNumber: "20241002", fname: "Jose", lname: "Reyes", email: "jose.reyes@bulsu.seed", course: "BS Information Technology", year: "3" },
-	{ studentNumber: "20241003", fname: "Ana", lname: "Pascual", email: "ana.pascual@bulsu.seed", course: "BS Education", year: "4" },
-	{ studentNumber: "20241004", fname: "Pedro", lname: "Bautista", email: "pedro.bautista@bulsu.seed", course: "BS Civil Engineering", year: "1" },
-	{ studentNumber: "20241005", fname: "Elena", lname: "Garcia", email: "elena.garcia@bulsu.seed", course: "BS Business Administration", year: "2" },
-	{ studentNumber: "20241006", fname: "Manuel", lname: "Mendoza", email: "manuel.mendoza@bulsu.seed", course: "AB Communication", year: "3" },
-	{ studentNumber: "20241007", fname: "Rosa", lname: "Torres", email: "rosa.torres@bulsu.seed", course: "BS Information Technology", year: "4" },
-	{ studentNumber: "20241008", fname: "Antonio", lname: "Tomas", email: "antonio.tomas@bulsu.seed", course: "BS Computer Science", year: "1" },
-	{ studentNumber: "20241009", fname: "Carmen", lname: "Villanueva", email: "carmen.villanueva@bulsu.seed", course: "BS Education", year: "2" },
+const FIRST_NAMES = [
+	"Juan",
+	"Maria",
+	"Jose",
+	"Ana",
+	"Pedro",
+	"Elena",
+	"Manuel",
+	"Rosa",
+	"Antonio",
+	"Carmen",
+	"Liza",
+	"Carlo",
+	"Bianca",
+	"Paolo",
+	"Angela",
+	"Mika",
+	"Jerome",
+	"Patricia",
+	"Nathan",
+	"Camille",
 ]
+
+const MIDDLE_INITIALS = ["A.", "B.", "C.", "D.", "E.", "F.", "G.", "H.", "I.", "J."]
+
+const LAST_NAMES = [
+	"Dela Cruz",
+	"Santos",
+	"Reyes",
+	"Pascual",
+	"Bautista",
+	"Garcia",
+	"Mendoza",
+	"Torres",
+	"Tomas",
+	"Villanueva",
+	"Navarro",
+	"Flores",
+	"Castro",
+	"Mercado",
+	"Ramos",
+	"Valdez",
+	"Lopez",
+	"Fernandez",
+	"Aquino",
+	"Rivera",
+]
+
+const BULACAN_CITIES = [
+	"Malolos",
+	"Guiguinto",
+	"Plaridel",
+	"Bustos",
+	"Baliuag",
+	"San Rafael",
+	"Pulilan",
+	"Hagonoy",
+	"Calumpit",
+	"Bulakan",
+	"Paombong",
+	"Balagtas",
+]
+
+const COURSES = [
+	{ course: "Bachelor of Science in Information Technology", sections: ["A", "B", "C"] },
+	{ course: "Bachelor of Science in Computer Science", sections: ["A", "B"] },
+	{ course: "Bachelor of Science in Computer Engineering", sections: ["A", "B"] },
+	{ course: "Bachelor of Science in Industrial Engineering", sections: ["A", "B"] },
+	{ course: "Bachelor of Science in Business Administration", sections: ["A", "B", "C"] },
+	{ course: "Bachelor of Secondary Education", sections: ["A", "B", "C"] },
+	{ course: "Bachelor of Science in Accountancy", sections: ["A", "B"] },
+	{ course: "Bachelor of Science in Civil Engineering", sections: ["A", "B"] },
+]
+
+const SCHOLARSHIP_BLUEPRINTS = [
+	{
+		providerType: "tina_pancho",
+		name: "Cong. Tina Pancho",
+		provider: "Cong. Tina Pancho",
+		status: "Active",
+		matchSource: "grantor_roster",
+	},
+	{
+		providerType: "morisson",
+		name: "Morisson",
+		provider: "Morisson",
+		status: "Active",
+		matchSource: "grantor_roster",
+	},
+	{
+		providerType: "kuya_win",
+		name: "Kuya Win Scholarship Program",
+		provider: "Kuya Win Scholarship Program",
+		status: "Application Submitted",
+		matchSource: "grantor_roster",
+	},
+]
+
+function createScholarshipEntries(studentNumber, academicYear, semesterTag, index) {
+	const primaryBlueprint = SCHOLARSHIP_BLUEPRINTS[index % SCHOLARSHIP_BLUEPRINTS.length]
+	const primaryEntry = {
+		id: `seed_sch_${primaryBlueprint.providerType}_${studentNumber}`,
+		name: primaryBlueprint.name,
+		provider: primaryBlueprint.provider,
+		providerType: primaryBlueprint.providerType,
+		status: primaryBlueprint.status,
+		academicYear,
+		semesterTag,
+		matchSource: primaryBlueprint.matchSource,
+		applicationNumber: `${studentNumber}-${primaryBlueprint.providerType}`,
+		requestNumber: `${studentNumber}-${primaryBlueprint.providerType}`,
+	}
+
+	if (index % 12 !== 0) {
+		return {
+			scholarships: [primaryEntry],
+			hasConflict: false,
+		}
+	}
+
+	const secondaryBlueprint = SCHOLARSHIP_BLUEPRINTS[(index + 1) % SCHOLARSHIP_BLUEPRINTS.length]
+	return {
+		scholarships: [
+			primaryEntry,
+			{
+				id: `seed_sch_${secondaryBlueprint.providerType}_${studentNumber}`,
+				name: secondaryBlueprint.name,
+				provider: secondaryBlueprint.provider,
+				providerType: secondaryBlueprint.providerType,
+				status: secondaryBlueprint.status,
+				academicYear,
+				semesterTag,
+				matchSource: secondaryBlueprint.matchSource,
+				applicationNumber: `${studentNumber}-${secondaryBlueprint.providerType}`,
+				requestNumber: `${studentNumber}-${secondaryBlueprint.providerType}`,
+			},
+		],
+		hasConflict: true,
+	}
+}
+
+function buildDeterministicStudents() {
+	return Array.from({ length: STUDENT_SEED_COUNT }, (_, index) => {
+		const studentNumber = `20243${String(index).padStart(3, "0")}`
+		const fname = FIRST_NAMES[index % FIRST_NAMES.length]
+		const lname = LAST_NAMES[(index * 3) % LAST_NAMES.length]
+		const mname = MIDDLE_INITIALS[index % MIDDLE_INITIALS.length]
+		const city = BULACAN_CITIES[index % BULACAN_CITIES.length]
+		const courseEntry = COURSES[index % COURSES.length]
+		const year = String((index % 4) + 1)
+		const section = courseEntry.sections[index % courseEntry.sections.length]
+		const emailLocal = `${fname}.${lname}`.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/\.+/g, ".")
+		return {
+			studentNumber,
+			fname,
+			mname,
+			lname,
+			email: `${emailLocal}.${studentNumber}@bulsu.seed`,
+			cpNumber: `0917${String(3200000 + index).padStart(7, "0")}`,
+			course: courseEntry.course,
+			year,
+			section,
+			city,
+			province: "Bulacan",
+			postalCode: "3000",
+			street: `${(index % 25) + 1} Scholarship Avenue`,
+			houseNumber: String(100 + index),
+			gwa: Number((1.25 + (index % 8) * 0.15).toFixed(2)),
+		}
+	})
+}
+
+const DETERMINISTIC_STUDENTS = buildDeterministicStudents()
 
 function appendLog(message) {
 	const timestamp = new Date().toLocaleString("en-PH")
@@ -104,7 +257,7 @@ function setBusy(nextBusy) {
 
 function buildPreview() {
 	dom.previewTableBody.innerHTML = DETERMINISTIC_STUDENTS.map(s => {
-		const exists = state.existingStudents.some(e => e.studentNumber === s.studentNumber)
+		const exists = state.existingStudents.some(e => e.studentnumber === s.studentNumber)
 		return `
 			<tr style="${exists ? 'opacity: 0.5; background: #fef2f2;' : ''}">
 				<td><strong>${s.fname} ${s.lname}</strong> ${exists ? '<span style="color: #b91c1c; font-size: 10px;">(EXISTING)</span>' : ''}</td>
@@ -112,7 +265,7 @@ function buildPreview() {
 				<td>${s.email}</td>
 				<td><code>${DEFAULT_STUDENT_PASSWORD}</code></td>
 				<td>${s.course}</td>
-				<td>Year ${s.year}</td>
+				<td>Yr ${s.year}-${s.section}</td>
 			</tr>
 		`
 	}).join("")
@@ -122,56 +275,99 @@ function buildPreview() {
 async function seedStudents() {
 	if (state.isBusy) return
 	setBusy(true)
-	setStatus("Seeding students (ignoring duplicates)...", "ok")
+	setStatus("Seeding students...", "ok")
 
 	const batchId = `student-batch-${Date.now()}`
 	let seededCount = 0
 	let skippedCount = 0
 
 	try {
+		const encryptedPassword = await encryptPasswordAES256(DEFAULT_STUDENT_PASSWORD)
 		const batch = writeBatch(state.db)
+		const semesterTag = getCurrentSemesterTag()
+		const academicYear = getCurrentAcademicYear()
 		
 		for (const s of DETERMINISTIC_STUDENTS) {
-			const exists = state.existingStudents.some(e => e.studentNumber === s.studentNumber)
+			const exists = state.existingStudents.some(e => e.studentnumber === s.studentNumber)
 			if (exists) {
 				skippedCount++
 				continue
 			}
 
-			const scholarships = [
-				{
-					id: `seed_sch_tina_${s.studentNumber}`,
-					name: "Cong. Tina Pancho",
-					provider: "Cong. Tina Pancho",
-					providerType: "tina_pancho",
-					status: "Active",
-					academicYear: getCurrentAcademicYear(),
-					semesterTag: getCurrentSemesterTag(),
-				},
-				{
-					id: `seed_sch_morisson_${s.studentNumber}`,
-					name: "Morisson",
-					provider: "Morisson",
-					providerType: "morisson",
-					status: "Active",
-					academicYear: getCurrentAcademicYear(),
-					semesterTag: getCurrentSemesterTag(),
-				}
-			]
+			const { scholarships, hasConflict } = createScholarshipEntries(
+				s.studentNumber,
+				academicYear,
+				semesterTag,
+				seededCount + skippedCount,
+			)
 
 			const studentData = {
-				...s,
-				mname: "M.",
-				fullName: `${s.fname} M. ${s.lname}`,
+				studentnumber: s.studentNumber,
+				fname: s.fname,
+				mname: s.mname,
+				lname: s.lname,
+				fullName: `${s.fname} ${s.mname} ${s.lname}`,
+				email: s.email,
+				password: encryptedPassword,
+				cpNumber: s.cpNumber,
+				houseNumber: s.houseNumber,
+				street: s.street,
+				city: s.city,
+				province: s.province,
+				postalCode: s.postalCode,
+				course: s.course,
+				major: "",
+				year: s.year,
 				yearLevel: s.year,
+				section: s.section,
+				gwa: s.gwa,
+				gender: seededCount % 2 === 0 ? "Female" : "Male",
+				campus: "Main Campus",
+				userType: "student",
+				isValidated: true,
+				isPending: false,
+				archived: false,
+				accountStatus: "active",
+				corFile: {
+					name: "seed-cor.jpg",
+					type: "image/jpeg",
+					size: 102400,
+					url: "https://res.cloudinary.com/demo/image/upload/v1/sample.jpg",
+					semesterTag,
+				},
+				cogFile: {
+					name: "seed-cog.jpg",
+					type: "image/jpeg",
+					size: 104320,
+					url: "https://res.cloudinary.com/demo/image/upload/v1/sample.jpg",
+					semesterTag,
+				},
+				schoolIdFile: {
+					name: "seed-school-id.jpg",
+					type: "image/jpeg",
+					size: 98304,
+					url: "https://res.cloudinary.com/demo/image/upload/v1/sample.jpg",
+					semesterTag,
+				},
 				scholarships,
+				scholarshipConflictWarning: hasConflict,
+				scholarshipConflictMessage: hasConflict
+					? "Multiple grantor matches were found based on your academic profile. Choose one matched grantor first before requesting scholarship materials."
+					: "",
+				scholarshipRestrictionReason: hasConflict ? "multiple_scholarships" : null,
+				restrictions: {
+					accountAccess: false,
+					scholarshipEligibility: hasConflict,
+					complianceHold: false,
+				},
 				seedSource: SEED_SOURCE,
 				seedBatchId: batchId,
-				createdAt: Timestamp.now(),
-				updatedAt: Timestamp.now(),
+				createdAt: serverTimestamp(),
+				updatedAt: serverTimestamp(),
+				validatedAt: serverTimestamp(),
 			}
 
-			const ref = doc(collection(state.db, "students"))
+			const ref = doc(state.db, "students", s.studentNumber)
 			batch.set(ref, studentData)
 			seededCount++
 		}
@@ -183,7 +379,7 @@ async function seedStudents() {
 			appendLog(`Seeded ${seededCount} students. Skipped ${skippedCount} existing.`)
 			setStatus(`Seeded ${seededCount}, Skipped ${skippedCount}.`, "ok")
 		} else {
-			appendLog(`All 10 students already exist. No new records created.`)
+			appendLog(`All ${STUDENT_SEED_COUNT} students already exist. No new records created.`)
 			setStatus("All students already exist.", "warning")
 		}
 

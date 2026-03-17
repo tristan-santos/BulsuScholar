@@ -75,6 +75,7 @@ import {
 import {
 	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
+	getScholarshipTrackingStepBadgeLabel,
 	getScholarshipTrackingStatusLabel,
 } from "../services/scholarshipTrackingService"
 
@@ -90,6 +91,11 @@ const SECTIONS = [
 const RANGES = ["daily", "weekly", "monthly", "yearly"]
 const YEAR_LEVELS = ["1", "2", "3", "4"]
 const SCHOLAR_TABS = ["active", "archived"]
+const GRANTOR_COMPLETABLE_STEP_LABELS = {
+	interview: "Interview",
+	application_review: "Application Review",
+	final_screening: "Final Screening",
+}
 const SCHOLAR_FORM = {
 	studentId: "",
 	fname: "",
@@ -227,6 +233,10 @@ function scholarPayload(form, grantorId, grantorName, providerType, file = null)
 
 function validScholar(form) {
 	return Boolean(form.studentId.trim() && form.fname.trim() && form.lname.trim() && form.course.trim() && form.scholarshipTitle.trim())
+}
+
+function getGrantorCompletableStepLabel(stepId = "") {
+	return GRANTOR_COMPLETABLE_STEP_LABELS[stepId] || ""
 }
 
 function EmptyRow({ colSpan, message }) {
@@ -466,6 +476,11 @@ export default function ProviderDashboard() {
 		[tablePages, visibleApplications],
 	)
 
+	const grantorActionStepLabel = useMemo(
+		() => getGrantorCompletableStepLabel(applicationModalState.trackingProgress?.currentStep?.id),
+		[applicationModalState.trackingProgress?.currentStep?.id],
+	)
+
 	const importPreviewPage = useMemo(
 		() => paginateRows(importData || [], tablePages.grantor_import_preview || 1, TABLE_PAGE_SIZE),
 		[importData, tablePages],
@@ -696,8 +711,9 @@ export default function ProviderDashboard() {
 		}
 
 		const currentStep = applicationModalState.trackingProgress?.currentStep
-		if (!currentStep || currentStep.id !== "interview") {
-			toast.info("Grantor actions are currently limited to the interview stage.")
+		const currentStepLabel = getGrantorCompletableStepLabel(currentStep?.id)
+		if (!currentStepLabel) {
+			toast.info("Grantor actions are limited to interview, application review, and final screening.")
 			return
 		}
 
@@ -770,10 +786,10 @@ export default function ProviderDashboard() {
 					: prev.student,
 				trackingProgress: nextTrackingProgress,
 			}))
-			toast.success("Interview stage completed.")
+			toast.success(`${currentStepLabel} stage completed.`)
 		} catch (error) {
 			console.error(error)
-			toast.error("Unable to complete the interview stage right now.")
+			toast.error(`Unable to complete the ${currentStepLabel.toLowerCase()} stage right now.`)
 		} finally {
 			setBusy("")
 		}
@@ -897,6 +913,35 @@ export default function ProviderDashboard() {
 		} catch (error) {
 			console.error(error)
 			toast.error("Unable to archive scholars right now.")
+		} finally {
+			setBusy("")
+		}
+	}
+
+	const handleUnarchive = async () => {
+		if (!grantorId || selectedScholarIds.length === 0 || busy) {
+			if (selectedScholarIds.length === 0) toast.info("Select one or more scholars to unarchive.")
+			return
+		}
+		if (!window.confirm("Return the selected scholars to the active roster?")) return
+		setBusy("unarchive")
+		try {
+			const batch = writeBatch(db)
+			selectedScholarIds.forEach((id) => {
+				batch.update(doc(getGrantorScholarsCollection(db, grantorId), id), {
+					archived: false,
+					status: "Active",
+					archivedAt: null,
+					updatedAt: serverTimestamp(),
+				})
+			})
+			await batch.commit()
+			setSelectedScholarIds([])
+			setSelectedScholarId("")
+			toast.success("Selected scholars unarchived.")
+		} catch (error) {
+			console.error(error)
+			toast.error("Unable to unarchive scholars right now.")
 		} finally {
 			setBusy("")
 		}
@@ -1085,7 +1130,26 @@ export default function ProviderDashboard() {
 								<p className="admin-panel-copy">Manage active and archived scholars inside the grantor-only Firestore namespace.</p>
 							</div>
 							<div className="grantor-toolbar-actions">
-								<button type="button" className="admin-danger-btn" onClick={handleArchive} disabled={tab === "archived" || selectedScholarIds.length === 0 || busy === "archive"}><HiOutlineTrash /> {busy === "archive" ? "Archiving..." : "Archive"}</button>
+								<button
+									type="button"
+									className={tab === "archived" ? "admin-safe-btn" : "admin-danger-btn"}
+									onClick={tab === "archived" ? handleUnarchive : handleArchive}
+									disabled={
+										selectedScholarIds.length === 0 ||
+										busy === "archive" ||
+										busy === "unarchive"
+									}
+								>
+									{tab === "archived" ? (
+										<>
+											<HiOutlineRefresh /> {busy === "unarchive" ? "Unarchiving..." : "Unarchive"}
+										</>
+									) : (
+										<>
+											<HiOutlineTrash /> {busy === "archive" ? "Archiving..." : "Archive"}
+										</>
+									)}
+								</button>
 								<button type="button" className="admin-table-btn" onClick={() => selectedScholar ? setShowEditModal(true) : toast.info("Select a scholar row first before editing.")}><HiOutlineRefresh /> Edit</button>
 								<button type="button" className="admin-export-btn" onClick={() => setShowCreateModal(true)}><HiOutlineCloudUpload /> Add</button>
 							</div>
@@ -1110,7 +1174,7 @@ export default function ProviderDashboard() {
 									</tr>
 								</thead>
 								<tbody>
-									{visibleScholars.length === 0 ? <EmptyRow colSpan={7} message={tab === "archived" ? "No archived scholars yet." : "No scholars in the active roster yet."} /> : visibleScholarsPage.rows.map((scholar) => (
+									{visibleScholars.length === 0 ? <EmptyRow colSpan={7} message="No results found matching your criteria." /> : visibleScholarsPage.rows.map((scholar) => (
 										<tr key={scholar.id} className={selectedScholarId === scholar.id ? "grantor-row-selected" : ""} onClick={() => setSelectedScholarId(scholar.id)}>
 											<td className="grantor-checkbox-col" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selectedScholarIds.includes(scholar.id)} onChange={() => setSelectedScholarIds((prev) => prev.includes(scholar.id) ? prev.filter((id) => id !== scholar.id) : [...prev, scholar.id])} /></td>
 											<td>{scholar.studentId || "-"}</td><td>{scholar.fullName}</td><td>{scholar.course || "-"}</td><td>{scholar.yearLevel || "-"}</td><td><span className={statusClass(scholar.status)}>{scholar.status}</span></td><td>{formatDateTime(scholar.updatedAt || scholar.createdAt)}</td>
@@ -1240,26 +1304,14 @@ export default function ProviderDashboard() {
 								) : (
 									<>
 										<div className="grantor-application-summary">
-											<div>
+											<div className="grantor-application-summary-card">
 												<span>Current Step</span>
 												<strong>{applicationModalState.trackingProgress?.currentStepLabel || "Applied"}</strong>
-											</div>
-											<div>
-												<span>Owner</span>
-												<strong>{applicationModalState.trackingProgress?.currentStepOwnerLabel || "Office"}</strong>
-											</div>
-											<div>
-												<span>Document Status</span>
-												<strong>
-													{applicationModalState.documentCheck?.ok
-														? "Compliant"
-														: "Needs Upload"}
-												</strong>
 											</div>
 										</div>
 
 										<div className="grantor-application-grid">
-											<section className="grantor-application-card">
+											<section className="grantor-application-card grantor-application-card--student">
 												<h4>Student Information</h4>
 												<div className="grantor-application-info-list">
 													<p><span>Student ID</span><strong>{applicationModalState.application?.studentId || "-"}</strong></p>
@@ -1315,45 +1367,53 @@ export default function ProviderDashboard() {
 											<h4>Tracking</h4>
 											{applicationModalState.trackingProgress?.steps?.length ? (
 												<div className="grantor-tracking-list">
-													{applicationModalState.trackingProgress.steps.map((step) => (
-														<div
-															key={step.id}
-															className={`grantor-tracking-step grantor-tracking-step--${step.state}`.trim()}
-														>
-															<div>
-																<strong>{step.label}</strong>
-																<p>{step.detail || "Tracking detail unavailable."}</p>
+													{applicationModalState.trackingProgress.steps.map((step) => {
+														const stepBadgeLabel = getScholarshipTrackingStepBadgeLabel(
+															step,
+															applicationModalState.trackingProgress.steps,
+														)
+
+														return (
+															<div
+																key={step.id}
+																className={`grantor-tracking-step grantor-tracking-step--${step.state}`.trim()}
+															>
+																<div>
+																	<strong>{step.label}</strong>
+																	<p>{step.detail || "Tracking detail unavailable."}</p>
+																</div>
+																{stepBadgeLabel ? (
+																	<span className={statusClass(stepBadgeLabel === "Completed" ? "Approved" : stepBadgeLabel === "Pending" ? "Pending" : "")}>
+																		{stepBadgeLabel}
+																	</span>
+																) : null}
 															</div>
-															<span className={statusClass(step.state === "complete" ? "Approved" : step.state === "current" ? "Pending" : "")}>
-																{step.state === "complete"
-																	? "Completed"
-																	: step.state === "current"
-																		? "Current"
-																		: "Upcoming"}
-															</span>
-														</div>
-													))}
+														)
+													})}
 												</div>
 											) : (
 												<div className="admin-empty-state-card"><strong>No tracking data available yet.</strong></div>
 											)}
 										</section>
 
-										{applicationModalState.trackingProgress?.currentStep?.id === "interview" ? (
-											<div className="grantor-application-actions">
-												<button
-													type="button"
-													className="admin-export-btn"
-													onClick={handleCompleteGrantorStage}
-													disabled={
-														busy === "grantor_tracking" ||
-														!applicationModalState.trackingProgress?.canAdminCompleteCurrentStep
-													}
-												>
-													{busy === "grantor_tracking" ? "Completing..." : "Complete Interview"}
-												</button>
-											</div>
-										) : null}
+										<div className="grantor-application-actions">
+											<button
+												type="button"
+												className="admin-export-btn"
+												onClick={handleCompleteGrantorStage}
+												disabled={
+													busy === "grantor_tracking" ||
+													!grantorActionStepLabel ||
+													!applicationModalState.trackingProgress?.canAdminCompleteCurrentStep
+												}
+											>
+												{busy === "grantor_tracking"
+													? "Completing..."
+													: grantorActionStepLabel
+														? `Complete ${grantorActionStepLabel}`
+														: "Complete Stage"}
+											</button>
+										</div>
 									</>
 								)}
 							</div>

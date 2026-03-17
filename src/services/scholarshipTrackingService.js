@@ -22,29 +22,27 @@ function statusIncludesAny(value = "", keywords = []) {
 
 function buildKwspSteps() {
 	return [
-		{ id: "account", label: "Creating an account", owner: "system" },
-		{ id: "kwsp_apply", label: "Applying for KWSP", owner: "student" },
-		{ id: "document_uploading", label: "Document Uploading", owner: "admin" },
+		{ id: "account", label: "Creation of Account", owner: "system" },
+		{ id: "kwsp_apply", label: "Application for KWSP", owner: "student" },
+		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
 		{ id: "admin_review", label: "Admin Review", owner: "admin" },
 		{ id: "interview", label: "Interview", owner: "admin" },
 		{ id: "application_review", label: "Application Review", owner: "admin" },
 		{ id: "final_screening", label: "Final Screening", owner: "admin" },
-		{ id: "request_materials", label: "Request of Materials", owner: "student" },
-		{ id: "download_materials", label: "Download of Materials", owner: "student" },
+		{ id: "request_materials", label: "Requesting of Materials", owner: "student" },
+		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
-		{ id: "payout", label: "Payout", owner: "admin" },
 	]
 }
 
 function buildStandardSteps(scholarshipName = "Scholarship") {
 	return [
-		{ id: "account", label: "Creating an account", owner: "system" },
-		{ id: "scholarship_apply", label: `Applying for ${scholarshipName}`, owner: "student" },
-		{ id: "document_uploading", label: "Document Uploading", owner: "admin" },
-		{ id: "request_materials", label: "Request of Materials", owner: "student" },
-		{ id: "download_materials", label: "Download of Materials", owner: "student" },
+		{ id: "account", label: "Creation of Account", owner: "system" },
+		{ id: "scholarship_apply", label: `Application for ${scholarshipName}`, owner: "student" },
+		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
+		{ id: "request_materials", label: "Requesting of Materials", owner: "student" },
+		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
-		{ id: "payout", label: "Payout", owner: "admin" },
 	]
 }
 
@@ -116,16 +114,16 @@ function buildTrackingDetail(stepId, context) {
 			return state === "complete"
 				? "Final screening has been completed."
 				: "Final screening must be completed before materials can be requested."
-		case "request_materials":
-			if (requestedMaterials.length > 0) {
-				return `Requested materials: ${requestedMaterials.map((item) => toMaterialLabel(item)).join(", ")}.`
-			}
-			return isKwspFlow
-				? "Student can request SOE or Application Form after the KWSP review stages are completed."
-				: `Student can request SOE or Application Form for ${scholarshipName}.`
-		case "download_materials":
-			if (downloadedMaterials.length > 0) {
-				return `Downloaded materials: ${downloadedMaterials.map((item) => toMaterialLabel(item)).join(", ")}.`
+	case "request_materials":
+		if (requestedMaterials.length > 0) {
+			return `Requested materials: ${requestedMaterials.map((item) => toMaterialLabel(item)).join(", ")}.`
+		}
+		return isKwspFlow
+			? "Student can request SOE after the KWSP review stages are completed."
+			: `Student can request SOE for ${scholarshipName}.`
+	case "download_materials":
+		if (downloadedMaterials.length > 0) {
+			return `Downloaded materials: ${downloadedMaterials.map((item) => toMaterialLabel(item)).join(", ")}.`
 			}
 			if (hasApprovedMaterials) return "Approved materials are ready for student download."
 			if (hasPendingMaterialApproval) return "Requested materials are still pending admin approval."
@@ -135,10 +133,6 @@ function buildTrackingDetail(stepId, context) {
 			if (signingComplete) return "Downloaded SOE already completed the checking and signing stage."
 			if (hasDownloadedMaterials) return "Downloaded SOE is waiting for scholarship office checking and signing."
 			return "Signing starts after the student downloads the approved SOE."
-		case "payout":
-			if (payoutComplete) return "Payout has already been completed for this scholarship cycle."
-			if (signingComplete) return "Materials are signed and ready for final payout handling."
-			return "Payout is the final stage after signed materials are confirmed."
 		default:
 			return ""
 	}
@@ -243,9 +237,27 @@ export function completeScholarshipTrackingStep(
 
 export function formatScholarshipTrackingStateLabel(state = "") {
 	if (state === "complete") return "Completed"
-	if (state === "current") return "Current"
+	if (state === "current") return "On-going"
 	if (state === "attention") return "Action Needed"
-	return "Upcoming"
+	return "Pending"
+}
+
+export function getScholarshipTrackingStepBadgeLabel(step = null, steps = []) {
+	if (!step) return ""
+	if (step.state === "complete") return "Completed"
+	if (step.state === "current") return "On-going"
+	if (step.state === "attention") return "Action Needed"
+	if (step.state !== "upcoming") return ""
+
+	const currentIndex = Array.isArray(steps)
+		? steps.findIndex((item) => item?.state === "attention" || item?.state === "current")
+		: -1
+	const stepIndex = Array.isArray(steps)
+		? steps.findIndex((item) => item?.id === step.id)
+		: -1
+
+	if (currentIndex >= 0 && stepIndex === currentIndex + 1) return "Pending"
+	return ""
 }
 
 export function getScholarshipTrackingProgress({
@@ -299,7 +311,7 @@ export function getScholarshipTrackingProgress({
 	const applyStepId = getApplyStepId(providerType)
 
 	const normalizedRequest = latestMaterialRequest ? normalizeMaterialRequest(latestMaterialRequest) : null
-	const requestedMaterials = ["soe", "application_form"].filter((materialKey) => {
+	const requestedMaterials = ["soe"].filter((materialKey) => {
 		if (!normalizedRequest) return false
 		const materialEntry = getMaterialEntry(normalizedRequest, materialKey)
 		return (
@@ -403,8 +415,6 @@ export function getScholarshipTrackingProgress({
 					: "This step depends on student downloads or materials checking."
 	} else if (currentStep.id === "document_uploading" && documentCheck?.ok !== true) {
 		adminCompletionReason = "Student must complete the required document uploads first."
-	} else if (currentStep.id === "payout" && !signingComplete) {
-		adminCompletionReason = "Materials must be signed before payout can be completed."
 	} else {
 		canAdminCompleteCurrentStep = true
 	}
@@ -438,19 +448,17 @@ export function getScholarshipTrackingProgress({
 
 export function getScholarshipTrackingStatusLabel(progress = null) {
 	if (!progress) return "Applied"
-	if (progress.payoutComplete) return "Payout Completed"
 	if (progress.signingAttention) return "Non-Compliant"
 	if (progress.signingComplete) return "Signed"
 	if (progress.hasDownloadedMaterials) return "For Signing"
 	if (progress.hasApprovedMaterials) return "Approved"
 	if (progress.hasPendingMaterialApproval) return "Pending Material Approval"
 	if (progress.hasRequestedMaterials) return "Materials Requested"
-	if (progress.currentStep?.id === "document_uploading") return "Document Uploading"
+	if (progress.currentStep?.id === "document_uploading") return "Uploading of Document"
 	if (progress.currentStep?.id === "admin_review") return "Admin Review"
 	if (progress.currentStep?.id === "interview") return "Interview"
 	if (progress.currentStep?.id === "application_review") return "Application Review"
 	if (progress.currentStep?.id === "final_screening") return "Final Screening"
 	if (progress.currentStep?.id === "request_materials") return "Approved"
-	if (progress.currentStep?.id === "payout") return "Ready for Payout"
 	return "Applied"
 }

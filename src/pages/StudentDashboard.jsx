@@ -135,7 +135,7 @@ export default function StudentDashboard() {
 				...adminRows,
 				...grantorRows,
 			]).filter((item) => !isPreviousStudentAnnouncement(item))
-			setAnnouncements(merged.slice(0, 8))
+			setAnnouncements(merged.slice(0, 1))
 		}
 
 		const unsubscribeAdminAnnouncements = onSnapshot(
@@ -282,37 +282,34 @@ export default function StudentDashboard() {
 							<p className="dashboard-placeholder">No announcements published yet.</p>
 						) : (
 							<div className="student-announcement-feed">
-								{announcements.map((announcement) => (
-									<button
-										key={announcement.id}
-										type="button"
-										className="student-announcement-card student-announcement-card--action"
-										onClick={() => handleAnnouncementRedirect(announcement)}
-									>
-										<div className="student-announcement-type">
-											{announcement.source === "grantor"
-												? "Grantor"
-												: iconForAnnouncement(announcement.type || "")}
-										</div>
-										<div className="student-announcement-content">
-											<h4>{announcement.title || "Announcement"}</h4>
-											<p className="student-announcement-content__meta">
-												<span>{announcement.sourceLabel || "Scholarship Office"}</span>
-												<span>
-													{formatAnnouncementDate(
-														announcement.date || announcement.createdAt,
-													) || "Date unavailable"}
-												</span>
-											</p>
-											<p>
-												{announcement.previewText ||
-													announcement.content ||
-													announcement.description ||
-													"No preview text provided."}
-											</p>
-										</div>
-									</button>
-								))}
+								<button
+									type="button"
+									className="student-announcement-card student-announcement-card--action"
+									onClick={() => handleAnnouncementRedirect(announcements[0])}
+								>
+									<div className="student-announcement-type">
+										{announcements[0].source === "grantor"
+											? "Grantor"
+											: iconForAnnouncement(announcements[0].type || "")}
+									</div>
+									<div className="student-announcement-content">
+										<h4>{announcements[0].title || "Announcement"}</h4>
+										<p className="student-announcement-content__meta">
+											<span>{announcements[0].sourceLabel || "Scholarship Office"}</span>
+											<span>
+												{formatAnnouncementDate(
+													announcements[0].date || announcements[0].createdAt,
+												) || "Date unavailable"}
+											</span>
+										</p>
+										<p>
+											{announcements[0].previewText ||
+												announcements[0].content ||
+												announcements[0].description ||
+												"No preview text provided."}
+										</p>
+									</div>
+								</button>
 							</div>
 						)}
 					</>

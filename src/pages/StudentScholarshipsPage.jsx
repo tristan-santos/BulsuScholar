@@ -68,7 +68,10 @@ import {
 } from "../services/applicationFormService"
 import { downloadSoePdfBytes, exportSoePdfDocument } from "../services/soeService"
 import { resolveSoeRequestNumber } from "../services/soeRequestNumberService"
-import { getScholarshipTrackingProgress } from "../services/scholarshipTrackingService"
+import {
+	getScholarshipTrackingProgress,
+	getScholarshipTrackingStepBadgeLabel,
+} from "../services/scholarshipTrackingService"
 import {
 	GRANTOR_PORTAL_COLLECTION,
 	normalizeGrantorPortalSettings,
@@ -138,13 +141,6 @@ function getMultipleScholarshipBannerCopy(user, scholarships) {
 		return "Your scholarship eligibility is temporarily on hold. Choose one scholarship only to comply with the one scholarship per student policy."
 	}
 	return "Your scholarship eligibility is temporarily on hold until you choose one scholarship only."
-}
-
-function formatTrackingStateLabel(state = "") {
-	if (state === "complete") return "Completed"
-	if (state === "current") return "Current"
-	if (state === "attention") return "Action Needed"
-	return "Upcoming"
 }
 
 function buildDocumentRequirementCopy(documentCheck) {
@@ -744,6 +740,7 @@ export default function StudentScholarshipsPage() {
 	const kwspTracking = useMemo(() => {
 		const trackedScholarshipLabel = kwspEntry?.name || kwspCatalogItem?.name || "Scholarship"
 		const isKwspFlow = kwspEntry?.providerType === "kuya_win"
+		const isMorissonFlow = kwspEntry?.providerType === "morisson"
 		const trackerTitle = isKwspFlow
 			? "Kuya Win Scholarship Progress"
 			: `${trackedScholarshipLabel} Progress`
@@ -757,7 +754,7 @@ export default function StudentScholarshipsPage() {
 		const documentCopy = buildDocumentRequirementCopy(kwspDocumentCheck)
 		const trackingProgress = getTrackingProgressForScholarship(kwspEntry)
 
-		let nextActionTitle = "Apply for Kuya Win Scholarship Program"
+		let nextActionTitle = "Application for KWSP"
 		let nextActionCopy = "Your account is ready. Start your KWSP application from the available programs list."
 		let summaryTone = "current"
 
@@ -780,8 +777,8 @@ export default function StudentScholarshipsPage() {
 				summaryTone = "attention"
 			} else {
 				nextActionTitle = isKwspFlow
-					? "Apply for Kuya Win Scholarship Program"
-					: `Apply for ${trackedScholarshipLabel}`
+					? "Application for KWSP"
+					: `Application for ${trackedScholarshipLabel}`
 				nextActionCopy = isKwspFlow
 					? "Submit your KWSP application from the available programs section. You can complete the required documents in the next stage."
 					: `Submit your ${trackedScholarshipLabel} application from the available programs section. You can complete the required documents in the next stage.`
@@ -789,8 +786,8 @@ export default function StudentScholarshipsPage() {
 			}
 		} else if (trackingProgress.currentStep?.id === "document_uploading") {
 			nextActionTitle = isKwspFlow
-				? "Upload your KWSP requirements"
-				: `Upload your ${trackedScholarshipLabel} requirements`
+				? "Uploading of Document"
+				: `Uploading of Document`
 			nextActionCopy = kwspDocumentCheck.ok
 				? "Your uploads are complete. Wait for the scholarship office to continue with admin review."
 				: documentCopy
@@ -818,14 +815,16 @@ export default function StudentScholarshipsPage() {
 				: `Your ${trackedScholarshipLabel} application is in final screening.`
 			summaryTone = "current"
 		} else if (trackingProgress.currentStep?.id === "request_materials") {
-			nextActionTitle = "Request your materials"
-			nextActionCopy = isKwspFlow
-				? "Your KWSP application is approved. Request the SOE or Application Form that you need next."
-				: `Request the SOE or Application Form that you need next for ${trackedScholarshipLabel}.`
+			nextActionTitle = "Requesting of Materials"
+			nextActionCopy = isMorissonFlow
+				? "Your Morisson application form is confidential. Get the application form directly from the scholarship office, then request your SOE here if you still need it."
+				: isKwspFlow
+					? "Your KWSP application is approved. Request your SOE if you still need it."
+					: `Request your SOE for ${trackedScholarshipLabel} if you still need it.`
 			summaryTone = "current"
 		} else if (trackingProgress.currentStep?.id === "download_materials") {
 			nextActionTitle = trackingProgress.hasApprovedMaterials
-				? "Download your approved materials"
+				? "Downloading of Materials"
 				: "Wait for material approval"
 			nextActionCopy = trackingProgress.hasApprovedMaterials
 				? isKwspFlow
@@ -841,16 +840,10 @@ export default function StudentScholarshipsPage() {
 			nextActionTitle = "Wait for signing of materials"
 			nextActionCopy = "Your downloaded SOE is now waiting for scholarship office checking and signing."
 			summaryTone = "current"
-		} else if (trackingProgress.currentStep?.id === "payout") {
-			nextActionTitle = "Wait for payout release"
-			nextActionCopy = isKwspFlow
-				? "Your KWSP materials are signed. The remaining step is payout confirmation from the scholarship office."
-				: `Your ${trackedScholarshipLabel} materials are signed. The remaining step is payout confirmation from the scholarship office.`
-			summaryTone = "current"
-		} else if (trackingProgress.payoutComplete) {
+		} else if (trackingProgress.signingComplete) {
 			nextActionTitle = isKwspFlow
-				? "KWSP payout completed"
-				: `${trackedScholarshipLabel} payout completed`
+				? "KWSP tracking completed"
+				: `${trackedScholarshipLabel} tracking completed`
 			nextActionCopy = isKwspFlow
 				? "All tracked KWSP stages are complete for this scholarship cycle."
 				: `All tracked ${trackedScholarshipLabel} stages are complete for this scholarship cycle.`
@@ -872,6 +865,7 @@ export default function StudentScholarshipsPage() {
 			applicationStatus: kwspEntry?.status || "Not started",
 			applicationNumber:
 				kwspEntry?.applicationNumber || kwspEntry?.requestNumber || kwspEntry?.id || "-",
+			isMorissonFlow,
 			materialStatus:
 				trackingProgress.hasDownloadedMaterials
 					? "Downloaded"
@@ -882,12 +876,13 @@ export default function StudentScholarshipsPage() {
 							: trackingProgress.hasRequestedMaterials
 								? "Requested"
 								: "Not Requested",
+			applicationFormDownloadedAt: kwspEntry?.applicationFormDownloadedAt || null,
 			canRequestMaterials: trackingProgress.canRequestMaterials,
 			hasApprovedMaterials: trackingProgress.hasApprovedMaterials,
 			hasPendingMaterialApproval: trackingProgress.hasPendingMaterialApproval,
 			hasDownloadedMaterials: trackingProgress.hasDownloadedMaterials,
 			signingAttention: trackingProgress.signingAttention,
-			payoutComplete: trackingProgress.payoutComplete,
+			signingComplete: trackingProgress.signingComplete,
 		}
 	}, [
 		activeOrPendingProviderTypes,
@@ -1323,6 +1318,10 @@ export default function StudentScholarshipsPage() {
 	const handleRequestMaterial = (target, materialKey) => {
 		if (!target) return
 		if (isScholarshipActionBlocked()) return
+		if (materialKey === "application_form") {
+			handleDownloadApplicationForm(target)
+			return
+		}
 		if (hasMultipleScholarshipChoices) {
 			toast.info(`Choose one scholarship first before requesting ${toMaterialLabel(materialKey).toLowerCase()}.`)
 			return
@@ -1519,12 +1518,6 @@ export default function StudentScholarshipsPage() {
 			return
 		}
 
-		const downloadGate = getMaterialDownloadGate(target, "application_form")
-		if (!downloadGate.canDownload) {
-			toast.warning(downloadGate.reason)
-			return
-		}
-
 		setIsDownloadingApplicationForm(true)
 		try {
 			const { pdfBytes } = await exportApplicationFormPdfDocument({
@@ -1538,37 +1531,25 @@ export default function StudentScholarshipsPage() {
 				pdfBytes,
 				`Application_Form_${userId}_${target.applicationNumber || target.requestNumber || target.id}.pdf`,
 			)
+			const downloadedAt = new Date().toISOString()
+			const nextScholarships = scholarships.map((entry) =>
+				entry.id === target.id
+					? {
+							...entry,
+							applicationFormDownloadedAt: downloadedAt,
+						}
+					: entry,
+			)
 
-			const approvedRequest = getLatestMaterialRequest(target.id)
-			if (approvedRequest?.id) {
-				await updateDoc(doc(db, "soeRequests", approvedRequest.id), {
-					"materials.application_form.requested": true,
-					"materials.application_form.status": "approved",
-					"materials.application_form.downloadedAt": serverTimestamp(),
-					applicationFormDownloadedAt: serverTimestamp(),
+			await setDoc(
+				doc(db, "students", userId),
+				{
+					scholarships: nextScholarships,
 					updatedAt: serverTimestamp(),
-				})
-
-				setStudentSoeRequests((prev) =>
-					prev.map((request) =>
-						request.id === approvedRequest.id
-							? normalizeMaterialRequest({
-									...request,
-									materials: {
-										...(request.materials || normalizeMaterialRequest(request).materials),
-										application_form: {
-											...getMaterialEntry(request, "application_form"),
-											requested: true,
-											status: "approved",
-											downloadedAt: new Date().toISOString(),
-										},
-									},
-									applicationFormDownloadedAt: new Date().toISOString(),
-								})
-							: request,
-					),
-				)
-			}
+				},
+				{ merge: true },
+			)
+			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
 
 			toast.success("Application form downloaded.")
 		} catch (error) {
@@ -2067,6 +2048,46 @@ export default function StudentScholarshipsPage() {
 												<strong>{kwspTracking.materialStatus}</strong>
 											</div>
 										</div>
+										<div className="student-kwsp-next-actions">
+											{kwspTracking.isMorissonFlow ? (
+												<p className="student-scholarship-card-note">
+													Morisson application forms are confidential. Get your application form at the scholarship office.
+												</p>
+											) : (
+												<button
+													type="button"
+													className="student-mini-btn student-mini-btn--secondary"
+													disabled={
+														isDownloadingApplicationForm ||
+														hasScholarshipActionBlock ||
+														kwspTracking.entry?.adminBlocked === true
+													}
+													title={
+														studentAccessState.isPortalAccessBlocked
+															? "Portal access is blocked."
+															: hasComplianceBlock
+																? "Your scholarship actions are currently on hold."
+																: kwspTracking.entry?.adminBlocked === true
+																	? "This scholarship is blocked by the scholarship office."
+																	: "Download your application form"
+													}
+													onClick={() => handleDownloadApplicationForm(kwspTracking.entry)}
+												>
+													<HiOutlineDocumentText />
+													{studentAccessState.isPortalAccessBlocked
+														? "Access Blocked"
+														: hasComplianceBlock
+															? "Compliance Hold"
+															: kwspTracking.entry?.adminBlocked === true
+																? "Blocked by Office"
+																: isDownloadingApplicationForm
+																	? "Preparing..."
+																	: kwspTracking.applicationFormDownloadedAt
+																		? "Download Application Form Again"
+																		: "Download Application Form"}
+												</button>
+											)}
+										</div>
 									</section>
 									<section className="student-kwsp-step-list">
 										{kwspTracking.steps.map((step, index) => (
@@ -2084,11 +2105,13 @@ export default function StudentScholarshipsPage() {
 												<div className="student-kwsp-step-content">
 													<div className="student-kwsp-step-head">
 														<h4>{step.label}</h4>
+													{getScholarshipTrackingStepBadgeLabel(step, kwspTracking.steps) ? (
 														<span
 															className={`student-kwsp-step-state student-kwsp-step-state--${step.state}`}
 														>
-															{formatTrackingStateLabel(step.state)}
+															{getScholarshipTrackingStepBadgeLabel(step, kwspTracking.steps)}
 														</span>
+													) : null}
 													</div>
 													<p>{step.detail}</p>
 												</div>
@@ -2118,20 +2141,8 @@ export default function StudentScholarshipsPage() {
 									{scholarships.map((entry) => {
 										const entryTrackingProgress = getTrackingProgressForScholarship(entry)
 										const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
-										const applicationFormRequestLabel = getMaterialLabelForScholarship(
-											entry,
-											"application_form",
-										)
 										const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
-										const applicationFormRequestButtonState = getMaterialRequestButtonState(
-											entry,
-											"application_form",
-										)
 										const soeDownloadGate = getMaterialDownloadGate(entry, "soe")
-										const applicationFormDownloadGate = getMaterialDownloadGate(
-											entry,
-											"application_form",
-										)
 
 										return (
 											<article
@@ -2167,6 +2178,11 @@ export default function StudentScholarshipsPage() {
 												<p className="student-scholarship-card-note">
 													SOE: {hasMultipleScholarshipChoices ? "Choose one scholarship first" : soeRequestLabel}
 												</p>
+												{entry.providerType === "morisson" ? (
+													<p className="student-scholarship-card-note">
+														Application form: Get it directly from the scholarship office because Morisson forms are confidential.
+													</p>
+												) : null}
 											</div>
 											<div className="student-scholarship-card-action">
 												<div className="student-scholarship-card-action-buttons">
@@ -2243,78 +2259,6 @@ export default function StudentScholarshipsPage() {
 													)}
 												</div>
 											</div>
-											{!hasMultipleScholarshipChoices ? (
-												<div className="student-scholarship-card-material-row">
-													<div className="student-scholarship-material-box student-scholarship-material-box--application">
-														<div className="student-scholarship-material-head">
-															<div className="student-scholarship-material-intro">
-																<p className="student-scholarship-material-label">
-																	Application Material
-																</p>
-																<h4 className="student-scholarship-material-title">
-																	Application Form
-																</h4>
-															</div>
-															<span
-																className="student-scholarship-material-icon-wrap"
-																aria-hidden="true"
-															>
-																<HiOutlineDocumentText />
-															</span>
-														</div>
-														<p className="student-scholarship-material-status student-scholarship-material-status--application">
-															{applicationFormRequestLabel}
-														</p>
-														<div className="student-scholarship-material-actions">
-															<button
-																type="button"
-																className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
-																disabled={
-																	isMutating ||
-																	entry.adminBlocked === true ||
-																	hasScholarshipActionBlock ||
-																	!entryTrackingProgress.canRequestMaterials ||
-																	applicationFormRequestButtonState.disabled
-																}
-																onClick={() => handleRequestMaterial(entry, "application_form")}
-															>
-																<HiOutlineDocumentText />
-																{studentAccessState.isPortalAccessBlocked
-																	? "Access Blocked"
-																	: hasComplianceBlock
-																		? "Compliance Hold"
-																		: entry.adminBlocked === true
-																			? "Blocked by Office"
-																			: applicationFormRequestButtonState.label}
-															</button>
-															<button
-																type="button"
-																className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
-																disabled={
-																	hasScholarshipActionBlock ||
-																	isDownloadingApplicationForm ||
-																	!applicationFormDownloadGate.canDownload
-																}
-																title={
-																	applicationFormDownloadGate.canDownload
-																		? "Download your approved application form"
-																		: applicationFormDownloadGate.reason
-																}
-																onClick={() => handleDownloadApplicationForm(entry)}
-															>
-																<HiOutlineDocumentText />
-																{studentAccessState.isPortalAccessBlocked
-																	? "Access Blocked"
-																	: hasComplianceBlock
-																		? "Compliance Hold"
-																		: isDownloadingApplicationForm
-																			? "Processing..."
-																			: applicationFormDownloadGate.label}
-															</button>
-														</div>
-													</div>
-												</div>
-											) : null}
 											</article>
 										)
 									})}
@@ -2466,13 +2410,6 @@ export default function StudentScholarshipsPage() {
 						<div className="student-soe-modal-actions">
 							<button
 								type="button"
-								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
-								onClick={() => setDocumentUploadPrompt(null)}
-							>
-								Cancel
-							</button>
-							<button
-								type="button"
 								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
 								onClick={() => {
 									setDocumentUploadPrompt(null)
@@ -2506,13 +2443,6 @@ export default function StudentScholarshipsPage() {
 							Choosing [{confirmTarget.name}] will keep only this scholarship in your list and remove the others, based on the one scholarship per student policy. {hasMultipleScholarshipConflict ? "This will also clear your current multiple scholarship warning. " : ""}Do you want to continue?
 						</p>
 						<div className="student-soe-modal-actions">
-							<button
-								type="button"
-								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
-								onClick={() => setConfirmTarget(null)}
-							>
-								Cancel
-							</button>
 							<button
 								type="button"
 								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
@@ -2614,13 +2544,6 @@ export default function StudentScholarshipsPage() {
 						<div className="student-soe-modal-actions">
 							<button
 								type="button"
-								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
-								onClick={closeExpenseModal}
-							>
-								Cancel
-							</button>
-							<button
-								type="button"
 								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
 								onClick={handleExportSoeWithExpenses}
 								disabled={isExportingSoe}
@@ -2651,13 +2574,6 @@ export default function StudentScholarshipsPage() {
 							/>
 						</div>
 						<div className="student-soe-modal-actions">
-							<button
-								type="button"
-								className="student-program-save-btn student-mini-btn student-mini-btn--secondary"
-								onClick={closeSoePreview}
-							>
-								Cancel
-							</button>
 							<button
 								type="button"
 								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"

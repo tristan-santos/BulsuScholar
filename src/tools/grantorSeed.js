@@ -100,6 +100,22 @@ const GRANTOR_BLUEPRINTS = [
 		},
 	},
 	{
+		id: "grantor_kuya_win",
+		providerName: "Kuya Win Scholarship Program",
+		providerType: "kuya_win",
+		scholarshipName: "Kuya Win Scholarship Program",
+		email: "grantor.kuya.win@seed.bulsuscholar.local",
+		organization: "Kuya Win Scholarship Office",
+		announcement: {
+			id: "opening_kuya_win",
+			title: "Kuya Win scholarship screening schedule is open",
+			subtitle: "Complete documents and prepare for review stages",
+			description: "The Kuya Win Scholarship Program is opening a new intake for BulSU students who can complete the required academic and identity documents for the current term.",
+			applicationWindow: "March 22, 2026 to April 26, 2026",
+			createdDaysAgo: 3,
+		},
+	},
+	{
 		id: "grantor_morisson",
 		providerName: "Morisson",
 		providerType: "morisson",
@@ -137,6 +153,47 @@ function generateFallbackStudent(index) {
 		city: CITIES[index % CITIES.length],
 		province: "Bulacan",
 	}
+}
+
+function stableHash(value = "") {
+	let hash = 0
+	const source = String(value || "")
+	for (let index = 0; index < source.length; index += 1) {
+		hash = (hash * 31 + source.charCodeAt(index)) >>> 0
+	}
+	return hash
+}
+
+function selectStudentsForGrantor(grantorId = "", count = 10) {
+	const sourceStudents =
+		state.students.length > 0
+			? state.students
+			: Array.from({ length: Math.max(count * 3, 30) }, (_, index) =>
+					generateFallbackStudent(index),
+				)
+	const grantor = GRANTOR_BLUEPRINTS.find((entry) => entry.id === grantorId)
+	const eligibleStudents = sourceStudents.filter((student) => {
+		if (!grantor) return true
+		const scholarships = Array.isArray(student.scholarships) ? student.scholarships : []
+		return scholarships.some((entry) => entry?.providerType === grantor.providerType)
+	})
+	const pool = eligibleStudents.length > 0 ? eligibleStudents : sourceStudents
+
+	return pool
+		.slice()
+		.sort((left, right) => {
+			const leftKey = stableHash(
+				`${grantorId}::${left.studentnumber || left.studentNumber || left.id || left.cpNumber || ""}`,
+			)
+			const rightKey = stableHash(
+				`${grantorId}::${right.studentnumber || right.studentNumber || right.id || right.cpNumber || ""}`,
+			)
+			if (leftKey !== rightKey) return leftKey - rightKey
+			return String(left.studentnumber || left.studentNumber || left.id || "").localeCompare(
+				String(right.studentnumber || right.studentNumber || right.id || ""),
+			)
+		})
+		.slice(0, count)
 }
 
 function mapStudentToScholar(student, grantor, index, batchId) {
@@ -251,7 +308,7 @@ async function loadLiveData() {
 function renderPreview() {
 	const previewScholars = []
 	GRANTOR_BLUEPRINTS.forEach(bp => {
-		const students = state.students.length > 0 ? state.students.slice(0, 3) : [generateFallbackStudent(0), generateFallbackStudent(1)]
+		const students = selectStudentsForGrantor(bp.id, 3)
 		students.forEach((s, i) => {
 			const payload = mapStudentToScholar(s, bp, i, "preview")
 			previewScholars.push({ ...payload, grantorName: bp.providerName })
@@ -310,7 +367,7 @@ async function seedGrantorData() {
 			})
 
 			// Scholars
-			const scholarStudents = state.students.length >= 10 ? state.students.slice(0, 10) : Array.from({ length: 10 }).map((_, i) => generateFallbackStudent(i))
+			const scholarStudents = selectStudentsForGrantor(bp.id, 10)
 			scholarStudents.forEach((student, i) => {
 				const payload = mapStudentToScholar(student, bp, i, batchId)
 				if (state.existingScholars.has(`${bp.id}_${payload.cpNumber}`)) {
