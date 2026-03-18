@@ -462,6 +462,7 @@
 	align-items: center;
 	justify-content: center;
 	line-height: 1;
+	white-space: nowrap;
 }
 
 .student-header-user-btn {
@@ -1057,6 +1058,7 @@
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
+	white-space: nowrap;
 }
 
 .student-profile-avatar-wrap {
@@ -2127,6 +2129,7 @@
 	font-weight: 700;
 	color: #166534;
 	text-align: center;
+	white-space: nowrap;
 }
 
 .student-kwsp-tracker-badge--current {

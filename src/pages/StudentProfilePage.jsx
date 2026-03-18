@@ -58,6 +58,7 @@ export default function StudentProfilePage() {
 	const [isDocumentUploading, setIsDocumentUploading] = useState({
 		cog: false,
 		schoolId: false,
+		applicationForm: false,
 	})
 	const [isLightboxOpen, setIsLightboxOpen] = useState(false)
 	const userMenuRef = useRef(null)
@@ -65,6 +66,7 @@ export default function StudentProfilePage() {
 	const fileInputRef = useRef(null)
 	const cogFileInputRef = useRef(null)
 	const schoolIdFileInputRef = useRef(null)
+	const applicationFormFileInputRef = useRef(null)
 	const { theme, setTheme } = useThemeMode()
 	const isValidated = checkValidated(user)
 	const currentSemesterTag = getCurrentSemesterTag()
@@ -108,6 +110,10 @@ export default function StudentProfilePage() {
 			cogFileInputRef.current?.click()
 			return
 		}
+		if (type === "applicationForm") {
+			applicationFormFileInputRef.current?.click()
+			return
+		}
 		schoolIdFileInputRef.current?.click()
 	}
 
@@ -146,19 +152,30 @@ export default function StudentProfilePage() {
 		if (!file || !userId) return
 
 		const mimeType = String(file.type || "").toLowerCase()
-		const isAllowedFile =
-			mimeType.startsWith("image/") ||
-			mimeType === "application/pdf" ||
-			/\.(png|jpe?g|pdf)$/i.test(file.name || "")
+		const isApplicationFormUpload = type === "applicationForm"
+		const isAllowedFile = isApplicationFormUpload
+			? mimeType.startsWith("image/") || /\.(png|jpe?g)$/i.test(file.name || "")
+			: mimeType.startsWith("image/") ||
+				mimeType === "application/pdf" ||
+				/\.(png|jpe?g|pdf)$/i.test(file.name || "")
 		if (!isAllowedFile) {
-			toast.error("Only PNG, JPG, JPEG, and PDF files are allowed.")
+			toast.error(
+				isApplicationFormUpload
+					? "Scholarship application must be uploaded as PNG, JPG, or JPEG."
+					: "Only PNG, JPG, JPEG, and PDF files are allowed.",
+			)
 			return
 		}
 
 		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
 		try {
 			const uploadResult = await uploadToCloudinary(file)
-			const fieldName = type === "cog" ? "cogFile" : "schoolIdFile"
+			const fieldName =
+				type === "cog"
+					? "cogFile"
+					: type === "applicationForm"
+						? "scholarshipApplicationFile"
+						: "schoolIdFile"
 			const nextFileValue = {
 				url: uploadResult.url,
 				name: uploadResult.name || file.name,
@@ -178,7 +195,13 @@ export default function StudentProfilePage() {
 			)
 
 			setUser((prev) => ({ ...(prev || {}), [fieldName]: nextFileValue }))
-			toast.success(type === "cog" ? "COG uploaded successfully." : "Student ID uploaded successfully.")
+			toast.success(
+				type === "cog"
+					? "COG uploaded successfully."
+					: type === "applicationForm"
+						? "Scholarship application uploaded successfully."
+						: "Student ID uploaded successfully.",
+			)
 		} catch (error) {
 			console.error(`Failed to upload ${type}:`, error)
 			toast.error("Failed to upload document. Please try again.")
@@ -645,7 +668,7 @@ export default function StudentProfilePage() {
 							<section className="student-profile-section-card student-profile-section-card--full">
 								<h3>Document Vault</h3>
 								<p className="student-profile-vault-sub">
-									Upload and review COR, COG, and Student ID records.
+									Upload and review COR, COG, Student ID, and scholarship application records.
 								</p>
 								<div className="student-vault-grid">
 									<article className="student-vault-card">
@@ -736,6 +759,47 @@ export default function StudentProfilePage() {
 												onChange={(e) => {
 													const file = e.target.files?.[0]
 													handleDocumentUpload("schoolId", file)
+													e.target.value = ""
+												}}
+											/>
+										</div>
+									</article>
+									<article className="student-vault-card">
+										<div>
+											<h4>Scholarship Application</h4>
+											<p>{user?.scholarshipApplicationFile?.url ? "Uploaded" : "Not uploaded"}</p>
+										</div>
+										<div className="student-vault-actions">
+											{user?.scholarshipApplicationFile?.url ? (
+												<a
+													href={user.scholarshipApplicationFile.url}
+													target="_blank"
+													rel="noreferrer"
+													className="student-vault-link"
+												>
+													<HiOutlineDocumentText aria-hidden /> View Application
+												</a>
+											) : (
+												<span className="student-vault-muted">No file available</span>
+											)}
+											<button
+												type="button"
+												className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
+												onClick={() => triggerDocumentUpload("applicationForm")}
+												disabled={isDocumentUploading.applicationForm}
+											>
+												{isDocumentUploading.applicationForm
+													? "Uploading..."
+													: "Upload Application"}
+											</button>
+											<input
+												ref={applicationFormFileInputRef}
+												type="file"
+												accept=".png,.jpg,.jpeg,image/*"
+												className="student-profile-file-input"
+												onChange={(e) => {
+													const file = e.target.files?.[0]
+													handleDocumentUpload("applicationForm", file)
 													e.target.value = ""
 												}}
 											/>

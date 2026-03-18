@@ -222,11 +222,17 @@ export function getDocumentUrlsForStudent(student = {}) {
 		"validIdFile",
 		"idFile",
 	])
+	const applicationForm = getFirstValidDocument(student, [
+		"scholarshipApplicationFile",
+		"applicationFormFile",
+		"scholarshipFormFile",
+	])
 
 	return {
 		cor: cor?.url || "",
 		cog: cog?.url || "",
 		schoolId: schoolId?.url || "",
+		applicationForm: applicationForm?.url || "",
 	}
 }
 

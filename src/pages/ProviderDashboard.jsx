@@ -231,6 +231,68 @@ function scholarPayload(form, grantorId, grantorName, providerType, file = null)
 	}
 }
 
+function buildScholarRecordFromScreening(student = {}, scholarship = {}, application = {}, grantorMeta = {}) {
+	return {
+		studentId:
+			String(
+				student.id ||
+					student.studentId ||
+					student.studentnumber ||
+					student.studentNumber ||
+					application.studentId ||
+					"",
+			).trim(),
+		fname: String(student.fname || application.fname || "").trim(),
+		mname: String(student.mname || application.mname || "").trim(),
+		lname: String(student.lname || application.lname || "").trim(),
+		fullName: [student.fname || application.fname, student.mname || application.mname, student.lname || application.lname]
+			.filter(Boolean)
+			.join(" ")
+			.trim(),
+		email: String(student.email || application.email || "").trim(),
+		cpNumber: String(student.cpNumber || student.contactNumber || application.cpNumber || application.contactNumber || "").trim(),
+		houseNumber: String(student.houseNumber || "").trim(),
+		street: String(student.street || student.address || "").trim(),
+		city: String(student.city || "").trim(),
+		province: String(student.province || "").trim(),
+		postalCode: String(student.postalCode || "").trim(),
+		course: String(student.course || "").trim(),
+		yearLevel: String(student.yearLevel || student.year || "1"),
+		scholarshipTitle: String(
+			scholarship.name || application.scholarshipName || grantorMeta.grantorName || "Scholarship",
+		).trim(),
+		status: "Active",
+		notes: "Auto-saved after final screening completion.",
+		archived: false,
+		grantorId: grantorMeta.grantorId || "",
+		grantorName: grantorMeta.grantorName || "",
+		providerType: grantorMeta.providerType || "",
+		scholarshipId: String(scholarship.id || application.scholarshipId || "").trim(),
+		applicationId: String(application.id || "").trim(),
+		applicationNumber: String(application.applicationNumber || application.requestNumber || application.id || "").trim(),
+		requestNumber: String(application.requestNumber || application.applicationNumber || application.id || "").trim(),
+	}
+}
+
+function findExistingScholarForScreening(scholars = [], student = {}, scholarship = {}, application = {}, providerType = "") {
+	const studentId = String(student.id || student.studentId || application.studentId || "").trim()
+	const scholarshipId = String(scholarship.id || application.scholarshipId || "").trim()
+	const applicationId = String(application.id || "").trim()
+	const scholarshipTitle = String(scholarship.name || application.scholarshipName || "").trim().toLowerCase()
+
+	return (
+		scholars.find((row) => applicationId && row.applicationId === applicationId) ||
+		scholars.find(
+			(row) =>
+				row.studentId === studentId &&
+				((scholarshipId && row.scholarshipId === scholarshipId) ||
+					(String(row.scholarshipTitle || "").trim().toLowerCase() === scholarshipTitle &&
+						String(row.providerType || "").trim() === String(providerType || "").trim())),
+		) ||
+		null
+	)
+}
+
 function validScholar(form) {
 	return Boolean(form.studentId.trim() && form.fname.trim() && form.lname.trim() && form.course.trim() && form.scholarshipTitle.trim())
 }
@@ -755,6 +817,28 @@ export default function ProviderDashboard() {
 					? { ...nextScholarship, status: nextStatus }
 					: item,
 			)
+			const completedFinalScreening = currentStep.id === "final_screening"
+			const matchedScholar = completedFinalScreening
+				? findExistingScholarForScreening(
+						scholars,
+						applicationModalState.student,
+						nextScholarship,
+						applicationModalState.application,
+						grantorProviderType,
+					)
+				: null
+			const scholarRecord = completedFinalScreening
+				? buildScholarRecordFromScreening(
+						applicationModalState.student,
+						nextScholarship,
+						applicationModalState.application,
+						{
+							grantorId,
+							grantorName,
+							providerType: grantorProviderType,
+						},
+					)
+				: null
 
 			await setDoc(
 				doc(db, "students", applicationModalState.student.id),
@@ -774,6 +858,21 @@ export default function ProviderDashboard() {
 				},
 				{ merge: true },
 			)
+
+			if (completedFinalScreening && scholarRecord) {
+				const scholarDocId =
+					matchedScholar?.id ||
+					`${grantorId || grantorProviderType || "grantor"}__${applicationModalState.application.id || nextScholarship.id || applicationModalState.student.id}`
+				await setDoc(
+					doc(getGrantorScholarsCollection(db, grantorId), scholarDocId),
+					{
+						...scholarRecord,
+						createdAt: matchedScholar?.createdAt || serverTimestamp(),
+						updatedAt: serverTimestamp(),
+					},
+					{ merge: true },
+				)
+			}
 
 			setApplicationModalState((prev) => ({
 				...prev,
@@ -1338,6 +1437,7 @@ export default function ProviderDashboard() {
 														{ id: "cor", label: "COR" },
 														{ id: "cog", label: "COG" },
 														{ id: "schoolId", label: "School ID" },
+														{ id: "applicationForm", label: "Application Form" },
 													].map((document) => (
 														<a
 															key={document.id}

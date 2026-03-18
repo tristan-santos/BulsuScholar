@@ -106,6 +106,7 @@
 	align-items: center;
 	justify-content: center;
 	line-height: 1;
+	white-space: nowrap;
 }
 
 /* User button wrap: opens profile dropdown */
@@ -1927,6 +1928,7 @@
 	font-size: 0.78rem;
 	font-weight: 600;
 	color: #475569;
+	white-space: nowrap;
 }
 
 .admin-grantor-dot {
@@ -5767,6 +5769,7 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.02em;
+    white-space: nowrap;
 }
 
 .type-Deadline { background: #fef2f2; color: #991b1b; border: 1px solid #fee2e2; }
@@ -5948,6 +5951,7 @@
 	font-size: 0.85rem;
 	font-weight: 700;
 	color: #1e293b;
+	white-space: nowrap;
 }
 
 .admin-report-kpi-grid {

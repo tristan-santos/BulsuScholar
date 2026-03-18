@@ -65,6 +65,7 @@ import {
 	toMaterialLabel,
 } from "../services/materialRequestService"
 import {
+	getDocumentUrlsForStudent,
 	normalizeScholarshipList,
 	validateScholarshipDocuments,
 } from "../services/scholarshipService"
@@ -4920,6 +4921,12 @@ export default function AdminDashboard() {
 								{ label: "View COR", url: selectedStudent.corFile?.url },
 								{ label: "View COG", url: selectedStudent.cogFile?.url },
 								{ label: "View School ID", url: selectedStudent.schoolIdFile?.url || selectedStudent.studentIdFile?.url },
+								{
+									label: "View Application Form",
+									url:
+										selectedStudent.scholarshipApplicationFile?.url ||
+										selectedStudent.applicationFormFile?.url,
+								},
 							].map((document) =>
 								document.url ? (
 									<a key={document.label} href={document.url} target="_blank" rel="noreferrer">
@@ -5052,6 +5059,35 @@ export default function AdminDashboard() {
 											</div>
 										</article>
 									))}
+								</div>
+								<div className="admin-detail-docs">
+									<strong>Submitted Documents</strong>
+									{(() => {
+										const documentUrls = getDocumentUrlsForStudent(
+											selectedScholarshipTrackingRow.studentSnapshot,
+										)
+										return [
+											{ label: "View COR", url: documentUrls.cor },
+											{ label: "View COG", url: documentUrls.cog },
+											{ label: "View School ID", url: documentUrls.schoolId },
+											{ label: "View Application Form", url: documentUrls.applicationForm },
+										].map((document) =>
+											document.url ? (
+												<a
+													key={document.label}
+													href={document.url}
+													target="_blank"
+													rel="noreferrer"
+												>
+													{document.label}
+												</a>
+											) : (
+												<span key={document.label} className="admin-detail-docs-empty">
+													{document.label} Unavailable
+												</span>
+											),
+										)
+									})()}
 								</div>
 							</div>
 							<div className="admin-tracking-modal-footer">
