@@ -62,10 +62,6 @@ import {
 	normalizeMaterialRequest,
 	toMaterialLabel,
 } from "../services/materialRequestService"
-import {
-	downloadApplicationFormPdfBytes,
-	exportApplicationFormPdfDocument,
-} from "../services/applicationFormService"
 import { downloadSoePdfBytes, exportSoePdfDocument } from "../services/soeService"
 import { resolveSoeRequestNumber } from "../services/soeRequestNumberService"
 import {
@@ -1520,17 +1516,21 @@ export default function StudentScholarshipsPage() {
 
 		setIsDownloadingApplicationForm(true)
 		try {
-			const { pdfBytes } = await exportApplicationFormPdfDocument({
-				student: user || {},
-				studentId: userId,
-				scholarship: target,
-				autoDownload: false,
-			})
+			const response = await fetch("/soe-template.pdf")
+			if (!response.ok) {
+				throw new Error(`Template download failed with status ${response.status}`)
+			}
 
-			downloadApplicationFormPdfBytes(
-				pdfBytes,
-				`Application_Form_${userId}_${target.applicationNumber || target.requestNumber || target.id}.pdf`,
-			)
+			const pdfBlob = await response.blob()
+			const downloadUrl = URL.createObjectURL(pdfBlob)
+			const link = document.createElement("a")
+			link.href = downloadUrl
+			link.download = "SOE-Format.pdf"
+			document.body.appendChild(link)
+			link.click()
+			document.body.removeChild(link)
+			URL.revokeObjectURL(downloadUrl)
+
 			const downloadedAt = new Date().toISOString()
 			const nextScholarships = scholarships.map((entry) =>
 				entry.id === target.id

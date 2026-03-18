@@ -409,6 +409,7 @@
 
 .grantor-document-links {
 	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 0.65rem;
 	align-content: start;
 }
@@ -429,6 +430,12 @@
 .grantor-document-link.is-disabled {
 	opacity: 0.6;
 	pointer-events: none;
+}
+
+@media (max-width: 640px) {
+	.grantor-document-links {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .grantor-tracking-list {
