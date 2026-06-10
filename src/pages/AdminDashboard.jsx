@@ -5062,32 +5062,34 @@ export default function AdminDashboard() {
 								</div>
 								<div className="admin-detail-docs">
 									<strong>Submitted Documents</strong>
-									{(() => {
-										const documentUrls = getDocumentUrlsForStudent(
-											selectedScholarshipTrackingRow.studentSnapshot,
-										)
-										return [
-											{ label: "View COR", url: documentUrls.cor },
-											{ label: "View COG", url: documentUrls.cog },
-											{ label: "View School ID", url: documentUrls.schoolId },
-											{ label: "View Application Form", url: documentUrls.applicationForm },
-										].map((document) =>
-											document.url ? (
-												<a
-													key={document.label}
-													href={document.url}
-													target="_blank"
-													rel="noreferrer"
-												>
-													{document.label}
-												</a>
-											) : (
-												<span key={document.label} className="admin-detail-docs-empty">
-													{document.label} Unavailable
-												</span>
-											),
-										)
-									})()}
+									<div className="admin-detail-docs-grid admin-detail-docs-grid--review">
+										{(() => {
+											const documentUrls = getDocumentUrlsForStudent(
+												selectedScholarshipTrackingRow.studentSnapshot,
+											)
+											return [
+												{ label: "View COR", url: documentUrls.cor },
+												{ label: "View COG", url: documentUrls.cog },
+												{ label: "View School ID", url: documentUrls.schoolId },
+												{ label: "View Application Form", url: documentUrls.applicationForm },
+											].map((document) =>
+												document.url ? (
+													<a
+														key={document.label}
+														href={document.url}
+														target="_blank"
+														rel="noreferrer"
+													>
+														{document.label}
+													</a>
+												) : (
+													<span key={document.label} className="admin-detail-docs-empty">
+														{document.label} Unavailable
+													</span>
+												),
+											)
+										})()}
+									</div>
 								</div>
 							</div>
 							<div className="admin-tracking-modal-footer">

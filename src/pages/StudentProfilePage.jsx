@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore"
+import {
+	addDoc,
+	collection,
+	doc,
+	getDoc,
+	getDocs,
+	onSnapshot,
+	query,
+	serverTimestamp,
+	setDoc,
+	where,
+} from "firebase/firestore"
 import {
 	HiMenu,
 	HiOutlineAcademicCap,
@@ -16,7 +27,12 @@ import {
 import { toast } from "react-toastify"
 import { db } from "../../firebase"
 import { uploadToCloudinary } from "../services/cloudinaryService"
-import { getCurrentSemesterTag } from "../services/scholarshipService"
+import {
+	getCurrentAcademicYear,
+	getCurrentSemesterTag,
+	getDocumentUrlsForStudent,
+	normalizeScholarshipList,
+} from "../services/scholarshipService"
 import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
 import logo2 from "../assets/logo2.png"
 import "../css/StudentDashboard.css"
@@ -117,6 +133,88 @@ export default function StudentProfilePage() {
 		schoolIdFileInputRef.current?.click()
 	}
 
+	const syncScholarshipApplicationDocuments = async ({
+		type,
+		studentSnapshot,
+		nextFileValue,
+	}) => {
+		if (!userId || !studentSnapshot) return
+
+		const scholarships = normalizeScholarshipList(studentSnapshot.scholarships || [])
+		if (scholarships.length === 0) return
+
+		const documentUrls = getDocumentUrlsForStudent(studentSnapshot)
+		const applicationCollection = collection(db, "scholarshipApplications")
+		const applicationSnapshot = await getDocs(
+			query(applicationCollection, where("studentId", "==", userId)),
+		)
+		const matchingDocs = new Map()
+
+		applicationSnapshot.docs.forEach((applicationDoc) => {
+			const data = applicationDoc.data() || {}
+			const scholarshipKey = String(
+				data.scholarshipId || data.applicationNumber || data.requestNumber || "",
+			)
+			if (scholarshipKey) {
+				matchingDocs.set(scholarshipKey, applicationDoc.id)
+			}
+		})
+
+		const syncJobs = scholarships.map((scholarship) => {
+			const scholarshipKey = String(
+				scholarship.id || scholarship.applicationNumber || scholarship.requestNumber || "",
+			)
+			const payload = {
+				studentId: userId,
+				fname: studentSnapshot.fname || "",
+				mname: studentSnapshot.mname || "",
+				lname: studentSnapshot.lname || "",
+				fullName:
+					[studentSnapshot.fname, studentSnapshot.mname, studentSnapshot.lname]
+						.filter(Boolean)
+						.join(" ")
+						.trim() || "Applicant",
+				email: studentSnapshot.email || "",
+				cpNumber: studentSnapshot.cpNumber || "",
+				scholarshipId: scholarshipKey,
+				applicationNumber:
+					scholarship.applicationNumber || scholarship.requestNumber || scholarshipKey,
+				requestNumber:
+					scholarship.requestNumber || scholarship.applicationNumber || scholarshipKey,
+				scholarshipName: scholarship.name || scholarship.provider || "Scholarship",
+				providerType: scholarship.providerType || "",
+				providerLabel: scholarship.provider || scholarship.name || "Scholarship",
+				status: scholarship.status || "Applied",
+				tracking: scholarship.tracking || null,
+				appliedAt: scholarship.appliedAt || null,
+				applicationDate: scholarship.appliedAt || null,
+				semesterTag: scholarship.semesterTag || currentSemesterTag,
+				academicYear: scholarship.academicYear || getCurrentAcademicYear(),
+				documentUrls,
+				updatedAt: serverTimestamp(),
+			}
+
+			if (type === "applicationForm") {
+				payload.scholarshipApplicationFile = nextFileValue
+				payload.applicationFormFile = nextFileValue
+			}
+
+			const existingDocId = matchingDocs.get(scholarshipKey)
+			if (existingDocId) {
+				return setDoc(doc(db, "scholarshipApplications", existingDocId), payload, {
+					merge: true,
+				})
+			}
+
+			return addDoc(applicationCollection, {
+				...payload,
+				createdAt: serverTimestamp(),
+			})
+		})
+
+		await Promise.all(syncJobs)
+	}
+
 	const handlePhotoChange = async (event) => {
 		const file = event.target.files?.[0]
 		event.target.value = ""
@@ -193,6 +291,13 @@ export default function StudentProfilePage() {
 				},
 				{ merge: true },
 			)
+
+			const nextStudentSnapshot = { ...(user || {}), [fieldName]: nextFileValue }
+			await syncScholarshipApplicationDocuments({
+				type,
+				studentSnapshot: nextStudentSnapshot,
+				nextFileValue,
+			})
 
 			setUser((prev) => ({ ...(prev || {}), [fieldName]: nextFileValue }))
 			toast.success(
@@ -790,7 +895,7 @@ export default function StudentProfilePage() {
 											>
 												{isDocumentUploading.applicationForm
 													? "Uploading..."
-													: "Upload Application"}
+													: "Upload Application Form"}
 											</button>
 											<input
 												ref={applicationFormFileInputRef}
