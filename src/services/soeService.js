@@ -51,7 +51,7 @@ function mapCourseToCollege(course = "") {
 }
 
 async function fetchTemplateBytes() {
-	const response = await fetch("/soe-template-fields.pdf")
+	const response = await fetch("/Templates/soe-template-fields.pdf")
 	if (!response.ok) {
 		throw new Error("SOE template file could not be loaded.")
 	}

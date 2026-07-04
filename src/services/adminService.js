@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
-import formattedReportTemplateUrl from "../../FORMATTED_REPORT.pdf?url"
+import formattedReportTemplateUrl from "/Templates/FORMATTED_REPORT.pdf?url"
 
 const PAGE_MARGIN_LEFT = 64
 const PAGE_MARGIN_RIGHT = 64

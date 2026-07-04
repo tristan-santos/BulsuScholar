@@ -1,13 +1,13 @@
-import { initializeApp } from "firebase/app"
-import { getAuth, onAuthStateChanged } from "firebase/auth"
+import { initializeApp } from "../services/supabaseDataService"
+import { getAuth, onAuthStateChanged } from "../services/supabaseDataService"
 import {
 	Timestamp,
 	collection,
 	doc,
 	getDocs,
-	getFirestore,
+	getDatabase,
 	writeBatch,
-} from "firebase/firestore"
+} from "../services/supabaseDataService"
 import { normalizeMaterialRequest } from "../services/materialRequestService"
 import {
 	generateFallbackSoeRequestNumber,
@@ -22,15 +22,12 @@ import {
 const SEED_SOURCE = "material-checking-seed-html"
 const LAST_BATCH_STORAGE_KEY = "bulsuscholar_material_checking_seed_last_batch"
 const MAX_PREVIEW_ROWS = 12
-const REQUIRED_FIREBASE_FIELDS = ["apiKey", "authDomain", "projectId", "messagingSenderId", "appId"]
+const REQUIRED_SUPABASE_FIELDS = ["url", "anonKey"]
 
-const firebaseConfig = {
-	apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-	authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-	projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-	messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-	appId: import.meta.env.VITE_FIREBASE_APP_ID,
-	measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+const supabaseConfig = {
+	url: import.meta.env.VITE_SUPABASE_URL,
+	projectId: import.meta.env.VITE_SUPABASE_URL,
+	anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
 }
 
 const dom = {
@@ -590,14 +587,14 @@ async function deleteSeededRows(mode = "last") {
 }
 
 async function initializeSeeder() {
-	const missingFields = REQUIRED_FIREBASE_FIELDS.filter((field) => {
-		const value = firebaseConfig[field]
+	const missingFields = REQUIRED_SUPABASE_FIELDS.filter((field) => {
+		const value = supabaseConfig[field]
 		return value == null || value === ""
 	})
 	if (missingFields.length > 0) {
-		setStatus("Firebase configuration is incomplete. Check the required VITE_FIREBASE_* environment variables.", "danger")
-		appendLog(`Initialization failed because required Firebase fields are missing: ${missingFields.join(", ")}.`)
-		dom.projectState.textContent = "Firebase config missing"
+		setStatus("Supabase configuration is incomplete. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.", "danger")
+		appendLog(`Initialization failed because required Supabase fields are missing: ${missingFields.join(", ")}.`)
+		dom.projectState.textContent = "Supabase config missing"
 		dom.authState.textContent = "Unavailable"
 		dom.refreshBtn.disabled = true
 		dom.previewBtn.disabled = true
@@ -607,15 +604,15 @@ async function initializeSeeder() {
 		return
 	}
 
-	state.app = initializeApp(firebaseConfig)
-	state.db = getFirestore(state.app)
+	state.app = initializeApp(supabaseConfig)
+	state.db = getDatabase(state.app)
 	state.auth = getAuth(state.app)
 
-	dom.projectState.textContent = `Project: ${firebaseConfig.projectId}`
+	dom.projectState.textContent = `Supabase: ${supabaseConfig.url || "not configured"}`
 	onAuthStateChanged(state.auth, (user) => {
 		state.currentUser = user
 		dom.authState.textContent = user?.email ? `Signed in: ${user.email}` : "No active auth session"
-		appendLog(user?.email ? `Auth session detected for ${user.email}.` : "No shared auth session detected. Firestore rules may still allow access.")
+		appendLog(user?.email ? `Auth session detected for ${user.email}.` : "No shared auth session detected. Supabase RLS may still allow access.")
 	})
 
 	dom.refreshBtn.addEventListener("click", () => {

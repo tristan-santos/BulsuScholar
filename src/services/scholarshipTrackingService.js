@@ -20,11 +20,21 @@ function statusIncludesAny(value = "", keywords = []) {
 	return keywords.some((keyword) => normalized.includes(String(keyword || "").toLowerCase()))
 }
 
-function buildKwspSteps() {
+function withAnnouncementApplyStep(steps = [], appliedViaAnnouncement = false) {
+	if (!appliedViaAnnouncement) return steps
 	return [
+		steps[0],
+		{ id: "announcement_apply", label: "Applying via Announcement", owner: "student" },
+		...steps.slice(1),
+	].filter(Boolean)
+}
+
+function buildKwspSteps(appliedViaAnnouncement = false) {
+	return withAnnouncementApplyStep([
 		{ id: "account", label: "Creation of Account", owner: "system" },
 		{ id: "kwsp_apply", label: "Application for KWSP", owner: "student" },
 		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
+		{ id: "application_form", label: "Application Form", owner: "student" },
 		{ id: "admin_review", label: "Admin Review", owner: "admin" },
 		{ id: "interview", label: "Interview", owner: "admin" },
 		{ id: "application_review", label: "Application Review", owner: "admin" },
@@ -32,18 +42,19 @@ function buildKwspSteps() {
 		{ id: "request_materials", label: "Requesting of Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
-	]
+	], appliedViaAnnouncement)
 }
 
-function buildStandardSteps(scholarshipName = "Scholarship") {
-	return [
+function buildStandardSteps(scholarshipName = "Scholarship", appliedViaAnnouncement = false) {
+	return withAnnouncementApplyStep([
 		{ id: "account", label: "Creation of Account", owner: "system" },
 		{ id: "scholarship_apply", label: `Application for ${scholarshipName}`, owner: "student" },
 		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
+		{ id: "application_form", label: "Application Form", owner: "student" },
 		{ id: "request_materials", label: "Requesting of Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
-	]
+	], appliedViaAnnouncement)
 }
 
 function getApplyStepId(providerType = "") {
@@ -70,7 +81,6 @@ function buildTrackingDetail(stepId, context) {
 		hasDownloadedMaterials,
 		signingComplete,
 		signingAttention,
-		payoutComplete,
 		state,
 		isKwspFlow,
 	} = context
@@ -87,17 +97,23 @@ function buildTrackingDetail(stepId, context) {
 			return isValidated
 				? "Student account is active and validated in BulsuScholar."
 				: "Student account already exists in BulsuScholar."
+		case "announcement_apply":
+			return `Application started from a published announcement for ${scholarshipName}.`
 		case "kwsp_apply":
 		case "scholarship_apply":
 			return `Application recorded for ${scholarshipName} under ${semesterTag || "the current semester"}.`
 		case "document_uploading":
 			if (state === "complete") {
-				return "Required documents are complete. The application can now move to the next stage."
+				return "COR and COG are complete. The student can now proceed to the application form stage."
 			}
-			if (documentCheck?.ok) return "Required documents are uploaded and ready for admin confirmation."
+			if (documentCheck?.ok) return "COR and COG are uploaded and ready for admin confirmation."
 			return missingCopy
 				? `Student still needs to comply with: ${missingCopy}.`
-				: "Student still needs to upload the required scholarship documents."
+				: "Student still needs to upload the required COR and COG."
+		case "application_form":
+			return state === "complete"
+				? "Application form has been uploaded and is ready for review."
+				: "Student must complete and upload the application form before review continues."
 		case "admin_review":
 			return state === "complete"
 				? "Admin review was completed for this application."
@@ -138,22 +154,25 @@ function buildTrackingDetail(stepId, context) {
 	}
 }
 
-export function getScholarshipTrackingSteps(providerType = "", scholarshipName = "Scholarship") {
+export function getScholarshipTrackingSteps(providerType = "", scholarshipName = "Scholarship", options = {}) {
+	const appliedViaAnnouncement = options?.appliedViaAnnouncement === true
 	return normalizeProviderType(providerType) === "kuya_win"
-		? buildKwspSteps()
-		: buildStandardSteps(scholarshipName)
+		? buildKwspSteps(appliedViaAnnouncement)
+		: buildStandardSteps(scholarshipName, appliedViaAnnouncement)
 }
 
-export function createScholarshipTrackingState({ providerType = "", scholarshipName = "Scholarship" } = {}) {
-	const steps = getScholarshipTrackingSteps(providerType, scholarshipName)
+export function createScholarshipTrackingState({ providerType = "", scholarshipName = "Scholarship", appliedViaAnnouncement = false } = {}) {
+	const steps = getScholarshipTrackingSteps(providerType, scholarshipName, { appliedViaAnnouncement })
 	const applyStepId = getApplyStepId(providerType)
 	const accountStep = steps.find((step) => step.id === "account")
+	const announcementStep = steps.find((step) => step.id === "announcement_apply")
 	const applyStep = steps.find((step) => step.id === applyStepId)
 	const completedAt = new Date().toISOString()
 
 	return {
 		flowType: normalizeProviderType(providerType) === "kuya_win" ? "kwsp" : "standard",
-		completedStepIds: ["account", applyStepId],
+		appliedViaAnnouncement,
+		completedStepIds: ["account", appliedViaAnnouncement ? "announcement_apply" : "", applyStepId].filter(Boolean),
 		lastCompletedStepId: applyStepId,
 		updatedAt: completedAt,
 		history: [
@@ -162,6 +181,14 @@ export function createScholarshipTrackingState({ providerType = "", scholarshipN
 						stepId: accountStep.id,
 						label: accountStep.label,
 						completedBy: "system",
+						completedAt,
+					}
+				: null,
+			announcementStep
+				? {
+						stepId: announcementStep.id,
+						label: announcementStep.label,
+						completedBy: "student",
 						completedAt,
 					}
 				: null,
@@ -179,11 +206,15 @@ export function createScholarshipTrackingState({ providerType = "", scholarshipN
 
 export function normalizeScholarshipTrackingState(
 	rawTracking = null,
-	{ providerType = "", scholarshipName = "Scholarship" } = {},
+	{ providerType = "", scholarshipName = "Scholarship", appliedViaAnnouncement: optionAppliedViaAnnouncement = false } = {},
 ) {
-	const steps = getScholarshipTrackingSteps(providerType, scholarshipName)
+	const appliedViaAnnouncement =
+		optionAppliedViaAnnouncement === true ||
+		rawTracking?.appliedViaAnnouncement === true ||
+		rawTracking?.completedStepIds?.includes?.("announcement_apply")
+	const steps = getScholarshipTrackingSteps(providerType, scholarshipName, { appliedViaAnnouncement })
 	const allowedStepIds = new Set(steps.map((step) => step.id))
-	const baseTracking = createScholarshipTrackingState({ providerType, scholarshipName })
+	const baseTracking = createScholarshipTrackingState({ providerType, scholarshipName, appliedViaAnnouncement })
 	const mergedCompletedIds = Array.from(
 		new Set([
 			...baseTracking.completedStepIds,
@@ -293,7 +324,12 @@ export function getScholarshipTrackingProgress({
 	const providerType = normalizeProviderType(scholarship.providerType || scholarship.provider || scholarship.name)
 	const scholarshipName = scholarship.name || scholarship.provider || "Scholarship"
 	const isKwspFlow = providerType === "kuya_win"
-	const stepsDefinition = getScholarshipTrackingSteps(providerType, scholarshipName)
+	const appliedViaAnnouncement =
+		scholarship.appliedViaAnnouncement === true ||
+		Boolean(scholarship.announcementId || scholarship.announcementSource) ||
+		scholarship.tracking?.appliedViaAnnouncement === true ||
+		scholarship.tracking?.completedStepIds?.includes?.("announcement_apply")
+	const stepsDefinition = getScholarshipTrackingSteps(providerType, scholarshipName, { appliedViaAnnouncement })
 	const baseTracking = normalizeScholarshipTrackingState(scholarship.tracking, {
 		providerType,
 		scholarshipName,
@@ -309,6 +345,14 @@ export function getScholarshipTrackingProgress({
 			: baseTracking
 	const completedStepIds = new Set(tracking.completedStepIds)
 	const applyStepId = getApplyStepId(providerType)
+	const documentUrls = {
+		...(scholarship.documentUrls || {}),
+		...(documentCheck?.documentUrls || {}),
+	}
+	const hasApplicationForm =
+		Boolean(documentUrls.applicationForm) ||
+		Boolean(scholarship.applicationFormUrl) ||
+		Boolean(scholarship.applicationFormFile?.url)
 
 	const normalizedRequest = latestMaterialRequest ? normalizeMaterialRequest(latestMaterialRequest) : null
 	const requestedMaterials = ["soe"].filter((materialKey) => {
@@ -349,8 +393,10 @@ export function getScholarshipTrackingProgress({
 
 	const completionByStepId = {
 		account: true,
+		announcement_apply: appliedViaAnnouncement,
 		[applyStepId]: true,
 		document_uploading: completedStepIds.has("document_uploading"),
+		application_form: completedStepIds.has("application_form") || hasApplicationForm,
 		admin_review: completedStepIds.has("admin_review"),
 		interview: completedStepIds.has("interview"),
 		application_review: completedStepIds.has("application_review"),
@@ -455,6 +501,7 @@ export function getScholarshipTrackingStatusLabel(progress = null) {
 	if (progress.hasPendingMaterialApproval) return "Pending Material Approval"
 	if (progress.hasRequestedMaterials) return "Materials Requested"
 	if (progress.currentStep?.id === "document_uploading") return "Uploading of Document"
+	if (progress.currentStep?.id === "application_form") return "Application Form"
 	if (progress.currentStep?.id === "admin_review") return "Admin Review"
 	if (progress.currentStep?.id === "interview") return "Interview"
 	if (progress.currentStep?.id === "application_review") return "Application Review"

@@ -1,4 +1,4 @@
-import { collection, collectionGroup, doc, getDocs } from "firebase/firestore"
+import { collection, collectionGroup, doc, getDocs } from "./supabaseDataService"
 import { getScholarshipPolicy } from "./scholarshipService"
 
 export const GRANTOR_PORTAL_COLLECTION = "grantorPortals"
@@ -21,9 +21,9 @@ export const GRANTOR_ACCEPT_ATTR = GRANTOR_ACCEPTED_UPLOAD_EXTENSIONS.join(",")
 
 const YEAR_LEVEL_COLORS = {
 	1: "#15803d",
-	2: "#0ea5e9",
-	3: "#b45309",
-	4: "#7c3aed",
+	2: "#0f766e",
+	3: "#16a34a",
+	4: "#65a30d",
 }
 
 export function toJsDate(value) {
@@ -31,6 +31,43 @@ export function toJsDate(value) {
 	if (value?.toDate) return value.toDate()
 	const date = new Date(value)
 	return Number.isNaN(date.getTime()) ? null : date
+}
+
+function toEndOfDay(date) {
+	if (!date) return null
+	const nextDate = new Date(date)
+	nextDate.setHours(23, 59, 59, 999)
+	return nextDate
+}
+
+function parseApplicationWindowEnd(applicationWindow = "") {
+	const parts = String(applicationWindow || "")
+		.split(/\s+-\s+/)
+		.map((part) => part.trim())
+		.filter(Boolean)
+	if (parts.length < 2) return null
+	const endDate = toJsDate(parts[parts.length - 1])
+	return toEndOfDay(endDate)
+}
+
+export function getAnnouncementEndDate(item = {}) {
+	const explicitEndDate = toJsDate(item.endDate || item.scheduleEnd)
+	if (explicitEndDate) return explicitEndDate
+	return parseApplicationWindowEnd(item.applicationWindow)
+}
+
+export function isAnnouncementExpired(item = {}, now = new Date()) {
+	const endDate = getAnnouncementEndDate(item)
+	return Boolean(endDate && endDate.getTime() < now.getTime())
+}
+
+export function isAnnouncementArchived(item = {}, now = new Date()) {
+	const normalizedStatus = String(item.status || "").toLowerCase()
+	return (
+		item.archived === true ||
+		["archived", "closed", "expired", "ended"].some((keyword) => normalizedStatus.includes(keyword)) ||
+		isAnnouncementExpired(item, now)
+	)
 }
 
 export function getGrantorPortalDoc(db, grantorId = "") {
@@ -91,7 +128,6 @@ export function normalizeGrantorScholar(raw = {}, id = "") {
 		fullName: buildFullName(raw),
 		email: raw.email || "",
 		cpNumber: raw.cpNumber || raw.contactNumber || raw.phoneNumber || "",
-		houseNumber: raw.houseNumber || "",
 		street: raw.street || raw.address || "",
 		city: raw.city || "",
 		province: raw.province || "",
@@ -101,6 +137,10 @@ export function normalizeGrantorScholar(raw = {}, id = "") {
 		scholarshipTitle: raw.scholarshipTitle || raw.scholarshipName || raw.programName || "",
 		status: raw.archived === true ? "Archived" : raw.status || "Active",
 		notes: raw.notes || "",
+		customColumns:
+			raw.customColumns && typeof raw.customColumns === "object" && !Array.isArray(raw.customColumns)
+				? raw.customColumns
+				: {},
 		archived: raw.archived === true,
 		grantorId: raw.grantorId || "",
 		grantorName: raw.grantorName || raw.providerName || raw.organization || "",
@@ -146,6 +186,7 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 	const policy = getScholarshipPolicy(
 		raw.providerType || raw.grantorName || raw.providerLabel || raw.title || id,
 	)
+	const archived = isAnnouncementArchived(raw)
 	return {
 		id: raw.id || id,
 		title: raw.title || "Announcement",
@@ -154,13 +195,45 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 		content: raw.content || raw.description || "",
 		previewText: raw.previewText || raw.description || "",
 		applicationWindow: raw.applicationWindow || "",
+		applicationEnabled: raw.applicationEnabled === true,
+		requiredDocuments: {
+			cog: raw.requiredDocuments?.cog === true,
+			cor: raw.requiredDocuments?.cor === true,
+			applicationForm: raw.requiredDocuments?.applicationForm === true,
+		},
+		otherRequirements: Array.isArray(raw.otherRequirements)
+			? raw.otherRequirements.map((item) => ({
+					name: String(item?.name || "").trim(),
+					fileType: String(item?.fileType || "pdf").toLowerCase() === "png" ? "png" : "pdf",
+					uploadCount: Math.max(1, Number.parseInt(item?.uploadCount, 10) || 1),
+				})).filter((item) => item.name)
+			: [],
+		minimumGrade:
+			raw.minimumGrade !== undefined && raw.minimumGrade !== null && raw.minimumGrade !== ""
+				? Number(raw.minimumGrade)
+				: raw.minGwa !== undefined && raw.minGwa !== null && raw.minGwa !== ""
+					? Number(raw.minGwa)
+					: null,
+		minGwa:
+			raw.minGwa !== undefined && raw.minGwa !== null && raw.minGwa !== ""
+				? Number(raw.minGwa)
+				: raw.minimumGrade !== undefined && raw.minimumGrade !== null && raw.minimumGrade !== ""
+					? Number(raw.minimumGrade)
+					: null,
 		grantorId: raw.grantorId || "",
 		grantorName: raw.grantorName || raw.providerLabel || "",
 		providerType: raw.providerType || policy.providerType,
 		providerLabel: raw.providerLabel || raw.grantorName || "",
-		status: raw.status || "Open",
-		archived: raw.archived === true,
+		profileImageUrl: raw.profileImageUrl || raw.authorImageUrl || "",
+		authorImageUrl: raw.authorImageUrl || raw.profileImageUrl || "",
+		imageUrl: raw.imageUrl || "",
+		imageUrls: Array.isArray(raw.imageUrls) ? raw.imageUrls : raw.imageUrl ? [raw.imageUrl] : [],
+		images: Array.isArray(raw.images) ? raw.images : [],
+		archived,
+		startDate: raw.startDate || raw.scheduleStart || null,
 		endDate: raw.endDate || raw.scheduleEnd || null,
+		scheduleEnd: raw.scheduleEnd || raw.endDate || null,
+		status: archived ? "Archived" : raw.status || "Open",
 		createdAt: raw.createdAt || null,
 		updatedAt: raw.updatedAt || null,
 	}
@@ -183,6 +256,18 @@ export function normalizeGrantorPortalSettings(raw = {}, grantorId = "") {
 			"Grantor",
 		providerType: raw.providerType || policy.providerType,
 		applicationsBlocked: raw.applicationsBlocked === true,
+		minimumGwa:
+			raw.minimumGwa !== undefined && raw.minimumGwa !== null && raw.minimumGwa !== ""
+				? Number(raw.minimumGwa)
+				: raw.minGwa !== undefined && raw.minGwa !== null && raw.minGwa !== ""
+					? Number(raw.minGwa)
+					: null,
+		minGwa:
+			raw.minGwa !== undefined && raw.minGwa !== null && raw.minGwa !== ""
+				? Number(raw.minGwa)
+				: raw.minimumGwa !== undefined && raw.minimumGwa !== null && raw.minimumGwa !== ""
+					? Number(raw.minimumGwa)
+					: null,
 		updatedAt: raw.updatedAt || null,
 	}
 }
@@ -219,9 +304,137 @@ export function matchesGrantorProfile(application = {}, profile = {}) {
 
 function normalizeMatchValue(value = "") {
 	return String(value || "")
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, " ")
 		.trim()
+}
+
+function normalizeIdentifier(value = "") {
+	return normalizeMatchValue(value).replace(/\s+/g, "")
+}
+
+export function levenshteinSimilarity(leftValue = "", rightValue = "") {
+	const left = normalizeMatchValue(leftValue)
+	const right = normalizeMatchValue(rightValue)
+	if (!left && !right) return 1
+	if (!left || !right) return 0
+	if (left === right) return 1
+
+	const distances = Array.from({ length: right.length + 1 }, (_, index) => index)
+	for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+		let diagonal = distances[0]
+		distances[0] = leftIndex
+		for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+			const above = distances[rightIndex]
+			const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1
+			distances[rightIndex] = Math.min(
+				distances[rightIndex] + 1,
+				distances[rightIndex - 1] + 1,
+				diagonal + substitutionCost,
+			)
+			diagonal = above
+		}
+	}
+
+	return 1 - distances[right.length] / Math.max(left.length, right.length)
+}
+
+function tokenSortedValue(value = "") {
+	return normalizeMatchValue(value).split(/\s+/).filter(Boolean).sort().join(" ")
+}
+
+function scholarFullName(raw = {}) {
+	return raw.fullName || [raw.fname, raw.mname, raw.lname].filter(Boolean).join(" ")
+}
+
+function comparableSimilarity(left, right, normalizer = normalizeMatchValue) {
+	const normalizedLeft = normalizer(left)
+	const normalizedRight = normalizer(right)
+	if (!normalizedLeft || !normalizedRight) return null
+	return levenshteinSimilarity(normalizedLeft, normalizedRight)
+}
+
+export function evaluateScholarDuplicate(candidate = {}, existing = {}) {
+	const candidateName = scholarFullName(candidate)
+	const existingName = scholarFullName(existing)
+	const directNameSimilarity = comparableSimilarity(candidateName, existingName) ?? 0
+	const sortedNameSimilarity = comparableSimilarity(
+		tokenSortedValue(candidateName),
+		tokenSortedValue(existingName),
+	) ?? 0
+	const nameSimilarity = Math.max(directNameSimilarity, sortedNameSimilarity)
+	const candidateStudentId = normalizeIdentifier(
+		candidate.studentId || candidate.studentnumber || candidate.studentNumber,
+	)
+	const existingStudentId = normalizeIdentifier(
+		existing.studentId || existing.studentnumber || existing.studentNumber,
+	)
+	const candidateEmail = normalizeIdentifier(candidate.email)
+	const existingEmail = normalizeIdentifier(existing.email)
+	const candidatePhone = String(candidate.cpNumber || candidate.contactNumber || "").replace(/\D/g, "")
+	const existingPhone = String(existing.cpNumber || existing.contactNumber || "").replace(/\D/g, "")
+	const exactStudentId = Boolean(candidateStudentId && candidateStudentId === existingStudentId)
+	const exactEmail = Boolean(candidateEmail && candidateEmail === existingEmail)
+	const exactPhone = Boolean(candidatePhone && candidatePhone === existingPhone)
+	const fields = [
+		{ label: "student ID", weight: 0.32, value: comparableSimilarity(candidateStudentId, existingStudentId, normalizeIdentifier) },
+		{ label: "name", weight: 0.3, value: nameSimilarity || null },
+		{ label: "email", weight: 0.1, value: comparableSimilarity(candidateEmail, existingEmail, normalizeIdentifier) },
+		{ label: "contact number", weight: 0.08, value: comparableSimilarity(candidatePhone, existingPhone, normalizeIdentifier) },
+		{ label: "course", weight: 0.08, value: comparableSimilarity(candidate.course, existing.course) },
+		{ label: "year level", weight: 0.04, value: comparableSimilarity(candidate.yearLevel || candidate.year, existing.yearLevel || existing.year) },
+		{ label: "city", weight: 0.04, value: comparableSimilarity(candidate.city, existing.city) },
+		{ label: "province", weight: 0.04, value: comparableSimilarity(candidate.province, existing.province) },
+	].filter((field) => field.value != null)
+	const comparedWeight = fields.reduce((sum, field) => sum + field.weight, 0)
+	const weightedScore = comparedWeight > 0
+		? fields.reduce((sum, field) => sum + field.value * field.weight, 0) / comparedWeight
+		: 0
+	const strongIdentifierMatch = exactStudentId || ((exactEmail || exactPhone) && nameSimilarity >= 0.72)
+	const isDuplicate = strongIdentifierMatch || (nameSimilarity >= 0.82 && weightedScore >= 0.84)
+	const reasons = fields.filter((field) => field.value >= 0.9).map((field) => field.label)
+
+	return {
+		isDuplicate,
+		score: weightedScore,
+		nameSimilarity,
+		reasons,
+		exactStudentId,
+		exactEmail,
+		exactPhone,
+	}
+}
+
+export function findScholarDuplicate(candidate = {}, existingRecords = [], options = {}) {
+	const excludeId = String(options.excludeId || "")
+	const excludeGrantorId = String(options.excludeGrantorId || "")
+	let bestMatch = null
+	for (const existing of existingRecords) {
+		if (
+			excludeId &&
+			String(existing.id || "") === excludeId &&
+			(!excludeGrantorId || String(existing.grantorId || "") === excludeGrantorId)
+		) continue
+		const evaluation = evaluateScholarDuplicate(candidate, existing)
+		if (!evaluation.isDuplicate) continue
+		if (!bestMatch || evaluation.score > bestMatch.score) {
+			bestMatch = { ...evaluation, record: existing }
+		}
+	}
+	return bestMatch
+}
+
+export async function getAllGrantorScholars(db) {
+	const snapshot = await getDocs(collectionGroup(db, GRANTOR_SUBCOLLECTIONS.scholars))
+	return snapshot.docs.map((row) => {
+		const normalized = normalizeGrantorScholar(row.data() || {}, row.id)
+		return {
+			...normalized,
+			grantorId: normalized.grantorId || row.ref.parent.parent?.id || "",
+		}
+	})
 }
 
 function normalizeMiddleInitial(value = "") {
@@ -270,7 +483,6 @@ function matchAddress(student = {}, scholar = {}) {
 		["city", "city"],
 		["province", "province"],
 		["postalCode", "postalCode"],
-		["houseNumber", "houseNumber"],
 	]
 
 	let sharedFieldCount = 0
@@ -291,7 +503,6 @@ function matchAddress(student = {}, scholar = {}) {
 
 	const studentAddress = normalizeMatchValue(
 		[
-			student?.houseNumber,
 			student?.street,
 			student?.city,
 			student?.province,
@@ -302,7 +513,6 @@ function matchAddress(student = {}, scholar = {}) {
 	)
 	const scholarAddress = normalizeMatchValue(
 		[
-			scholar?.houseNumber,
 			scholar?.street,
 			scholar?.city,
 			scholar?.province,

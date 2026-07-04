@@ -1,0 +1,609 @@
+BULSUSCHOLAR SYSTEM - LEVEL 1 DATA FLOW DIAGRAM
+Text-only guide for creating the Level 1 DFD diagram
+
+Legend:
+[External Entity] = user or outside service
+(Process) = system process
+[[Data Store]] = database/storage table or file repository
+--> = data flow direction
+
+============================================================
+EXTERNAL ENTITIES
+============================================================
+
+[Student]
+[Grantor / Scholarship Provider]
+[Admin / Scholarship Office]
+[Supabase Auth / Email Service]
+[Supabase Storage]
+
+============================================================
+DATA STORES
+============================================================
+
+[[D1 Admin Accounts]]
+[[D2 Student Accounts and Profiles]]
+[[D3 Pending Student Registrations]]
+[[D4 Grantor / Provider Accounts]]
+[[D5 Grantor Portals]]
+[[D6 Grantor Scholars]]
+[[D7 Scholarship Applications]]
+[[D8 SOE and Application Form Requests]]
+[[D9 SOE Downloads / Checked Materials]]
+[[D10 Announcements]]
+[[D11 Student Notifications]]
+[[D12 Grantor Notifications]]
+[[D13 Student Warnings / Compliance Records]]
+[[D14 Uploaded Documents and Images]]
+[[D15 Reports / Exported Files]]
+
+============================================================
+THREE ALGORITHMS USED IN THE LEVEL 1 DFD
+============================================================
+
+Algorithm 1: AES-256-GCM Password Encryption and Verification
+
+Where it appears:
+(1.0 Account Access and Authentication)
+(7.0 Admin Management and Approval Operations)
+
+Data flow:
+[Student / Grantor / Admin]
+--> password, login credentials, or password update
+--> (1.0 Account Access and Authentication)
+--> AES-256-GCM encrypt / decrypt / verify password
+--> [[D1 Admin Accounts]]
+--> [[D2 Student Accounts and Profiles]]
+--> [[D4 Grantor / Provider Accounts]]
+
+Description:
+The system encrypts stored passwords using AES-256-GCM. During login, the encrypted password is decrypted and compared with the entered password. The same algorithm is used when admin creates or resets grantor accounts.
+
+Input:
+Plain password, stored encrypted password, system password secret
+
+Output:
+Encrypted Base64 password or true/false password verification result
+
+
+Algorithm 2: Grantor-Scholar Matching and Duplicate Detection Algorithm
+
+Where it appears:
+(2.0 Student Registration and Profile Management)
+(3.0 Scholarship Discovery, Selection, and Application)
+(5.0 Grantor Scholar, Application, and Portal Management)
+(7.0 Admin Management and Approval Operations)
+
+Data flow:
+[Student]
+--> name, address, student number, email, contact number, course, year level
+--> (2.0 Student Registration and Profile Management)
+--> normalized matching and duplicate checking
+--> [[D6 Grantor Scholars]]
+--> [[D2 Student Accounts and Profiles]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+Description:
+The system compares student records with grantor scholar records. It normalizes names and addresses, checks exact name/address matches, and uses Levenshtein similarity with weighted fields to detect possible duplicate scholar records.
+
+Input:
+Student profile, grantor scholar records, address fields, identity fields
+
+Output:
+Matched grantor scholar, scholarship match, duplicate warning, or multiple-scholarship conflict warning
+
+
+Algorithm 3: Scholarship Application Tracking and Status Progression Algorithm
+
+Where it appears:
+(3.0 Scholarship Discovery, Selection, and Application)
+(4.0 Material Request, Download, and Compliance Checking)
+(5.0 Grantor Scholar, Application, and Portal Management)
+(7.0 Admin Management and Approval Operations)
+
+Data flow:
+[Student / Grantor / Admin]
+--> application actions, document uploads, review stages, material requests, downloads, checking result
+--> tracking status progression
+--> [[D7 Scholarship Applications]]
+--> [[D8 SOE and Application Form Requests]]
+--> [[D9 SOE Downloads / Checked Materials]]
+--> status, current step, next action
+--> [Student / Grantor / Admin]
+
+Description:
+The system builds a scholarship tracking path depending on provider type. KWSP has a longer flow with admin review, interview, application review, and final screening. Other scholarships use the standard flow. The algorithm checks completed steps, document status, material request status, download status, and signing/compliance status to determine the current step.
+
+Input:
+Scholarship record, provider type, tracking history, document check, latest material request, latest SOE download
+
+Output:
+Current step, completed steps, owner of next action, status label, and whether the student/admin can proceed
+
+============================================================
+TOP-TO-BOTTOM LEVEL 1 DFD
+============================================================
+
+1.0 ACCOUNT ACCESS AND AUTHENTICATION
+
+[Student]
+--> enters student ID, email, password, and reset-password request
+--> (1.0 Account Access and Authentication)
+
+[Grantor / Scholarship Provider]
+--> enters grantor login credentials or password-change request
+--> (1.0 Account Access and Authentication)
+
+[Admin / Scholarship Office]
+--> enters admin login credentials
+--> (1.0 Account Access and Authentication)
+
+(1.0 Account Access and Authentication)
+--> checks account type and account status
+--> [[D1 Admin Accounts]]
+--> [[D2 Student Accounts and Profiles]]
+--> [[D4 Grantor / Provider Accounts]]
+
+(1.0 Account Access and Authentication)
+--> sends password reset, email confirmation, and auth session request
+--> [Supabase Auth / Email Service]
+
+[Supabase Auth / Email Service]
+--> returns login session, email confirmation, or password reset result
+--> (1.0 Account Access and Authentication)
+
+(1.0 Account Access and Authentication)
+--> redirects user to correct dashboard
+--> [Student]
+--> [Grantor / Scholarship Provider]
+--> [Admin / Scholarship Office]
+
+
+2.0 STUDENT REGISTRATION AND PROFILE MANAGEMENT
+
+[Student]
+--> submits signup information: student number, name, email, contact number, address, course, year, section, GWA, password
+--> (2.0 Student Registration and Profile Management)
+
+[Student]
+--> uploads COR, COG, school ID, scholarship application form, and profile photo
+--> (2.0 Student Registration and Profile Management)
+
+(2.0 Student Registration and Profile Management)
+--> validates required fields, password strength, duplicate accounts, document type, and scholarship match
+--> [[D2 Student Accounts and Profiles]]
+--> [[D3 Pending Student Registrations]]
+--> [[D4 Grantor / Provider Accounts]]
+--> [[D6 Grantor Scholars]]
+
+(2.0 Student Registration and Profile Management)
+--> stores uploaded student files and image URLs
+--> [Supabase Storage]
+--> [[D14 Uploaded Documents and Images]]
+
+(2.0 Student Registration and Profile Management)
+--> creates or updates student profile, document records, validation flags, scholarship match, conflict warning, and access status
+--> [[D2 Student Accounts and Profiles]]
+
+(2.0 Student Registration and Profile Management)
+--> syncs updated student documents with active scholarship application records
+--> [[D7 Scholarship Applications]]
+
+(2.0 Student Registration and Profile Management)
+--> displays registration result, profile details, document status, and blocked-access messages
+--> [Student]
+
+
+3.0 SCHOLARSHIP DISCOVERY, SELECTION, AND APPLICATION
+
+[Student]
+--> views scholarship catalog, active grantor portals, announcements, eligibility notes, and current applications
+--> (3.0 Scholarship Discovery, Selection, and Application)
+
+(3.0 Scholarship Discovery, Selection, and Application)
+--> retrieves student profile, saved scholarships, grantor portals, grantor announcements, and existing applications
+--> [[D2 Student Accounts and Profiles]]
+--> [[D5 Grantor Portals]]
+--> [[D10 Announcements]]
+--> [[D7 Scholarship Applications]]
+
+[Student]
+--> selects one scholarship, applies to a grantor announcement, or resolves multiple-scholarship conflict
+--> (3.0 Scholarship Discovery, Selection, and Application)
+
+(3.0 Scholarship Discovery, Selection, and Application)
+--> validates one-scholarship policy, GWA rules, document requirements, active application lock, and portal access block
+--> [[D2 Student Accounts and Profiles]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+(3.0 Scholarship Discovery, Selection, and Application)
+--> creates or updates scholarship record, application number, request number, academic year, semester tag, status, and tracking progress
+--> [[D2 Student Accounts and Profiles]]
+--> [[D7 Scholarship Applications]]
+
+(3.0 Scholarship Discovery, Selection, and Application)
+--> sends application details and uploaded document URLs to matching grantor workspace
+--> [[D5 Grantor Portals]]
+--> [[D7 Scholarship Applications]]
+
+(3.0 Scholarship Discovery, Selection, and Application)
+--> returns application status, tracking step, next action, and eligibility warnings
+--> [Student]
+
+
+4.0 MATERIAL REQUEST, DOWNLOAD, AND COMPLIANCE CHECKING
+
+[Student]
+--> requests scholarship materials: SOE or Application Form
+--> (4.0 Material Request, Download, and Compliance Checking)
+
+(4.0 Material Request, Download, and Compliance Checking)
+--> checks profile validation, scholarship stage, uploaded documents, previous requests, and compliance block
+--> [[D2 Student Accounts and Profiles]]
+--> [[D7 Scholarship Applications]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+(4.0 Material Request, Download, and Compliance Checking)
+--> records pending material request, requested material type, request number, scholarship ID, and timestamp
+--> [[D8 SOE and Application Form Requests]]
+
+(4.0 Material Request, Download, and Compliance Checking)
+--> shows pending, approved, rejected, downloaded, or non-compliant request status
+--> [Student]
+
+[Admin / Scholarship Office]
+--> reviews incoming SOE and application-form requests
+--> (4.0 Material Request, Download, and Compliance Checking)
+
+(4.0 Material Request, Download, and Compliance Checking)
+--> displays request queue, student details, requested materials, scholarship provider, and document links
+--> [Admin / Scholarship Office]
+
+[Admin / Scholarship Office]
+--> approves, rejects, marks checked, signs, or marks material as non-compliant
+--> (4.0 Material Request, Download, and Compliance Checking)
+
+(4.0 Material Request, Download, and Compliance Checking)
+--> updates request review state, approved materials, rejection reason, checked status, and compliance result
+--> [[D8 SOE and Application Form Requests]]
+--> [[D9 SOE Downloads / Checked Materials]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+(4.0 Material Request, Download, and Compliance Checking)
+--> creates student notification for material request result or compliance issue
+--> [[D11 Student Notifications]]
+
+[Student]
+--> downloads approved SOE or application form
+--> (4.0 Material Request, Download, and Compliance Checking)
+
+(4.0 Material Request, Download, and Compliance Checking)
+--> generates SOE PDF from template or prepares downloadable application form
+--> [[D8 SOE and Application Form Requests]]
+--> [[D9 SOE Downloads / Checked Materials]]
+--> [Supabase Storage]
+
+(4.0 Material Request, Download, and Compliance Checking)
+--> returns generated/downloaded file
+--> [Student]
+
+
+5.0 GRANTOR SCHOLAR, APPLICATION, AND PORTAL MANAGEMENT
+
+[Grantor / Scholarship Provider]
+--> views grantor dashboard, scholar counts, applications, announcements, trends, and inbox
+--> (5.0 Grantor Scholar, Application, and Portal Management)
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> retrieves grantor profile, portal settings, scholar roster, applications, material requests, downloads, announcements, and notifications
+--> [[D4 Grantor / Provider Accounts]]
+--> [[D5 Grantor Portals]]
+--> [[D6 Grantor Scholars]]
+--> [[D7 Scholarship Applications]]
+--> [[D8 SOE and Application Form Requests]]
+--> [[D9 SOE Downloads / Checked Materials]]
+--> [[D10 Announcements]]
+--> [[D12 Grantor Notifications]]
+
+[Grantor / Scholarship Provider]
+--> adds scholar manually or imports scholar list from CSV/XLS/XLSX file
+--> (5.0 Grantor Scholar, Application, and Portal Management)
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> validates mapped columns, duplicate scholars, custom fields, and required identity fields
+--> [[D6 Grantor Scholars]]
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> saves new scholars, imported scholars, custom columns, source file details, active status, or archived status
+--> [[D6 Grantor Scholars]]
+
+[Grantor / Scholarship Provider]
+--> edits scholar profile, archives scholars, or restores archived scholars
+--> (5.0 Grantor Scholar, Application, and Portal Management)
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> updates scholar data, archive flag, restored date, notes, and status
+--> [[D6 Grantor Scholars]]
+
+[Grantor / Scholarship Provider]
+--> reviews student scholarship applications and documents
+--> (5.0 Grantor Scholar, Application, and Portal Management)
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> displays application number, applicant profile, document URLs, material request status, and tracking stage
+--> [Grantor / Scholarship Provider]
+
+[Grantor / Scholarship Provider]
+--> completes grantor-controlled application stages: interview, application review, or final screening
+--> (5.0 Grantor Scholar, Application, and Portal Management)
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> updates application tracking and scholarship status
+--> [[D7 Scholarship Applications]]
+--> [[D2 Student Accounts and Profiles]]
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> sends tracking update notification to student
+--> [[D11 Student Notifications]]
+
+[Grantor / Scholarship Provider]
+--> updates grantor profile, portal information, profile image, and password-change request
+--> (5.0 Grantor Scholar, Application, and Portal Management)
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> stores provider profile, portal settings, profile image, and password-change request status
+--> [[D4 Grantor / Provider Accounts]]
+--> [[D5 Grantor Portals]]
+--> [[D14 Uploaded Documents and Images]]
+--> [[D12 Grantor Notifications]]
+
+(5.0 Grantor Scholar, Application, and Portal Management)
+--> returns saved grantor dashboard data and inbox updates
+--> [Grantor / Scholarship Provider]
+
+
+6.0 ANNOUNCEMENT AND NOTIFICATION MANAGEMENT
+
+[Admin / Scholarship Office]
+--> creates school-wide announcement with title, content, status, schedule, and image/document attachment
+--> (6.0 Announcement and Notification Management)
+
+[Grantor / Scholarship Provider]
+--> creates grantor announcement with title, description, application window, application enabled flag, minimum grade, required documents, custom requirements, and images
+--> (6.0 Announcement and Notification Management)
+
+(6.0 Announcement and Notification Management)
+--> uploads announcement images and attachments
+--> [Supabase Storage]
+--> [[D14 Uploaded Documents and Images]]
+
+(6.0 Announcement and Notification Management)
+--> stores published, draft, archived, expired, or closed announcement records
+--> [[D10 Announcements]]
+
+(6.0 Announcement and Notification Management)
+--> creates notifications for students and grantors when announcements, account updates, or application updates are posted
+--> [[D11 Student Notifications]]
+--> [[D12 Grantor Notifications]]
+
+[Student]
+--> views dashboard announcements, announcement details, and inbox messages
+--> (6.0 Announcement and Notification Management)
+
+[Grantor / Scholarship Provider]
+--> views grantor inbox and announcement list
+--> (6.0 Announcement and Notification Management)
+
+(6.0 Announcement and Notification Management)
+--> retrieves active admin announcements, active grantor announcements, personal notifications, read status, and archived announcement status
+--> [[D10 Announcements]]
+--> [[D11 Student Notifications]]
+--> [[D12 Grantor Notifications]]
+
+[Student]
+--> marks announcement/inbox item as read or deletes notification
+--> (6.0 Announcement and Notification Management)
+
+[Grantor / Scholarship Provider]
+--> marks grantor notification as read or deletes notification
+--> (6.0 Announcement and Notification Management)
+
+(6.0 Announcement and Notification Management)
+--> updates read status or removes notification record
+--> [[D11 Student Notifications]]
+--> [[D12 Grantor Notifications]]
+
+(6.0 Announcement and Notification Management)
+--> displays latest announcements, inbox count, read/unread state, and message details
+--> [Student]
+--> [Grantor / Scholarship Provider]
+
+
+7.0 ADMIN MANAGEMENT AND APPROVAL OPERATIONS
+
+[Admin / Scholarship Office]
+--> views admin dashboard summary, student records, grantor records, scholarship programs, requirements, warnings, and reports
+--> (7.0 Admin Management and Approval Operations)
+
+(7.0 Admin Management and Approval Operations)
+--> retrieves all major system records for monitoring
+--> [[D2 Student Accounts and Profiles]]
+--> [[D3 Pending Student Registrations]]
+--> [[D4 Grantor / Provider Accounts]]
+--> [[D5 Grantor Portals]]
+--> [[D6 Grantor Scholars]]
+--> [[D7 Scholarship Applications]]
+--> [[D8 SOE and Application Form Requests]]
+--> [[D9 SOE Downloads / Checked Materials]]
+--> [[D10 Announcements]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+[Admin / Scholarship Office]
+--> approves, validates, edits, archives, restores, or monitors student accounts
+--> (7.0 Admin Management and Approval Operations)
+
+(7.0 Admin Management and Approval Operations)
+--> updates student validation status, archive status, document reset flags, scholarship conflict warning, compliance block, and profile information
+--> [[D2 Student Accounts and Profiles]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+[Admin / Scholarship Office]
+--> creates, edits, resets password, approves password-change request, archives, or manages grantor accounts
+--> (7.0 Admin Management and Approval Operations)
+
+(7.0 Admin Management and Approval Operations)
+--> stores grantor login data, encrypted/default password, profile details, account status, and password-change approval result
+--> [[D4 Grantor / Provider Accounts]]
+--> [[D5 Grantor Portals]]
+--> [[D12 Grantor Notifications]]
+
+[Admin / Scholarship Office]
+--> manages scholarship programs, scholar tracking, and application status
+--> (7.0 Admin Management and Approval Operations)
+
+(7.0 Admin Management and Approval Operations)
+--> updates scholarship list, assigned grantor, application status, tracking stage, active/finalized state, and warnings
+--> [[D2 Student Accounts and Profiles]]
+--> [[D6 Grantor Scholars]]
+--> [[D7 Scholarship Applications]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+[Admin / Scholarship Office]
+--> posts, archives, or monitors announcements
+--> (7.0 Admin Management and Approval Operations)
+
+(7.0 Admin Management and Approval Operations)
+--> updates announcement records and related attachments
+--> [[D10 Announcements]]
+--> [[D14 Uploaded Documents and Images]]
+
+(7.0 Admin Management and Approval Operations)
+--> returns updated admin dashboard tables, charts, status badges, and action results
+--> [Admin / Scholarship Office]
+
+
+8.0 REPORT GENERATION AND EXPORT
+
+[Admin / Scholarship Office]
+--> requests report by category: students, scholarships, SOE/material requests, compliance, or dashboard summary
+--> (8.0 Report Generation and Export)
+
+(8.0 Report Generation and Export)
+--> retrieves report source data and applies filters by search, course, year level, grantor, status, date range, and scholarship type
+--> [[D2 Student Accounts and Profiles]]
+--> [[D4 Grantor / Provider Accounts]]
+--> [[D6 Grantor Scholars]]
+--> [[D7 Scholarship Applications]]
+--> [[D8 SOE and Application Form Requests]]
+--> [[D9 SOE Downloads / Checked Materials]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+(8.0 Report Generation and Export)
+--> formats rows, summaries, charts, compliance results, and table data
+--> [[D15 Reports / Exported Files]]
+
+(8.0 Report Generation and Export)
+--> exports PDF or CSV report
+--> [Admin / Scholarship Office]
+
+[Grantor / Scholarship Provider]
+--> views grantor analytics: scholar totals, application counts, year distribution, and trend charts
+--> (8.0 Report Generation and Export)
+
+(8.0 Report Generation and Export)
+--> retrieves grantor-specific scholar and application records
+--> [[D6 Grantor Scholars]]
+--> [[D7 Scholarship Applications]]
+
+(8.0 Report Generation and Export)
+--> returns dashboard analytics and filtered table data
+--> [Grantor / Scholarship Provider]
+
+
+============================================================
+SUMMARY FLOW FOR THE WHOLE SYSTEM
+============================================================
+
+[Student]
+--> registers / logs in / manages profile and uploads documents
+--> (2.0 Student Registration and Profile Management)
+--> [[D2 Student Accounts and Profiles]]
+--> applies for scholarship and requests materials
+--> (3.0 Scholarship Discovery, Selection, and Application)
+--> (4.0 Material Request, Download, and Compliance Checking)
+--> [[D7 Scholarship Applications]]
+--> [[D8 SOE and Application Form Requests]]
+--> receives notifications, announcements, downloadable SOE/application form, and status updates
+--> [Student]
+
+[Grantor / Scholarship Provider]
+--> logs in / manages portal / imports scholars / posts announcements / reviews applications
+--> (5.0 Grantor Scholar, Application, and Portal Management)
+--> [[D5 Grantor Portals]]
+--> [[D6 Grantor Scholars]]
+--> [[D7 Scholarship Applications]]
+--> sends application-stage updates and announcements
+--> (6.0 Announcement and Notification Management)
+--> [[D10 Announcements]]
+--> [[D11 Student Notifications]]
+--> receives dashboard analytics and inbox updates
+--> [Grantor / Scholarship Provider]
+
+[Admin / Scholarship Office]
+--> logs in / manages students, grantors, scholarships, requirements, warnings, announcements, and reports
+--> (7.0 Admin Management and Approval Operations)
+--> [[D1 Admin Accounts]]
+--> [[D2 Student Accounts and Profiles]]
+--> [[D4 Grantor / Provider Accounts]]
+--> [[D7 Scholarship Applications]]
+--> [[D8 SOE and Application Form Requests]]
+--> [[D9 SOE Downloads / Checked Materials]]
+--> [[D10 Announcements]]
+--> [[D13 Student Warnings / Compliance Records]]
+--> approves requests, checks materials, sends updates, and exports reports
+--> (8.0 Report Generation and Export)
+--> [[D15 Reports / Exported Files]]
+--> [Admin / Scholarship Office]
+
+============================================================
+SUGGESTED LEVEL 1 PROCESS BOXES FOR THE DIAGRAM
+============================================================
+
+(1.0 Account Access and Authentication)
+(2.0 Student Registration and Profile Management)
+(3.0 Scholarship Discovery, Selection, and Application)
+(4.0 Material Request, Download, and Compliance Checking)
+(5.0 Grantor Scholar, Application, and Portal Management)
+(6.0 Announcement and Notification Management)
+(7.0 Admin Management and Approval Operations)
+(8.0 Report Generation and Export)
+
+============================================================
+SUGGESTED EXTERNAL ENTITIES FOR THE DIAGRAM
+============================================================
+
+[Student]
+[Grantor / Scholarship Provider]
+[Admin / Scholarship Office]
+[Supabase Auth / Email Service]
+[Supabase Storage]
+
+============================================================
+SUGGESTED DATA STORES FOR THE DIAGRAM
+============================================================
+
+[[D1 Admin Accounts]]
+[[D2 Student Accounts and Profiles]]
+[[D3 Pending Student Registrations]]
+[[D4 Grantor / Provider Accounts]]
+[[D5 Grantor Portals]]
+[[D6 Grantor Scholars]]
+[[D7 Scholarship Applications]]
+[[D8 SOE and Application Form Requests]]
+[[D9 SOE Downloads / Checked Materials]]
+[[D10 Announcements]]
+[[D11 Student Notifications]]
+[[D12 Grantor Notifications]]
+[[D13 Student Warnings / Compliance Records]]
+[[D14 Uploaded Documents and Images]]
+[[D15 Reports / Exported Files]]

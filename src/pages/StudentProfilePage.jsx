@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import {
 	addDoc,
 	collection,
@@ -11,22 +11,14 @@ import {
 	serverTimestamp,
 	setDoc,
 	where,
-} from "firebase/firestore"
+} from "../services/supabaseDataService"
 import {
-	HiMenu,
-	HiOutlineAcademicCap,
 	HiOutlineCamera,
-	HiOutlineCheckCircle,
-	HiOutlineClock,
 	HiOutlineDocumentText,
-	HiOutlineLogout,
-	HiOutlineMoon,
-	HiOutlineSun,
-	HiOutlineUserCircle,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { db } from "../../firebase"
-import { uploadToCloudinary } from "../services/cloudinaryService"
+import { db } from "../services/supabaseDataService"
+import { uploadToStorage } from "../services/storageService"
 import {
 	getCurrentAcademicYear,
 	getCurrentSemesterTag,
@@ -34,7 +26,9 @@ import {
 	normalizeScholarshipList,
 } from "../services/scholarshipService"
 import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
-import logo2 from "../assets/logo2.png"
+import { isPdf, convertPdfToImageFile } from "../utils/pdfConverter"
+import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
+import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
 import useThemeMode from "../hooks/useThemeMode"
 
@@ -63,6 +57,12 @@ function documentStatus(file, semesterTag) {
 	return `Current (${file.semesterTag || semesterTag})`
 }
 
+function canUploadDocument(file, semesterTag) {
+	if (!file?.url) return true
+	if (file.semesterTag && file.semesterTag !== semesterTag) return true
+	return Boolean(file.requiresReupload || file.resetRequired || file.uploadResetRequired)
+}
+
 export default function StudentProfilePage() {
 	const navigate = useNavigate()
 	const [user, setUser] = useState(null)
@@ -84,9 +84,11 @@ export default function StudentProfilePage() {
 	const schoolIdFileInputRef = useRef(null)
 	const applicationFormFileInputRef = useRef(null)
 	const { theme, setTheme } = useThemeMode()
-	const isValidated = checkValidated(user)
 	const currentSemesterTag = getCurrentSemesterTag()
 	const profileImageUrl = user?.profileImageUrl || ""
+	const canUploadCog = canUploadDocument(user?.cogFile, currentSemesterTag)
+	const canUploadSchoolId = canUploadDocument(user?.schoolIdFile, currentSemesterTag)
+	const canUploadApplicationForm = canUploadDocument(user?.scholarshipApplicationFile, currentSemesterTag)
 
 	const [formData, setFormData] = useState({
 		fname: "",
@@ -94,7 +96,6 @@ export default function StudentProfilePage() {
 		lname: "",
 		email: "",
 		cpNumber: "",
-		houseNumber: "",
 		street: "",
 		city: "",
 		province: "",
@@ -227,7 +228,7 @@ export default function StudentProfilePage() {
 
 		setIsPhotoUploading(true)
 		try {
-			const uploadResult = await uploadToCloudinary(file)
+			const uploadResult = await uploadToStorage(file)
 			await setDoc(
 				doc(db, "students", userId),
 				{
@@ -267,7 +268,16 @@ export default function StudentProfilePage() {
 
 		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
 		try {
-			const uploadResult = await uploadToCloudinary(file)
+			let fileToUpload = file
+
+			// Convert PDF to image if needed (for COR and School ID)
+			if (isPdf(file) && (type === "cog" || type === "schoolId")) {
+				toast.info("Converting PDF to image...")
+				fileToUpload = await convertPdfToImageFile(file)
+				toast.success("PDF converted successfully!")
+			}
+
+			const uploadResult = await uploadToStorage(fileToUpload)
 			const fieldName =
 				type === "cog"
 					? "cogFile"
@@ -276,11 +286,11 @@ export default function StudentProfilePage() {
 						: "schoolIdFile"
 			const nextFileValue = {
 				url: uploadResult.url,
-				name: uploadResult.name || file.name,
-				type: uploadResult.type || file.type,
-				size: uploadResult.size || file.size,
+				name: uploadResult.name || fileToUpload.name,
+				type: uploadResult.type || fileToUpload.type,
+				size: uploadResult.size || fileToUpload.size,
 				uploadedAt: new Date().toISOString(),
-				...(type === "cog" ? { semesterTag: currentSemesterTag } : {}),
+				semesterTag: currentSemesterTag,
 			}
 
 			await setDoc(
@@ -377,7 +387,6 @@ export default function StudentProfilePage() {
 			lname: user.lname || "",
 			email: user.email || "",
 			cpNumber: user.cpNumber || user.contact || user.mobile || "",
-			houseNumber: user.houseNumber || "",
 			street: user.street || "",
 			city: user.city || "",
 			province: user.province || "",
@@ -400,7 +409,6 @@ export default function StudentProfilePage() {
 			!formData.lname.trim() ||
 			!formData.email.trim() ||
 			!formData.cpNumber.trim() ||
-			!formData.houseNumber.trim() ||
 			!formData.street.trim() ||
 			!formData.city.trim() ||
 			!formData.province.trim() ||
@@ -418,7 +426,6 @@ export default function StudentProfilePage() {
 				lname: formData.lname.trim(),
 				email: formData.email.trim(),
 				cpNumber: formData.cpNumber.trim(),
-				houseNumber: formData.houseNumber.trim(),
 				street: formData.street.trim(),
 				city: formData.city.trim(),
 				province: formData.province.trim(),
@@ -447,141 +454,35 @@ export default function StudentProfilePage() {
 
 	return (
 		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
-			<header className="student-header">
-				<div className="student-header-top-stripe"></div>
-				<div className="student-header-content">
-					<div className="student-header-left">
-						<Link to="/student-dashboard" className="student-header-home-link" aria-label="Go to dashboard">
-							<img src={logo2} alt="BulsuScholar" className="student-header-logo" />
-							<h1 className="student-header-brand">BulsuScholar</h1>
-						</Link>
-					</div>
-					<div className="student-header-right">
-						<div className="student-header-verified-wrap">
-							<button
-								type="button"
-								className={`student-header-verified-btn ${isValidated ? "student-header-verified-btn--verified" : "student-header-verified-btn--pending"}`}
-								aria-label={isValidated ? "Verified" : "Pending verification"}
-								title={isValidated ? "Verified" : "Pending"}
-							>
-								{isValidated ? (
-									<HiOutlineCheckCircle className="student-header-verified-icon" aria-hidden />
-								) : (
-									<HiOutlineClock className="student-header-verified-icon" aria-hidden />
-								)}
-								<span className="student-header-verified-tooltip-below">
-									{isValidated ? "Verified" : "Pending"}
-								</span>
-							</button>
-						</div>
-						<div className="student-header-user-wrap" ref={userMenuRef}>
-							<button
-								type="button"
-								className="student-header-user-btn"
-								onClick={() => setUserMenuOpen((open) => !open)}
-								aria-label="User menu"
-								aria-expanded={userMenuOpen}
-							>
-								<HiMenu className="student-header-menu-icon" aria-hidden />
-								<div className="student-header-avatar">
-									{profileImageUrl ? (
-										<img
-											src={profileImageUrl}
-											alt="Profile"
-											className="student-header-avatar-image-mini"
-										/>
-									) : (
-										getUserInitials()
-									)}
-								</div>
-							</button>
-							{userMenuOpen && (
-								<div className="student-verified-dropdown">
-									<div className="student-verified-dropdown-user">
-										<div className="student-verified-dropdown-avatar">
-											{profileImageUrl ? (
-												<img
-													src={profileImageUrl}
-													alt="Profile"
-													className="student-header-avatar-image-mini"
-												/>
-											) : (
-												getUserInitials()
-											)}
-										</div>
-										<div className="student-verified-dropdown-user-info">
-											<p className="student-verified-dropdown-name">
-												{`${formData.fname} ${formData.mname || ""} ${formData.lname}`.trim() ||
-													"Student"}
-											</p>
-											<p className="student-verified-dropdown-email">{userId || "-"}</p>
-										</div>
-									</div>
-									<nav className="student-verified-dropdown-nav">
-										<button type="button" className="student-verified-dropdown-item">
-											<HiOutlineUserCircle className="student-verified-dropdown-item-icon" aria-hidden />
-											My Profile
-										</button>
-										<button
-											type="button"
-											className="student-verified-dropdown-item"
-											onClick={() => {
-												setUserMenuOpen(false)
-												navigate("/student-dashboard/scholarships", { state: { user } })
-											}}
-										>
-											<HiOutlineAcademicCap className="student-verified-dropdown-item-icon" aria-hidden />
-											Scholarship
-										</button>
-									</nav>
-									<div className="student-verified-dropdown-theme">
-										<span className="student-verified-dropdown-theme-label">THEME</span>
-										<div className="student-verified-dropdown-theme-btns">
-											<button
-												type="button"
-												className={`student-verified-dropdown-theme-btn ${theme === "light" ? "active" : ""}`}
-												onClick={() => setTheme("light")}
-											>
-												<HiOutlineSun aria-hidden />
-												Light
-											</button>
-											<button
-												type="button"
-												className={`student-verified-dropdown-theme-btn ${theme === "dark" ? "active" : ""}`}
-												onClick={() => setTheme("dark")}
-											>
-												<HiOutlineMoon aria-hidden />
-												Dark
-											</button>
-										</div>
-									</div>
-									<button
-										type="button"
-										className="student-verified-dropdown-logout"
-										onClick={() => {
-											sessionStorage.removeItem("bulsuscholar_userId")
-											sessionStorage.removeItem("bulsuscholar_userType")
-											setUserMenuOpen(false)
-											navigate("/", { replace: true })
-										}}
-									>
-										<HiOutlineLogout className="student-verified-dropdown-logout-icon" aria-hidden />
-										Logout
-									</button>
-								</div>
-							)}
-						</div>
-					</div>
-				</div>
-			</header>
+			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 
 			<main className="student-shell">
 				<div className="student-shell-content">
-					<div className="student-page-title">
-						<h2 className="student-page-heading">My Profile</h2>
-						<p className="student-page-sub">
-							Keep your information, documents, and semester records current.
-						</p>
+					<div className="student-page-title student-profile-page-title">
+						<div>
+							<span className="student-profile-page-kicker">Student Account</span>
+							<h2 className="student-page-heading">My Profile</h2>
+							<p className="student-page-sub">
+								Keep your information, documents, and semester records current.
+							</p>
+						</div>
+						<div className="student-profile-header-actions">
+							<button
+								type="button"
+								className="student-profile-cancel-btn student-mini-btn student-mini-btn--secondary"
+								onClick={() => navigate("/student-dashboard")}
+							>
+								Back to Dashboard
+							</button>
+							<button
+								type="button"
+								className="student-profile-save-btn student-mini-btn student-mini-btn--primary"
+								onClick={handleSaveProfile}
+								disabled={isSaving}
+							>
+								{isSaving ? "Saving..." : "Save Profile"}
+							</button>
+						</div>
 					</div>
 
 					<section className="student-profile-modern-wrap">
@@ -602,19 +503,12 @@ export default function StudentProfilePage() {
 										<div className="student-profile-photo-overlay">
 											<button
 												type="button"
-												className="student-profile-photo-action student-mini-btn student-mini-btn--secondary"
-												onClick={openPhotoLightbox}
-											>
-												Show Profile
-											</button>
-											<button
-												type="button"
-												className="student-profile-photo-action student-profile-photo-action--upload student-mini-btn student-mini-btn--primary"
+												className="student-profile-photo-edit"
 												onClick={triggerPhotoUpload}
 												disabled={isPhotoUploading}
+												aria-label={isPhotoUploading ? "Uploading profile photo" : "Change profile photo"}
 											>
 												<HiOutlineCamera aria-hidden />
-												{isPhotoUploading ? "Uploading..." : "Upload Photo"}
 											</button>
 										</div>
 									</div>
@@ -629,6 +523,11 @@ export default function StudentProfilePage() {
 								<div className="student-profile-cover-text">
 									<h3>{`${formData.fname} ${formData.lname}`.trim() || "Student"}</h3>
 									<p>{userId}</p>
+									<div className="student-profile-summary-chips">
+										<span>{currentSemesterTag}</span>
+										<span>{[formData.year, formData.section].filter(Boolean).join(" - ") || "Year not set"}</span>
+										<span>{formData.course || "Course not set"}</span>
+									</div>
 								</div>
 							</div>
 						</div>
@@ -689,41 +588,52 @@ export default function StudentProfilePage() {
 							<section className="student-profile-section-card">
 								<h3>Home Address</h3>
 								<div className="student-profile-form-grid">
-									<label className="student-profile-label">
-										House No.
-										<input
-											type="text"
-											className="student-profile-input"
-											value={formData.houseNumber}
-											onChange={(e) => setFormData((prev) => ({ ...prev, houseNumber: e.target.value }))}
-										/>
-									</label>
-									<label className="student-profile-label">
-										Street / Subdivision
-										<input
-											type="text"
-											className="student-profile-input"
-											value={formData.street}
-											onChange={(e) => setFormData((prev) => ({ ...prev, street: e.target.value }))}
-										/>
-									</label>
 									<label className="student-profile-label student-profile-label--full">
 										Province
-										<input
-											type="text"
+										<select
 											className="student-profile-input"
 											value={formData.province}
-											onChange={(e) => setFormData((prev) => ({ ...prev, province: e.target.value }))}
-										/>
+											onChange={(e) =>
+												setFormData((prev) => ({
+													...prev,
+													province: e.target.value,
+													city: "",
+												}))
+											}
+										>
+											<option value="" disabled>
+												Select province
+											</option>
+											{PROVINCES.map((p) => (
+												<option key={p} value={p}>
+													{p}
+												</option>
+											))}
+										</select>
 									</label>
 									<label className="student-profile-label">
 										City / Municipality
-										<input
-											type="text"
+										<select
 											className="student-profile-input"
 											value={formData.city}
-											onChange={(e) => setFormData((prev) => ({ ...prev, city: e.target.value }))}
-										/>
+											onChange={(e) =>
+												setFormData((prev) => ({
+													...prev,
+													city: e.target.value,
+												}))
+											}
+											disabled={!formData.province}
+										>
+											<option value="" disabled>
+												{formData.province ? "Select city" : "Select province first"}
+											</option>
+											{formData.province &&
+												getCitiesByProvince(formData.province).map((c) => (
+													<option key={c} value={c}>
+														{c}
+													</option>
+												))}
+										</select>
 									</label>
 									<label className="student-profile-label">
 										Postal Code
@@ -733,6 +643,15 @@ export default function StudentProfilePage() {
 											value={formData.postalCode}
 											onChange={(e) => setFormData((prev) => ({ ...prev, postalCode: e.target.value.replace(/\D/g, "") }))}
 											maxLength={4}
+										/>
+									</label>
+									<label className="student-profile-label student-profile-label--full">
+										Street / Subdivision
+										<input
+											type="text"
+											className="student-profile-input"
+											value={formData.street}
+											onChange={(e) => setFormData((prev) => ({ ...prev, street: e.target.value }))}
 										/>
 									</label>
 								</div>
@@ -785,9 +704,7 @@ export default function StudentProfilePage() {
 											<a href={user.corFile.url} target="_blank" rel="noreferrer" className="student-vault-link">
 												<HiOutlineDocumentText aria-hidden /> View COR
 											</a>
-										) : (
-											<span className="student-vault-muted">No file available</span>
-										)}
+										) : null}
 									</article>
 									<article className="student-vault-card">
 										<div>
@@ -804,17 +721,17 @@ export default function StudentProfilePage() {
 												>
 													<HiOutlineDocumentText aria-hidden /> View COG
 												</a>
-											) : (
-												<span className="student-vault-muted">No file available</span>
-											)}
-											<button
-												type="button"
-												className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
-												onClick={() => triggerDocumentUpload("cog")}
-												disabled={isDocumentUploading.cog}
-											>
-												{isDocumentUploading.cog ? "Uploading..." : "Upload COG"}
-											</button>
+											) : null}
+											{canUploadCog ? (
+												<button
+													type="button"
+													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
+													onClick={() => triggerDocumentUpload("cog")}
+													disabled={isDocumentUploading.cog}
+												>
+													{isDocumentUploading.cog ? "Uploading..." : "Upload COG"}
+												</button>
+											) : null}
 											<input
 												ref={cogFileInputRef}
 												type="file"
@@ -831,7 +748,7 @@ export default function StudentProfilePage() {
 									<article className="student-vault-card">
 										<div>
 											<h4>Student ID</h4>
-											<p>{user?.schoolIdFile?.url ? "Uploaded" : "Not uploaded"}</p>
+											<p>{documentStatus(user?.schoolIdFile, currentSemesterTag)}</p>
 										</div>
 										<div className="student-vault-actions">
 											{user?.schoolIdFile?.url ? (
@@ -843,19 +760,19 @@ export default function StudentProfilePage() {
 												>
 													<HiOutlineDocumentText aria-hidden /> View Student ID
 												</a>
-											) : (
-												<span className="student-vault-muted">No file available</span>
-											)}
-											<button
-												type="button"
-												className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
-												onClick={() => triggerDocumentUpload("schoolId")}
-												disabled={isDocumentUploading.schoolId}
-											>
-												{isDocumentUploading.schoolId
-													? "Uploading..."
-													: "Upload Student ID"}
-											</button>
+											) : null}
+											{canUploadSchoolId ? (
+												<button
+													type="button"
+													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
+													onClick={() => triggerDocumentUpload("schoolId")}
+													disabled={isDocumentUploading.schoolId}
+												>
+													{isDocumentUploading.schoolId
+														? "Uploading..."
+														: "Upload Student ID"}
+												</button>
+											) : null}
 											<input
 												ref={schoolIdFileInputRef}
 												type="file"
@@ -872,7 +789,7 @@ export default function StudentProfilePage() {
 									<article className="student-vault-card">
 										<div>
 											<h4>Scholarship Application</h4>
-											<p>{user?.scholarshipApplicationFile?.url ? "Uploaded" : "Not uploaded"}</p>
+											<p>{documentStatus(user?.scholarshipApplicationFile, currentSemesterTag)}</p>
 										</div>
 										<div className="student-vault-actions">
 											{user?.scholarshipApplicationFile?.url ? (
@@ -884,19 +801,19 @@ export default function StudentProfilePage() {
 												>
 													<HiOutlineDocumentText aria-hidden /> View Application
 												</a>
-											) : (
-												<span className="student-vault-muted">No file available</span>
-											)}
-											<button
-												type="button"
-												className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
-												onClick={() => triggerDocumentUpload("applicationForm")}
-												disabled={isDocumentUploading.applicationForm}
-											>
-												{isDocumentUploading.applicationForm
-													? "Uploading..."
-													: "Upload Application Form"}
-											</button>
+											) : null}
+											{canUploadApplicationForm ? (
+												<button
+													type="button"
+													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
+													onClick={() => triggerDocumentUpload("applicationForm")}
+													disabled={isDocumentUploading.applicationForm}
+												>
+													{isDocumentUploading.applicationForm
+														? "Uploading..."
+														: "Upload Application Form"}
+												</button>
+											) : null}
 											<input
 												ref={applicationFormFileInputRef}
 												type="file"
@@ -914,23 +831,6 @@ export default function StudentProfilePage() {
 							</section>
 						</div>
 
-						<div className="student-profile-actions">
-							<button
-								type="button"
-								className="student-profile-cancel-btn student-mini-btn student-mini-btn--secondary"
-								onClick={() => navigate("/student-dashboard", { state: { user } })}
-							>
-								Back to Dashboard
-							</button>
-							<button
-								type="button"
-								className="student-profile-save-btn student-mini-btn student-mini-btn--primary"
-								onClick={handleSaveProfile}
-								disabled={isSaving}
-							>
-								{isSaving ? "Saving..." : "Save Profile"}
-							</button>
-						</div>
 					</section>
 
 					{isLightboxOpen && profileImageUrl && (
@@ -981,16 +881,37 @@ export default function StudentProfilePage() {
 								<button
 									type="button"
 									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard", { state: { user } })}
+									onClick={() => navigate("/student-dashboard")}
 								>
 									Dashboard Home
 								</button>
 								<button
 									type="button"
 									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+									onClick={() => navigate("/student-dashboard/announcements")}
+								>
+									Announcements
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/inbox")}
+								>
+									Inbox
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/scholarships")}
 								>
 									My Scholarships
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/profile")}
+								>
+									My Profile
 								</button>
 							</div>
 						</div>

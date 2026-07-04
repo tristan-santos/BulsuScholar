@@ -1,11 +1,7 @@
-import emailjs from '@emailjs/browser';
-
-const SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
-const TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID;
-const PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+const RESEND_ENDPOINT = import.meta.env.VITE_RESEND_API_ENDPOINT || "/api/send-email"
 
 /**
- * Sends an email using EmailJS
+ * Sends an email through the Vercel Resend API route.
  * @param {string} toEmail - Recipient's email address
  * @param {string} toName - Recipient's name
  * @param {string} subject - Email subject
@@ -16,8 +12,8 @@ export const sendEmailNotification = async (toEmail, toName, subject, messageBod
   const normalizedName = String(toName || "").trim();
   const normalizedSubject = String(subject || "").trim();
 
-  if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) {
-    console.warn('EmailJS credentials missing. Email not sent.');
+  if (!RESEND_ENDPOINT) {
+    console.warn('Resend endpoint missing. Email not sent.');
     return { sent: false, reason: "missing_config" };
   }
 
@@ -27,20 +23,19 @@ export const sendEmailNotification = async (toEmail, toName, subject, messageBod
   }
 
   try {
-    const templateParams = {
-      to_email: normalizedEmail,
-      email: normalizedEmail,
-      user_email: normalizedEmail,
-      recipient_email: normalizedEmail,
-      to_name: normalizedName,
-      name: normalizedName,
-      user_name: normalizedName,
-      subject: normalizedSubject,
-      message_body: messageBody,
-    };
-
-    const response = await emailjs.send(SERVICE_ID, TEMPLATE_ID, templateParams, PUBLIC_KEY);
-    return { sent: true, response };
+    const response = await fetch(RESEND_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: normalizedEmail,
+        toName: normalizedName,
+        subject: normalizedSubject,
+        html: messageBody,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || `Email failed: ${response.status}`);
+    return { sent: true, response: data };
   } catch (error) {
     console.error('Email failed to send:', error);
     throw error;

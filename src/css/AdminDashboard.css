@@ -6932,3 +6932,456 @@
 	padding-bottom: 0.25rem;
 	min-width: fit-content;
 }
+
+.admin-grantor-table-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.65rem;
+	margin: 0.15rem 0 0.25rem;
+	padding: 0.1rem 0;
+	min-height: 34px;
+}
+
+.admin-grantor-select-all {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-size: 0.8rem;
+	font-weight: 800;
+	color: #334155;
+	cursor: pointer;
+}
+
+.admin-grantor-select-all input {
+	width: 15px;
+	height: 15px;
+	accent-color: #166534;
+}
+
+.admin-filter-bar--grantors {
+	margin-bottom: 0.15rem;
+	gap: 0.45rem;
+}
+
+.admin-filter-bar--grantors input {
+	min-height: 34px;
+	padding-block: 0.32rem;
+}
+
+.admin-tab-panel--grantors {
+	padding: 0.55rem 0.7rem 0.7rem !important;
+}
+
+.admin-tab-panel--grantors .admin-filter-bar {
+	margin-top: 0;
+}
+
+.admin-table-wrap--grantors .admin-management-table--roomy thead th {
+	padding-top: 0.5rem;
+	padding-bottom: 0.5rem;
+}
+
+.admin-table-wrap--grantors .admin-management-table--roomy tbody td {
+	padding-top: 0.48rem;
+	padding-bottom: 0.48rem;
+}
+
+.admin-table-wrap--grantors .admin-management-table--roomy {
+	border-spacing: 0 6px;
+}
+
+.admin-table-wrap--grantors .admin-management-table--roomy input[type="checkbox"] {
+	width: 15px;
+	height: 15px;
+	accent-color: #166534;
+}
+
+.admin-portal--dark .admin-grantor-select-all {
+	color: #cbd5e1;
+}
+
+/* Admin nav scale and modern theme toggle */
+.admin-sidebar {
+	padding: 0.95rem 0.8rem;
+}
+
+.admin-sidebar-brand {
+	gap: 0.6rem;
+	padding: 0.35rem 0.35rem 0.8rem;
+}
+
+.admin-sidebar-brand img {
+	width: 36px;
+	height: 36px;
+}
+
+.admin-sidebar-brand h1 {
+	font-size: 0.92rem;
+}
+
+.admin-sidebar-brand p {
+	font-size: 0.7rem;
+}
+
+.admin-sidebar-nav {
+	gap: 0.38rem;
+	margin-top: 0.8rem;
+}
+
+.admin-sidebar-link {
+	gap: 0.5rem;
+	padding: 0.66rem 0.68rem;
+	border-radius: 9px;
+	font-size: 0.9rem;
+	line-height: 1.15;
+}
+
+.admin-sidebar-link svg {
+	width: 16px;
+	height: 16px;
+}
+
+.admin-sidebar-bottom {
+	gap: 0.55rem;
+	padding-top: 0.75rem;
+}
+
+.admin-sidebar-profile {
+	gap: 0.48rem;
+	padding: 0.5rem 0.55rem;
+	border-radius: 9px;
+}
+
+.admin-sidebar-profile svg {
+	width: 18px;
+	height: 18px;
+}
+
+.admin-sidebar-profile strong {
+	font-size: 0.76rem;
+}
+
+.admin-sidebar-profile p {
+	font-size: 0.66rem;
+}
+
+.admin-sidebar-logout {
+	min-height: 38px;
+	border-radius: 9px;
+	font-size: 0.8rem;
+}
+
+.admin-theme-switch {
+	position: relative;
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.25rem;
+	padding: 0.25rem;
+	border: 1px solid rgba(255, 255, 255, 0.22);
+	border-radius: 999px;
+	background: rgba(15, 23, 42, 0.18);
+}
+
+.admin-theme-switch button,
+.admin-theme-switch--sidebar button {
+	min-height: 34px !important;
+	height: 34px !important;
+	border: 0;
+	border-radius: 999px;
+	padding: 0.35rem 0.55rem !important;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.78);
+	font-size: 0.78rem !important;
+	font-weight: 700;
+	justify-content: center;
+	box-shadow: none !important;
+	transition:
+		background 0.16s ease,
+		color 0.16s ease,
+		box-shadow 0.16s ease;
+}
+
+.admin-theme-switch button:hover {
+	background: rgba(255, 255, 255, 0.12);
+	color: #ffffff;
+}
+
+.admin-theme-switch button.active {
+	background: #ffffff;
+	color: #064e3b;
+	box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22) !important;
+}
+
+.admin-theme-switch button svg {
+	width: 15px;
+	height: 15px;
+}
+
+.admin-portal--dark .admin-theme-switch {
+	background: rgba(2, 6, 23, 0.44);
+	border-color: rgba(148, 163, 184, 0.28);
+}
+
+.admin-portal--dark .admin-theme-switch button.active {
+	background: #22c55e;
+	color: #052e16;
+}
+
+.admin-detail-modal--grantor {
+	width: min(620px, calc(100vw - 32px));
+	padding: 0;
+	overflow: hidden;
+	border: 1px solid rgba(148, 163, 184, 0.35);
+	background: #ffffff;
+	box-shadow: 0 28px 70px rgba(15, 23, 42, 0.32);
+}
+
+.admin-detail-modal--grantor .admin-detail-close {
+	position: absolute;
+	top: 16px;
+	right: 16px;
+	z-index: 3;
+	border: 1px solid rgba(148, 163, 184, 0.45);
+	background: rgba(255, 255, 255, 0.92);
+	color: #334155;
+	box-shadow: 0 10px 22px rgba(15, 23, 42, 0.14);
+}
+
+.admin-grantor-modal-head {
+	display: flex;
+	gap: 1rem;
+	align-items: flex-start;
+	padding: 1.35rem 1.45rem 1.1rem;
+	background:
+		linear-gradient(135deg, rgba(22, 101, 52, 0.96), rgba(15, 118, 110, 0.94)),
+		#166534;
+	color: #ffffff;
+}
+
+.admin-grantor-modal-icon {
+	width: 44px;
+	height: 44px;
+	border-radius: 14px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(255, 255, 255, 0.16);
+	border: 1px solid rgba(255, 255, 255, 0.24);
+	flex: 0 0 auto;
+}
+
+.admin-grantor-modal-icon svg {
+	width: 22px;
+	height: 22px;
+}
+
+.admin-grantor-modal-eyebrow {
+	display: block;
+	margin-bottom: 0.2rem;
+	font-size: 0.72rem;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: rgba(255, 255, 255, 0.72);
+}
+
+.admin-grantor-modal-head h3 {
+	margin: 0;
+	font-size: 1.45rem;
+	line-height: 1.15;
+	color: #ffffff;
+}
+
+.admin-grantor-modal-head p {
+	margin: 0.35rem 2.5rem 0 0;
+	font-size: 0.9rem;
+	line-height: 1.45;
+	color: rgba(255, 255, 255, 0.82);
+}
+
+.admin-grantor-modal-note {
+	display: grid;
+	gap: 0.15rem;
+	margin: 1rem 1.45rem 0;
+	padding: 0.75rem 0.85rem;
+	border: 1px solid #bbf7d0;
+	border-radius: 12px;
+	background: #f0fdf4;
+	color: #14532d;
+}
+
+.admin-grantor-modal-note strong {
+	font-size: 0.82rem;
+}
+
+.admin-grantor-modal-note span {
+	font-size: 0.78rem;
+	line-height: 1.45;
+	color: #166534;
+}
+
+.admin-grantor-form {
+	padding: 1rem 1.45rem 1.35rem;
+}
+
+.admin-grantor-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.85rem;
+}
+
+.admin-grantor-field {
+	display: grid;
+	gap: 0.4rem;
+}
+
+.admin-grantor-field--wide {
+	grid-column: 1 / -1;
+}
+
+.admin-grantor-field span {
+	font-size: 0.76rem;
+	font-weight: 800;
+	color: #334155;
+}
+
+.admin-grantor-field input,
+.admin-grantor-field select {
+	width: 100%;
+	min-height: 42px;
+	border: 1px solid #cbd5e1;
+	border-radius: 10px;
+	background: #f8fafc;
+	color: #0f172a;
+	padding: 0.65rem 0.75rem;
+	font-size: 0.9rem;
+	outline: none;
+	transition:
+		border-color 0.16s ease,
+		box-shadow 0.16s ease,
+		background 0.16s ease;
+}
+
+.admin-grantor-field input:focus,
+.admin-grantor-field select:focus {
+	border-color: #16a34a;
+	background: #ffffff;
+	box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16);
+}
+
+.admin-grantor-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.7rem;
+	margin-top: 1.15rem;
+	padding-top: 1rem;
+	border-top: 1px solid #e2e8f0;
+}
+
+.admin-grantor-secondary-btn,
+.admin-grantor-primary-btn {
+	min-height: 42px;
+	border-radius: 10px;
+	padding: 0.65rem 0.95rem;
+	font-weight: 800;
+	font-size: 0.86rem;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.45rem;
+}
+
+.admin-grantor-secondary-btn {
+	border: 1px solid #cbd5e1;
+	background: #ffffff;
+	color: #475569;
+}
+
+.admin-grantor-primary-btn {
+	border: 1px solid #166534;
+	background: #166534;
+	color: #ffffff;
+	box-shadow: 0 12px 22px rgba(22, 101, 52, 0.24);
+}
+
+.admin-grantor-primary-btn:disabled {
+	opacity: 0.65;
+	cursor: not-allowed;
+	box-shadow: none;
+}
+
+.admin-grantor-primary-btn svg {
+	width: 17px;
+	height: 17px;
+}
+
+.admin-portal--dark .admin-detail-modal--grantor {
+	background: #0f172a;
+	border-color: rgba(148, 163, 184, 0.28);
+}
+
+.admin-portal--dark .admin-detail-modal--grantor .admin-detail-close {
+	background: rgba(15, 23, 42, 0.9);
+	color: #e2e8f0;
+	border-color: rgba(148, 163, 184, 0.35);
+}
+
+.admin-portal--dark .admin-grantor-modal-note {
+	background: rgba(20, 83, 45, 0.22);
+	border-color: rgba(34, 197, 94, 0.28);
+	color: #dcfce7;
+}
+
+.admin-portal--dark .admin-grantor-modal-note span {
+	color: #bbf7d0;
+}
+
+.admin-portal--dark .admin-grantor-field span {
+	color: #cbd5e1;
+}
+
+.admin-portal--dark .admin-grantor-field input,
+.admin-portal--dark .admin-grantor-field select {
+	background: #111827;
+	border-color: rgba(148, 163, 184, 0.32);
+	color: #f8fafc;
+}
+
+.admin-portal--dark .admin-grantor-modal-actions {
+	border-top-color: rgba(148, 163, 184, 0.24);
+}
+
+.admin-portal--dark .admin-grantor-secondary-btn {
+	background: #111827;
+	border-color: rgba(148, 163, 184, 0.32);
+	color: #cbd5e1;
+}
+
+@media (max-width: 640px) {
+	.admin-grantor-modal-head {
+		padding: 1.2rem 1rem 1rem;
+	}
+
+	.admin-grantor-modal-note {
+		margin: 0.9rem 1rem 0;
+	}
+
+	.admin-grantor-form {
+		padding: 0.9rem 1rem 1rem;
+	}
+
+	.admin-grantor-form-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-grantor-modal-actions {
+		flex-direction: column-reverse;
+	}
+
+	.admin-grantor-secondary-btn,
+	.admin-grantor-primary-btn {
+		width: 100%;
+	}
+}

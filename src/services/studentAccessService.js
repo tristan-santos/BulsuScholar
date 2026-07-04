@@ -1,18 +1,10 @@
-function hasScholarshipAdminBlock(student = {}) {
-	// Manual admin block is disabled as per request, but we keep the structure
-	return false
-}
-
 export function getStudentAccessState(student = {}) {
 	const isArchived = student?.archived === true
 	
-	// Keep multiple scholarship blocking logic
 	const multipleScholarshipConflict =
 		student?.scholarshipConflictWarning === true ||
 		student?.scholarshipRestrictionReason === "multiple_scholarships"
 
-	// Account access block and compliance block are removed/disabled from admin side logic
-	// but we keep scholarshipEligibilityBlocked true IF there is a multiple scholarship conflict
 	const scholarshipEligibilityBlocked = multipleScholarshipConflict
 
 	return {

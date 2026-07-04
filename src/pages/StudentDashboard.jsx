@@ -8,19 +8,28 @@ import {
 	collectionGroup,
 	doc,
 	onSnapshot,
-} from "firebase/firestore"
+	query,
+	where,
+} from "../services/supabaseDataService"
 import {
 	HiOutlineAcademicCap,
+	HiOutlineBell,
 	HiOutlineCheckCircle,
-	HiOutlineClock,
+	HiOutlineDocumentText,
 	HiOutlineExclamation,
+	HiOutlineExternalLink,
+	HiOutlineInbox,
+	HiOutlineLogout,
+	HiOutlineMail,
+	HiOutlineMenu,
 	HiOutlineMoon,
 	HiOutlineSun,
+	HiOutlineUser,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { db } from "../../firebase"
+import { db } from "../services/supabaseDataService"
 import useThemeMode from "../hooks/useThemeMode"
-import { normalizeScholarshipList } from "../services/scholarshipService"
+import { getCurrentSemesterTag, normalizeScholarshipList } from "../services/scholarshipService"
 import {
 	isPreviousStudentAnnouncement,
 	normalizeStudentAnnouncement,
@@ -32,7 +41,7 @@ import {
 	getStudentAccessState,
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
-import logo2 from "../assets/logo2.png"
+import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
 
 function checkValidated(userData) {
@@ -57,6 +66,26 @@ function formatAnnouncementDate(value) {
 	})
 }
 
+function formatRelativeDate(value) {
+	const date = value?.toDate ? value.toDate() : new Date(value)
+	if (!value || Number.isNaN(date.getTime())) return "Date unavailable"
+	const elapsedSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+	const intervals = [
+		{ seconds: 31536000, label: "year" },
+		{ seconds: 2592000, label: "month" },
+		{ seconds: 86400, label: "day" },
+		{ seconds: 3600, label: "hour" },
+		{ seconds: 60, label: "minute" },
+	]
+	for (const interval of intervals) {
+		if (elapsedSeconds >= interval.seconds) {
+			const amount = Math.floor(elapsedSeconds / interval.seconds)
+			return `${amount} ${interval.label}${amount === 1 ? "" : "s"} ago`
+		}
+	}
+	return "Just now"
+}
+
 function iconForAnnouncement(type = "") {
 	const normalized = type.toLowerCase()
 	if (normalized.includes("deadline")) return "Deadline"
@@ -73,6 +102,36 @@ function getMultipleScholarshipBannerCopy(user, scholarships) {
 	return "Your scholarship eligibility is temporarily on hold until you choose one scholarship only."
 }
 
+function buildAnnouncementImageList(item = {}) {
+	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
+	const imageObjects = Array.isArray(item.images) ? item.images.map((image) => image?.url).filter(Boolean) : []
+	return [...new Set([item.imageUrl, ...imageUrls, ...imageObjects].filter(Boolean))]
+}
+
+function getReadAnnouncementStorageKey(studentId = "") {
+	return `bulsuscholar_student_read_announcements_${studentId || "guest"}`
+}
+
+function loadReadAnnouncementIds(studentId = "") {
+	try {
+		const raw = localStorage.getItem(getReadAnnouncementStorageKey(studentId))
+		const parsed = JSON.parse(raw || "[]")
+		return Array.isArray(parsed) ? parsed.map(String) : []
+	} catch {
+		return []
+	}
+}
+
+function formatDisplayText(value, fallback = "") {
+	const text = String(value ?? "").trim()
+	if (!text) return fallback
+	if (text.includes("@")) return text.toLowerCase()
+	if (/^[\d\s+()./-]+$/.test(text)) return text
+	return text
+		.toLowerCase()
+		.replace(/\b([a-z])([a-z]*)/g, (_, first, rest) => `${first.toUpperCase()}${rest}`)
+}
+
 export default function StudentDashboard() {
 	const navigate = useNavigate()
 	const [sessionState] = useState(() => {
@@ -86,8 +145,14 @@ export default function StudentDashboard() {
 	const [user, setUser] = useState(null)
 	const [userLoaded, setUserLoaded] = useState(() => !sessionState.isStudent)
 	const [announcements, setAnnouncements] = useState([])
+	const [studentNotifications, setStudentNotifications] = useState([])
+	const [readAnnouncementIds, setReadAnnouncementIds] = useState(() =>
+		loadReadAnnouncementIds(sessionStorage.getItem("bulsuscholar_userId")),
+	)
+	const [profileMenuOpen, setProfileMenuOpen] = useState(false)
 	const { theme, setTheme } = useThemeMode()
 	const forcedLogoutRef = useRef(false)
+	const profileMenuRef = useRef(null)
 
 	useEffect(() => {
 		if (!sessionState.isStudent || !sessionState.storedUserId) {
@@ -135,7 +200,7 @@ export default function StudentDashboard() {
 				...adminRows,
 				...grantorRows,
 			]).filter((item) => !isPreviousStudentAnnouncement(item))
-			setAnnouncements(merged.slice(0, 1))
+			setAnnouncements(merged)
 		}
 
 		const unsubscribeAdminAnnouncements = onSnapshot(
@@ -172,12 +237,53 @@ export default function StudentDashboard() {
 		}
 	}, [])
 
+	useEffect(() => {
+		if (!sessionState.storedUserId) return undefined
+		setReadAnnouncementIds(loadReadAnnouncementIds(sessionState.storedUserId))
+		return onSnapshot(
+			query(collection(db, "studentNotifications"), where("studentId", "==", sessionState.storedUserId)),
+			(snap) => setStudentNotifications(snap.docs.map((item) => ({ id: item.id, ...(item.data() || {}) }))),
+			() => setStudentNotifications([]),
+		)
+	}, [sessionState.storedUserId])
+
+	useEffect(() => {
+		const handleStorage = (event) => {
+			if (event.key === getReadAnnouncementStorageKey(sessionState.storedUserId)) {
+				setReadAnnouncementIds(loadReadAnnouncementIds(sessionState.storedUserId))
+			}
+		}
+		window.addEventListener("storage", handleStorage)
+		return () => window.removeEventListener("storage", handleStorage)
+	}, [sessionState.storedUserId])
+
+	useEffect(() => {
+		if (!profileMenuOpen) return undefined
+		const handlePointerDown = (event) => {
+			if (!profileMenuRef.current?.contains(event.target)) {
+				setProfileMenuOpen(false)
+			}
+		}
+		document.addEventListener("mousedown", handlePointerDown)
+		return () => document.removeEventListener("mousedown", handlePointerDown)
+	}, [profileMenuOpen])
+
 	const isValidated = checkValidated(user)
 	const scholarships = useMemo(
 		() => normalizeScholarshipList(user?.scholarships || []),
 		[user?.scholarships],
 	)
 	const scholarshipPreview = scholarships.slice(0, 6)
+	const latestAnnouncements = useMemo(() => announcements.slice(0, 3), [announcements])
+	const unreadStudentNotifications = useMemo(
+		() => studentNotifications.filter((item) => item.read !== true),
+		[studentNotifications],
+	)
+	const unreadAnnouncementCount = useMemo(
+		() => announcements.filter((item) => !readAnnouncementIds.includes(String(item.id || ""))).length,
+		[announcements, readAnnouncementIds],
+	)
+	const inboxBadgeCount = studentNotifications.length > 0 ? unreadStudentNotifications.length : unreadAnnouncementCount
 	const avatarUrl = user?.profileImageUrl || ""
 	const studentAccessState = useMemo(() => getStudentAccessState(user || {}), [user])
 	const hasComplianceWarning = user?.soeComplianceWarning === true
@@ -189,6 +295,21 @@ export default function StudentDashboard() {
 	const hasBlockedScholarshipBanner =
 		studentAccessState.scholarshipEligibilityBlocked || studentAccessState.soeComplianceBlocked
 	const blockedScholarshipBannerCopy = getStudentBlockedBannerMessage(user || {})
+	const currentSemesterTag = getCurrentSemesterTag()
+	const needsDocumentRenewal = useMemo(() => {
+		if (scholarships.length === 0) return false
+		const watchedFiles = [user?.corFile, user?.cogFile, user?.schoolIdFile, user?.scholarshipApplicationFile]
+		return watchedFiles.some((file) => !file?.url || (file?.semesterTag && file.semesterTag !== currentSemesterTag))
+	}, [currentSemesterTag, scholarships.length, user?.cogFile, user?.corFile, user?.schoolIdFile, user?.scholarshipApplicationFile])
+	const studentContactNumber = user?.cpNumber || user?.contactNumber || user?.phoneNumber || "Not set"
+	const studentIdNumber = user?.studentId || user?.studentNumber || sessionState.storedUserId || "Not set"
+	const currentGwa = user?.gwa || user?.currentGwa || user?.generalWeightedAverage || "Not set"
+	const activeScholarshipName =
+		scholarships.find((item) => String(item?.status || "").toLowerCase() !== "saved")?.name ||
+		scholarships[0]?.name ||
+		scholarships[0]?.providerLabel ||
+		scholarships[0]?.provider ||
+		""
 
 	const userInitials = `${user?.fname?.[0]?.toUpperCase() || ""}${user?.lname?.[0]?.toUpperCase() || ""}` || "ST"
 
@@ -205,20 +326,21 @@ export default function StudentDashboard() {
 
 	const handleAnnouncementRedirect = useCallback(
 		(announcement) => {
-			navigate("/student-dashboard/scholarships", {
-				state: {
-					user,
-					fromAnnouncement: true,
-					focusProviderType: announcement?.providerType || "",
-					focusSection: "available-programs",
-				},
-			})
+			const announcementId = encodeURIComponent(announcement?.id || "")
+			const source = announcement?.source || "admin"
+			if (!announcementId) return
+
+			navigate(`/student-dashboard/announcements/${source}/${announcementId}`)
 		},
-		[navigate, user],
+		[navigate],
 	)
 
-	const fullName =
-		[user?.fname, user?.mname, user?.lname].filter(Boolean).join(" ") || "Student"
+	const fullName = formatDisplayText(
+		[user?.fname, user?.mname, user?.lname].filter(Boolean).join(" "),
+		"Student",
+	)
+	const firstName = formatDisplayText(user?.fname)
+	const studentEmail = user?.email ? String(user.email).trim().toLowerCase() : "Not set"
 
 	const bentoItems = useMemo(
 		() => [
@@ -243,7 +365,7 @@ export default function StudentDashboard() {
 						<div>
 							<p className="student-bento-eyebrow">Student Workspace</p>
 							<h2 className="student-welcome-title">
-								Welcome back{user?.fname ? `, ${user.fname}` : ""}
+								Welcome back{firstName ? `, ${firstName}` : ""}
 							</h2>
 							<p className="student-welcome-user-name">{fullName}</p>
 							<p className="student-welcome-sub">
@@ -273,7 +395,7 @@ export default function StudentDashboard() {
 							<button
 								type="button"
 								className="student-bento-inline-link"
-								onClick={() => navigate("/student-dashboard/announcements", { state: { user } })}
+								onClick={() => navigate("/student-dashboard/announcements")}
 							>
 								View All
 							</button>
@@ -327,7 +449,7 @@ export default function StudentDashboard() {
 							<button
 								type="button"
 								className="student-bento-inline-link"
-								onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+								onClick={() => navigate("/student-dashboard/scholarships")}
 							>
 								Open Scholarships
 							</button>
@@ -350,12 +472,12 @@ export default function StudentDashboard() {
 											aria-hidden
 										/>
 										<div className="student-dashboard-scholarship-preview-meta">
-											<h4>{entry.name}</h4>
-											<p>{entry.status || "Applied"}</p>
+											<h4>{formatDisplayText(entry.name, "Scholarship")}</h4>
+											<p>{formatDisplayText(entry.status, "Applied")}</p>
 											<p>Application No. {entry.applicationNumber || entry.requestNumber || entry.id}</p>
 										</div>
 										<span className="student-dashboard-scholarship-preview-term">
-											{entry.semesterTag || "Current Semester"}
+											{formatDisplayText(entry.semesterTag, "Current Semester")}
 										</span>
 									</article>
 								))}
@@ -376,7 +498,7 @@ export default function StudentDashboard() {
 							<button
 								type="button"
 								className="student-action-card student-mini-btn student-mini-btn--primary"
-								onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+								onClick={() => navigate("/student-dashboard/scholarships")}
 							>
 								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
 									<path
@@ -393,7 +515,7 @@ export default function StudentDashboard() {
 							<button
 								type="button"
 								className="student-action-card student-mini-btn student-mini-btn--secondary"
-								onClick={() => navigate("/student-dashboard/profile", { state: { user } })}
+								onClick={() => navigate("/student-dashboard/profile")}
 							>
 								<svg viewBox="0 0 24 24" className="student-action-icon" aria-hidden="true">
 									<circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.7" />
@@ -480,54 +602,7 @@ export default function StudentDashboard() {
 
 	return (
 		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
-			<header className="student-header">
-				<div className="student-header-top-stripe"></div>
-				<div className="student-header-content">
-					<div className="student-header-left">
-						<Link to="/student-dashboard" className="student-header-home-link" aria-label="Go to dashboard">
-							<img src={logo2} alt="BulsuScholar" className="student-header-logo" />
-							<h1 className="student-header-brand">BulsuScholar</h1>
-						</Link>
-					</div>
-					<div className="student-header-right">
-						<div className="student-header-verified-wrap">
-							<button
-								type="button"
-								className={`student-header-verified-btn ${isValidated ? "student-header-verified-btn--verified" : "student-header-verified-btn--pending"}`}
-								aria-label={isValidated ? "Verified" : "Pending verification"}
-								title={isValidated ? "Verified" : "Pending"}
-							>
-								{isValidated ? (
-									<HiOutlineCheckCircle className="student-header-verified-icon" aria-hidden />
-								) : (
-									<HiOutlineClock className="student-header-verified-icon" aria-hidden />
-								)}
-								<span className="student-header-verified-tooltip-below">
-									{isValidated ? "Verified" : "Pending"}
-								</span>
-							</button>
-						</div>
-						<div className="student-header-theme-switch" role="group" aria-label="Theme switcher">
-							<button
-								type="button"
-								className={`student-header-theme-btn ${theme === "light" ? "active" : ""}`}
-								onClick={() => setTheme("light")}
-							>
-								<HiOutlineSun aria-hidden />
-								Light
-							</button>
-							<button
-								type="button"
-								className={`student-header-theme-btn ${theme === "dark" ? "active" : ""}`}
-								onClick={() => setTheme("dark")}
-							>
-								<HiOutlineMoon aria-hidden />
-								Dark
-							</button>
-						</div>
-					</div>
-				</div>
-			</header>
+			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 
 			<main className="student-shell">
 				<div className="student-shell-content student-dashboard-surface">
@@ -542,7 +617,7 @@ export default function StudentDashboard() {
 								<button
 									type="button"
 									className="student-mini-btn student-mini-btn--primary student-compliance-action"
-									onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+									onClick={() => navigate("/student-dashboard/scholarships")}
 								>
 									Choose Scholarship
 								</button>
@@ -559,21 +634,117 @@ export default function StudentDashboard() {
 							<button
 								type="button"
 								className="student-mini-btn student-mini-btn--primary student-compliance-action"
-								onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+								onClick={() => navigate("/student-dashboard/scholarships")}
 							>
 								Choose Scholarship
 							</button>
 						</div>
 					) : null}
-					<section className="student-dashboard-layout" aria-label="Student dashboard overview">
-						{bentoItems.map((item) => (
-							<article
-								key={item.id}
-								className={`student-dashboard-card ${item.className || ""}`}
-							>
-								{item.render()}
-							</article>
-						))}
+					<section className="student-dashboard-modern" aria-label="Student dashboard overview">
+						<section className="student-modern-welcome">
+							<header className="student-detail-head">
+								<h2>Student Details</h2>
+								<span>{currentSemesterTag}</span>
+							</header>
+							<div className="student-detail-profile">
+								<span className="student-detail-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : userInitials}</span>
+								<div className="student-detail-name">
+									<h3>Welcome Back!!</h3>
+									<p>Welcome back{firstName ? `, ${firstName}` : ""}. Keep your scholarship profile and documents updated.</p>
+								</div>
+								<div className="student-detail-field"><span>Name</span><strong className="student-detail-name-value">{fullName}{isValidated ? <HiOutlineCheckCircle className="student-detail-verified-icon" aria-label="Verified student" /> : null}</strong></div>
+								<div className="student-detail-field"><span>ID</span><strong>{studentIdNumber}</strong></div>
+								<div className="student-detail-field"><span>Number</span><strong>{studentContactNumber}</strong></div>
+								<div className="student-detail-field"><span>Email</span><strong>{studentEmail}</strong></div>
+							</div>
+							<div className="student-detail-metrics">
+								<article><span><HiOutlineAcademicCap /></span><div><strong className={scholarships.length > 0 ? "student-detail-scholarship-value" : ""}>{scholarships.length > 0 ? activeScholarshipName : scholarships.length}</strong><p>{scholarships.length > 0 ? "Active Scholar" : "Recommended Scholarships"}</p></div></article>
+								<article><span><HiOutlineCheckCircle /></span><div><strong>{currentGwa}</strong><p>Current GWA</p></div></article>
+								<article><span><HiOutlineDocumentText /></span><div><strong>{needsDocumentRenewal ? "Not Complied Yet" : "Complied"}</strong><p>Document Status</p></div></article>
+							</div>
+						</section>
+
+						<section className="student-modern-section">
+							<header className="student-modern-section-head">
+								<div><h3>Announcements</h3><p>Available and latest scholarship announcements.</p></div>
+								<button type="button" onClick={() => navigate("/student-dashboard/announcements")}>See all <HiOutlineExternalLink /></button>
+							</header>
+							<div className="student-modern-announcement-grid">
+								{latestAnnouncements.length === 0 ? (
+									<div className="student-modern-empty"><HiOutlineBell /><strong>No announcements available.</strong><p>Latest notices will appear here.</p></div>
+								) : latestAnnouncements.map((announcement) => {
+									const imageUrls = buildAnnouncementImageList(announcement)
+									const authorName = formatDisplayText(announcement.sourceLabel || (announcement.source === "grantor" ? "Grantor" : "Scholarship Office"))
+									const authorInitials = String(authorName || "SO").trim().slice(0, 2).toUpperCase()
+									const authorImage = announcement.profileImageUrl || announcement.authorImageUrl || ""
+									return (
+										<article key={announcement.id} className="student-modern-announcement-card">
+											<div className="student-modern-announcement-media">{imageUrls[0] ? <img src={imageUrls[0]} alt={formatDisplayText(announcement.title, "Announcement")} /> : <HiOutlineBell />}</div>
+											<div className="student-modern-announcement-body">
+												<div className="student-modern-announcement-author">
+													<span>{authorImage ? <img src={authorImage} alt="" /> : authorInitials}</span>
+													<div><strong>{authorName}</strong><small>{formatRelativeDate(announcement.date || announcement.createdAt)}</small></div>
+												</div>
+												<h4>{formatDisplayText(announcement.title, "Announcement")}</h4>
+												<p>{formatDisplayText(announcement.previewText || announcement.content || announcement.description, "No Preview Text Provided.")}</p>
+												<button type="button" onClick={() => handleAnnouncementRedirect(announcement)}>
+													{announcement.applicationEnabled ? "Apply Now" : "View Announcement"}
+												</button>
+											</div>
+										</article>
+									)
+								})}
+							</div>
+						</section>
+
+						<section className="student-modern-section">
+							<header className="student-modern-section-head">
+								<div><h3>Recommended Scholarships</h3><p>Personalized scholarship suggestions will appear here later.</p></div>
+							</header>
+							<div className="student-modern-recommended-empty">
+								<HiOutlineAcademicCap />
+								<strong>No recommendations yet.</strong>
+								<p>Recommended scholarships will be shown here after matching is enabled.</p>
+							</div>
+						</section>
+
+						<section className="student-modern-section">
+							<header className="student-modern-section-head">
+								<div><h3>Scholarship Preview</h3><p>Your current scholarship records and renewal reminders.</p></div>
+								<button type="button" onClick={() => navigate("/student-dashboard/scholarships")}>Open Scholarships <HiOutlineExternalLink /></button>
+							</header>
+							{needsDocumentRenewal ? (
+								<div className="student-modern-renewal">
+									<HiOutlineDocumentText />
+									<div><strong>Document renewal reminder</strong><p>The current cycle is active. Review your COR, COG, ID, and application documents for {currentSemesterTag}.</p></div>
+								</div>
+							) : null}
+							{scholarshipPreview.length === 0 ? (
+								<div className="student-modern-empty"><HiOutlineAcademicCap /><strong>No scholarship records yet.</strong><p>Your active scholarship preview will appear here.</p></div>
+							) : (
+								<div className="student-modern-scholarship-list">
+									{scholarshipPreview.map((entry) => (
+										<article key={entry.id} className={`student-modern-scholarship-item ${entry.adminBlocked === true || hasBlockedScholarshipBanner ? "is-blocked" : ""}`}>
+											<span><HiOutlineAcademicCap /></span>
+											<div><h4>{formatDisplayText(entry.name, "Scholarship")}</h4><p>{formatDisplayText(entry.status, "Applied")} · Application No. {entry.applicationNumber || entry.requestNumber || entry.id}</p></div>
+											<small>{formatDisplayText(entry.semesterTag, "Current Semester")}</small>
+										</article>
+									))}
+								</div>
+							)}
+						</section>
+
+						<section className="student-modern-section">
+							<header className="student-modern-section-head">
+								<div><h3>Quick Actions</h3><p>Common student tasks and shortcuts.</p></div>
+							</header>
+							<div className="student-modern-action-grid">
+								<button type="button" onClick={() => navigate("/student-dashboard/scholarships")}><HiOutlineAcademicCap /><span>Scholarships</span><small>View records and applications</small></button>
+								<button type="button" onClick={() => navigate("/student-dashboard/profile")}><HiOutlineUser /><span>My Profile</span><small>Update personal details</small></button>
+								<button type="button" onClick={() => navigate("/student-dashboard/announcements")}><HiOutlineBell /><span>Announcements</span><small>Read latest notices</small></button>
+								<button type="button" onClick={handleContactSupport}><HiOutlineMail /><span>Support</span><small>Contact scholarship office</small></button>
+							</div>
+						</section>
 					</section>
 
 					<footer className="student-footer">
@@ -596,14 +767,35 @@ export default function StudentDashboard() {
 								<button
 									type="button"
 									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/profile", { state: { user } })}
+									onClick={() => navigate("/student-dashboard")}
+								>
+									Dashboard Home
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/announcements")}
+								>
+									Announcements
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/inbox")}
+								>
+									Inbox
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/profile")}
 								>
 									My Profile
 								</button>
 								<button
 									type="button"
 									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/scholarships", { state: { user } })}
+									onClick={() => navigate("/student-dashboard/scholarships")}
 								>
 									My Scholarships
 								</button>

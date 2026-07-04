@@ -129,6 +129,41 @@
 	box-shadow: 0 2px 8px rgba(11, 87, 43, 0.08);
 }
 
+.signup-process-step {
+	display: grid;
+	gap: 0.25rem;
+	padding: 0.9rem 1rem;
+	border-left: 4px solid #0b572b;
+	border-radius: 10px;
+	background: #f3faf6;
+}
+
+.signup-process-step span {
+	color: #0b572b;
+	font-size: 0.72rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.signup-process-step strong {
+	color: #17342a;
+	font-size: 0.98rem;
+	font-weight: 700;
+}
+
+.signup-process-step p {
+	margin: 0;
+	color: #4b6358;
+	font-size: 0.82rem;
+	line-height: 1.45;
+}
+
+.signup-form-section--documents {
+	border-color: #b8dccb;
+	background: linear-gradient(135deg, #ffffff 0%, #f7fcf9 100%);
+}
+
 .signup-upload-wrap:hover {
 	border-color: #0b572b;
 	background: linear-gradient(135deg, #f0f8f4 0%, #e8f3f0 100%);
@@ -1332,6 +1367,7 @@
 	max-height: 80vh;
 	object-fit: contain;
 	border-radius: 8px;
+	display: block;
 }
 
 /* Close Button */

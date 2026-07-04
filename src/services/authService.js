@@ -6,6 +6,23 @@ const SECRET =
 	import.meta.env.VITE_PASSWORD_SECRET ||
 	"bulsuscholar-default-secret-key-32!!!"
 
+function bytesToBase64(bytes) {
+	let binary = ""
+	for (let i = 0; i < bytes.byteLength; i += 1) {
+		binary += String.fromCharCode(bytes[i])
+	}
+	return btoa(binary)
+}
+
+function base64ToBytes(base64) {
+	const binary = atob(base64)
+	const bytes = new Uint8Array(binary.length)
+	for (let i = 0; i < binary.length; i += 1) {
+		bytes[i] = binary.charCodeAt(i)
+	}
+	return bytes
+}
+
 /**
  * Encrypts a password using AES-256-GCM
  * @param {string} plainPassword - The plain text password to encrypt
@@ -36,11 +53,7 @@ export async function encryptPasswordAES256(plainPassword) {
 	combined.set(iv, 0)
 	combined.set(new Uint8Array(cipherBuffer), iv.byteLength)
 
-	let binary = ""
-	for (let i = 0; i < combined.byteLength; i += 1) {
-		binary += String.fromCharCode(combined[i])
-	}
-	return btoa(binary)
+	return bytesToBase64(combined)
 }
 
 /**
@@ -52,12 +65,7 @@ export async function decryptPasswordAES256(encryptedPassword) {
 	if (!encryptedPassword) return ""
 
 	try {
-		const binary = atob(encryptedPassword)
-		const combined = new Uint8Array(binary.length)
-		for (let i = 0; i < binary.length; i += 1) {
-			combined[i] = binary.charCodeAt(i)
-		}
-
+		const combined = base64ToBytes(encryptedPassword)
 		const iv = combined.slice(0, 12)
 		const cipherBuffer = combined.slice(12)
 

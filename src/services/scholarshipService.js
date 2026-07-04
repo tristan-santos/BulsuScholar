@@ -112,6 +112,7 @@ export function buildScholarshipRecord({
 	mode = "saved",
 	documentUrls = {},
 	semesterTag = getCurrentSemesterTag(),
+	appliedViaAnnouncement = false,
 }) {
 	const displayName = (name || provider || "Scholarship").trim()
 	const providerName = (provider || name || "Other").trim()
@@ -141,10 +142,12 @@ export function buildScholarshipRecord({
 		academicYear: getCurrentAcademicYear(),
 		semesterTag,
 		appliedAt: nowIso,
+		appliedViaAnnouncement,
 		documentUrls,
 		tracking: createScholarshipTrackingState({
 			providerType: policy.providerType,
 			scholarshipName: displayName,
+			appliedViaAnnouncement,
 		}),
 	}
 }
@@ -192,10 +195,18 @@ export function normalizeScholarshipRecord(raw = {}, index = 0) {
 		academicYear: raw.academicYear || getCurrentAcademicYear(),
 		semesterTag: raw.semesterTag || getCurrentSemesterTag(),
 		appliedAt: raw.appliedAt || raw.date || new Date().toISOString(),
+		appliedViaAnnouncement:
+			raw.appliedViaAnnouncement === true ||
+			Boolean(raw.announcementId || raw.announcementSource) ||
+			raw.tracking?.appliedViaAnnouncement === true,
 		documentUrls: raw.documentUrls || {},
 		tracking: normalizeScholarshipTrackingState(raw.tracking, {
 			providerType: raw.providerType || policy.providerType,
 			scholarshipName: raw.name || provider || "Scholarship",
+			appliedViaAnnouncement:
+				raw.appliedViaAnnouncement === true ||
+				Boolean(raw.announcementId || raw.announcementSource) ||
+				raw.tracking?.appliedViaAnnouncement === true,
 		}),
 	}
 }
@@ -237,36 +248,22 @@ export function getDocumentUrlsForStudent(student = {}) {
 }
 
 export function validateScholarshipDocuments(student = {}, provider = "") {
-	const policy = getScholarshipPolicy(provider)
 	const semesterTag = getCurrentSemesterTag()
 	const missing = []
 	const expired = []
 
 	const cor = getFirstValidDocument(student, ["corFile", "corDocument", "cor"])
 	const cog = getFirstValidDocument(student, ["cogFile", "cogDocument", "cog"])
-	const schoolId = getFirstValidDocument(student, [
-		"schoolIdFile",
-		"studentIdFile",
-		"validIdFile",
-		"idFile",
-	])
-
 	if (!cor?.url) {
 		missing.push("COR")
 	} else if (cor.semesterTag && cor.semesterTag !== semesterTag) {
 		expired.push("COR")
 	}
 
-	if (policy.requiresFullDocs) {
-		if (!cog?.url) {
-			missing.push("COG")
-		} else if (cog.semesterTag && cog.semesterTag !== semesterTag) {
-			expired.push("COG")
-		}
-
-		if (!schoolId?.url) {
-			missing.push("School ID/Valid ID")
-		}
+	if (!cog?.url) {
+		missing.push("COG")
+	} else if (cog.semesterTag && cog.semesterTag !== semesterTag) {
+		expired.push("COG")
 	}
 
 	return {
@@ -274,6 +271,7 @@ export function validateScholarshipDocuments(student = {}, provider = "") {
 		missing,
 		expired,
 		semesterTag,
+		documentUrls: getDocumentUrlsForStudent(student),
 	}
 }
 

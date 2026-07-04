@@ -1,0 +1,282 @@
+BULSUSCHOLAR SYSTEM - LEVEL 0 DATA FLOW DIAGRAM
+Text-only context diagram guide
+
+Legend:
+[External Entity] = user or outside service
+(System) = whole BulsuScholar system
+[[Data Store]] = internal database/storage, shown only as reference
+--> = data flow direction
+
+============================================================
+LEVEL 0 CONTEXT DIAGRAM
+============================================================
+
+                         [Supabase Auth / Email Service]
+                                      ^
+                                      |
+                 login sessions, email confirmation,
+                 password reset, auth result
+                                      |
+                                      v
+[Student] <--> registration, login, profile, documents, scholarship applications,
+              material requests, downloads, announcements, inbox notifications
+                                      |
+                                      v
+                         (0.0 BULSUSCHOLAR SYSTEM)
+                                      ^
+                                      |
+[Grantor / Scholarship Provider] <--> grantor login, portal profile, scholar records,
+                                      imported scholar lists, application review,
+                                      announcements, tracking updates, inbox notifications
+                                      |
+                                      v
+                         (0.0 BULSUSCHOLAR SYSTEM)
+                                      ^
+                                      |
+[Admin / Scholarship Office] <--> admin login, student management, grantor management,
+                                  scholarship monitoring, requirement approval,
+                                  SOE checking, compliance management,
+                                  announcement posting, report generation
+                                      |
+                                      v
+                         (0.0 BULSUSCHOLAR SYSTEM)
+                                      ^
+                                      |
+                   uploaded files, public file URLs,
+                   document/image retrieval
+                                      |
+                                      v
+                              [Supabase Storage]
+
+============================================================
+MAIN EXTERNAL ENTITY FLOWS
+============================================================
+
+1. Student to BulsuScholar System
+
+[Student]
+--> submits signup details, student number, email, password, personal information, academic information, and documents
+--> (0.0 BulsuScholar System)
+
+[Student]
+--> submits login credentials and password reset request
+--> (0.0 BulsuScholar System)
+
+[Student]
+--> updates profile, uploads profile photo, COR, COG, school ID, and application form
+--> (0.0 BulsuScholar System)
+
+[Student]
+--> views scholarship catalog, grantor announcements, application tracking, inbox, and dashboard summary
+--> (0.0 BulsuScholar System)
+
+[Student]
+--> applies for scholarship, selects one scholarship, resolves conflict warning, and requests SOE or application form
+--> (0.0 BulsuScholar System)
+
+(0.0 BulsuScholar System)
+--> returns account status, dashboard data, profile data, scholarship status, tracking progress, request approval result, generated SOE/application form, announcements, and notifications
+--> [Student]
+
+
+2. Grantor / Scholarship Provider to BulsuScholar System
+
+[Grantor / Scholarship Provider]
+--> submits login credentials and password-change request
+--> (0.0 BulsuScholar System)
+
+[Grantor / Scholarship Provider]
+--> manages provider profile, portal settings, profile image, scholars, imported scholar lists, and archived scholar records
+--> (0.0 BulsuScholar System)
+
+[Grantor / Scholarship Provider]
+--> reviews scholarship applications, student documents, material request status, and application tracking stage
+--> (0.0 BulsuScholar System)
+
+[Grantor / Scholarship Provider]
+--> completes grantor-controlled stages such as interview, application review, and final screening
+--> (0.0 BulsuScholar System)
+
+[Grantor / Scholarship Provider]
+--> creates, publishes, and archives grantor announcements
+--> (0.0 BulsuScholar System)
+
+(0.0 BulsuScholar System)
+--> returns grantor dashboard analytics, scholar records, application records, announcement records, profile data, password-change result, and notifications
+--> [Grantor / Scholarship Provider]
+
+
+3. Admin / Scholarship Office to BulsuScholar System
+
+[Admin / Scholarship Office]
+--> submits login credentials
+--> (0.0 BulsuScholar System)
+
+[Admin / Scholarship Office]
+--> manages student records, validation status, archive status, uploaded document checks, warnings, and compliance blocks
+--> (0.0 BulsuScholar System)
+
+[Admin / Scholarship Office]
+--> creates and manages grantor accounts, provider profiles, password resets, and password-change approvals
+--> (0.0 BulsuScholar System)
+
+[Admin / Scholarship Office]
+--> monitors scholarship programs, grantor scholars, student applications, tracking progress, and one-scholarship policy issues
+--> (0.0 BulsuScholar System)
+
+[Admin / Scholarship Office]
+--> approves, rejects, signs, checks, or marks SOE/application-form requests as non-compliant
+--> (0.0 BulsuScholar System)
+
+[Admin / Scholarship Office]
+--> creates announcements and generates PDF/CSV reports
+--> (0.0 BulsuScholar System)
+
+(0.0 BulsuScholar System)
+--> returns dashboard charts, student/grantor/scholarship tables, request queues, compliance results, announcement status, and exported reports
+--> [Admin / Scholarship Office]
+
+
+4. Supabase Auth / Email Service to BulsuScholar System
+
+(0.0 BulsuScholar System)
+--> sends signup authentication, login authentication, email confirmation, and password reset request
+--> [Supabase Auth / Email Service]
+
+[Supabase Auth / Email Service]
+--> returns authentication session, confirmation status, reset status, or authentication error
+--> (0.0 BulsuScholar System)
+
+
+5. Supabase Storage to BulsuScholar System
+
+(0.0 BulsuScholar System)
+--> uploads student documents, profile photos, grantor profile photos, announcement images, and attachments
+--> [Supabase Storage]
+
+[Supabase Storage]
+--> returns file URLs, storage paths, file metadata, and downloadable files
+--> (0.0 BulsuScholar System)
+
+============================================================
+INTERNAL DATA STORES USED BY THE SYSTEM
+Shown as reference for converting Level 0 to lower levels.
+============================================================
+
+[[D1 Admin Accounts]]
+[[D2 Student Accounts and Profiles]]
+[[D3 Pending Student Registrations]]
+[[D4 Grantor / Provider Accounts]]
+[[D5 Grantor Portals]]
+[[D6 Grantor Scholars]]
+[[D7 Scholarship Applications]]
+[[D8 SOE and Application Form Requests]]
+[[D9 SOE Downloads / Checked Materials]]
+[[D10 Announcements]]
+[[D11 Student Notifications]]
+[[D12 Grantor Notifications]]
+[[D13 Student Warnings / Compliance Records]]
+[[D14 Uploaded Documents and Images]]
+[[D15 Reports / Exported Files]]
+
+============================================================
+SHORT LEVEL 0 SUMMARY
+============================================================
+
+[Student]
+--> registration, profile, documents, scholarship applications, material requests
+--> (0.0 BulsuScholar System)
+--> account status, scholarship status, downloadable materials, announcements, notifications
+--> [Student]
+
+[Grantor / Scholarship Provider]
+--> scholar records, applications, announcements, portal updates
+--> (0.0 BulsuScholar System)
+--> dashboard analytics, student applications, tracking updates, inbox notifications
+--> [Grantor / Scholarship Provider]
+
+[Admin / Scholarship Office]
+--> account management, approval operations, compliance checking, reports
+--> (0.0 BulsuScholar System)
+--> dashboards, managed records, request results, exported reports
+--> [Admin / Scholarship Office]
+
+[Supabase Auth / Email Service]
+<--> authentication, email confirmation, and password reset
+<--> (0.0 BulsuScholar System)
+
+[Supabase Storage]
+<--> uploaded documents, images, generated file URLs, and downloads
+<--> (0.0 BulsuScholar System)
+
+============================================================
+THREE ALGORITHMS USED IN THE SYSTEM
+============================================================
+
+Algorithm 1: AES-256-GCM Password Encryption and Verification
+
+Purpose:
+Protects locally stored student, admin, and grantor passwords by encrypting them before saving and decrypting only for password comparison during login.
+
+Used in Level 0 flow:
+[Student / Grantor / Admin]
+--> login credentials or new password
+--> (0.0 BulsuScholar System)
+--> AES-256-GCM encryption / decryption / password comparison
+--> [[D1 Admin Accounts]]
+--> [[D2 Student Accounts and Profiles]]
+--> [[D4 Grantor / Provider Accounts]]
+
+Main steps:
+1. Convert the system password secret into a 32-byte key.
+2. Generate a random 12-byte initialization vector.
+3. Encrypt the plain password using AES-GCM.
+4. Combine IV + encrypted password.
+5. Convert the result to Base64 for storage.
+6. During login, decrypt the stored value and compare it with the entered password.
+
+
+Algorithm 2: Grantor-Scholar Matching and Duplicate Detection Algorithm
+
+Purpose:
+Matches student registration/profile data with grantor scholar records and detects possible duplicate scholar entries.
+
+Used in Level 0 flow:
+[Student]
+--> registration/profile details
+--> (0.0 BulsuScholar System)
+--> name normalization, address matching, Levenshtein similarity, weighted duplicate score
+--> [[D6 Grantor Scholars]]
+--> [[D2 Student Accounts and Profiles]]
+--> [[D13 Student Warnings / Compliance Records]]
+
+Main steps:
+1. Normalize names and addresses by converting to lowercase, removing accents, and removing unnecessary symbols.
+2. Compare full name or first name + last name + middle initial.
+3. Compare available address fields: street, city, province, and postal code.
+4. Match student with active grantor scholar records when name and address match.
+5. For duplicate scholar checking, compute Levenshtein similarity for name, ID, email, phone, course, year level, city, and province.
+6. Apply weighted scoring and mark as duplicate when strong identifier or high weighted similarity is reached.
+
+
+Algorithm 3: Scholarship Application Tracking and Status Progression Algorithm
+
+Purpose:
+Determines the current scholarship stage, completed steps, next action, and displayed status for each scholarship application.
+
+Used in Level 0 flow:
+[Student / Grantor / Admin]
+--> application actions, document uploads, material requests, approvals, downloads, checking result
+--> (0.0 BulsuScholar System)
+--> tracking step evaluation and status progression
+--> [[D7 Scholarship Applications]]
+--> [[D8 SOE and Application Form Requests]]
+--> [[D9 SOE Downloads / Checked Materials]]
+
+Main steps:
+1. Identify the scholarship flow type: KWSP flow or standard scholarship flow.
+2. Build the correct ordered step list.
+3. Mark system/student/admin-completed steps.
+4. Check document completion, material request status, approved materials, downloaded materials, and signing/compliance result.
+5. Find the first incomplete or attention-needed step.
+6. Return current step label, owner, status label, next action, and whether admin or student can proceed.

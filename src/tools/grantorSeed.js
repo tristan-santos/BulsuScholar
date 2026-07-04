@@ -1,43 +1,24 @@
-import { getApp, getApps, initializeApp } from "firebase/app"
-import { getAuth, onAuthStateChanged } from "firebase/auth"
+import { initializeApp } from "../services/supabaseDataService"
+import { getAuth, onAuthStateChanged } from "../services/supabaseDataService"
 import {
 	Timestamp,
 	collection,
 	doc,
-	getDoc,
 	getDocs,
-	getFirestore,
+	getDatabase,
 	query,
 	writeBatch,
 	where,
-	setDoc,
-	deleteDoc,
-} from "firebase/firestore"
+} from "../services/supabaseDataService"
 import { encryptPasswordAES256 } from "../services/authService"
-import {
-	GRANTOR_SUBCOLLECTIONS,
-	getGrantorAnnouncementsCollection,
-	getGrantorPortalDoc,
-	getGrantorScholarsCollection,
-	getGrantorSubcollection,
-} from "../services/grantorService"
-import {
-	getCurrentAcademicYear,
-	getCurrentSemesterTag,
-} from "../services/scholarshipService"
 
 const SEED_SOURCE = "grantor-seed-html"
 const LAST_BATCH_STORAGE_KEY = "bulsuscholar_grantor_seed_last_batch"
 const DEFAULT_PASSWORD = "Grantor@123"
-const REQUIRED_FIREBASE_FIELDS = ["apiKey", "authDomain", "projectId", "messagingSenderId", "appId"]
-
-const firebaseConfig = {
-	apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-	authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-	projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-	messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-	appId: import.meta.env.VITE_FIREBASE_APP_ID,
-	measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+const supabaseConfig = {
+	url: import.meta.env.VITE_SUPABASE_URL,
+	projectId: import.meta.env.VITE_SUPABASE_URL,
+	anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
 }
 
 const dom = {
@@ -210,7 +191,7 @@ function mapStudentToScholar(student, grantor, index, batchId) {
 		fullName: student.fullName || buildFullName(student),
 		email: student.email || `${cpNumber}@bulsu.seed`,
 		cpNumber,
-		houseNumber: student.houseNumber || "",
+		
 		street: student.street || "Main Street",
 		city: student.city || CITIES[index % CITIES.length],
 		province: student.province || "Bulacan",
@@ -349,6 +330,7 @@ async function seedGrantorData() {
 				organization: bp.organization,
 				email: bp.email,
 				password: encryptedPassword,
+				mustChangePassword: true,
 				role: "provider",
 				status: "Active",
 				createdAt: daysAgo(365),
@@ -437,11 +419,11 @@ async function deleteGrantorData(mode = "last") {
 }
 
 async function initializeSeeder() {
-	state.app = initializeApp(firebaseConfig)
-	state.db = getFirestore(state.app)
+	state.app = initializeApp(supabaseConfig)
+	state.db = getDatabase(state.app)
 	state.auth = getAuth(state.app)
 
-	dom.projectState.textContent = `Project: ${firebaseConfig.projectId}`
+	dom.projectState.textContent = `Supabase: ${supabaseConfig.url || "not configured"}`
 	onAuthStateChanged(state.auth, (user) => {
 		state.currentUser = user
 		dom.authState.textContent = user?.email ? `Signed in: ${user.email}` : "No active auth session"

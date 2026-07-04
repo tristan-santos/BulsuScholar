@@ -1,4 +1,4 @@
-import { normalizeGrantorAnnouncement, toJsDate } from "./grantorService"
+import { isAnnouncementArchived, normalizeGrantorAnnouncement, toJsDate } from "./grantorService"
 import { toScholarshipProviderType } from "./scholarshipService"
 
 function toAnnouncementPreviewText(raw = {}) {
@@ -22,6 +22,7 @@ export function normalizeStudentAnnouncement(raw = {}, id = "", source = "admin"
 		}
 	}
 
+	const archived = isAnnouncementArchived(raw)
 	return {
 		id: raw.id || id,
 		title: raw.title || "Announcement",
@@ -33,8 +34,33 @@ export function normalizeStudentAnnouncement(raw = {}, id = "", source = "admin"
 		imageUrls: Array.isArray(raw.imageUrls) ? raw.imageUrls : [],
 		startDate: raw.startDate || null,
 		endDate: raw.endDate || raw.scheduleEnd || null,
-		archived: raw.archived === true,
-		status: raw.archived === true ? "Archived" : raw.status || "Published",
+		applicationEnabled: raw.applicationEnabled === true,
+		requiredDocuments: {
+			cog: raw.requiredDocuments?.cog === true,
+			cor: raw.requiredDocuments?.cor === true,
+			applicationForm: raw.requiredDocuments?.applicationForm === true,
+		},
+		otherRequirements: Array.isArray(raw.otherRequirements)
+			? raw.otherRequirements.map((item) => ({
+					name: String(item?.name || "").trim(),
+					fileType: String(item?.fileType || "pdf").toLowerCase() === "png" ? "png" : "pdf",
+					uploadCount: Math.max(1, Number.parseInt(item?.uploadCount, 10) || 1),
+				})).filter((item) => item.name)
+			: [],
+		minimumGrade:
+			raw.minimumGrade !== undefined && raw.minimumGrade !== null && raw.minimumGrade !== ""
+				? Number(raw.minimumGrade)
+				: raw.minGwa !== undefined && raw.minGwa !== null && raw.minGwa !== ""
+					? Number(raw.minGwa)
+					: null,
+		minGwa:
+			raw.minGwa !== undefined && raw.minGwa !== null && raw.minGwa !== ""
+				? Number(raw.minGwa)
+				: raw.minimumGrade !== undefined && raw.minimumGrade !== null && raw.minimumGrade !== ""
+					? Number(raw.minimumGrade)
+					: null,
+		archived,
+		status: archived ? "Archived" : raw.status || "Published",
 		createdAt: raw.createdAt || raw.date || null,
 		updatedAt: raw.updatedAt || null,
 		source: "admin",
@@ -55,17 +81,5 @@ export function sortStudentAnnouncements(rows = []) {
 }
 
 export function isPreviousStudentAnnouncement(item = {}, now = new Date()) {
-	if (item.archived === true) return true
-
-	const normalizedStatus = String(item.status || "").toLowerCase()
-	if (
-		["archived", "closed", "expired", "ended"].some((keyword) =>
-			normalizedStatus.includes(keyword),
-		)
-	) {
-		return true
-	}
-
-	const endDate = toJsDate(item.endDate)
-	return Boolean(endDate && endDate.getTime() < now.getTime())
+	return isAnnouncementArchived(item, now)
 }

@@ -1,6 +1,6 @@
-import { initializeApp } from "firebase/app"
-import { getAuth, onAuthStateChanged } from "firebase/auth"
-import { collection, doc, getDocs, getFirestore, writeBatch, query, where, serverTimestamp } from "firebase/firestore"
+import { initializeApp } from "../services/supabaseDataService"
+import { getAuth, onAuthStateChanged } from "../services/supabaseDataService"
+import { collection, doc, getDocs, getDatabase, writeBatch, query, where, serverTimestamp } from "../services/supabaseDataService"
 import {
 	getCurrentAcademicYear,
 	getCurrentSemesterTag,
@@ -12,13 +12,10 @@ const LAST_BATCH_STORAGE_KEY = "bulsuscholar_student_seed_last_batch"
 const DEFAULT_STUDENT_PASSWORD = "Student@123"
 const STUDENT_SEED_COUNT = 100
 
-const firebaseConfig = {
-	apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-	authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-	projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-	messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-	appId: import.meta.env.VITE_FIREBASE_APP_ID,
-	measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+const supabaseConfig = {
+	url: import.meta.env.VITE_SUPABASE_URL,
+	projectId: import.meta.env.VITE_SUPABASE_URL,
+	anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
 }
 
 const dom = {
@@ -210,7 +207,7 @@ function buildDeterministicStudents() {
 			province: "Bulacan",
 			postalCode: "3000",
 			street: `${(index % 25) + 1} Scholarship Avenue`,
-			houseNumber: String(100 + index),
+			
 			gwa: Number((1.25 + (index % 8) * 0.15).toFixed(2)),
 		}
 	})
@@ -310,7 +307,7 @@ async function seedStudents() {
 				email: s.email,
 				password: encryptedPassword,
 				cpNumber: s.cpNumber,
-				houseNumber: s.houseNumber,
+				
 				street: s.street,
 				city: s.city,
 				province: s.province,
@@ -332,21 +329,21 @@ async function seedStudents() {
 					name: "seed-cor.jpg",
 					type: "image/jpeg",
 					size: 102400,
-					url: "https://res.cloudinary.com/demo/image/upload/v1/sample.jpg",
+					url: "https://placehold.co/800x600?text=Sample+Document",
 					semesterTag,
 				},
 				cogFile: {
 					name: "seed-cog.jpg",
 					type: "image/jpeg",
 					size: 104320,
-					url: "https://res.cloudinary.com/demo/image/upload/v1/sample.jpg",
+					url: "https://placehold.co/800x600?text=Sample+Document",
 					semesterTag,
 				},
 				schoolIdFile: {
 					name: "seed-school-id.jpg",
 					type: "image/jpeg",
 					size: 98304,
-					url: "https://res.cloudinary.com/demo/image/upload/v1/sample.jpg",
+					url: "https://placehold.co/800x600?text=Sample+Document",
 					semesterTag,
 				},
 				scholarships,
@@ -429,11 +426,11 @@ async function deleteSeededStudents(mode = "last") {
 }
 
 async function initialize() {
-	state.app = initializeApp(firebaseConfig)
-	state.db = getFirestore(state.app)
+	state.app = initializeApp(supabaseConfig)
+	state.db = getDatabase(state.app)
 	state.auth = getAuth(state.app)
 
-	dom.projectState.textContent = `Project: ${firebaseConfig.projectId}`
+	dom.projectState.textContent = `Supabase: ${supabaseConfig.url || "not configured"}`
 	onAuthStateChanged(state.auth, (user) => {
 		state.currentUser = user
 		dom.authState.textContent = user?.email ? `Signed in: ${user.email}` : "No auth session"

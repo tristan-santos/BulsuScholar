@@ -2,7 +2,7 @@
  * Student Scholarships Page - Apply-only scholarship flow with gated material requests.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useLocation, useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import {
 	addDoc,
 	collection,
@@ -16,23 +16,17 @@ import {
 	setDoc,
 	updateDoc,
 	where,
-} from "firebase/firestore"
+} from "../services/supabaseDataService"
 import { toast } from "react-toastify"
 import {
-	HiMenu,
 	HiOutlineAcademicCap,
 	HiOutlineCheckCircle,
-	HiOutlineClock,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
-	HiOutlineLogout,
-	HiOutlineMoon,
-	HiOutlineSun,
-	HiOutlineUserCircle,
 	HiX,
 } from "react-icons/hi"
-import { db } from "../../firebase"
-import logo2 from "../assets/logo2.png"
+import { db } from "../services/supabaseDataService"
+import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
 import useThemeMode from "../hooks/useThemeMode"
 import {
@@ -110,6 +104,17 @@ function isScholarshipActiveOrPending(status = "") {
 	].some((keyword) => normalized.includes(keyword))
 }
 
+function formatApplicationStatus(status = "") {
+	const normalized = String(status || "").toLowerCase()
+	if (["rejected", "denied", "declined", "cancelled", "canceled", "withdrawn"].some((keyword) => normalized.includes(keyword))) {
+		return "Rejected"
+	}
+	if (["complete", "completed", "approved", "accepted", "finalized", "released", "paid"].some((keyword) => normalized.includes(keyword))) {
+		return "Complete"
+	}
+	return "Pending"
+}
+
 function toJsDate(value) {
 	if (!value) return null
 	if (value?.toDate) return value.toDate()
@@ -141,7 +146,7 @@ function getMultipleScholarshipBannerCopy(user, scholarships) {
 
 function buildDocumentRequirementCopy(documentCheck) {
 	if (documentCheck?.ok) {
-		return `All KWSP requirements are ready for ${documentCheck?.semesterTag || "the current semester"}.`
+		return `COR and COG are ready for ${documentCheck?.semesterTag || "the current semester"}.`
 	}
 
 	const notes = []
@@ -151,12 +156,12 @@ function buildDocumentRequirementCopy(documentCheck) {
 	if (Array.isArray(documentCheck?.expired) && documentCheck.expired.length > 0) {
 		notes.push(`Update needed: ${documentCheck.expired.join(", ")}`)
 	}
-	return notes.join(" | ") || "Upload the required KWSP documents."
+	return notes.join(" | ") || "Upload the required COR and COG."
 }
 
 function buildDocumentRequirementPrompt(documentCheck, scholarshipName = "this scholarship") {
 	if (!documentCheck) {
-		return `Upload the required documents for ${scholarshipName} before requesting materials.`
+		return `Upload the required COR and COG for ${scholarshipName} before requesting materials.`
 	}
 
 	const notes = []
@@ -170,7 +175,7 @@ function buildDocumentRequirementPrompt(documentCheck, scholarshipName = "this s
 	}
 
 	return (
-		`Upload the required documents for ${scholarshipName} before requesting materials.` +
+		`Upload the required COR and COG for ${scholarshipName} before requesting materials.` +
 		(notes.length > 0 ? ` ${notes.join(" | ")}` : "")
 	)
 }
@@ -737,12 +742,8 @@ export default function StudentScholarshipsPage() {
 		const trackedScholarshipLabel = kwspEntry?.name || kwspCatalogItem?.name || "Scholarship"
 		const isKwspFlow = kwspEntry?.providerType === "kuya_win"
 		const isMorissonFlow = kwspEntry?.providerType === "morisson"
-		const trackerTitle = isKwspFlow
-			? "Kuya Win Scholarship Progress"
-			: `${trackedScholarshipLabel} Progress`
-		const trackerCopy = isKwspFlow
-			? "Track each KWSP stage and see what you need to do next."
-			: `Track your ${trackedScholarshipLabel} progress and see what you need to do next.`
+		const trackerTitle = `Applying for: ${trackedScholarshipLabel}`
+		const trackerCopy = "Track your application stage and the next action required for this scholarship."
 		const trackerAriaLabel = isKwspFlow
 			? "KWSP application tracking"
 			: `${trackedScholarshipLabel} application tracking`
@@ -752,7 +753,9 @@ export default function StudentScholarshipsPage() {
 
 		let nextActionTitle = "Application for KWSP"
 		let nextActionCopy = "Your account is ready. Start your KWSP application from the available programs list."
+		let nextActionHelp = ""
 		let summaryTone = "current"
+		let nextPanelTone = "default"
 
 		if (studentAccessState.isPortalAccessBlocked) {
 			nextActionTitle = "Portal access is blocked"
@@ -787,7 +790,17 @@ export default function StudentScholarshipsPage() {
 			nextActionCopy = kwspDocumentCheck.ok
 				? "Your uploads are complete. Wait for the scholarship office to continue with admin review."
 				: documentCopy
+			nextActionHelp = kwspDocumentCheck.ok
+				? "No upload action is needed right now. Wait for the scholarship office to review your submitted documents."
+				: "Go to Profile, open your document uploads, then update the missing COR or COG."
 			summaryTone = kwspDocumentCheck.ok ? "current" : "attention"
+			nextPanelTone = kwspDocumentCheck.ok ? "default" : "missing"
+		} else if (trackingProgress.currentStep?.id === "application_form") {
+			nextActionTitle = "Application Form"
+			nextActionCopy = "Your COR and COG are complete. Complete and upload the required application form before review continues."
+			nextActionHelp = "Go to Profile, open your document uploads, then add your scholarship application form."
+			summaryTone = "current"
+			nextPanelTone = "pending"
 		} else if (trackingProgress.currentStep?.id === "admin_review") {
 			nextActionTitle = "Wait for admin review"
 			nextActionCopy = "Your application is now under scholarship office review."
@@ -817,6 +830,7 @@ export default function StudentScholarshipsPage() {
 				: isKwspFlow
 					? "Your KWSP application is approved. Request your SOE if you still need it."
 					: `Request your SOE for ${trackedScholarshipLabel} if you still need it.`
+			nextActionHelp = "Use the My Scholarship Applications section below to request your SOE or continue your material request."
 			summaryTone = "current"
 		} else if (trackingProgress.currentStep?.id === "download_materials") {
 			nextActionTitle = trackingProgress.hasApprovedMaterials
@@ -827,7 +841,11 @@ export default function StudentScholarshipsPage() {
 					? "Your material request is approved. Download the available files from your KWSP card."
 					: "Your material request is approved. Download the available files from your scholarship card."
 				: "Your requested materials are still pending admin approval."
+			nextActionHelp = trackingProgress.hasApprovedMaterials
+				? "Use the material download button in your scholarship card below to download the approved file."
+				: "Wait for admin approval. Once approved, the material download button will become available below."
 			summaryTone = "current"
+			nextPanelTone = trackingProgress.hasApprovedMaterials ? "default" : "pending"
 		} else if (trackingProgress.signingAttention) {
 			nextActionTitle = "Resolve SOE checking issue"
 			nextActionCopy = "Your downloaded SOE was marked non-compliant. Coordinate with the scholarship office before proceeding."
@@ -852,13 +870,15 @@ export default function StudentScholarshipsPage() {
 			currentStep: trackingProgress.currentStep,
 			nextActionTitle,
 			nextActionCopy,
+			nextActionHelp,
 			summaryTone,
+			nextPanelTone,
 			currentStageLabel: trackingProgress.currentStepLabel || `${trackedScholarshipLabel} Tracking`,
 			highlightedStepId: trackingProgress.highlightedStepId || "",
 			trackerTitle,
 			trackerCopy,
 			trackerAriaLabel,
-			applicationStatus: kwspEntry?.status || "Not started",
+			applicationStatus: formatApplicationStatus(kwspEntry?.status),
 			applicationNumber:
 				kwspEntry?.applicationNumber || kwspEntry?.requestNumber || kwspEntry?.id || "-",
 			isMorissonFlow,
@@ -1516,7 +1536,7 @@ export default function StudentScholarshipsPage() {
 
 		setIsDownloadingApplicationForm(true)
 		try {
-			const response = await fetch("/soe-template.pdf")
+			const response = await fetch("/Templates/soe-template.pdf")
 			if (!response.ok) {
 				throw new Error(`Template download failed with status ${response.status}`)
 			}
@@ -1800,6 +1820,23 @@ export default function StudentScholarshipsPage() {
 		if (!label || !Number.isFinite(amount) || amount <= 0) return sum
 		return sum + amount
 	}, 0)
+	const scholarshipControlStats = [
+		{
+			label: scholarships.length > 0 ? "Applying To" : "Available Programs",
+			value: kwspEntry?.name || scholarships[0]?.name || scholarshipCatalog.length,
+			icon: HiOutlineAcademicCap,
+		},
+		{
+			label: "Application Status",
+			value: kwspTracking.applicationStatus || "Pending",
+			icon: HiOutlineCheckCircle,
+		},
+		{
+			label: "Materials",
+			value: kwspTracking.materialStatus || "Not Requested",
+			icon: HiOutlineDocumentText,
+		},
+	]
 
 	if (!userLoaded) {
 		return (
@@ -1817,167 +1854,19 @@ export default function StudentScholarshipsPage() {
 
 	return (
 		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
-			<header className="student-header">
-				<div className="student-header-top-stripe"></div>
-				<div className="student-header-content">
-					<div className="student-header-left">
-						<Link to="/student-dashboard" className="student-header-home-link" aria-label="Go to dashboard">
-							<img src={logo2} alt="BulsuScholar" className="student-header-logo" />
-							<h1 className="student-header-brand">BulsuScholar</h1>
-						</Link>
-					</div>
-					<div className="student-header-right">
-						<div className="student-header-verified-wrap">
-							<button
-								type="button"
-								className={`student-header-verified-btn ${isValidated ? "student-header-verified-btn--verified" : "student-header-verified-btn--pending"}`}
-								aria-label={isValidated ? "Verified" : "Pending verification"}
-								title={isValidated ? "Verified" : "Pending"}
-							>
-								{isValidated ? (
-									<HiOutlineCheckCircle
-										className="student-header-verified-icon"
-										aria-hidden
-									/>
-								) : (
-									<HiOutlineClock
-										className="student-header-verified-icon"
-										aria-hidden
-									/>
-								)}
-								<span className="student-header-verified-tooltip-below">
-									{isValidated ? "Verified" : "Pending"}
-								</span>
-							</button>
-						</div>
-						<div className="student-header-user-wrap" ref={userMenuRef}>
-							<button
-								type="button"
-								className="student-header-user-btn"
-								onClick={() => setUserMenuOpen((open) => !open)}
-								aria-label="User menu"
-								aria-expanded={userMenuOpen}
-							>
-								<HiMenu className="student-header-menu-icon" aria-hidden />
-								<div className="student-header-avatar">
-									{avatarUrl ? (
-										<img
-											src={avatarUrl}
-											alt="Profile"
-											className="student-header-avatar-image-mini"
-										/>
-									) : (
-										getUserInitials()
-									)}
-								</div>
-							</button>
-							{userMenuOpen && (
-								<div className="student-verified-dropdown">
-									<div className="student-verified-dropdown-user">
-										<div className="student-verified-dropdown-avatar">
-											{avatarUrl ? (
-												<img
-													src={avatarUrl}
-													alt="Profile"
-													className="student-header-avatar-image-mini"
-												/>
-											) : (
-												getUserInitials()
-											)}
-										</div>
-										<div className="student-verified-dropdown-user-info">
-											<p className="student-verified-dropdown-name">
-												{[user?.fname, user?.mname, user?.lname]
-													.filter(Boolean)
-													.join(" ") || "Student"}
-											</p>
-											<p className="student-verified-dropdown-email">
-												{studentNumber || "-"}
-											</p>
-										</div>
-									</div>
-									<nav className="student-verified-dropdown-nav">
-										<button
-											type="button"
-											className="student-verified-dropdown-item"
-											onClick={() => {
-												setUserMenuOpen(false)
-												navigate("/student-dashboard/profile", { state: { user } })
-											}}
-										>
-											<HiOutlineUserCircle
-												className="student-verified-dropdown-item-icon"
-												aria-hidden
-											/>
-											My Profile
-										</button>
-										<button
-											type="button"
-											className="student-verified-dropdown-item"
-											onClick={() => {
-												setUserMenuOpen(false)
-												navigate("/student-dashboard")
-											}}
-										>
-											<HiOutlineAcademicCap
-												className="student-verified-dropdown-item-icon"
-												aria-hidden
-											/>
-											Dashboard
-										</button>
-									</nav>
-									<div className="student-verified-dropdown-theme">
-										<span className="student-verified-dropdown-theme-label">THEME</span>
-										<div className="student-verified-dropdown-theme-btns">
-											<button
-												type="button"
-												className={`student-verified-dropdown-theme-btn ${theme === "light" ? "active" : ""}`}
-												onClick={() => setTheme("light")}
-											>
-												<HiOutlineSun aria-hidden />
-												Light
-											</button>
-											<button
-												type="button"
-												className={`student-verified-dropdown-theme-btn ${theme === "dark" ? "active" : ""}`}
-												onClick={() => setTheme("dark")}
-											>
-												<HiOutlineMoon aria-hidden />
-												Dark
-											</button>
-										</div>
-									</div>
-									<button
-										type="button"
-										className="student-verified-dropdown-logout"
-										onClick={() => {
-											sessionStorage.removeItem("bulsuscholar_userId")
-											sessionStorage.removeItem("bulsuscholar_userType")
-											setUserMenuOpen(false)
-											navigate("/", { replace: true })
-										}}
-									>
-										<HiOutlineLogout
-											className="student-verified-dropdown-logout-icon"
-											aria-hidden
-										/>
-										Logout
-									</button>
-								</div>
-							)}
-						</div>
-					</div>
-				</div>
-			</header>
+			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 
 			<main className="student-shell">
 				<div className="student-shell-content">
-					<div className="student-page-title">
-						<h2 className="student-page-heading">Scholarship Control Center</h2>
-						<p className="student-page-sub">
-							Submit one active scholarship application at a time. Apply locks out other programs until resolved.
-						</p>
-					</div>
+					<section className="student-scholarship-control-hero">
+						<div className="student-scholarship-control-copy">
+							<span className="student-scholarship-control-kicker">Scholarship Control Center</span>
+							<h2>Manage your scholarship application</h2>
+							<p>
+								Track your current application, request approved materials, and review available scholarship programs in one place.
+							</p>
+						</div>
+					</section>
 
 					{hasBlockedScholarshipBanner ? (
 						<div className="student-block-banner" role="alert">
@@ -2030,63 +1919,33 @@ export default function StudentScholarshipsPage() {
 									</span>
 								</div>
 								<div className="student-kwsp-tracker-grid">
-									<section className="student-kwsp-next-panel">
+									<section className={`student-kwsp-next-panel student-kwsp-next-panel--${kwspTracking.nextPanelTone}`}>
 										<span className="student-kwsp-next-kicker">What You Need To Do Next</span>
 										<h4>{kwspTracking.nextActionTitle}</h4>
 										<p>{kwspTracking.nextActionCopy}</p>
+										{kwspTracking.nextActionHelp ? (
+											<p className="student-kwsp-next-help">{kwspTracking.nextActionHelp}</p>
+										) : null}
 										<div className="student-kwsp-next-meta">
+											{scholarshipControlStats.map((item) => {
+												const Icon = item.icon
+												return (
+													<div className="student-kwsp-next-meta-card" key={item.label}>
+														<Icon aria-hidden />
+														<div>
+															<span>{item.label}</span>
+															<strong>{item.value}</strong>
+														</div>
+													</div>
+												)
+											})}
 											<div className="student-kwsp-next-meta-card">
-												<span>Application Status</span>
-												<strong>{kwspTracking.applicationStatus}</strong>
+												<HiOutlineDocumentText aria-hidden />
+												<div>
+													<span>Application Number</span>
+													<strong>{kwspTracking.applicationNumber}</strong>
+												</div>
 											</div>
-											<div className="student-kwsp-next-meta-card">
-												<span>Application Number</span>
-												<strong>{kwspTracking.applicationNumber}</strong>
-											</div>
-											<div className="student-kwsp-next-meta-card">
-												<span>Materials</span>
-												<strong>{kwspTracking.materialStatus}</strong>
-											</div>
-										</div>
-										<div className="student-kwsp-next-actions">
-											{kwspTracking.isMorissonFlow ? (
-												<p className="student-scholarship-card-note">
-													Morisson application forms are confidential. Get your application form at the scholarship office.
-												</p>
-											) : (
-												<button
-													type="button"
-													className="student-mini-btn student-mini-btn--secondary"
-													disabled={
-														isDownloadingApplicationForm ||
-														hasScholarshipActionBlock ||
-														kwspTracking.entry?.adminBlocked === true
-													}
-													title={
-														studentAccessState.isPortalAccessBlocked
-															? "Portal access is blocked."
-															: hasComplianceBlock
-																? "Your scholarship actions are currently on hold."
-																: kwspTracking.entry?.adminBlocked === true
-																	? "This scholarship is blocked by the scholarship office."
-																	: "Download your application form"
-													}
-													onClick={() => handleDownloadApplicationForm(kwspTracking.entry)}
-												>
-													<HiOutlineDocumentText />
-													{studentAccessState.isPortalAccessBlocked
-														? "Access Blocked"
-														: hasComplianceBlock
-															? "Compliance Hold"
-															: kwspTracking.entry?.adminBlocked === true
-																? "Blocked by Office"
-																: isDownloadingApplicationForm
-																	? "Preparing..."
-																	: kwspTracking.applicationFormDownloadedAt
-																		? "Download Application Form Again"
-																		: "Download Application Form"}
-												</button>
-											)}
 										</div>
 									</section>
 									<section className="student-kwsp-step-list">
@@ -2126,7 +1985,13 @@ export default function StudentScholarshipsPage() {
 					{shouldShowScholarshipWorkspace ? (
 						<section className="student-scholarship-workspace">
 						<div className="student-scholarship-board">
-							<h3>My Scholarship Applications</h3>
+							<div className="student-scholarship-board-head">
+								<div>
+									<span>Current Records</span>
+									<h3>My Scholarship Applications</h3>
+								</div>
+								<strong>{scholarships.length} total</strong>
+							</div>
 							{hasMultipleScholarshipChoices ? (
 								<p className="dashboard-placeholder">
 									One scholarship per student policy: choose one scholarship first before SOE and application form actions become available.
@@ -2167,7 +2032,7 @@ export default function StudentScholarshipsPage() {
 												</p>
 												{entry.matchSource === "grantor_roster" ? (
 													<p className="student-scholarship-card-note">
-														Matched grantor: {entry.matchedGrantorName || entry.name}. Upload the required documents before requesting materials.
+														Matched grantor: {entry.matchedGrantorName || entry.name}. Upload the required COR and COG before completing the form stage.
 													</p>
 												) : null}
 												{!hasMultipleScholarshipChoices && !entryTrackingProgress.canRequestMaterials ? (
@@ -2267,7 +2132,13 @@ export default function StudentScholarshipsPage() {
 						</div>
 
 						<div className="student-scholarship-board" ref={availableProgramsRef}>
-							<h3>Available Programs</h3>
+							<div className="student-scholarship-board-head">
+								<div>
+									<span>Program Catalog</span>
+									<h3>Available Programs</h3>
+								</div>
+								<strong>{scholarshipCatalog.length} listed</strong>
+							</div>
 							<div className="student-program-grid">
 								{scholarshipCatalog.map((catalogItem) => {
 									const hasThisActiveApplication = scholarships.some(
@@ -2312,8 +2183,8 @@ export default function StudentScholarshipsPage() {
 											<h4>{catalogItem.name}</h4>
 											<p>
 												{catalogItem.requiresFullDocs
-													? "Requires COR, COG, School ID"
-													: "Requires COR"}
+													? "Requires COR and COG"
+													: "Requires COR and COG"}
 											</p>
 											<div className="student-program-actions">
 												<button
@@ -2361,16 +2232,37 @@ export default function StudentScholarshipsPage() {
 								<button
 									type="button"
 									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/profile", { state: { user } })}
+									onClick={() => navigate("/student-dashboard")}
 								>
-									My Profile
+									Dashboard Home
 								</button>
 								<button
 									type="button"
 									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard", { state: { user } })}
+									onClick={() => navigate("/student-dashboard/announcements")}
 								>
-									Dashboard Home
+									Announcements
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/inbox")}
+								>
+									Inbox
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/scholarships")}
+								>
+									My Scholarships
+								</button>
+								<button
+									type="button"
+									className="student-footer-link"
+									onClick={() => navigate("/student-dashboard/profile")}
+								>
+									My Profile
 								</button>
 							</div>
 						</div>
@@ -2413,7 +2305,7 @@ export default function StudentScholarshipsPage() {
 								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
 								onClick={() => {
 									setDocumentUploadPrompt(null)
-									navigate("/student-dashboard/profile", { state: { user } })
+									navigate("/student-dashboard/profile")
 								}}
 							>
 								Go to Profile Uploads

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { addDoc, collection, collectionGroup, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore"
+import { addDoc, collection, collectionGroup, doc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from "../services/supabaseDataService"
 import {
 	Chart as ChartJS,
 	CategoryScale,
@@ -31,20 +31,25 @@ import {
 	HiOutlineSparkles,
 	HiOutlineSun,
 	HiOutlineTrash,
+	HiOutlineUserAdd,
 	HiOutlineUserGroup,
 	HiOutlineUsers,
 	HiX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { db } from "../../firebase"
+import { db } from "../services/supabaseDataService"
+import { encryptPasswordAES256 } from "../services/authService"
+import { GRANTOR_DEFAULT_PASSWORD } from "../constants/grantorAuth"
 import logo2 from "../assets/logo2.png"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
-import TablePagination, { TABLE_PAGE_SIZE, paginateRows } from "../components/TablePagination"
+import TablePagination from "../components/TablePagination"
+import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
-import { uploadToCloudinary } from "../services/cloudinaryService"
+import { uploadToStorage } from "../services/storageService"
 import {
 	GRANTOR_SUBCOLLECTIONS,
+	isAnnouncementArchived,
 	matchesGrantorScholarToStudent,
 	normalizeGrantorScholar,
 } from "../services/grantorService"
@@ -81,9 +86,9 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 const ADMIN_SECTIONS = [
 	{ id: "dashboard", label: "Dashboard", icon: HiOutlineAcademicCap, path: "/admin/dashboard" },
 	{ id: "students", label: "Student Management", icon: HiOutlineUsers, path: "/admin/students" },
+	{ id: "grantors", label: "Grantor Management", icon: HiOutlineUserGroup, path: "/admin/grantors" },
 	{ id: "scholarships", label: "Scholarship Programs", icon: HiOutlineDocumentText, path: "/admin/scholarships" },
-	{ id: "soe", label: "Materials Request", icon: HiOutlineClock, path: "/admin/soe-requests" },
-	{ id: "soe-checking", label: "Materials Checking", icon: HiOutlineShieldCheck, path: "/admin/soe-checking" },
+	{ id: "requirements", label: "Requirements", icon: HiOutlineShieldCheck, path: "/admin/requirements" },
 	{ id: "reports", label: "Report Generation", icon: HiOutlineChartBar, path: "/admin/reports" },
 	{ id: "announcements", label: "Announcements", icon: HiOutlineBell, path: "/admin/announcements" },
 ]
@@ -132,6 +137,7 @@ function mergeGrantorScholarRows(rows = []) {
 }
 
 function toSectionFromPath(pathname) {
+	if (pathname.startsWith("/admin/soe-requests") || pathname.startsWith("/admin/soe-checking")) return "requirements"
 	const match = ADMIN_SECTIONS.find((item) => pathname.startsWith(item.path))
 	return match?.id || "dashboard"
 }
@@ -143,6 +149,15 @@ function toProviderType(value = "") {
 	if (normalized.includes("morisson") || normalized.includes("morrison")) return "morisson"
 	if (normalized.includes("none")) return "none"
 	return "other"
+}
+
+function buildGrantorIdFromFirstName(value = "") {
+	const fname = String(value || "")
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_+|_+$/g, "")
+	return fname ? `grantor_${fname}` : ""
 }
 
 function toProviderLabel(value = "") {
@@ -179,10 +194,20 @@ function buildGrantorScholarFullName(scholar = {}) {
 }
 
 function buildGrantorScholarAddress(scholar = {}) {
-	return [scholar.houseNumber, scholar.street, scholar.city, scholar.province, scholar.postalCode]
+	return [scholar.street, scholar.city, scholar.province, scholar.postalCode]
 		.filter(Boolean)
 		.join(" ")
 		.trim()
+}
+
+function buildGrantorName(grantor = {}) {
+	return (
+		[grantor.fname, grantor.mname, grantor.lname].filter(Boolean).join(" ").trim() ||
+		grantor.providerName ||
+		grantor.name ||
+		grantor.grantorName ||
+		""
+	)
 }
 
 function toJsDate(value) {
@@ -205,11 +230,6 @@ function startOfDay(value) {
 	const date = new Date(value)
 	date.setHours(0, 0, 0, 0)
 	return date
-}
-
-function startOfYear(value) {
-	const date = toJsDate(value) || new Date()
-	return new Date(date.getFullYear(), 0, 1)
 }
 
 function endOfDay(value) {
@@ -270,14 +290,6 @@ function getStudentScholarshipNames(student) {
 	)]
 }
 
-function getMultipleScholarshipComplianceMessage(student) {
-	const scholarshipNames = getStudentScholarshipNames(student)
-	if (scholarshipNames.length > 0) {
-		return `Multiple scholarships detected: ${scholarshipNames.join(", ")}. Choose one scholarship only to comply with the one scholarship per student policy.`
-	}
-	return "Multiple scholarships detected. Choose one scholarship only to comply with the one scholarship per student policy."
-}
-
 function getStudentRestrictionState(student) {
 	const scholarshipEligibility =
 		student?.scholarshipConflictWarning === true ||
@@ -288,6 +300,27 @@ function getStudentRestrictionState(student) {
 function toStudentLifecycle(student) {
 	if (student?.archived === true) return "archived"
 	return "students"
+}
+
+function toGrantorStatus(grantor = {}) {
+	if (grantor?.archived === true) return "Archived"
+	if (grantor?.passwordChangeRequested === true || grantor?.passwordChangeRequestStatus === "pending") {
+		return "Password Requested"
+	}
+	return grantor?.status || "Active"
+}
+
+function buildGrantorReportRow(grantor = {}) {
+	return {
+		id: grantor.id || "-",
+		name: buildGrantorName(grantor) || "-",
+		email: grantor.email || "-",
+		organization: grantor.organization || "-",
+		providerType: grantor.providerType || toProviderType(grantor.providerName || grantor.name || ""),
+		totalScholars: Number(grantor.totalScholars || 0),
+		status: toGrantorStatus(grantor),
+		createdAt: formatDate(grantor.createdAt),
+	}
 }
 
 function toReviewStateLabel(value = "") {
@@ -346,15 +379,6 @@ function buildAnnouncementImageList(item) {
 	return []
 }
 
-function getEarliestDate(values = []) {
-	return values.reduce((earliest, current) => {
-		const date = toJsDate(current)
-		if (!date) return earliest
-		if (!earliest) return date
-		return date.getTime() < earliest.getTime() ? date : earliest
-	}, null)
-}
-
 function getApplicationDate(application) {
 	return toJsDate(
 		application?.createdAt ||
@@ -400,90 +424,6 @@ function createVerticalGradient(context, topColor, bottomColor) {
 	gradient.addColorStop(0, topColor)
 	gradient.addColorStop(1, bottomColor)
 	return gradient
-}
-
-function buildTimelineBuckets(anchorDate, endDate, range) {
-	const buckets = []
-	if (!anchorDate || !endDate) return buckets
-
-	if (range === "daily") {
-		let cursor = startOfDay(anchorDate)
-		while (cursor <= endDate) {
-			buckets.push({
-				key: toDateString(cursor),
-				label: cursor.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-			})
-			cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1)
-		}
-		return buckets
-	}
-
-	if (range === "weekly") {
-		let cursor = startOfDay(anchorDate)
-		while (cursor <= endDate) {
-			buckets.push({
-				key: toDateString(cursor),
-				label: cursor.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-			})
-			cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7)
-		}
-		return buckets
-	}
-
-	if (range === "monthly") {
-		let cursor = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
-		while (cursor <= endDate) {
-			buckets.push({
-				key: `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`,
-				label: cursor.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
-			})
-			cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
-		}
-		return buckets
-	}
-
-	let cursor = new Date(anchorDate.getFullYear(), 0, 1)
-	while (cursor <= endDate) {
-		buckets.push({
-			key: String(cursor.getFullYear()),
-			label: String(cursor.getFullYear()),
-		})
-		cursor = new Date(cursor.getFullYear() + 1, 0, 1)
-	}
-	return buckets
-}
-
-function getBucketKey(date, anchorDate, range) {
-	const current = startOfDay(date)
-	if (range === "daily") return toDateString(current)
-	if (range === "weekly") {
-		const diffMs = current.getTime() - startOfDay(anchorDate).getTime()
-		const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
-		const bucketStart = new Date(anchorDate)
-		bucketStart.setDate(anchorDate.getDate() + Math.floor(diffDays / 7) * 7)
-		return toDateString(bucketStart)
-	}
-	if (range === "monthly") return `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`
-	return String(current.getFullYear())
-}
-
-function buildTimelineSeries(dates, anchorDate, range) {
-	const timelineEnd = new Date()
-	timelineEnd.setHours(23, 59, 59, 999)
-	const buckets = buildTimelineBuckets(anchorDate, timelineEnd, range)
-	const counts = Object.fromEntries(buckets.map((bucket) => [bucket.key, 0]))
-
-	dates.forEach((value) => {
-		const date = toJsDate(value)
-		if (!date || date.getTime() < anchorDate.getTime()) return
-		const bucketKey = getBucketKey(date, anchorDate, range)
-		if (Object.hasOwn(counts, bucketKey)) counts[bucketKey] += 1
-	})
-
-	return {
-		labels: buckets.map((bucket) => bucket.label),
-		values: buckets.map((bucket) => counts[bucket.key]),
-	}
 }
 
 function buildSoeVolumeSeries(dates, range) {
@@ -622,15 +562,6 @@ function toScholarshipReportRow(row) {
 	}
 }
 
-function toScholarshipTableReportRow(row) {
-	return {
-		studentId: row.studentId || "-",
-		fullName: row.fullName || "-",
-		scholarshipName: row.scholarship || "-",
-		status: row.status || "-",
-	}
-}
-
 function toScholarshipWarningReportRow(row) {
 	return {
 		studentId: row.studentId || "-",
@@ -652,21 +583,6 @@ function toSoeReportRow(row) {
 		nextEligibleLabel: row.nextEligibleLabel || "-",
 		reviewStateLabel: row.reviewStateLabel || toReviewStateLabel(row.reviewState),
 		downloadStatusLabel: row.downloadStatusLabel || "-",
-	}
-}
-
-function toSoeWarningReportRow(row) {
-	return {
-		id: row.id,
-		studentId: row.studentId || "-",
-		fullName: row.fullName || "-",
-		scholarshipName: row.scholarshipName || "-",
-		providerType: "Warning",
-		status: "Cooldown Warning",
-		timestamp: row.currentDate || new Date().toISOString(),
-		requestDate: row.currentDate,
-		nextEligibleLabel: formatDate(addMonths(row.previousDate, 6)),
-		reviewStateLabel: `Previous: ${formatDate(row.previousDate)}`,
 	}
 }
 
@@ -745,7 +661,6 @@ function SectionTabs({ tabs, value, onChange, className = "" }) {
 
 import {
 	sendEmailNotification,
-	getMultipleScholarshipComplianceEmailBody,
 	getSoeApprovalEmailBody,
 	getSoeDisapprovalEmailBody,
 } from "../services/emailService"
@@ -757,6 +672,7 @@ export default function AdminDashboard() {
 	const activeSection = toSectionFromPath(location.pathname)
 
 	const [studentsRaw, setStudentsRaw] = useState([])
+	const [providersRaw, setProvidersRaw] = useState([])
 	const [applicationsRaw, setApplicationsRaw] = useState([])
 	const [soeRequests, setSoeRequests] = useState([])
 	const [soeDownloads, setSoeDownloads] = useState([])
@@ -764,6 +680,7 @@ export default function AdminDashboard() {
 	const [grantorScholarsRaw, setGrantorScholarsRaw] = useState([])
 	const [dataLoadState, setDataLoadState] = useState({
 		students: false,
+		providers: false,
 		applications: false,
 		soe: false,
 		soeDownloads: false,
@@ -779,6 +696,20 @@ export default function AdminDashboard() {
 	const [studentArchiveTrendRange, setStudentArchiveTrendRange] = useState("monthly")
 	const [selectedStudentId, setSelectedStudentId] = useState("")
 	const [selectedScholarshipTrackingKey, setSelectedScholarshipTrackingKey] = useState("")
+
+	const [grantorTab, setGrantorTab] = useState("overview")
+	const [grantorSearch, setGrantorSearch] = useState("")
+	const [selectedGrantorIds, setSelectedGrantorIds] = useState([])
+	const [showGrantorModal, setShowGrantorModal] = useState(false)
+	const [grantorForm, setGrantorForm] = useState({
+		id: "",
+		fname: "",
+		mname: "",
+		lname: "",
+		email: "",
+		organization: "",
+	})
+	const [isCreatingGrantor, setIsCreatingGrantor] = useState(false)
 
 	const [scholarshipProvider, setScholarshipProvider] = useState("All")
 	const [scholarshipSearch, setScholarshipSearch] = useState("")
@@ -835,6 +766,10 @@ export default function AdminDashboard() {
 	}, [studentViewTab])
 
 	useEffect(() => {
+		setSelectedGrantorIds([])
+	}, [grantorTab])
+
+	useEffect(() => {
 		if (location.pathname === "/admin" || location.pathname === "/admin/") {
 			navigate("/admin/dashboard", { replace: true })
 		}
@@ -853,6 +788,14 @@ export default function AdminDashboard() {
 					markLoaded("students")
 				},
 				() => markLoaded("students"),
+			),
+			onSnapshot(
+				collection(db, "providers"),
+				(snap) => {
+					setProvidersRaw(snap.docs.map((row) => ({ id: row.id, ...(row.data() || {}) })))
+					markLoaded("providers")
+				},
+				() => markLoaded("providers"),
 			),
 			onSnapshot(
 				collection(db, "scholarshipApplications"),
@@ -1082,6 +1025,78 @@ export default function AdminDashboard() {
 			],
 		}),
 		[studentTabCounts, theme],
+	)
+
+	const grantorScholarCountsById = useMemo(() => {
+		const counts = new Map()
+		grantorScholarsRaw.forEach((scholar) => {
+			const grantorId = scholar.grantorId || scholar.parentId || ""
+			if (!grantorId) return
+			counts.set(grantorId, (counts.get(grantorId) || 0) + 1)
+		})
+		return counts
+	}, [grantorScholarsRaw])
+
+	const grantorRows = useMemo(
+		() =>
+			providersRaw
+				.map((provider) => ({
+					...provider,
+					name: buildGrantorName(provider) || provider.id,
+					providerType: provider.providerType || toProviderType(buildGrantorName(provider)),
+					totalScholars: grantorScholarCountsById.get(provider.id) || 0,
+					statusLabel: toGrantorStatus(provider),
+				}))
+				.sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""))),
+		[grantorScholarCountsById, providersRaw],
+	)
+
+	const activeGrantorRows = useMemo(
+		() => grantorRows.filter((grantor) => grantor.archived !== true),
+		[grantorRows],
+	)
+
+	const archivedGrantorRows = useMemo(
+		() => grantorRows.filter((grantor) => grantor.archived === true),
+		[grantorRows],
+	)
+
+	const visibleGrantorRows = useMemo(() => {
+		const sourceRows = grantorTab === "archived" ? archivedGrantorRows : activeGrantorRows
+		const keyword = grantorSearch.trim().toLowerCase()
+		if (!keyword) return sourceRows
+		return sourceRows.filter((grantor) =>
+			[
+				grantor.id,
+				grantor.name,
+				grantor.email,
+				grantor.organization,
+				String(grantor.totalScholars || 0),
+				grantor.statusLabel,
+			]
+				.join(" ")
+				.toLowerCase()
+				.includes(keyword),
+		)
+	}, [activeGrantorRows, archivedGrantorRows, grantorSearch, grantorTab])
+
+	const grantorTabCounts = useMemo(
+		() => ({
+			overview: grantorRows.length,
+			grantors: activeGrantorRows.length,
+			archived: archivedGrantorRows.length,
+		}),
+		[activeGrantorRows.length, archivedGrantorRows.length, grantorRows.length],
+	)
+
+	const grantorTablePage = useMemo(
+		() => paginateRows(visibleGrantorRows, tablePages[`grantors_${grantorTab}`] || 1, TABLE_PAGE_SIZE),
+		[grantorTab, tablePages, visibleGrantorRows],
+	)
+
+	const grantorReportRows = useMemo(
+		() => (grantorTab === "overview" ? grantorRows : visibleGrantorRows).map((grantor) => buildGrantorReportRow(grantor)),
+		[grantorRows, grantorTab, visibleGrantorRows],
 	)
 
 	const providerCounts = useMemo(() => {
@@ -2439,21 +2454,11 @@ export default function AdminDashboard() {
 	)
 
 	const currentAnnouncements = useMemo(() => {
-		const now = Date.now()
-		return announcements.filter((announcement) => {
-			if (announcement.archived === true) return false
-			const endDate = toJsDate(announcement.endDate || announcement.scheduleEnd)
-			return !endDate || endDate.getTime() >= now
-		})
+		return announcements.filter((announcement) => !isAnnouncementArchived(announcement))
 	}, [announcements])
 
 	const previousAnnouncements = useMemo(() => {
-		const now = Date.now()
-		return announcements.filter((announcement) => {
-			if (announcement.archived === true) return true
-			const endDate = toJsDate(announcement.endDate || announcement.scheduleEnd)
-			return Boolean(endDate && endDate.getTime() < now)
-		})
+		return announcements.filter((announcement) => isAnnouncementArchived(announcement))
 	}, [announcements])
 
 	const todayStart = useMemo(() => {
@@ -2834,6 +2839,16 @@ export default function AdminDashboard() {
 		})
 	}
 
+	const openGrantorArchiveConfirmation = () => {
+		setAdminConfirmDialog({
+			type: "batch_archive_grantors",
+			title: "Archive Selected Grantors",
+			message: `Are you sure you want to archive ${selectedGrantorIds.length} grantors? This will move them to the archived grantor list.`,
+			confirmLabel: "Archive Selected",
+			tone: "danger",
+		})
+	}
+
 	const handleBatchArchive = async () => {
 		const targetIds = [...selectedStudentIds]
 		setAdminConfirmDialog(null)
@@ -2875,6 +2890,26 @@ export default function AdminDashboard() {
 		}, `Successfully archived ${targetIds.length} students.`)
 	}
 
+	const handleGrantorBatchArchive = async () => {
+		const targetIds = [...selectedGrantorIds]
+		setAdminConfirmDialog(null)
+		await runAction(async () => {
+			const batch = writeBatch(db)
+			targetIds.forEach((id) => {
+				const archivePayload = {
+					archived: true,
+					archivedAt: serverTimestamp(),
+					status: "Archived",
+					updatedAt: serverTimestamp(),
+				}
+				batch.set(doc(db, "providers", id), archivePayload, { merge: true })
+				batch.set(doc(db, "grantorPortals", id), archivePayload, { merge: true })
+			})
+			await batch.commit()
+			setSelectedGrantorIds([])
+		}, `Successfully archived ${targetIds.length} grantors.`)
+	}
+
 	const confirmAdminDialogAction = async () => {
 		if (!adminConfirmDialog || isBusy) return
 		const currentDialog = adminConfirmDialog
@@ -2882,6 +2917,11 @@ export default function AdminDashboard() {
 
 		if (currentDialog.type === "batch_archive") {
 			await handleBatchArchive()
+			return
+		}
+
+		if (currentDialog.type === "batch_archive_grantors") {
+			await handleGrantorBatchArchive()
 			return
 		}
 
@@ -3147,7 +3187,7 @@ export default function AdminDashboard() {
 
 		setIsPostingAnnouncement(true)
 		try {
-			const uploads = await Promise.all(announcementImageFiles.map((file) => uploadToCloudinary(file)))
+			const uploads = await Promise.all(announcementImageFiles.map((file) => uploadToStorage(file)))
 			const imageUrls = uploads.map((item) => item.url).filter(Boolean)
 			await addDoc(collection(db, "announcements"), {
 				title: announcementTitle.trim(),
@@ -3187,6 +3227,119 @@ export default function AdminDashboard() {
 				updatedAt: serverTimestamp(),
 			})
 		}, "Announcement archived.")
+	}
+
+	const updateGrantorForm = (field, value) => {
+		setGrantorForm((prev) => ({
+			...prev,
+			[field]: value,
+			...(field === "fname" ? { id: buildGrantorIdFromFirstName(value) } : {}),
+		}))
+	}
+
+	const resetGrantorForm = () => {
+		setGrantorForm({
+			id: "",
+			fname: "",
+			mname: "",
+			lname: "",
+			email: "",
+			organization: "",
+		})
+	}
+
+	const closeGrantorModal = () => {
+		setShowGrantorModal(false)
+		resetGrantorForm()
+	}
+
+	const createGrantor = async (event) => {
+		event.preventDefault()
+		const fname = grantorForm.fname.trim()
+		const grantorId = buildGrantorIdFromFirstName(fname)
+		const mname = grantorForm.mname.trim()
+		const lname = grantorForm.lname.trim()
+		const providerName = [fname, mname, lname].filter(Boolean).join(" ").trim()
+		const email = grantorForm.email.trim()
+		if (!grantorId || !fname || !lname || !email) {
+			toast.error("First name, last name, and email are required.")
+			return
+		}
+		if (providersRaw.some((provider) => provider.id === grantorId)) {
+			toast.error("Grantor ID already exists.")
+			return
+		}
+
+		setIsCreatingGrantor(true)
+		try {
+			const encryptedPassword = await encryptPasswordAES256(GRANTOR_DEFAULT_PASSWORD)
+			const payload = {
+				providerId: grantorId,
+				providerName,
+				name: providerName,
+				fname,
+				mname,
+				lname,
+				providerType: toProviderType(providerName),
+				organization: grantorForm.organization.trim(),
+				email,
+				password: encryptedPassword,
+				mustChangePassword: true,
+				role: "provider",
+				userType: "provider",
+				status: "Active",
+				archived: false,
+				createdAt: serverTimestamp(),
+				updatedAt: serverTimestamp(),
+			}
+			await Promise.all([
+				setDoc(doc(db, "providers", grantorId), payload),
+				setDoc(doc(db, "grantorPortals", grantorId), {
+					grantorId,
+					providerName,
+					name: providerName,
+					fname,
+					mname,
+					lname,
+					providerType: payload.providerType,
+					organization: payload.organization,
+					email,
+					createdAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				}, { merge: true }),
+			])
+			toast.success("Grantor account created.")
+			closeGrantorModal()
+		} catch (error) {
+			console.error(error)
+			toast.error("Failed to create grantor.")
+		} finally {
+			setIsCreatingGrantor(false)
+		}
+	}
+
+	const approveGrantorPasswordChange = async (grantorId) => {
+		if (!grantorId) return
+		try {
+			await setDoc(doc(db, "providers", grantorId), {
+				passwordChangeRequested: false,
+				passwordChangeRequestStatus: "approved",
+				passwordChangeApprovedAt: serverTimestamp(),
+				updatedAt: serverTimestamp(),
+			}, { merge: true })
+			await addDoc(collection(db, "grantorNotifications"), {
+				grantorId,
+				type: "password_change_approved",
+				title: "Password Change Approved",
+				message: "Your administrator approved the request. You can now change your password from your profile.",
+				read: false,
+				createdAt: serverTimestamp(),
+			})
+			toast.success("Password change request approved.")
+		} catch (error) {
+			console.error("Unable to approve password change request.", error)
+			toast.error("Unable to approve the password change request.")
+		}
 	}
 
 	const handleLogout = () => {
@@ -3248,6 +3401,41 @@ export default function AdminDashboard() {
 			pdfBodyRows: options.csvRows || defaultCsvRows,
 		}
 	}
+
+	const createGrantorPreviewConfig = (rows, filterLabel) => ({
+		key: "scholarships",
+		title: "Grantor Management Report",
+		description: "Preview of grantor account records before export.",
+		filterLabel,
+		filename: `grantors-report-${Date.now()}`,
+		stats: [
+			{ label: "Grantors", value: rows.length },
+			{ label: "Active", value: rows.filter((row) => row.status !== "Archived").length },
+			{ label: "Archived", value: rows.filter((row) => row.status === "Archived").length },
+			{ label: "Password Requests", value: rows.filter((row) => row.status === "Password Requested").length },
+		],
+		columns: ["Grantor ID", "Name", "Email", "Organization", "Total Scholars", "Status", "Created"],
+		csvRows: rows.map((row) => [
+			row.id,
+			row.name,
+			row.email,
+			row.organization,
+			String(row.totalScholars),
+			row.status,
+			row.createdAt,
+		]),
+		pdfRows: rows,
+		pdfColumns: ["Grantor ID", "Name", "Email", "Organization", "Total Scholars", "Status", "Created"],
+		pdfBodyRows: rows.map((row) => [
+			row.id,
+			row.name,
+			row.email,
+			row.organization,
+			String(row.totalScholars),
+			row.status,
+			row.createdAt,
+		]),
+	})
 
 	const createSoePreviewConfig = (rows, filterLabel) => ({
 		key: "soe",
@@ -3753,6 +3941,196 @@ export default function AdminDashboard() {
 			)
 		}
 
+		if (activeSection === "grantors") {
+			const rowsForTable = grantorTab === "archived" ? archivedGrantorRows : activeGrantorRows
+			const selectableGrantorIds = grantorTab === "grantors" ? visibleGrantorRows.map((grantor) => grantor.id) : []
+			const allVisibleGrantorsSelected =
+				selectableGrantorIds.length > 0 &&
+				selectableGrantorIds.every((id) => selectedGrantorIds.includes(id))
+			return (
+				<section className="admin-management-panel">
+					<div className="admin-panel-head">
+						<div>
+							<h2>Grantor Management</h2>
+							<p className="admin-panel-copy">Manage scholarship provider accounts, password requests, and archived grantor records.</p>
+						</div>
+						<div className="admin-head-actions">
+							<button
+								type="button"
+								className="admin-export-btn admin-export-btn--mini"
+								onClick={() => openReportPreview(createGrantorPreviewConfig(grantorReportRows, `View: ${grantorTab} | Search: ${grantorSearch || "-"}`))}
+							>
+								<HiOutlineEye /> Generate Report
+							</button>
+							<button
+								type="button"
+								className="admin-export-btn admin-export-btn--mini admin-export-btn--primary"
+								onClick={() => setShowGrantorModal(true)}
+							>
+								<HiOutlineUserAdd /> New Grantor
+							</button>
+						</div>
+					</div>
+					<SectionTabs
+						tabs={[
+							{ id: "overview", label: "Overview", count: grantorTabCounts.overview, icon: HiOutlineChartPie },
+							{ id: "grantors", label: "Grantors", count: grantorTabCounts.grantors, icon: HiOutlineUserGroup },
+							{ id: "archived", label: "Archived", count: grantorTabCounts.archived, icon: HiOutlineTrash },
+						]}
+						value={grantorTab}
+						onChange={setGrantorTab}
+					/>
+					{grantorTab === "overview" ? (
+						<section className="admin-tab-panel">
+							<div className="admin-summary-strip">
+								<article className="admin-summary-card">
+									<h3>Total Grantors</h3>
+									<strong>{grantorRows.length}</strong>
+									<p>Provider accounts registered in the system.</p>
+								</article>
+								<article className="admin-summary-card">
+									<h3>Active Grantors</h3>
+									<strong>{activeGrantorRows.length}</strong>
+									<p>Grantors currently available for portal access.</p>
+								</article>
+								<article className="admin-summary-card">
+									<h3>Password Requests</h3>
+									<strong>{grantorRows.filter((row) => row.statusLabel === "Password Requested").length}</strong>
+									<p>Grantors waiting for admin password assistance.</p>
+								</article>
+							</div>
+							<div className="admin-table-wrap">
+								<table className="admin-management-table admin-management-table--roomy">
+									<thead>
+										<tr>
+											<th>Grantor ID</th>
+											<th>Name</th>
+											<th>Email</th>
+											<th>Total Scholars</th>
+											<th>Status</th>
+										</tr>
+									</thead>
+									<tbody>
+										{grantorRows.length === 0 ? (
+											<EmptyStateRow colSpan={5} />
+										) : (
+											grantorRows.map((grantor) => (
+												<tr key={grantor.id}>
+													<td>{grantor.id}</td>
+													<td>{grantor.name}</td>
+													<td>{grantor.email || "-"}</td>
+													<td>{grantor.totalScholars || 0}</td>
+													<td><span className={toStatusClass(grantor.statusLabel)}>{grantor.statusLabel}</span></td>
+												</tr>
+											))
+										)}
+									</tbody>
+								</table>
+							</div>
+						</section>
+					) : (
+						<section className="admin-tab-panel admin-tab-panel--grantors">
+							<div className="admin-filter-bar admin-filter-bar--grantors">
+								<input
+									type="text"
+									placeholder="Search grantor ID, name, email, organization, or status"
+									value={grantorSearch}
+									onChange={(event) => setGrantorSearch(event.target.value)}
+								/>
+							</div>
+							{grantorTab === "grantors" ? (
+								<div className="admin-grantor-table-toolbar">
+									<label className="admin-grantor-select-all">
+										<input
+											type="checkbox"
+											checked={allVisibleGrantorsSelected}
+											onChange={(event) => {
+												if (event.target.checked) {
+													setSelectedGrantorIds((prev) => [...new Set([...prev, ...selectableGrantorIds])])
+												} else {
+													setSelectedGrantorIds((prev) => prev.filter((id) => !selectableGrantorIds.includes(id)))
+												}
+											}}
+										/>
+										<span>All</span>
+									</label>
+									<button
+										type="button"
+										className="admin-danger-btn admin-danger-btn--mini"
+										disabled={selectedGrantorIds.length === 0}
+										onClick={openGrantorArchiveConfirmation}
+									>
+										<HiOutlineTrash /> Archived
+									</button>
+								</div>
+							) : null}
+							<div className="admin-table-wrap admin-table-wrap--grantors">
+								<table className="admin-management-table admin-management-table--roomy">
+									<thead>
+										<tr>
+											{grantorTab === "grantors" ? <th style={{ width: "44px" }} /> : null}
+											<th>Grantor ID</th>
+											<th>Name</th>
+											<th>Email</th>
+											<th>Organization</th>
+											<th>Total Scholars</th>
+											<th>Status</th>
+											{grantorTab === "grantors" ? <th>Action</th> : null}
+										</tr>
+									</thead>
+									<tbody>
+										{rowsForTable.length === 0 ? (
+											<EmptyStateRow colSpan={grantorTab === "grantors" ? 8 : 6} />
+										) : (
+											grantorTablePage.rows.map((grantor) => (
+												<tr key={grantor.id}>
+													{grantorTab === "grantors" ? (
+														<td>
+															<input
+																type="checkbox"
+																checked={selectedGrantorIds.includes(grantor.id)}
+																onChange={(event) => {
+																	if (event.target.checked) {
+																		setSelectedGrantorIds((prev) => [...new Set([...prev, grantor.id])])
+																	} else {
+																		setSelectedGrantorIds((prev) => prev.filter((id) => id !== grantor.id))
+																	}
+																}}
+															/>
+														</td>
+													) : null}
+													<td>{grantor.id}</td>
+													<td>{grantor.name}</td>
+													<td>{grantor.email || "-"}</td>
+													<td>{grantor.organization || "-"}</td>
+											<td>{grantor.totalScholars || 0}</td>
+											<td><span className={toStatusClass(grantor.statusLabel)}>{grantor.statusLabel}</span></td>
+											{grantorTab === "grantors" ? (
+												<td>
+													{grantor.passwordChangeRequestStatus === "pending" || grantor.passwordChangeRequested === true ? (
+														<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => approveGrantorPasswordChange(grantor.id)}>
+															<HiOutlineShieldCheck /> Approve
+														</button>
+													) : "-"}
+												</td>
+											) : null}
+												</tr>
+											))
+										)}
+									</tbody>
+								</table>
+							</div>
+							<TablePagination
+								currentPage={grantorTablePage.currentPage}
+								totalItems={visibleGrantorRows.length}
+								onPageChange={(page) => setTablePage(`grantors_${grantorTab}`, page)}
+							/>
+						</section>
+					)}
+				</section>
+			)
+		}
+
 		if (activeSection === "scholarships") {
 			return (
 				<section className="admin-management-panel">
@@ -4149,14 +4527,14 @@ export default function AdminDashboard() {
 			)
 		}
 
-		if (activeSection === "soe") {
+		if (activeSection === "requirements") {
 			const visibleRows = soeTab === "requesting" ? requestingSoeReportRows : requestedSoeReportRows
 			return (
 				<section className="admin-management-panel">
 					<div className="admin-panel-head">
 						<div>
-							<h2>Materials Request</h2>
-							<p className="admin-panel-copy">Review requested materials, then track approved SOE releases and timer resets after download.</p>
+							<h2>Requirements</h2>
+							<p className="admin-panel-copy">Review requested materials, track approved releases, and verify downloaded SOE records.</p>
 						</div>
 						<div className="admin-head-actions">
 							<button
@@ -4172,34 +4550,53 @@ export default function AdminDashboard() {
 						tabs={[
 							{ id: "requesting", label: "Requesting", count: soeRequestTabCounts.requesting, icon: HiOutlineClock },
 							{ id: "requested", label: "Requested", count: soeRequestTabCounts.requested, icon: HiOutlineShieldCheck },
+							{ id: "checking", label: "Checking", count: soeCheckingRows.length, icon: HiOutlineEye },
 						]}
 						value={soeTab}
 						onChange={setSoeTab}
 					/>
-					<div className="admin-filter-bar">
-						<input
-							type="text"
-							placeholder={
-								soeTab === "requesting"
-									? "Search approval requests by application number, student, scholarship, or material"
-									: "Search approved requests by application number, student, scholarship, material, or SOE download status"
-							}
-							value={soeSearch}
-							onChange={(event) => setSoeSearch(event.target.value)}
+					{soeTab === "checking" ? (
+						<SectionTabs
+							tabs={[
+								{ id: "incoming", label: "Pending", count: soeCheckingCounts.incoming, icon: HiOutlineClock },
+								{ id: "signed", label: "Signed", count: soeCheckingCounts.signed, icon: HiOutlineShieldCheck },
+								{ id: "non_compliant", label: "Non-Compliant", count: soeCheckingCounts.non_compliant, icon: HiOutlineExclamation },
+							]}
+							value={soeCheckingTab}
+							onChange={setSoeCheckingTab}
+							className="admin-section-tabs--compact"
 						/>
-						<select value={soeProviderFilter} onChange={(event) => setSoeProviderFilter(event.target.value)}>
-							<option value="All">All Grantors</option>
-							{soeProviderOptions.map((provider) => (
-								<option key={provider} value={provider}>
-									{toProviderLabel(provider)}
-								</option>
-							))}
-						</select>
-						<select value={soeMaterialFilter} onChange={(event) => setSoeMaterialFilter(event.target.value)}>
-							<option value="All">All Materials</option>
-							<option value="soe">SOE</option>
-							<option value="application_form">Application Form</option>
-						</select>
+					) : null}
+					<div className="admin-filter-bar">
+						{soeTab === "checking" ? (
+							<input type="text" placeholder="Search by SOE request number, student number, student, or scholarship" value={soeCheckSearch} onChange={(event) => setSoeCheckSearch(event.target.value)} />
+						) : (
+							<>
+								<input
+									type="text"
+									placeholder={
+										soeTab === "requesting"
+											? "Search approval requests by application number, student, scholarship, or material"
+											: "Search approved requests by application number, student, scholarship, material, or SOE download status"
+									}
+									value={soeSearch}
+									onChange={(event) => setSoeSearch(event.target.value)}
+								/>
+								<select value={soeProviderFilter} onChange={(event) => setSoeProviderFilter(event.target.value)}>
+									<option value="All">All Grantors</option>
+									{soeProviderOptions.map((provider) => (
+										<option key={provider} value={provider}>
+											{toProviderLabel(provider)}
+										</option>
+									))}
+								</select>
+								<select value={soeMaterialFilter} onChange={(event) => setSoeMaterialFilter(event.target.value)}>
+									<option value="All">All Materials</option>
+									<option value="soe">SOE</option>
+									<option value="application_form">Application Form</option>
+								</select>
+							</>
+						)}
 					</div>
 					{soeTab === "requesting" ? (
 						<>
@@ -4254,7 +4651,7 @@ export default function AdminDashboard() {
 								onPageChange={(page) => setTablePage("requesting_soe", page)}
 							/>
 						</>
-					) : (
+					) : soeTab === "requested" ? (
 						<>
 							<div className="admin-table-wrap">
 								<table className="admin-management-table admin-management-table--roomy">
@@ -4301,6 +4698,55 @@ export default function AdminDashboard() {
 								currentPage={requestedSoeTablePage.currentPage}
 								totalItems={requestedSoeRows.length}
 								onPageChange={(page) => setTablePage("requested_soe", page)}
+							/>
+						</>
+					) : (
+						<>
+							<div className="admin-table-wrap">
+								<table className="admin-management-table admin-management-table--roomy">
+									<thead>
+										<tr>
+											<th>SOE Request No.</th>
+											<th>Student No.</th>
+											<th>Student Name</th>
+											<th>Scholarship</th>
+											<th>Downloaded At</th>
+											<th>Status</th>
+											<th>Action</th>
+										</tr>
+									</thead>
+									<tbody>
+										{soeCheckingRows.length === 0 ? (
+											<EmptyStateRow colSpan={7} />
+										) : (
+											soeCheckingTablePage.rows.map((row) => (
+												<tr key={row.id}>
+													<td>{row.requestNumber || row.id || "-"}</td>
+													<td>{row.studentNumber || row.studentId || "-"}</td>
+													<td>{row.fullName || "-"}</td>
+													<td>{row.scholarshipName || "-"}</td>
+													<td>{formatDate(row.downloadedDate)}</td>
+													<td><span className={toStatusClass(row.reviewStateLabel)}>{row.reviewStateLabel}</span></td>
+													<td>
+														<button
+															type="button"
+															className="admin-table-btn admin-table-btn--mini admin-table-btn--view"
+															onClick={() => setSelectedSoeReviewId(row.id)}
+														>
+															<HiOutlineEye />
+															View
+														</button>
+													</td>
+												</tr>
+											))
+										)}
+									</tbody>
+								</table>
+							</div>
+							<TablePagination
+								currentPage={soeCheckingTablePage.currentPage}
+								totalItems={soeCheckingRows.length}
+								onPageChange={(page) => setTablePage(`soe_checking_${soeCheckingTab}`, page)}
 							/>
 						</>
 					)}
@@ -4759,7 +5205,7 @@ export default function AdminDashboard() {
 									<div className="card-header">
 										<h4>{item.title || "Announcement"}</h4>
 										<span className="type-badge-modern" style={{ background: "#edf2f7", color: "#4a5568" }}>
-											{item.archived === true ? "Archived" : "Expired"}
+											Archived
 										</span>
 									</div>
 									<p>{item.content || item.description || "-"}</p>
@@ -4875,6 +5321,98 @@ export default function AdminDashboard() {
 				</div>
 			) : null}
 
+			{showGrantorModal ? (
+				<div className="admin-detail-backdrop" role="presentation" onClick={closeGrantorModal}>
+					<div className="admin-detail-modal admin-detail-modal--grantor" role="dialog" aria-modal="true" aria-label="Create new grantor" onClick={(event) => event.stopPropagation()}>
+						<button type="button" className="admin-detail-close" onClick={closeGrantorModal}>
+							<HiX />
+						</button>
+						<div className="admin-grantor-modal-head">
+							<div className="admin-grantor-modal-icon" aria-hidden="true">
+								<HiOutlineUserAdd />
+							</div>
+							<div>
+								<span className="admin-grantor-modal-eyebrow">Provider account</span>
+								<h3>New Grantor</h3>
+								<p>Set up a grantor portal profile and login credentials.</p>
+							</div>
+						</div>
+						<div className="admin-grantor-modal-note">
+							<strong>Default access</strong>
+							<span>New grantors start with {GRANTOR_DEFAULT_PASSWORD} and must change it before entering the portal.</span>
+						</div>
+						<form className="admin-grantor-form" onSubmit={createGrantor}>
+							<div className="admin-grantor-form-grid">
+								<label className="admin-grantor-field">
+									<span>First Name</span>
+									<input
+										type="text"
+										value={grantorForm.fname}
+										onChange={(event) => updateGrantorForm("fname", event.target.value)}
+										placeholder="First name"
+									/>
+								</label>
+								<label className="admin-grantor-field">
+									<span>Middle Name</span>
+									<input
+										type="text"
+										value={grantorForm.mname}
+										onChange={(event) => updateGrantorForm("mname", event.target.value)}
+										placeholder="Optional"
+									/>
+								</label>
+								<label className="admin-grantor-field">
+									<span>Last Name</span>
+									<input
+										type="text"
+										value={grantorForm.lname}
+										onChange={(event) => updateGrantorForm("lname", event.target.value)}
+										placeholder="Last name"
+									/>
+								</label>
+								<label className="admin-grantor-field">
+									<span>Email</span>
+									<input
+										type="email"
+										value={grantorForm.email}
+										onChange={(event) => updateGrantorForm("email", event.target.value)}
+										placeholder="grantor@example.com"
+									/>
+								</label>
+								<label className="admin-grantor-field">
+									<span>Organization</span>
+									<input
+										type="text"
+										value={grantorForm.organization}
+										onChange={(event) => updateGrantorForm("organization", event.target.value)}
+										placeholder="Office or foundation"
+									/>
+								</label>
+								<label className="admin-grantor-field">
+									<span>Grantor ID</span>
+									<input
+										type="text"
+										value={grantorForm.id}
+										placeholder="Auto-generated from first name"
+										autoComplete="off"
+										readOnly
+									/>
+								</label>
+							</div>
+							<div className="admin-grantor-modal-actions">
+								<button type="button" className="admin-grantor-secondary-btn" onClick={closeGrantorModal}>
+									Cancel
+								</button>
+								<button type="submit" className="admin-grantor-primary-btn" disabled={isCreatingGrantor}>
+									<HiOutlineUserAdd />
+									{isCreatingGrantor ? "Creating..." : "Create Grantor"}
+								</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			) : null}
+
 			{selectedStudent ? (
 				<div className="admin-detail-backdrop" role="presentation" onClick={closeStudentModal}>
 					<div className="admin-detail-shell admin-detail-shell--student" onClick={(event) => event.stopPropagation()}>
@@ -4902,7 +5440,6 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta">
 									Address:{" "}
 									{[
-										selectedStudent.houseNumber ? `#${selectedStudent.houseNumber}` : "",
 										selectedStudent.street || "",
 										selectedStudent.city || "",
 										selectedStudent.province || "",

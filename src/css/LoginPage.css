@@ -409,6 +409,16 @@
 	outline: none;
 }
 
+.login-input::-webkit-outer-spin-button,
+.login-input::-webkit-inner-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+
+.login-input[type="number"] {
+	-moz-appearance: textfield;
+}
+
 .login-input::placeholder {
 	color: #9ca3af;
 }
@@ -429,6 +439,11 @@
 
 .login-input-eye-btn:hover {
 	color: #4b5563;
+}
+
+.login-input-eye-btn:focus,
+.login-input-eye-btn:focus-visible {
+	outline: none;
 }
 
 .login-input-eye-icon {

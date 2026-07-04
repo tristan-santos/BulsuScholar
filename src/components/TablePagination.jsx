@@ -1,4 +1,4 @@
-const DEFAULT_PAGE_SIZE = 25
+import { TABLE_PAGE_SIZE, getTotalPages } from "../utils/tablePaginationUtils"
 
 function buildPageItems(currentPage, totalPages) {
 	if (totalPages <= 6) {
@@ -16,44 +16,16 @@ function buildPageItems(currentPage, totalPages) {
 	return [1, "ellipsis", currentPage - 1, currentPage, currentPage + 1, "ellipsis", totalPages]
 }
 
-export const TABLE_PAGE_SIZE = DEFAULT_PAGE_SIZE
-
-export function getTotalPages(totalItems = 0, pageSize = DEFAULT_PAGE_SIZE) {
-	return Math.max(1, Math.ceil(Number(totalItems || 0) / pageSize) || 1)
-}
-
-export function clampPage(page = 1, totalPages = 1) {
-	return Math.min(Math.max(Number(page || 1), 1), Math.max(1, Number(totalPages || 1)))
-}
-
-export function paginateRows(rows = [], page = 1, pageSize = DEFAULT_PAGE_SIZE) {
-	const safeRows = Array.isArray(rows) ? rows : []
-	const totalItems = safeRows.length
-	const totalPages = getTotalPages(totalItems, pageSize)
-	const currentPage = clampPage(page, totalPages)
-	const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1
-	const endIndex = totalItems === 0 ? 0 : Math.min(currentPage * pageSize, totalItems)
-
-	return {
-		rows: safeRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-		currentPage,
-		totalPages,
-		totalItems,
-		startIndex,
-		endIndex,
-	}
-}
-
 export default function TablePagination({
 	currentPage = 1,
 	totalItems = 0,
-	pageSize = DEFAULT_PAGE_SIZE,
+	pageSize = TABLE_PAGE_SIZE,
 	onPageChange,
 }) {
 	const totalPages = getTotalPages(totalItems, pageSize)
 	if (totalItems <= 0 || totalPages <= 1) return null
 
-	const safeCurrentPage = clampPage(currentPage, totalPages)
+	const safeCurrentPage = Math.min(Math.max(Number(currentPage || 1), 1), totalPages)
 	const startIndex = (safeCurrentPage - 1) * pageSize + 1
 	const endIndex = Math.min(safeCurrentPage * pageSize, totalItems)
 	const pageItems = buildPageItems(safeCurrentPage, totalPages)
