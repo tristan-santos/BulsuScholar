@@ -164,6 +164,40 @@
 	background: linear-gradient(135deg, #ffffff 0%, #f7fcf9 100%);
 }
 
+.signup-stage-locked {
+	display: grid;
+	grid-template-columns: 38px minmax(0, 1fr);
+	gap: 0.8rem;
+	align-items: center;
+	padding: 1rem;
+	border: 1px dashed #b8dccb;
+	border-radius: 10px;
+	background: #fbfdfc;
+	color: #476053;
+}
+
+.signup-stage-locked svg {
+	width: 38px;
+	height: 38px;
+	padding: 0.55rem;
+	border-radius: 50%;
+	background: #eef8f3;
+	color: #0b572b;
+}
+
+.signup-stage-locked strong {
+	display: block;
+	color: #17342a;
+	font-size: 0.92rem;
+	font-weight: 700;
+}
+
+.signup-stage-locked p {
+	margin: 0.2rem 0 0;
+	font-size: 0.8rem;
+	line-height: 1.45;
+}
+
 .signup-upload-wrap:hover {
 	border-color: #0b572b;
 	background: linear-gradient(135deg, #f0f8f4 0%, #e8f3f0 100%);
@@ -224,6 +258,30 @@
 	margin-top: 0.25rem;
 }
 
+.signup-upload-scan {
+	font-size: 0.76rem;
+	font-weight: 600;
+	color: #64748b;
+}
+
+.signup-upload-scan--scanning {
+	color: #b45309;
+}
+
+.signup-upload-scan--done {
+	color: #0b572b;
+}
+
+.signup-upload-scan--error {
+	color: #b91c1c;
+}
+
+.signup-optional-label {
+	color: #64748b;
+	font-size: 0.78rem;
+	font-weight: 500;
+}
+
 .signup-cor-note {
 	font-size: 0.85rem;
 	color: #6b7280;
@@ -234,6 +292,56 @@
 	border-radius: 6px;
 	font-style: italic;
 	line-height: 1.5;
+}
+
+.signup-cor-note--warning {
+	border-left-color: #f97316;
+	background: #fff7ed;
+	color: #9a3412;
+	font-style: normal;
+}
+
+.signup-form-section--academic-alert {
+	border-color: #fed7aa;
+	background: #fffaf4;
+}
+
+.signup-section-icon--warning {
+	background: linear-gradient(135deg, #f97316 0%, #b45309 100%);
+}
+
+.signup-choice-row {
+	display: flex;
+	gap: 0.65rem;
+}
+
+.signup-choice-pill {
+	min-height: 38px;
+	padding: 0 1rem;
+	border: 1px solid #d8e5dd;
+	border-radius: 999px;
+	background: #fff;
+	color: #17342a;
+	font: inherit;
+	font-size: 0.84rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition:
+		background 0.2s ease,
+		border-color 0.2s ease,
+		color 0.2s ease,
+		transform 0.2s ease;
+}
+
+.signup-choice-pill:hover {
+	transform: translateY(-1px);
+	border-color: #0b572b;
+}
+
+.signup-choice-pill.is-active {
+	border-color: #0b572b;
+	background: #0b572b;
+	color: #fff;
 }
 
 .signup-question {

@@ -29,7 +29,7 @@ import {
 	getCurrentSemesterTag,
 	getDocumentUrlsForStudent,
 } from "../services/scholarshipService"
-import { isPdf, convertPdfToImageFile } from "../utils/pdfConverter"
+import { scanStudentDocument } from "../services/documentScanService"
 import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
@@ -196,13 +196,30 @@ export default function SignupPage() {
 	const [gwa, setGwa] = useState("")
 	const [corFile, setCorFile] = useState(null)
 	const [cogFile, setCogFile] = useState(null)
+	const [documentScanState, setDocumentScanState] = useState({ cor: "idle", cog: "idle" })
+	const [documentScanResult, setDocumentScanResult] = useState({ cor: null, cog: null })
+	const [academicConcernTerms, setAcademicConcernTerms] = useState([])
+	const [isIrregularStudent, setIsIrregularStudent] = useState("")
+	const [academicConcernReason, setAcademicConcernReason] = useState("")
+	const [preferredScholarshipSupport, setPreferredScholarshipSupport] = useState("")
 	const [showImagePreview, setShowImagePreview] = useState(false)
 	const [previewFile, setPreviewFile] = useState(null)
 	const [isPending, setIsPending] = useState(false)
 
-	const isCogOptional = useMemo(() => {
-		return false
+	const isFirstCycle = useMemo(() => {
+		const month = new Date().getMonth() + 1
+		return month >= 7 && month <= 12
 	}, [])
+
+	const isCogOptional = useMemo(() => {
+		return year === "1" && isFirstCycle
+	}, [isFirstCycle, year])
+	const isCogRequired = !isCogOptional
+	const hasAcademicConcern = useMemo(() => {
+		const numericGwa = Number.parseFloat(gwa)
+		return academicConcernTerms.length > 0 || (!Number.isNaN(numericGwa) && numericGwa >= 4)
+	}, [academicConcernTerms, gwa])
+	const shouldShowAcademicDetailQuestions = hasAcademicConcern || isIrregularStudent === "yes"
 
 	const [verificationStatus, setVerificationStatus] = useState(null)
 	const [showReview, setShowReview] = useState(false)
@@ -222,6 +239,119 @@ export default function SignupPage() {
 		if (element) {
 			element.scrollIntoView({ behavior: "smooth", block: "start" })
 		}
+	}
+
+	const applyScannedStudentData = (extracted = {}) => {
+		if (!extracted || typeof extracted !== "object") return
+
+		const isCorScan = extracted.documentType === "cor"
+		const isCogScan = extracted.documentType === "cog"
+
+		if (extracted.studentId && (!userId.trim() || isCorScan)) setUserId(extracted.studentId)
+		if (extracted.firstName && (!fname.trim() || isCorScan)) setFname(extracted.firstName)
+		if (extracted.middleName && (!mname.trim() || isCorScan)) setMname(extracted.middleName)
+		if (extracted.lastName && (!lname.trim() || isCorScan)) setLname(extracted.lastName)
+		if (extracted.course && (!course || isCorScan)) setCourse(extracted.course)
+		if (extracted.year && (!year || isCorScan)) setYear(String(extracted.year))
+		if (extracted.section && (!section || isCorScan)) setSection(extracted.section)
+		if (extracted.gwa && (!gwa.trim() || isCogScan)) setGwa(extracted.gwa)
+
+		if (Array.isArray(extracted.academicConcernTerms) && extracted.academicConcernTerms.length > 0) {
+			setAcademicConcernTerms((current) =>
+				Array.from(new Set([...current, ...extracted.academicConcernTerms])),
+			)
+		}
+	}
+
+	const logDocumentScanResult = (documentType, extracted = {}) => {
+		const label = `${documentType.toUpperCase()} document scan`
+		const gradeDebug = extracted?.gradeDebug || {}
+		const grades = Array.isArray(gradeDebug.grades) ? gradeDebug.grades : []
+		const concernMatches = Array.isArray(gradeDebug.concernMatches)
+			? gradeDebug.concernMatches
+			: []
+
+		console.groupCollapsed(`[BulsuScholar] ${label}`)
+		console.log("Autofill fields gathered:", {
+			studentId: extracted?.studentId || "",
+			firstName: extracted?.firstName || "",
+			middleName: extracted?.middleName || "",
+			lastName: extracted?.lastName || "",
+			fullName: extracted?.fullName || "",
+			course: extracted?.course || "",
+			year: extracted?.year || "",
+			section: extracted?.section || "",
+			gwa: extracted?.gwa || "",
+			academicYear: extracted?.academicYear || "",
+			semester: extracted?.semester || "",
+		})
+		console.log("Raw OCR preview:", extracted?.rawTextPreview || "")
+		console.log(
+			"Grade detection rule:",
+			gradeDebug.explanation ||
+				"Academic concern is detected from final grades 4.0/5.0 or remarks INC, UD, or OD.",
+		)
+		console.log(
+			"Grade extraction method:",
+			gradeDebug.extractionMethod || "Document parser fallback",
+		)
+
+		if (grades.length > 0) {
+			console.table(grades)
+			console.log("Computed GWA from gathered grades:", gradeDebug.computedAverage || extracted?.gwa || "Not detected")
+		} else {
+			console.info("No grade rows were gathered from this scan.")
+		}
+
+		if (concernMatches.length > 0) {
+			console.warn("Why an academic concern was detected:")
+			console.table(concernMatches)
+		} else {
+			console.info("No 5.0, 4.0, INC, UD, or OD was detected from gathered grade rows.")
+		}
+		console.groupEnd()
+	}
+
+	const scanUploadedDocument = async (file, documentType) => {
+		if (!file) return
+
+		setDocumentScanState((current) => ({ ...current, [documentType]: "scanning" }))
+		try {
+			const result = await scanStudentDocument(file, documentType)
+			const extracted = result?.extracted || null
+			setDocumentScanResult((current) => ({ ...current, [documentType]: extracted }))
+			logDocumentScanResult(documentType, extracted)
+			applyScannedStudentData(extracted)
+			toast.success(`${documentType.toUpperCase()} scanned. Review the autofilled data before submitting.`)
+			setDocumentScanState((current) => ({ ...current, [documentType]: "done" }))
+		} catch (error) {
+			console.error(`${documentType.toUpperCase()} scan failed:`, error)
+			toast.info(`${documentType.toUpperCase()} uploaded, but automatic scanning is not available right now.`)
+			setDocumentScanState((current) => ({ ...current, [documentType]: "error" }))
+		}
+	}
+
+	const processSignupDocumentFile = (file, documentType, resetInput) => {
+		if (!file) {
+			if (documentType === "cor") setCorFile(null)
+			if (documentType === "cog") setCogFile(null)
+			return
+		}
+
+		const validExtensions = ["png", "jpg", "jpeg", "pdf"]
+		const fileExtension = file.name.split(".").pop()?.toLowerCase()
+
+		if (!validExtensions.includes(fileExtension)) {
+			toast.error("Only PNG, JPG, JPEG, and PDF files are allowed.")
+			if (resetInput) resetInput.value = ""
+			if (documentType === "cor") setCorFile(null)
+			if (documentType === "cog") setCogFile(null)
+			return
+		}
+
+		const setDocumentFile = documentType === "cor" ? setCorFile : setCogFile
+		setDocumentFile(file)
+		scanUploadedDocument(file, documentType)
 	}
 
 	const handleReviewSubmit = (e) => {
@@ -282,8 +412,12 @@ export default function SignupPage() {
 		}
 
 		// Validate School Info
-		if (!course || !year || !section.trim() || !gwa.trim()) {
-			toast.error("Please complete your school information including GWA")
+		if (!course || !year || !section.trim() || (isCogRequired && !gwa.trim())) {
+			toast.error(
+				isCogRequired
+					? "Please complete your school information including GWA"
+					: "Please complete your school information",
+			)
 			scrollToSection("section-school")
 			return
 		}
@@ -302,9 +436,15 @@ export default function SignupPage() {
 			return
 		}
 
-		if (!cogFile) {
+		if (isCogRequired && !cogFile) {
 			toast.error("Please upload your Certificate of Grades (COG)")
 			scrollToSection("section-cor")
+			return
+		}
+
+		if (!isIrregularStudent || (shouldShowAcademicDetailQuestions && (!academicConcernReason.trim() || !preferredScholarshipSupport.trim()))) {
+			toast.error("Please answer the student status questions.")
+			scrollToSection("section-academic-status")
 			return
 		}
 
@@ -336,8 +476,9 @@ export default function SignupPage() {
 	}, [fname, lname, cpNumber, street, city, province, postalCode])
 
 	const isDocumentStageComplete = useMemo(() => {
-		return Boolean(corFile && cogFile && gwa.trim())
-	}, [corFile, cogFile, gwa])
+		return Boolean(corFile && (isCogOptional || (cogFile && gwa.trim())))
+	}, [cogFile, corFile, gwa, isCogOptional])
+	const showStudentFormStage = isDocumentStageComplete
 
 	// Automatically move to next sections if complete
 	useEffect(() => {
@@ -442,8 +583,12 @@ export default function SignupPage() {
 		}
 
 		// Validate School Info
-		if (!course || !year || !section.trim() || !gwa.trim()) {
-			toast.error("Please complete your school information including GWA")
+		if (!course || !year || !section.trim() || (isCogRequired && !gwa.trim())) {
+			toast.error(
+				isCogRequired
+					? "Please complete your school information including GWA"
+					: "Please complete your school information",
+			)
 			scrollToSection("section-school")
 			return
 		}
@@ -462,9 +607,15 @@ export default function SignupPage() {
 			return
 		}
 
-		if (!cogFile) {
+		if (isCogRequired && !cogFile) {
 			toast.error("Please upload your Certificate of Grades (COG)")
 			scrollToSection("section-cor")
+			return
+		}
+
+		if (!isIrregularStudent || (shouldShowAcademicDetailQuestions && (!academicConcernReason.trim() || !preferredScholarshipSupport.trim()))) {
+			toast.error("Please answer the student status questions.")
+			scrollToSection("section-academic-status")
 			return
 		}
 
@@ -584,6 +735,14 @@ export default function SignupPage() {
 				gwa: gwa.trim(),
 				corFile: corFilePayload,
 				cogFile: cogFilePayload,
+				documentScan: documentScanResult,
+				academicStatus: {
+					hasAcademicConcern,
+					concernTerms: academicConcernTerms,
+					isIrregularStudent,
+					reason: academicConcernReason.trim(),
+					preferredSupport: preferredScholarshipSupport.trim(),
+				},
 			}
 			console.log(
 				"SignupPage: Saving student record to database...",
@@ -912,43 +1071,7 @@ export default function SignupPage() {
 										type="file"
 										className="signup-file-input"
 										accept=".png,.jpg,.pdf,image/png,image/jpeg,application/pdf"
-										onChange={(e) => {
-											const file = e.target.files?.[0] ?? null
-											if (file) {
-												const validExtensions = ["png", "jpg", "pdf"]
-												const fileExtension = file.name
-													.split(".")
-													.pop()
-													?.toLowerCase()
-
-												if (!validExtensions.includes(fileExtension)) {
-													toast.error(
-														"Only PNG, JPG, and PDF files are allowed.",
-													)
-													e.target.value = ""
-													setCorFile(null)
-													return
-												}
-
-												if (isPdf(file)) {
-													toast.info("Converting PDF to image...")
-													convertPdfToImageFile(file)
-														.then((convertedFile) => {
-															setCorFile(convertedFile)
-															toast.success("PDF converted successfully!")
-														})
-														.catch((error) => {
-															toast.error(
-																`PDF conversion failed: ${error.message}`,
-															)
-															e.target.value = ""
-															setCorFile(null)
-														})
-													return
-												}
-											}
-											setCorFile(file)
-										}}
+										onChange={(e) => processSignupDocumentFile(e.target.files?.[0] ?? null, "cor", e.target)}
 									/>
 									{corFile ? (
 										<>
@@ -958,6 +1081,15 @@ export default function SignupPage() {
 											/>
 											<span className="signup-upload-filename">
 												{corFile.name}
+											</span>
+											<span className={`signup-upload-scan signup-upload-scan--${documentScanState.cor}`}>
+												{documentScanState.cor === "scanning"
+													? "Scanning COR..."
+													: documentScanState.cor === "done"
+														? "COR data scanned"
+														: documentScanState.cor === "error"
+															? "COR scan unavailable"
+															: ""}
 											</span>
 										</>
 									) : (
@@ -979,7 +1111,11 @@ export default function SignupPage() {
 									style={{ marginTop: "1rem", display: "block" }}
 								>
 									2. Certificate of Grades (COG){" "}
-									<span className="required">*</span>
+									{isCogOptional ? (
+										<span className="signup-optional-label">(Optional for 1st year, 1st cycle)</span>
+									) : (
+										<span className="required">*</span>
+									)}
 								</label>
 								<label
 									className="signup-upload-wrap"
@@ -990,43 +1126,7 @@ export default function SignupPage() {
 										type="file"
 										className="signup-file-input"
 										accept=".png,.jpg,.pdf,image/png,image/jpeg,application/pdf"
-										onChange={(e) => {
-											const file = e.target.files?.[0] ?? null
-											if (file) {
-												const validExtensions = ["png", "jpg", "pdf"]
-												const fileExtension = file.name
-													.split(".")
-													.pop()
-													?.toLowerCase()
-
-												if (!validExtensions.includes(fileExtension)) {
-													toast.error(
-														"Only PNG, JPG, and PDF files are allowed.",
-													)
-													e.target.value = ""
-													setCogFile(null)
-													return
-												}
-
-												if (isPdf(file)) {
-													toast.info("Converting PDF to image...")
-													convertPdfToImageFile(file)
-														.then((convertedFile) => {
-															setCogFile(convertedFile)
-															toast.success("PDF converted successfully!")
-														})
-														.catch((error) => {
-															toast.error(
-																`PDF conversion failed: ${error.message}`,
-															)
-															e.target.value = ""
-															setCogFile(null)
-														})
-													return
-												}
-											}
-											setCogFile(file)
-										}}
+										onChange={(e) => processSignupDocumentFile(e.target.files?.[0] ?? null, "cog", e.target)}
 									/>
 									{cogFile ? (
 										<>
@@ -1037,6 +1137,15 @@ export default function SignupPage() {
 											<span className="signup-upload-filename">
 												{cogFile.name}
 											</span>
+											<span className={`signup-upload-scan signup-upload-scan--${documentScanState.cog}`}>
+												{documentScanState.cog === "scanning"
+													? "Scanning COG..."
+													: documentScanState.cog === "done"
+														? "COG data scanned"
+														: documentScanState.cog === "error"
+															? "COG scan unavailable"
+															: ""}
+											</span>
 										</>
 									) : (
 										<>
@@ -1045,7 +1154,9 @@ export default function SignupPage() {
 												aria-hidden
 											/>
 											<span className="signup-upload-hint">
-												Drop COG here or click to browse
+												{isCogOptional
+													? "Optional: Drop COG here or click to browse"
+													: "Drop COG here or click to browse"}
 											</span>
 										</>
 									)}
@@ -1057,10 +1168,10 @@ export default function SignupPage() {
 									style={{ marginTop: "1rem", display: "block" }}
 								>
 									GWA (General Weighted Average){" "}
-									<span className="required">*</span>
+									{isCogRequired ? <span className="required">*</span> : <span className="signup-optional-label">(Optional)</span>}
 								</label>
 								<div
-									className={`login-input-wrap ${!cogFile ? "login-input-wrap--disabled" : ""}`}
+									className={`login-input-wrap ${!cogFile && isCogRequired ? "login-input-wrap--disabled" : ""}`}
 								>
 									<input
 										id="signup-gwa"
@@ -1069,10 +1180,16 @@ export default function SignupPage() {
 										min="1.0"
 										max="5.0"
 										className="login-input"
-										placeholder={cogFile ? "e.g., 1.25" : "Upload COG first to enter GWA"}
+										placeholder={
+											cogFile
+												? "e.g., 1.25"
+												: isCogOptional
+													? "Optional for first year, first cycle"
+													: "Upload COG first to enter GWA"
+										}
 										value={gwa}
 										onChange={(e) => setGwa(e.target.value)}
-										disabled={!cogFile}
+										disabled={!cogFile && isCogRequired}
 									/>
 								</div>
 
@@ -1080,10 +1197,25 @@ export default function SignupPage() {
 									className="signup-cor-note"
 									style={{ marginTop: "1.5rem" }}
 								>
-									Stage 1 requires both COR and COG to verify your enrollment and academic status.
+									{isCogOptional
+										? "Stage 1 requires COR. COG is optional because first-year students in the first cycle may not have grades yet."
+										: "Stage 1 requires both COR and COG to verify your enrollment and academic status."}
 								</div>
 							</div>
 
+							{!showStudentFormStage ? (
+								<div className="signup-stage-locked">
+									<HiOutlineClock aria-hidden />
+									<div>
+										<strong>Complete Stage 1 to continue</strong>
+										<p>
+											Upload your COR
+											{isCogOptional ? "" : " and COG with GWA"} before the student form appears.
+										</p>
+									</div>
+								</div>
+							) : (
+								<>
 							<div className="signup-process-step signup-process-step--form">
 								<span>Stage 2</span>
 								<strong>Complete Student Form</strong>
@@ -1531,6 +1663,83 @@ export default function SignupPage() {
 								</div>
 							</div>
 
+							{showStudentFormStage ? (
+								<div id="section-academic-status" className="signup-form-section signup-form-section--academic-alert">
+									<div className="signup-section-header">
+										<div className="signup-section-icon signup-section-icon--warning">
+											<HiOutlineClock />
+										</div>
+										<h3 className="signup-section-title">Student Status</h3>
+									</div>
+									{hasAcademicConcern ? (
+										<div className="signup-cor-note signup-cor-note--warning">
+											Detected academic concern: {academicConcernTerms.length > 0 ? academicConcernTerms.join(", ") : "GWA 4.0 or higher"}.
+											These answers will help the recommendation algorithm match you with suitable grantors.
+										</div>
+									) : (
+										<div className="signup-cor-note">
+											Select your student status so recommendations can match regular and irregular students more accurately.
+										</div>
+									)}
+
+									<label className="login-label">
+										Are you an irregular student? <span className="required">*</span>
+									</label>
+									<div className="signup-choice-row">
+										<button
+											type="button"
+											className={`signup-choice-pill ${isIrregularStudent === "yes" ? "is-active" : ""}`}
+											onClick={() => setIsIrregularStudent("yes")}
+										>
+											Yes
+										</button>
+										<button
+											type="button"
+											className={`signup-choice-pill ${isIrregularStudent === "no" ? "is-active" : ""}`}
+											onClick={() => setIsIrregularStudent("no")}
+										>
+											No
+										</button>
+									</div>
+
+									{shouldShowAcademicDetailQuestions ? (
+										<>
+											<label className="login-label" htmlFor="signup-academic-reason">
+												{hasAcademicConcern
+													? "What is the reason for the failed, incomplete, dropped, or low-grade subject?"
+													: "Why are you currently an irregular student?"}{" "}
+												<span className="required">*</span>
+											</label>
+											<div className="login-input-wrap login-input-wrap--textarea">
+												<textarea
+													id="signup-academic-reason"
+													className="login-input login-input--textarea"
+													placeholder="Example: subject retake, schedule conflict, medical reason, family emergency, or academic adjustment"
+													value={academicConcernReason}
+													onChange={(e) => setAcademicConcernReason(e.target.value)}
+												/>
+											</div>
+
+											<label className="login-label" htmlFor="signup-support-preference">
+												What scholarship support would help you most? <span className="required">*</span>
+											</label>
+											<select
+												id="signup-support-preference"
+												className="login-select"
+												value={preferredScholarshipSupport}
+												onChange={(e) => setPreferredScholarshipSupport(e.target.value)}
+											>
+												<option value="" disabled>Select support type</option>
+												<option value="tuition">Tuition or school fee support</option>
+												<option value="allowance">Monthly allowance</option>
+												<option value="materials">Books, uniform, or learning materials</option>
+												<option value="remedial">Academic recovery or remedial support</option>
+											</select>
+										</>
+									) : null}
+								</div>
+							) : null}
+
 							{/* Submit Button */}
 							<div className="signup-form-submit">
 								<button
@@ -1540,6 +1749,8 @@ export default function SignupPage() {
 									Review & Submit
 								</button>
 							</div>
+								</>
+							)}
 
 							<div className="login-create-account">
 								<span className="login-create-text">
@@ -1737,6 +1948,59 @@ export default function SignupPage() {
 									</div>
 								</div>
 							</div>
+
+							{isIrregularStudent || hasAcademicConcern ? (
+								<div className="signup-review-card signup-review-card--academic">
+									<div className="signup-review-card-header">
+										<h3 className="signup-review-card-title">
+											<span className="signup-review-card-title-icon" aria-hidden>
+												<HiOutlineClock />
+											</span>
+											Student Status
+										</h3>
+										<button
+											type="button"
+											className="signup-review-edit-btn"
+											onClick={() => {
+												setShowReview(false)
+												scrollToSection("section-academic-status")
+											}}
+										>
+											<HiOutlinePencil /> Edit
+										</button>
+									</div>
+									<div className="signup-review-content">
+										<div className="signup-review-row">
+											<span className="signup-review-label">Detected Concern:</span>
+											<span className="signup-review-value">
+												{hasAcademicConcern
+													? academicConcernTerms.length > 0
+														? academicConcernTerms.join(", ")
+														: "GWA 4.0 or higher"
+													: "None detected"}
+											</span>
+										</div>
+										<div className="signup-review-row">
+											<span className="signup-review-label">Irregular Student:</span>
+											<span className="signup-review-value">
+												{isIrregularStudent === "yes" ? "Yes" : "No"}
+											</span>
+										</div>
+										{shouldShowAcademicDetailQuestions ? (
+											<>
+												<div className="signup-review-row">
+													<span className="signup-review-label">Reason:</span>
+													<span className="signup-review-value">{academicConcernReason}</span>
+												</div>
+												<div className="signup-review-row">
+													<span className="signup-review-label">Preferred Support:</span>
+													<span className="signup-review-value">{preferredScholarshipSupport}</span>
+												</div>
+											</>
+										) : null}
+									</div>
+								</div>
+							) : null}
 
 							{/* Document Upload Review */}
 							{(corFile || cogFile) && (
