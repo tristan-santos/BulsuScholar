@@ -1,6 +1,12 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
 import formattedReportTemplateUrl from "/Templates/FORMATTED_REPORT.pdf?url"
 
+const BACKEND_API_URL = (
+	import.meta.env.VITE_BACKEND_API_URL ||
+	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
+	"http://localhost:8000"
+).replace(/\/$/, "")
+
 const PAGE_MARGIN_LEFT = 64
 const PAGE_MARGIN_RIGHT = 64
 const PAGE_MARGIN_TOP = 156
@@ -361,6 +367,28 @@ async function exportTemplateReportPdf({
 	rows = [],
 	logoUrl = "",
 }) {
+	const response = await fetch(`${BACKEND_API_URL}/reports/pdf`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			filename,
+			title,
+			subtitle,
+			filterLabel,
+			stats,
+			columns,
+			rows,
+			logoUrl,
+		}),
+	})
+	if (!response.ok) {
+		const message = await response.text().catch(() => "")
+		throw new Error(message || `Report generation failed: ${response.status}`)
+	}
+	const backendPdfBytes = await response.arrayBuffer()
+	savePdfFile(backendPdfBytes, filename)
+	return
+
 	const pdfDoc = await PDFDocument.create()
 	const templateBytes = await getTemplateBytes()
 	const templateDoc = await PDFDocument.load(templateBytes)
@@ -617,7 +645,28 @@ export async function exportComplianceReportPdf(rows = [], filterLabel = "", log
 	})
 }
 
-export function downloadCsvReport(filename, headers = [], rows = []) {
+export async function downloadCsvReport(filename, headers = [], rows = []) {
+	try {
+		const response = await fetch(`${BACKEND_API_URL}/reports/csv`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ filename, headers, rows }),
+		})
+		if (response.ok) {
+			const blob = await response.blob()
+			const url = URL.createObjectURL(blob)
+			const link = document.createElement("a")
+			link.href = url
+			link.download = filename
+			document.body.appendChild(link)
+			link.click()
+			document.body.removeChild(link)
+			URL.revokeObjectURL(url)
+			return
+		}
+	} catch (error) {
+		console.warn("Python CSV report generation unavailable. Falling back to browser CSV.", error)
+	}
 	const headerLine = headers.map((value) => escapeCsvValue(value)).join(",")
 	const bodyLines = rows.map((row) => row.map((value) => escapeCsvValue(value)).join(","))
 	const csv = [headerLine, ...bodyLines].join("\n")

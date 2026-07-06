@@ -8,7 +8,7 @@
 		"gitgit": "git add . && git commit -m 'update' && git push origin main",
 		"tapos": "npm run build && npm run gitgit",
 		"build": "vite build",
-		"pyRun":"uvicorn main:app --reload --port 8000",
+		"pyRun":"pip install -r requirements.txt uvicorn main:app --reload --port 8000",
 		"create:admin": "node scripts/create-admin.mjs",
 		"reset:grantor-passwords": "node scripts/reset-grantor-passwords.mjs",
 		"reset:grantor-password": "node scripts/reset-grantor-password.mjs",

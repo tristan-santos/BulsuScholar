@@ -4,7 +4,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import {
-	addDoc,
 	collection,
 	deleteDoc,
 	doc,
@@ -14,7 +13,6 @@ import {
 	query,
 	serverTimestamp,
 	setDoc,
-	updateDoc,
 	where,
 } from "../services/supabaseDataService"
 import { toast } from "react-toastify"
@@ -66,6 +64,8 @@ import {
 	GRANTOR_PORTAL_COLLECTION,
 	normalizeGrantorPortalSettings,
 } from "../services/grantorService"
+import { applyScholarshipWorkflow, materialRequestWorkflow } from "../services/workflowService"
+import { syncStudentGrantorRosterMatches } from "../services/studentGrantorMatchService"
 
 const SOE_EXPORT_LOCK_MONTHS = 6
 
@@ -208,6 +208,7 @@ export default function StudentScholarshipsPage() {
 	const userMenuRef = useRef(null)
 	const forcedLogoutRef = useRef(false)
 	const availableProgramsRef = useRef(null)
+	const rosterSyncRef = useRef("")
 
 	const scholarshipCatalog = useMemo(() => getScholarshipCatalog(), [])
 	const scholarships = useMemo(
@@ -352,16 +353,20 @@ export default function StudentScholarshipsPage() {
 				}
 
 				if (shouldSyncScholarships || shouldSyncDocs) {
-					void setDoc(
-						doc(db, "students", storedUserId),
-						{
-							scholarships: normalized,
-							corFile,
-							cogFile,
-							updatedAt: serverTimestamp(),
-						},
-						{ merge: true },
-					).catch(() => {})
+					void materialRequestWorkflow({
+						updates: [
+							{
+								table: "students",
+								id: storedUserId,
+								data: {
+									scholarships: normalized,
+									corFile,
+									cogFile,
+									updatedAt: serverTimestamp(),
+								},
+							},
+						],
+					}).catch(() => {})
 				}
 
 				setUser(nextUser)
@@ -379,6 +384,24 @@ export default function StudentScholarshipsPage() {
 			() => setUserLoaded(true),
 		)
 	}, [navigate])
+
+	useEffect(() => {
+		if (!userLoaded || !user || !userId) return
+		if (scholarships.length > 0) return
+		const syncKey = `${userId}:${user.updatedAt || user.createdAt || "empty"}`
+		if (rosterSyncRef.current === syncKey) return
+		rosterSyncRef.current = syncKey
+		syncStudentGrantorRosterMatches(user, userId)
+			.then((result) => {
+				if (!result.synced) return
+				console.info("StudentScholarshipsPage: synced grantor roster scholarship match.", {
+					count: result.matches.length,
+					matches: result.matches,
+				})
+				setUser((current) => current ? { ...current, scholarships: result.scholarships } : current)
+			})
+			.catch((error) => console.error("StudentScholarshipsPage: grantor roster sync failed:", error))
+	}, [scholarships.length, user, userId, userLoaded])
 
 	useEffect(() => {
 		if (userLoaded && (!user || !userId)) {
@@ -921,14 +944,18 @@ export default function StudentScholarshipsPage() {
 		)
 
 	const persistScholarships = async (nextScholarships, message = "") => {
-		await setDoc(
-			doc(db, "students", userId),
-			{
-				scholarships: nextScholarships,
-				updatedAt: serverTimestamp(),
-			},
-			{ merge: true },
-		)
+		await materialRequestWorkflow({
+			updates: [
+				{
+					table: "students",
+					id: userId,
+					data: {
+						scholarships: nextScholarships,
+						updatedAt: serverTimestamp(),
+					},
+				},
+			],
+		})
 		setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
 		await syncWarnings(nextScholarships)
 		if (message) {
@@ -979,12 +1006,13 @@ export default function StudentScholarshipsPage() {
 			})
 			const nextScholarships = [...scholarships, nextRecord]
 
-			await persistScholarships(
-				nextScholarships,
-				`${catalogItem.name} application recorded. Upload the required documents next to continue.`,
-			)
-
-			await addDoc(collection(db, "scholarshipApplications"), {
+			await applyScholarshipWorkflow({
+				studentId: userId,
+				studentUpdate: {
+					scholarships: nextScholarships,
+					updatedAt: serverTimestamp(),
+				},
+				application: {
 				studentId: userId,
 				fname: user?.fname || "",
 				mname: user?.mname || "",
@@ -1006,7 +1034,11 @@ export default function StudentScholarshipsPage() {
 				semesterTag: nextRecord.semesterTag,
 				documentUrls: nextRecord.documentUrls,
 				academicYear: getCurrentAcademicYear(),
+				},
 			})
+			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
+			await syncWarnings(nextScholarships)
+			toast.success(`${catalogItem.name} application recorded. Upload the required documents next to continue.`)
 		} catch (error) {
 			console.error("Failed to apply scholarship:", error)
 			toast.error("Failed to apply scholarship. Please try again.")
@@ -1051,18 +1083,22 @@ export default function StudentScholarshipsPage() {
 						complianceHold: user?.soeComplianceBlocked === true,
 					}
 				: user?.restrictions
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					scholarships: nextScholarships,
-					scholarshipConflictWarning: shouldClearConflictRestriction ? false : user?.scholarshipConflictWarning === true,
-					scholarshipConflictMessage: shouldClearConflictRestriction ? "" : user?.scholarshipConflictMessage || "",
-					scholarshipRestrictionReason: shouldClearConflictRestriction ? null : user?.scholarshipRestrictionReason || null,
-					...(nextRestrictions ? { restrictions: nextRestrictions } : {}),
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
+			await materialRequestWorkflow({
+				updates: [
+					{
+						table: "students",
+						id: userId,
+						data: {
+							scholarships: nextScholarships,
+							scholarshipConflictWarning: shouldClearConflictRestriction ? false : user?.scholarshipConflictWarning === true,
+							scholarshipConflictMessage: shouldClearConflictRestriction ? "" : user?.scholarshipConflictMessage || "",
+							scholarshipRestrictionReason: shouldClearConflictRestriction ? null : user?.scholarshipRestrictionReason || null,
+							...(nextRestrictions ? { restrictions: nextRestrictions } : {}),
+							updatedAt: serverTimestamp(),
+						},
+					},
+				],
+			})
 
 			setUser((prev) => ({
 				...(prev || {}),
@@ -1173,102 +1209,106 @@ export default function StudentScholarshipsPage() {
 						item.id === selected.id ? finalizedRecord : item,
 					)
 
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					scholarships: nextScholarships,
-					updatedAt: serverTimestamp(),
-					lastSoeStatus: materialKey === "soe" ? "Pending" : user?.lastSoeStatus || "",
-				},
-				{ merge: true },
-			)
-
-			await setDoc(
-				doc(db, "soeRequests", requestDocId),
-				{
-					requestNumber: selected.requestNumber || selected.id,
-					applicationNumber:
-						selected.applicationNumber || selected.requestNumber || selected.id,
-					studentId: userId,
-					scholarshipId: selected.id,
-					scholarshipName: selected.name,
-					providerType: selected.providerType,
-					timestamp: serverTimestamp(),
-					status: "Pending",
-					reviewState: "incoming",
-					requestedMaterials: {
-						soe:
-							materialKey === "soe"
-								? true
-								: normalizedExistingRequest?.materials?.soe?.requested === true,
-						application_form:
-							materialKey === "application_form"
-								? true
-								: normalizedExistingRequest?.materials?.application_form?.requested === true,
+			await materialRequestWorkflow({
+				updates: [
+					{
+						table: "students",
+						id: userId,
+						data: {
+							scholarships: nextScholarships,
+							updatedAt: serverTimestamp(),
+							lastSoeStatus: materialKey === "soe" ? "Pending" : user?.lastSoeStatus || "",
+						},
 					},
-					materials: {
-						soe:
-							materialKey === "soe"
-								? {
-										requested: true,
-										status: "pending",
-										requestedAt: serverTimestamp(),
-										approvedAt: null,
-										rejectedAt: null,
-										downloadedAt: existingSoeEntry.downloadedAt || null,
-									}
-								: existingSoeEntry.requested
-									? {
-											requested: true,
-											status: existingSoeEntry.status,
-											requestedAt: existingSoeEntry.requestedAt || null,
-											approvedAt: existingSoeEntry.approvedAt || null,
-											rejectedAt: existingSoeEntry.rejectedAt || null,
-											downloadedAt: existingSoeEntry.downloadedAt || null,
-										}
-									: {
-											requested: false,
-											status: "none",
-											requestedAt: null,
-											approvedAt: null,
-											rejectedAt: null,
-											downloadedAt: null,
-										},
-						application_form:
-							materialKey === "application_form"
-								? {
-										requested: true,
-										status: "pending",
-										requestedAt: serverTimestamp(),
-										approvedAt: null,
-										rejectedAt: null,
-										downloadedAt: existingApplicationFormEntry.downloadedAt || null,
-									}
-								: existingApplicationFormEntry.requested
-									? {
-											requested: true,
-											status: existingApplicationFormEntry.status,
-											requestedAt: existingApplicationFormEntry.requestedAt || null,
-											approvedAt: existingApplicationFormEntry.approvedAt || null,
-											rejectedAt: existingApplicationFormEntry.rejectedAt || null,
-											downloadedAt: existingApplicationFormEntry.downloadedAt || null,
-										}
-									: {
-											requested: false,
-											status: "none",
-											requestedAt: null,
-											approvedAt: null,
-											rejectedAt: null,
-											downloadedAt: null,
-										},
+					{
+						table: "soe_requests",
+						id: requestDocId,
+						upsert: true,
+						data: {
+							requestNumber: selected.requestNumber || selected.id,
+							applicationNumber:
+								selected.applicationNumber || selected.requestNumber || selected.id,
+							studentId: userId,
+							scholarshipId: selected.id,
+							scholarshipName: selected.name,
+							providerType: selected.providerType,
+							timestamp: serverTimestamp(),
+							status: "Pending",
+							reviewState: "incoming",
+							requestedMaterials: {
+								soe:
+									materialKey === "soe"
+										? true
+										: normalizedExistingRequest?.materials?.soe?.requested === true,
+								application_form:
+									materialKey === "application_form"
+										? true
+										: normalizedExistingRequest?.materials?.application_form?.requested === true,
+							},
+							materials: {
+								soe:
+									materialKey === "soe"
+										? {
+												requested: true,
+												status: "pending",
+												requestedAt: serverTimestamp(),
+												approvedAt: null,
+												rejectedAt: null,
+												downloadedAt: existingSoeEntry.downloadedAt || null,
+											}
+										: existingSoeEntry.requested
+											? {
+													requested: true,
+													status: existingSoeEntry.status,
+													requestedAt: existingSoeEntry.requestedAt || null,
+													approvedAt: existingSoeEntry.approvedAt || null,
+													rejectedAt: existingSoeEntry.rejectedAt || null,
+													downloadedAt: existingSoeEntry.downloadedAt || null,
+												}
+											: {
+													requested: false,
+													status: "none",
+													requestedAt: null,
+													approvedAt: null,
+													rejectedAt: null,
+													downloadedAt: null,
+												},
+								application_form:
+									materialKey === "application_form"
+										? {
+												requested: true,
+												status: "pending",
+												requestedAt: serverTimestamp(),
+												approvedAt: null,
+												rejectedAt: null,
+												downloadedAt: existingApplicationFormEntry.downloadedAt || null,
+											}
+										: existingApplicationFormEntry.requested
+											? {
+													requested: true,
+													status: existingApplicationFormEntry.status,
+													requestedAt: existingApplicationFormEntry.requestedAt || null,
+													approvedAt: existingApplicationFormEntry.approvedAt || null,
+													rejectedAt: existingApplicationFormEntry.rejectedAt || null,
+													downloadedAt: existingApplicationFormEntry.downloadedAt || null,
+												}
+											: {
+													requested: false,
+													status: "none",
+													requestedAt: null,
+													approvedAt: null,
+													rejectedAt: null,
+													downloadedAt: null,
+												},
+							},
+							academicYear: getCurrentAcademicYear(),
+							semesterTag: selected.semesterTag || getCurrentSemesterTag(),
+							updatedAt: serverTimestamp(),
+							createdAt: normalizedExistingRequest?.createdAt || serverTimestamp(),
+						},
 					},
-					academicYear: getCurrentAcademicYear(),
-					semesterTag: selected.semesterTag || getCurrentSemesterTag(),
-					updatedAt: serverTimestamp(),
-					createdAt: normalizedExistingRequest?.createdAt || serverTimestamp(),
-				},
-				{ merge: true },
-			)
+				],
+			})
 
 			setStudentSoeRequests((prev) => [
 				normalizeMaterialRequest({
@@ -1561,14 +1601,18 @@ export default function StudentScholarshipsPage() {
 					: entry,
 			)
 
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					scholarships: nextScholarships,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
+			await materialRequestWorkflow({
+				updates: [
+					{
+						table: "students",
+						id: userId,
+						data: {
+							scholarships: nextScholarships,
+							updatedAt: serverTimestamp(),
+						},
+					},
+				],
+			})
 			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
 
 			toast.success("Application form downloaded.")
@@ -1642,13 +1686,21 @@ export default function StudentScholarshipsPage() {
 			)
 
 			if (approvedRequest?.id) {
-				await updateDoc(doc(db, "soeRequests", approvedRequest.id), {
-					"materials.soe.requested": true,
-					"materials.soe.status": "approved",
-					"materials.soe.downloadedAt": serverTimestamp(),
-					downloadStatus: "Downloaded",
-					downloadedAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
+				await materialRequestWorkflow({
+					updates: [
+						{
+							table: "soe_requests",
+							id: approvedRequest.id,
+							data: {
+								"materials.soe.requested": true,
+								"materials.soe.status": "approved",
+								"materials.soe.downloadedAt": serverTimestamp(),
+								downloadStatus: "Downloaded",
+								downloadedAt: serverTimestamp(),
+								updatedAt: serverTimestamp(),
+							},
+						},
+					],
 				})
 				setStudentSoeRequests((prev) =>
 					prev.map((request) =>
@@ -1723,7 +1775,14 @@ export default function StudentScholarshipsPage() {
 						: [],
 				},
 			}
-			await addDoc(collection(db, "soeDownloads"), nextDownloadRow)
+			await materialRequestWorkflow({
+				inserts: [
+					{
+						table: "soe_downloads",
+						data: nextDownloadRow,
+					},
+				],
+			})
 			setStudentSoeDownloads((prev) => [
 				{
 					...nextDownloadRow,
@@ -1733,14 +1792,18 @@ export default function StudentScholarshipsPage() {
 				},
 				...prev,
 			])
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					soeLastExportAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
+			await materialRequestWorkflow({
+				updates: [
+					{
+						table: "students",
+						id: userId,
+						data: {
+							soeLastExportAt: serverTimestamp(),
+							updatedAt: serverTimestamp(),
+						},
+					},
+				],
+			})
 			setUser((prev) => ({
 				...(prev || {}),
 				soeLastExportAt: new Date().toISOString(),
@@ -1796,14 +1859,18 @@ export default function StudentScholarshipsPage() {
 
 		setIsSavingExpensePreset(true)
 		try {
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					soeExpenseItems: preparedExpenses,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
+			await materialRequestWorkflow({
+				updates: [
+					{
+						table: "students",
+						id: userId,
+						data: {
+							soeExpenseItems: preparedExpenses,
+							updatedAt: serverTimestamp(),
+						},
+					},
+				],
+			})
 			setUser((prev) => ({ ...(prev || {}), soeExpenseItems: preparedExpenses }))
 			toast.success("SOE expenses saved. They will auto-load next time.")
 		} catch (error) {

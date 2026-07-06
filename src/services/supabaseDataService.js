@@ -406,6 +406,30 @@ export async function recordExists(table, id) {
 	return Boolean(record)
 }
 
+export async function findRecordByDataField(table, field, value) {
+	const normalizedValue = String(value || "").trim()
+	if (!normalizedValue) return null
+	const { data, error } = await supabase
+		.from(table)
+		.select("*")
+		.eq(`data->>${field}`, normalizedValue)
+		.limit(1)
+		.maybeSingle()
+	if (error) throw error
+	return data ? flattenRecord(data) : null
+}
+
+export async function findStudentAccountByUniqueField(field, value) {
+	const normalizedValue = String(value || "").trim()
+	if (!normalizedValue) return null
+	const tables = [TABLES.students, TABLES.pendingStudent]
+	for (const table of tables) {
+		const record = await findRecordByDataField(table, field, normalizedValue)
+		if (record) return { table, record }
+	}
+	return null
+}
+
 export async function upsertStudent(studentId, fields = {}, options = {}) {
 	const table = options.pending ? TABLES.pendingStudent : TABLES.students
 	let data = serializeData(fields)

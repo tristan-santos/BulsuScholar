@@ -3,12 +3,10 @@ import { useNavigate } from "react-router-dom"
 import {
 	collection,
 	collectionGroup,
-	deleteDoc,
 	doc,
 	onSnapshot,
 	query,
 	serverTimestamp,
-	updateDoc,
 	where,
 } from "../services/supabaseDataService"
 import {
@@ -31,6 +29,10 @@ import {
 	getPortalAccessBlockMessage,
 	getStudentAccessState,
 } from "../services/studentAccessService"
+import {
+	deleteStudentNotification,
+	updateStudentNotification,
+} from "../services/notificationService"
 import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
 
@@ -287,7 +289,7 @@ export default function StudentInboxPage() {
 	const markNotificationRead = async (notification) => {
 		if (notification.source !== "personal" || !notification?.id || notification.read === true) return
 		try {
-			await updateDoc(doc(db, "studentNotifications", notification.id), {
+			await updateStudentNotification(notification.id, {
 				read: true,
 				readAt: serverTimestamp(),
 			})
@@ -304,7 +306,7 @@ export default function StudentInboxPage() {
 		try {
 			if (personalUnread.length > 0) {
 				await Promise.all(personalUnread.map((item) =>
-					updateDoc(doc(db, "studentNotifications", item.id), {
+					updateStudentNotification(item.id, {
 						read: true,
 						readAt: serverTimestamp(),
 					}),
@@ -324,7 +326,7 @@ export default function StudentInboxPage() {
 	const deleteNotification = async (notification) => {
 		if (notification.source !== "personal" || !notification?.id) return
 		try {
-			await deleteDoc(doc(db, "studentNotifications", notification.id))
+			await deleteStudentNotification(notification.id)
 		} catch (error) {
 			console.error("Unable to delete student notification.", error)
 			toast.error("Unable to delete this inbox message.")

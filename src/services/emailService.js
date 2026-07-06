@@ -1,7 +1,12 @@
-const RESEND_ENDPOINT = import.meta.env.VITE_RESEND_API_ENDPOINT || "/api/send-email"
+const BACKEND_API_URL = (
+	import.meta.env.VITE_BACKEND_API_URL ||
+	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
+	"http://localhost:8000"
+).replace(/\/$/, "")
+const RESEND_ENDPOINT = import.meta.env.VITE_RESEND_API_ENDPOINT || `${BACKEND_API_URL}/email/send`
 
 /**
- * Sends an email through the Vercel Resend API route.
+ * Sends an email through the Python Resend endpoint.
  * @param {string} toEmail - Recipient's email address
  * @param {string} toName - Recipient's name
  * @param {string} subject - Email subject
@@ -34,7 +39,12 @@ export const sendEmailNotification = async (toEmail, toName, subject, messageBod
       }),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data?.error || `Email failed: ${response.status}`);
+    if (!response.ok || data?.sent === false) {
+      const detail = data?.detail || data;
+      const reason = detail?.reason || data?.error || `Email failed: ${response.status}`;
+      console.error("Email endpoint rejected request:", detail);
+      throw new Error(reason);
+    }
     return { sent: true, response: data };
   } catch (error) {
     console.error('Email failed to send:', error);

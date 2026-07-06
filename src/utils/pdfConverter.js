@@ -36,11 +36,12 @@ export async function convertPdfToImage(pdfFile, pageNum = 1) {
 				const viewport = page.getViewport({ scale })
 
 				const canvas = document.createElement("canvas")
+				const canvasContext = canvas.getContext("2d")
 				canvas.width = viewport.width
 				canvas.height = viewport.height
 
 				await page.render({
-					canvas,
+					canvasContext,
 					viewport,
 				}).promise
 

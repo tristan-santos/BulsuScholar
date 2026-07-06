@@ -1106,6 +1106,17 @@
 		box-shadow 0.2s ease;
 }
 
+.signup-review-document-placeholder {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: #f8fafc;
+	color: #0b572b;
+	font-size: 0.7rem;
+	font-weight: 600;
+	line-height: 1;
+}
+
 .signup-review-document-image:hover {
 	transform: scale(1.05);
 	box-shadow: 0 4px 14px rgba(11, 87, 43, 0.22);

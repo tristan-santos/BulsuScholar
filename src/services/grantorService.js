@@ -1,6 +1,12 @@
 import { collection, collectionGroup, doc, getDocs } from "./supabaseDataService"
 import { getScholarshipPolicy } from "./scholarshipService"
 
+const PYTHON_BACKEND_API_URL = (
+	import.meta.env.VITE_BACKEND_API_URL ||
+	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
+	"http://localhost:8000"
+).replace(/\/$/, "")
+
 export const GRANTOR_PORTAL_COLLECTION = "grantorPortals"
 export const GRANTOR_SUBCOLLECTIONS = {
 	scholars: "scholars",
@@ -356,74 +362,33 @@ function comparableSimilarity(left, right, normalizer = normalizeMatchValue) {
 	return levenshteinSimilarity(normalizedLeft, normalizedRight)
 }
 
-export function evaluateScholarDuplicate(candidate = {}, existing = {}) {
-	const candidateName = scholarFullName(candidate)
-	const existingName = scholarFullName(existing)
-	const directNameSimilarity = comparableSimilarity(candidateName, existingName) ?? 0
-	const sortedNameSimilarity = comparableSimilarity(
-		tokenSortedValue(candidateName),
-		tokenSortedValue(existingName),
-	) ?? 0
-	const nameSimilarity = Math.max(directNameSimilarity, sortedNameSimilarity)
-	const candidateStudentId = normalizeIdentifier(
-		candidate.studentId || candidate.studentnumber || candidate.studentNumber,
-	)
-	const existingStudentId = normalizeIdentifier(
-		existing.studentId || existing.studentnumber || existing.studentNumber,
-	)
-	const candidateEmail = normalizeIdentifier(candidate.email)
-	const existingEmail = normalizeIdentifier(existing.email)
-	const candidatePhone = String(candidate.cpNumber || candidate.contactNumber || "").replace(/\D/g, "")
-	const existingPhone = String(existing.cpNumber || existing.contactNumber || "").replace(/\D/g, "")
-	const exactStudentId = Boolean(candidateStudentId && candidateStudentId === existingStudentId)
-	const exactEmail = Boolean(candidateEmail && candidateEmail === existingEmail)
-	const exactPhone = Boolean(candidatePhone && candidatePhone === existingPhone)
-	const fields = [
-		{ label: "student ID", weight: 0.32, value: comparableSimilarity(candidateStudentId, existingStudentId, normalizeIdentifier) },
-		{ label: "name", weight: 0.3, value: nameSimilarity || null },
-		{ label: "email", weight: 0.1, value: comparableSimilarity(candidateEmail, existingEmail, normalizeIdentifier) },
-		{ label: "contact number", weight: 0.08, value: comparableSimilarity(candidatePhone, existingPhone, normalizeIdentifier) },
-		{ label: "course", weight: 0.08, value: comparableSimilarity(candidate.course, existing.course) },
-		{ label: "year level", weight: 0.04, value: comparableSimilarity(candidate.yearLevel || candidate.year, existing.yearLevel || existing.year) },
-		{ label: "city", weight: 0.04, value: comparableSimilarity(candidate.city, existing.city) },
-		{ label: "province", weight: 0.04, value: comparableSimilarity(candidate.province, existing.province) },
-	].filter((field) => field.value != null)
-	const comparedWeight = fields.reduce((sum, field) => sum + field.weight, 0)
-	const weightedScore = comparedWeight > 0
-		? fields.reduce((sum, field) => sum + field.value * field.weight, 0) / comparedWeight
-		: 0
-	const strongIdentifierMatch = exactStudentId || ((exactEmail || exactPhone) && nameSimilarity >= 0.72)
-	const isDuplicate = strongIdentifierMatch || (nameSimilarity >= 0.82 && weightedScore >= 0.84)
-	const reasons = fields.filter((field) => field.value >= 0.9).map((field) => field.label)
-
-	return {
-		isDuplicate,
-		score: weightedScore,
-		nameSimilarity,
-		reasons,
-		exactStudentId,
-		exactEmail,
-		exactPhone,
+async function postGrantorAlgorithm(path, payload) {
+	const response = await fetch(`${PYTHON_BACKEND_API_URL}${path}`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(payload),
+	})
+	const data = await response.json().catch(() => ({}))
+	if (!response.ok) {
+		throw new Error(data?.detail || data?.error || `Grantor algorithm request failed: ${response.status}`)
 	}
+	return data
 }
 
-export function findScholarDuplicate(candidate = {}, existingRecords = [], options = {}) {
-	const excludeId = String(options.excludeId || "")
-	const excludeGrantorId = String(options.excludeGrantorId || "")
-	let bestMatch = null
-	for (const existing of existingRecords) {
-		if (
-			excludeId &&
-			String(existing.id || "") === excludeId &&
-			(!excludeGrantorId || String(existing.grantorId || "") === excludeGrantorId)
-		) continue
-		const evaluation = evaluateScholarDuplicate(candidate, existing)
-		if (!evaluation.isDuplicate) continue
-		if (!bestMatch || evaluation.score > bestMatch.score) {
-			bestMatch = { ...evaluation, record: existing }
-		}
-	}
-	return bestMatch
+export async function evaluateScholarDuplicate(candidate = {}, existing = {}) {
+	return postGrantorAlgorithm("/grantor/evaluate-scholar-duplicate", {
+		candidate,
+		existing,
+	})
+}
+
+export async function findScholarDuplicate(candidate = {}, existingRecords = [], options = {}) {
+	const data = await postGrantorAlgorithm("/grantor/find-scholar-duplicate", {
+		candidate,
+		existingRecords,
+		options,
+	})
+	return data?.duplicate || null
 }
 
 export async function getAllGrantorScholars(db) {
@@ -446,6 +411,16 @@ function buildNormalizedFullName(raw = {}) {
 	return normalizeMatchValue(
 		raw.fullName || [raw.fname, raw.mname, raw.lname].filter(Boolean).join(" "),
 	)
+}
+
+function normalizeLookupValue(value = "") {
+	return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "")
+}
+
+function matchStudentId(student = {}, scholar = {}) {
+	const studentId = normalizeLookupValue(student.studentnumber || student.studentId || student.id)
+	const scholarId = normalizeLookupValue(scholar.studentId || scholar.studentnumber || scholar.studentNumber || scholar.id)
+	return Boolean(studentId && scholarId && studentId === scholarId)
 }
 
 function matchNameParts(student = {}, scholar = {}) {
@@ -526,38 +501,43 @@ function matchAddress(student = {}, scholar = {}) {
 }
 
 export function matchesGrantorScholarToStudent(student = {}, scholar = {}) {
-	return matchNameParts(student, scholar) && matchAddress(student, scholar)
+	return matchStudentId(student, scholar) || (matchNameParts(student, scholar) && matchAddress(student, scholar))
 }
 
 export async function findMatchingGrantorScholars(db, student = {}) {
 	const snapshot = await getDocs(collectionGroup(db, GRANTOR_SUBCOLLECTIONS.scholars))
-	const matches = []
-	const seenGrantors = new Set()
-
-	snapshot.docs.forEach((row) => {
+	const scholars = snapshot.docs.map((row) => {
 		const normalized = normalizeGrantorScholar(row.data() || {}, row.id)
 		const grantorId = normalized.grantorId || row.ref.parent.parent?.id || ""
-		const policy = getScholarshipPolicy(
-			normalized.scholarshipTitle || normalized.grantorName || normalized.providerType || grantorId,
-		)
-		const match = {
+		return {
 			...normalized,
 			grantorId,
-			grantorName:
-				normalized.grantorName || normalized.scholarshipTitle || grantorId || "Grantor",
-			providerType: normalized.providerType || policy.providerType,
-			scholarshipName:
-				normalized.scholarshipTitle || normalized.grantorName || grantorId || "Scholarship",
+		}
+	})
+	const data = await postGrantorAlgorithm("/grantor/find-matching-scholars", {
+		student,
+		scholars,
+	})
+	const seenGrantors = new Set()
+	const matches = []
+
+	;(data?.matches || []).forEach((match) => {
+		if (match.archived) return
+		const policy = getScholarshipPolicy(
+			match.scholarshipTitle || match.grantorName || match.providerType || match.grantorId,
+		)
+		const enrichedMatch = {
+			...match,
+			grantorName: match.grantorName || match.scholarshipTitle || match.grantorId || "Grantor",
+			providerType: match.providerType || policy.providerType,
+			scholarshipName: match.scholarshipTitle || match.grantorName || match.grantorId || "Scholarship",
 			requiresFullDocs: policy.requiresFullDocs,
 		}
 
-		if (match.archived) return
-		if (!matchesGrantorScholarToStudent(student, match)) return
-
-		const dedupeKey = `${match.grantorId || "grantor"}__${match.providerType || "other"}`
+		const dedupeKey = `${enrichedMatch.grantorId || "grantor"}__${enrichedMatch.providerType || "other"}`
 		if (seenGrantors.has(dedupeKey)) return
 		seenGrantors.add(dedupeKey)
-		matches.push(match)
+		matches.push(enrichedMatch)
 	})
 
 	return matches.sort((left, right) =>

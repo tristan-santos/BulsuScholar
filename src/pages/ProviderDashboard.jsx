@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
-	addDoc,
 	collection,
-	deleteDoc,
 	doc,
 	getDoc,
 	getDocs,
 	onSnapshot,
 	query,
 	serverTimestamp,
-	setDoc,
-	updateDoc,
 	where,
-	writeBatch,
 } from "../services/supabaseDataService"
 import {
 	Chart as ChartJS,
@@ -71,6 +66,22 @@ import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
 import { uploadToStorage } from "../services/storageService"
+import {
+	createGrantorNotification,
+	createStudentNotification,
+	deleteGrantorNotification as deleteGrantorNotificationRecord,
+	updateGrantorNotification,
+} from "../services/notificationService"
+import {
+	adminReviewWorkflow,
+	createGrantorAnnouncementWorkflow,
+	createGrantorScholarsWorkflow,
+	requestGrantorPasswordChangeWorkflow,
+	updateGrantorAnnouncementWorkflow,
+	updateGrantorProfileWorkflow,
+	updateGrantorScholarWorkflow,
+	updateGrantorScholarsWorkflow,
+} from "../services/workflowService"
 import {
 	GRANTOR_ACCEPT_ATTR,
 	GRANTOR_ACCEPTED_UPLOAD_EXTENSIONS,
@@ -790,16 +801,16 @@ export default function ProviderDashboard() {
 
 	useEffect(() => {
 		if (!grantorId) return
-		setDoc(
-			getGrantorPortalDoc(db, grantorId),
-			{
+		updateGrantorProfileWorkflow({
+			grantorId,
+			data: {
 				grantorId,
 				grantorName,
 				providerType: grantorProviderType,
 				updatedAt: serverTimestamp(),
 			},
-			{ merge: true },
-		).catch(() => {})
+			updatePortal: true,
+		}).catch(() => {})
 	}, [grantorId, grantorName, grantorProviderType])
 
 	useEffect(() => {
@@ -1079,17 +1090,17 @@ export default function ProviderDashboard() {
 				const existingScholars = await getAllGrantorScholars(db)
 				const acceptedFileRows = []
 				const matches = {}
-				importData.forEach((row, rowIndex) => {
+				for (const [rowIndex, row] of importData.entries()) {
 					const scholar = buildMappedImportScholar(row, columnMapping, customImportFields, {
 						grantorId,
 						grantorName,
 						providerType: grantorProviderType,
 					})
-					if (!hasScholarIdentity(scholar)) return
-					const duplicate = findScholarDuplicate(scholar, [...existingScholars, ...acceptedFileRows])
+					if (!hasScholarIdentity(scholar)) continue
+					const duplicate = await findScholarDuplicate(scholar, [...existingScholars, ...acceptedFileRows])
 					if (duplicate) matches[rowIndex] = duplicate
 					else acceptedFileRows.push(scholar)
-				})
+				}
 				if (active) setImportDuplicateMatches(matches)
 			} catch (error) {
 				console.error("Unable to preflight imported scholar duplicates.", error)
@@ -1336,17 +1347,17 @@ export default function ProviderDashboard() {
 		const nextBlockedState = !applicationsBlocked
 		setBusy("portal_toggle")
 		try {
-			await setDoc(
-				getGrantorPortalDoc(db, grantorId),
-				{
+			await updateGrantorProfileWorkflow({
+				grantorId,
+				data: {
 					grantorId,
 					grantorName,
 					providerType: grantorProviderType,
 					applicationsBlocked: nextBlockedState,
 					updatedAt: serverTimestamp(),
 				},
-				{ merge: true },
-			)
+				updatePortal: true,
+			})
 			toast.success(
 				nextBlockedState
 					? "Apply button is now blocked on the student side."
@@ -1510,25 +1521,28 @@ export default function ProviderDashboard() {
 					)
 				: null
 
-			await setDoc(
-				doc(db, "students", applicationModalState.student.id),
-				{
-					scholarships: nextScholarships,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
-
-			await setDoc(
-				doc(db, "scholarshipApplications", applicationModalState.application.id),
-				{
-					status: nextStatus,
-					tracking: nextTracking,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
-			await addDoc(collection(db, "studentNotifications"), {
+			await adminReviewWorkflow({
+				updates: [
+					{
+						table: "students",
+						id: applicationModalState.student.id,
+						data: {
+							scholarships: nextScholarships,
+							updatedAt: serverTimestamp(),
+						},
+					},
+					{
+						table: "scholarship_applications",
+						id: applicationModalState.application.id,
+						data: {
+							status: nextStatus,
+							tracking: nextTracking,
+							updatedAt: serverTimestamp(),
+						},
+					},
+				],
+			})
+			await createStudentNotification({
 				studentId: applicationModalState.student.id,
 				source: "personal",
 				type: "scholarship_progress",
@@ -1551,15 +1565,16 @@ export default function ProviderDashboard() {
 				const scholarDocId =
 					matchedScholar?.id ||
 					`${grantorId || grantorProviderType || "grantor"}__${applicationModalState.application.id || nextScholarship.id || applicationModalState.student.id}`
-				await setDoc(
-					doc(getGrantorScholarsCollection(db, grantorId), scholarDocId),
-					{
+				await updateGrantorScholarWorkflow({
+					grantorId,
+					scholarId: scholarDocId,
+					upsert: true,
+					data: {
 						...scholarRecord,
 						createdAt: matchedScholar?.createdAt || serverTimestamp(),
 						updatedAt: serverTimestamp(),
 					},
-					{ merge: true },
-				)
+				})
 			}
 
 			setApplicationModalState((prev) => ({
@@ -1597,7 +1612,7 @@ export default function ProviderDashboard() {
 				const acceptedScholars = []
 				const duplicateRows = []
 
-				importData.forEach((row, rowIndex) => {
+				for (const [rowIndex, row] of importData.entries()) {
 					const scholarObj = {
 						...buildMappedImportScholar(row, columnMapping, customImportFields, {
 							grantorId,
@@ -1617,7 +1632,7 @@ export default function ProviderDashboard() {
 						scholarObj.fullName = [scholarObj.fname, scholarObj.mname, scholarObj.lname].filter(Boolean).join(" ").trim() || "Scholar"
 					}
 
-					const duplicate = findScholarDuplicate(
+					const duplicate = await findScholarDuplicate(
 						scholarObj,
 						[...existingScholars, ...acceptedScholars],
 					)
@@ -1626,16 +1641,13 @@ export default function ProviderDashboard() {
 						return
 					}
 					acceptedScholars.push(scholarObj)
-				})
+				}
 
 				if (acceptedScholars.length > 0) {
-					const batch = writeBatch(db)
-					const collectionRef = getGrantorScholarsCollection(db, grantorId)
-					acceptedScholars.forEach((scholarObj) => {
-						const newDocRef = doc(collectionRef)
-						batch.set(newDocRef, scholarObj)
+					await createGrantorScholarsWorkflow({
+						grantorId,
+						scholars: acceptedScholars,
 					})
-					await batch.commit()
 					toast.success(`Successfully imported ${acceptedScholars.length} new scholar${acceptedScholars.length === 1 ? "" : "s"}.`)
 				}
 
@@ -1667,7 +1679,7 @@ export default function ProviderDashboard() {
 		try {
 			const payload = scholarPayload(createForm, grantorId, grantorName, grantorProviderType, uploadFile)
 			const existingScholars = await getAllGrantorScholars(db)
-			const duplicate = findScholarDuplicate(payload, existingScholars)
+			const duplicate = await findScholarDuplicate(payload, existingScholars)
 			if (duplicate) {
 				const matchedName = duplicate.record.fullName || "an existing student"
 				const owner = duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"
@@ -1675,10 +1687,13 @@ export default function ProviderDashboard() {
 				toast.warning(`Duplicate student not added. This record matches ${matchedName} under ${owner}.${reason}`)
 				return
 			}
-			await addDoc(getGrantorScholarsCollection(db, grantorId), {
-				...payload,
-				createdAt: serverTimestamp(),
-				updatedAt: serverTimestamp(),
+			await createGrantorScholarsWorkflow({
+				grantorId,
+				scholars: [{
+					...payload,
+					createdAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				}],
 			})
 			closeCreateModal()
 			toast.success("Scholar added to the grantor roster.")
@@ -1699,7 +1714,7 @@ export default function ProviderDashboard() {
 		try {
 			const payload = scholarPayload(editForm, grantorId, grantorName, grantorProviderType)
 			const existingScholars = await getAllGrantorScholars(db)
-			const duplicate = findScholarDuplicate(payload, existingScholars, {
+			const duplicate = await findScholarDuplicate(payload, existingScholars, {
 				excludeId: selectedScholar.id,
 				excludeGrantorId: grantorId,
 			})
@@ -1709,9 +1724,13 @@ export default function ProviderDashboard() {
 				toast.warning(`Changes not saved because this record matches ${matchedName} under ${owner}.`)
 				return
 			}
-			await updateDoc(doc(getGrantorScholarsCollection(db, grantorId), selectedScholar.id), {
-				...payload,
-				updatedAt: serverTimestamp(),
+			await updateGrantorScholarWorkflow({
+				grantorId,
+				scholarId: selectedScholar.id,
+				data: {
+					...payload,
+					updatedAt: serverTimestamp(),
+				},
 			})
 			closeEditModal()
 			toast.success("Scholar details updated.")
@@ -1731,16 +1750,16 @@ export default function ProviderDashboard() {
 		if (!window.confirm("Archive the selected scholars from the active roster?")) return
 		setBusy("archive")
 		try {
-			const batch = writeBatch(db)
-			selectedScholarIds.forEach((id) => {
-				batch.update(doc(getGrantorScholarsCollection(db, grantorId), id), {
+			await updateGrantorScholarsWorkflow({
+				grantorId,
+				scholarIds: selectedScholarIds,
+				data: {
 					archived: true,
 					status: "Archived",
 					archivedAt: serverTimestamp(),
 					updatedAt: serverTimestamp(),
-				})
+				},
 			})
-			await batch.commit()
 			setSelectedScholarIds([])
 			setSelectedScholarId("")
 			toast.success("Selected scholars archived.")
@@ -1760,16 +1779,16 @@ export default function ProviderDashboard() {
 		if (!window.confirm("Return the selected scholars to the active roster?")) return
 		setBusy("unarchive")
 		try {
-			const batch = writeBatch(db)
-			selectedScholarIds.forEach((id) => {
-				batch.update(doc(getGrantorScholarsCollection(db, grantorId), id), {
+			await updateGrantorScholarsWorkflow({
+				grantorId,
+				scholarIds: selectedScholarIds,
+				data: {
 					archived: false,
 					status: "Active",
 					archivedAt: null,
 					updatedAt: serverTimestamp(),
-				})
+				},
 			})
-			await batch.commit()
 			setSelectedScholarIds([])
 			setSelectedScholarId("")
 			toast.success("Selected scholars unarchived.")
@@ -1845,10 +1864,14 @@ export default function ProviderDashboard() {
 		if (!window.confirm("Archive this announcement?")) return
 		setBusy(`archive-announcement-${announcementId}`)
 		try {
-			await updateDoc(doc(getGrantorAnnouncementsCollection(db, grantorId), announcementId), {
-				archived: true,
-				status: "Archived",
-				updatedAt: serverTimestamp(),
+			await updateGrantorAnnouncementWorkflow({
+				grantorId,
+				announcementId,
+				data: {
+					archived: true,
+					status: "Archived",
+					updatedAt: serverTimestamp(),
+				},
 			})
 			if (selectedAnnouncement?.id === announcementId) setSelectedAnnouncement(null)
 			toast.success("Announcement archived.")
@@ -1877,74 +1900,78 @@ export default function ProviderDashboard() {
 		try {
 			const uploads = await Promise.all(announcementImageFiles.map((file) => uploadToStorage(file, { folder: `grantor-announcements/${grantorId}` })))
 			const imageUrls = uploads.map((item) => item.url).filter(Boolean)
-			const announcementRef = await addDoc(getGrantorAnnouncementsCollection(db, grantorId), {
-				...announcementForm,
-				title: announcementForm.title.trim(),
-				subtitle: announcementForm.subtitle.trim(),
-				description: announcementForm.description.trim(),
-				content: announcementForm.description.trim(),
-				previewText: announcementForm.description.trim().slice(0, 150),
-				applicationEnabled: announcementForm.applicationEnabled === true,
-				minimumGrade: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
-				minGwa: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
-				requiredDocuments: announcementForm.applicationEnabled
-					? {
-							cog: announcementForm.requiredDocuments?.cog === true,
-							cor: announcementForm.requiredDocuments?.cor === true,
-							applicationForm: announcementForm.requiredDocuments?.applicationForm === true,
-						}
-					: {
-							cog: false,
-							cor: false,
-							applicationForm: false,
-						},
-				otherRequirements: announcementForm.applicationEnabled
-					? (Array.isArray(announcementForm.otherRequirements) ? announcementForm.otherRequirements : [])
-							.map((item) => ({
-								name: String(item.name || "").trim(),
-								fileType: String(item.fileType || "pdf").toLowerCase() === "png" ? "png" : "pdf",
-								uploadCount: Math.max(1, Number.parseInt(item.uploadCount, 10) || 1),
-							}))
-							.filter((item) => item.name)
-					: [],
-				applicationWindow: announcementForm.applicationEnabled ? announcementForm.applicationWindow.trim() : "",
-				startDate: announcementForm.applicationEnabled && announcementWindowStart ? new Date(`${announcementWindowStart}T00:00:00`).toISOString() : null,
-				endDate: announcementForm.applicationEnabled && announcementWindowEnd ? new Date(`${announcementWindowEnd}T23:59:59`).toISOString() : null,
-				imageUrl: imageUrls[0] || "",
-				imageUrls,
-				images: uploads.map((item) => ({
-					url: item.url || "",
-					name: item.name || "",
-					type: item.type || "",
-					size: item.size || 0,
-					path: item.path || "",
-				})),
+			const announcementResult = await createGrantorAnnouncementWorkflow({
 				grantorId,
-				grantorName,
-				providerType: grantorProviderType,
-				providerLabel: grantorName,
-				status: "Open",
-				createdAt: serverTimestamp(),
-				updatedAt: serverTimestamp(),
+				announcement: {
+					...announcementForm,
+					title: announcementForm.title.trim(),
+					subtitle: announcementForm.subtitle.trim(),
+					description: announcementForm.description.trim(),
+					content: announcementForm.description.trim(),
+					previewText: announcementForm.description.trim().slice(0, 150),
+					applicationEnabled: announcementForm.applicationEnabled === true,
+					minimumGrade: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
+					minGwa: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
+					requiredDocuments: announcementForm.applicationEnabled
+						? {
+								cog: announcementForm.requiredDocuments?.cog === true,
+								cor: announcementForm.requiredDocuments?.cor === true,
+								applicationForm: announcementForm.requiredDocuments?.applicationForm === true,
+							}
+						: {
+								cog: false,
+								cor: false,
+								applicationForm: false,
+							},
+					otherRequirements: announcementForm.applicationEnabled
+						? (Array.isArray(announcementForm.otherRequirements) ? announcementForm.otherRequirements : [])
+								.map((item) => ({
+									name: String(item.name || "").trim(),
+									fileType: String(item.fileType || "pdf").toLowerCase() === "png" ? "png" : "pdf",
+									uploadCount: Math.max(1, Number.parseInt(item.uploadCount, 10) || 1),
+								}))
+								.filter((item) => item.name)
+						: [],
+					applicationWindow: announcementForm.applicationEnabled ? announcementForm.applicationWindow.trim() : "",
+					startDate: announcementForm.applicationEnabled && announcementWindowStart ? new Date(`${announcementWindowStart}T00:00:00`).toISOString() : null,
+					endDate: announcementForm.applicationEnabled && announcementWindowEnd ? new Date(`${announcementWindowEnd}T23:59:59`).toISOString() : null,
+					imageUrl: imageUrls[0] || "",
+					imageUrls,
+					images: uploads.map((item) => ({
+						url: item.url || "",
+						name: item.name || "",
+						type: item.type || "",
+						size: item.size || 0,
+						path: item.path || "",
+					})),
+					grantorId,
+					grantorName,
+					providerType: grantorProviderType,
+					providerLabel: grantorName,
+					status: "Open",
+					createdAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				},
 			})
-			await addDoc(collection(db, "grantorNotifications"), {
+			const announcementId = announcementResult?.id || announcementResult?.result?.data?.[0]?.id || ""
+			await createGrantorNotification({
 				grantorId,
 				type: "announcement_published",
 				title: "Announcement Published",
 				message: `You published "${announcementForm.title.trim()}".`,
-				announcementId: announcementRef.id,
+				announcementId,
 				read: false,
 				createdAt: serverTimestamp(),
 			})
 			const studentsSnapshot = await getDocs(collection(db, "students"))
 			await Promise.all(studentsSnapshot.docs.map((studentDoc) =>
-				addDoc(collection(db, "studentNotifications"), {
+				createStudentNotification({
 					studentId: studentDoc.id,
 					source: "personal",
 					type: "announcement",
 					title: announcementForm.title.trim(),
 					message: announcementForm.description.trim().slice(0, 180) || "A grantor posted a new scholarship announcement.",
-					announcementId: announcementRef.id,
+					announcementId,
 					announcementSource: "grantor",
 					grantorId,
 					authorName: grantorName,
@@ -2038,10 +2065,11 @@ export default function ProviderDashboard() {
 				postalCode: grantorProfileForm.postalCode.trim(),
 				updatedAt: serverTimestamp(),
 			}
-			await Promise.all([
-				setDoc(doc(db, "providers", grantorId), payload, { merge: true }),
-				setDoc(getGrantorPortalDoc(db, grantorId), payload, { merge: true }),
-			])
+			await updateGrantorProfileWorkflow({
+				grantorId,
+				data: payload,
+				updatePortal: true,
+			})
 			setProfile((prev) => ({ ...(prev || {}), ...payload }))
 			toast.success("Grantor profile updated.")
 		} catch (error) {
@@ -2069,10 +2097,11 @@ export default function ProviderDashboard() {
 		try {
 			const uploadResult = await uploadToStorage(file, { folder: `grantor-profiles/${grantorId}` })
 			const payload = { profileImageUrl: uploadResult.url, updatedAt: serverTimestamp() }
-			await Promise.all([
-				setDoc(doc(db, "providers", grantorId), payload, { merge: true }),
-				setDoc(getGrantorPortalDoc(db, grantorId), payload, { merge: true }),
-			])
+			await updateGrantorProfileWorkflow({
+				grantorId,
+				data: payload,
+				updatePortal: true,
+			})
 			setProfile((prev) => ({ ...(prev || {}), profileImageUrl: uploadResult.url }))
 			toast.success("Profile photo updated.")
 		} catch (error) {
@@ -2097,20 +2126,23 @@ export default function ProviderDashboard() {
 
 		setPasswordRequestSubmitting(true)
 		try {
-			await setDoc(doc(db, "providers", grantorId), {
-				passwordChangeRequested: true,
-				passwordChangeRequestStatus: "pending",
-				passwordChangeRequestedAt: serverTimestamp(),
-				passwordChangeApprovedAt: null,
-				updatedAt: serverTimestamp(),
-			}, { merge: true })
-			await addDoc(collection(db, "grantorNotifications"), {
+			await requestGrantorPasswordChangeWorkflow({
 				grantorId,
-				type: "password_change_request",
-				title: "Password Change Requested",
-				message: "Your request was sent to the administrator and is awaiting approval.",
-				read: false,
-				createdAt: serverTimestamp(),
+				providerUpdate: {
+					passwordChangeRequested: true,
+					passwordChangeRequestStatus: "pending",
+					passwordChangeRequestedAt: serverTimestamp(),
+					passwordChangeApprovedAt: null,
+					updatedAt: serverTimestamp(),
+				},
+				notification: {
+					grantorId,
+					type: "password_change_request",
+					title: "Password Change Requested",
+					message: "Your request was sent to the administrator and is awaiting approval.",
+					read: false,
+					createdAt: serverTimestamp(),
+				},
 			})
 			toast.success("Password change request sent to the administrator.")
 		} catch (error) {
@@ -2124,7 +2156,7 @@ export default function ProviderDashboard() {
 	const markGrantorNotificationRead = async (notification) => {
 		if (!notification?.id || notification.read === true) return
 		try {
-			await updateDoc(doc(db, "grantorNotifications", notification.id), {
+			await updateGrantorNotification(notification.id, {
 				read: true,
 				readAt: serverTimestamp(),
 			})
@@ -2137,7 +2169,7 @@ export default function ProviderDashboard() {
 		if (unreadPersonalNotifications.length === 0) return
 		try {
 			await Promise.all(unreadPersonalNotifications.map((notification) =>
-				updateDoc(doc(db, "grantorNotifications", notification.id), {
+				updateGrantorNotification(notification.id, {
 					read: true,
 					readAt: serverTimestamp(),
 				}),
@@ -2151,7 +2183,7 @@ export default function ProviderDashboard() {
 	const deleteGrantorNotification = async (notificationId) => {
 		if (!notificationId) return
 		try {
-			await deleteDoc(doc(db, "grantorNotifications", notificationId))
+			await deleteGrantorNotificationRecord(notificationId)
 		} catch (error) {
 			console.error("Unable to delete grantor notification.", error)
 			toast.error("Unable to delete this inbox message.")

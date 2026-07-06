@@ -47,6 +47,9 @@ import TablePagination from "../components/TablePagination"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
+import { createGrantorNotification } from "../services/notificationService"
+import { materialRequestWorkflow } from "../services/workflowService"
+import { matchAdminGrantorStudents } from "../services/adminMatchingService"
 import {
 	GRANTOR_SUBCOLLECTIONS,
 	isAnnouncementArchived,
@@ -678,6 +681,7 @@ export default function AdminDashboard() {
 	const [soeDownloads, setSoeDownloads] = useState([])
 	const [announcements, setAnnouncements] = useState([])
 	const [grantorScholarsRaw, setGrantorScholarsRaw] = useState([])
+	const [grantorScholarStudentRecordLookup, setGrantorScholarStudentRecordLookup] = useState(new Map())
 	const [dataLoadState, setDataLoadState] = useState({
 		students: false,
 		providers: false,
@@ -1146,7 +1150,9 @@ export default function AdminDashboard() {
 		[grantorScholarsRaw],
 	)
 
-	const grantorScholarStudentRecordLookup = useMemo(() => {
+	useEffect(() => {
+		let active = true
+		const buildFallbackLookup = () => {
 		const studentIds = new Map(
 			studentProfiles.map((student) => [normalizeGrantorScholarLookupValue(student.id), student.id]),
 		)
@@ -1163,6 +1169,26 @@ export default function AdminDashboard() {
 			lookup.set(`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`, matchedStudentId)
 		})
 		return lookup
+		}
+
+		if (!grantorScholarsRaw.length || !studentProfiles.length) {
+			setGrantorScholarStudentRecordLookup(new Map())
+			return undefined
+		}
+
+		matchAdminGrantorStudents(studentProfiles, grantorScholarsRaw)
+			.then((result) => {
+				if (!active) return
+				setGrantorScholarStudentRecordLookup(new Map(Object.entries(result.lookup || {})))
+			})
+			.catch((error) => {
+				console.warn("Python admin grantor-student matching unavailable. Falling back to browser matching.", error)
+				if (active) setGrantorScholarStudentRecordLookup(buildFallbackLookup())
+			})
+
+		return () => {
+			active = false
+		}
 	}, [grantorScholarsRaw, studentProfiles])
 
 	const selectedStudentGrantorScholarships = useMemo(() => {
@@ -2944,17 +2970,29 @@ export default function AdminDashboard() {
 		const studentId = row?.studentId
 		if (!studentId) return
 		await runAction(async () => {
-			await updateDoc(doc(db, "students", studentId), {
-				soeLastExportAt: null,
-				soeCooldownOverrideAt: serverTimestamp(),
-				updatedAt: serverTimestamp(),
+			await materialRequestWorkflow({
+				updates: [{
+					table: "students",
+					id: studentId,
+					data: {
+						soeLastExportAt: null,
+						soeCooldownOverrideAt: serverTimestamp(),
+						updatedAt: serverTimestamp(),
+					},
+				}],
 			})
 			if (row?.id) {
-				await updateDoc(doc(db, "soeRequests", row.id), {
-					"materials.soe.downloadedAt": null,
-					downloadStatus: null,
-					downloadedAt: null,
-					updatedAt: serverTimestamp(),
+				await materialRequestWorkflow({
+					updates: [{
+						table: "soe_requests",
+						id: row.id,
+						data: {
+							"materials.soe.downloadedAt": null,
+							downloadStatus: null,
+							downloadedAt: null,
+							updatedAt: serverTimestamp(),
+						},
+					}],
 				})
 				setSoeRequests((prev) =>
 					prev.map((request) =>
@@ -3046,7 +3084,13 @@ export default function AdminDashboard() {
 				requestUpdate[`materials.${materialKey}.rejectedAt`] = action === "non_compliant" ? serverTimestamp() : null
 			})
 
-			await updateDoc(doc(db, "soeRequests", row.id), requestUpdate)
+			await materialRequestWorkflow({
+				updates: [{
+					table: "soe_requests",
+					id: row.id,
+					data: requestUpdate,
+				}],
+			})
 
 			if (student && hasPendingSoe) {
 				const reviewedScholarships = student.scholarships.map((entry) => {
@@ -3062,9 +3106,15 @@ export default function AdminDashboard() {
 				})
 
 				if (action === "signed") {
-					await updateDoc(doc(db, "students", student.id), {
-						scholarships: reviewedScholarships,
-						updatedAt: serverTimestamp(),
+					await materialRequestWorkflow({
+						updates: [{
+							table: "students",
+							id: student.id,
+							data: {
+								scholarships: reviewedScholarships,
+								updatedAt: serverTimestamp(),
+							},
+						}],
 					})
 					// Send SOE Approval Email
 					if (student.email) {
@@ -3087,18 +3137,30 @@ export default function AdminDashboard() {
 		const student = studentProfiles.find((entry) => entry.id === row.studentId)
 
 		await runAction(async () => {
-			await updateDoc(doc(db, "soeDownloads", row.id), {
-				status: action === "signed" ? "Signed" : "Non-Compliant",
-				reviewState: action,
-				checkedAt: serverTimestamp(),
-				updatedAt: serverTimestamp(),
+			await materialRequestWorkflow({
+				updates: [{
+					table: "soe_downloads",
+					id: row.id,
+					data: {
+						status: action === "signed" ? "Signed" : "Non-Compliant",
+						reviewState: action,
+						checkedAt: serverTimestamp(),
+						updatedAt: serverTimestamp(),
+					},
+				}],
 			})
 
 			if (row.requestRecordId) {
-				await updateDoc(doc(db, "soeRequests", row.requestRecordId), {
-					soeCheckingState: action,
-					soeCheckedAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
+				await materialRequestWorkflow({
+					updates: [{
+						table: "soe_requests",
+						id: row.requestRecordId,
+						data: {
+							soeCheckingState: action,
+							soeCheckedAt: serverTimestamp(),
+							updatedAt: serverTimestamp(),
+						},
+					}],
 				}).catch(() => {})
 			}
 
@@ -3120,21 +3182,33 @@ export default function AdminDashboard() {
 			})
 
 			if (action === "signed") {
-				await updateDoc(doc(db, "students", student.id), {
-					scholarships: reviewedScholarships,
-					updatedAt: serverTimestamp(),
+				await materialRequestWorkflow({
+					updates: [{
+						table: "students",
+						id: student.id,
+						data: {
+							scholarships: reviewedScholarships,
+							updatedAt: serverTimestamp(),
+						},
+					}],
 				})
 			}
 
 			if (action === "non_compliant") {
 				const nextViolationCount = Number(student.complianceViolationCount || 0) + 1
 
-				await updateDoc(doc(db, "students", student.id), {
-					scholarships: reviewedScholarships,
-					complianceViolationCount: nextViolationCount,
-					soeComplianceWarning: true,
-					lastComplianceReviewAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
+				await materialRequestWorkflow({
+					updates: [{
+						table: "students",
+						id: student.id,
+						data: {
+							scholarships: reviewedScholarships,
+							complianceViolationCount: nextViolationCount,
+							soeComplianceWarning: true,
+							lastComplianceReviewAt: serverTimestamp(),
+							updatedAt: serverTimestamp(),
+						},
+					}],
 				})
 
 				if (student.email) {
@@ -3327,7 +3401,7 @@ export default function AdminDashboard() {
 				passwordChangeApprovedAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
 			}, { merge: true })
-			await addDoc(collection(db, "grantorNotifications"), {
+			await createGrantorNotification({
 				grantorId,
 				type: "password_change_approved",
 				title: "Password Change Approved",

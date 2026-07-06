@@ -17,7 +17,7 @@ import {
 import {
 	serverTimestamp,
 	recordExists,
-	upsertStudent,
+	findStudentAccountByUniqueField,
 	db,
 } from "../services/supabaseDataService"
 import { toast } from "react-toastify"
@@ -30,7 +30,9 @@ import {
 	getDocumentUrlsForStudent,
 } from "../services/scholarshipService"
 import { scanStudentDocument } from "../services/documentScanService"
+import { finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
 import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
+import { isPdf, convertPdfToImage } from "../utils/pdfConverter"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -198,6 +200,7 @@ export default function SignupPage() {
 	const [cogFile, setCogFile] = useState(null)
 	const [documentScanState, setDocumentScanState] = useState({ cor: "idle", cog: "idle" })
 	const [documentScanResult, setDocumentScanResult] = useState({ cor: null, cog: null })
+	const [documentPreviewUrls, setDocumentPreviewUrls] = useState({ cor: "", cog: "" })
 	const [academicConcernTerms, setAcademicConcernTerms] = useState([])
 	const [isIrregularStudent, setIsIrregularStudent] = useState("")
 	const [academicConcernReason, setAcademicConcernReason] = useState("")
@@ -215,6 +218,43 @@ export default function SignupPage() {
 		return year === "1" && isFirstCycle
 	}, [isFirstCycle, year])
 	const isCogRequired = !isCogOptional
+
+	useEffect(() => {
+		let isMounted = true
+		const createdUrls = []
+
+		const buildPreviewUrl = async (file) => {
+			if (!file) return ""
+			if (isPdf(file)) {
+				const previewBlob = await convertPdfToImage(file)
+				const previewUrl = URL.createObjectURL(previewBlob)
+				createdUrls.push(previewUrl)
+				return previewUrl
+			}
+			const previewUrl = URL.createObjectURL(file)
+			createdUrls.push(previewUrl)
+			return previewUrl
+		}
+
+		Promise.all([buildPreviewUrl(corFile), buildPreviewUrl(cogFile)])
+			.then(([corPreviewUrl, cogPreviewUrl]) => {
+				if (isMounted) {
+					setDocumentPreviewUrls({ cor: corPreviewUrl, cog: cogPreviewUrl })
+				}
+			})
+			.catch((error) => {
+				console.error("Document preview generation failed:", error)
+				if (isMounted) {
+					setDocumentPreviewUrls({ cor: "", cog: "" })
+				}
+			})
+
+		return () => {
+			isMounted = false
+			createdUrls.forEach((url) => URL.revokeObjectURL(url))
+		}
+	}, [corFile, cogFile])
+
 	const hasAcademicConcern = useMemo(() => {
 		const numericGwa = Number.parseFloat(gwa)
 		return academicConcernTerms.length > 0 || (!Number.isNaN(numericGwa) && numericGwa >= 4)
@@ -241,35 +281,286 @@ export default function SignupPage() {
 		}
 	}
 
+	const normalizeIdentityText = (value = "") =>
+		String(value)
+			.toLowerCase()
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.replace(/[^a-z0-9\s]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim()
+
+	const normalizeStudentNumber = (value = "") => String(value).replace(/\D/g, "")
+	const normalizeEmail = (value = "") => String(value || "").trim().toLowerCase()
+	const normalizeCpNumber = (value = "") => String(value || "").replace(/\D/g, "")
+	const isValidCpNumber = (value = "") => /^09\d{9}$/.test(normalizeCpNumber(value))
+	const getFileSha256 = async (file) => {
+		if (!file) return ""
+		const buffer = await file.arrayBuffer()
+		const digest = await crypto.subtle.digest("SHA-256", buffer)
+		return Array.from(new Uint8Array(digest))
+			.map((byte) => byte.toString(16).padStart(2, "0"))
+			.join("")
+	}
+
+	const getTokenSortedName = (value = "") =>
+		normalizeIdentityText(value).split(" ").filter(Boolean).sort().join(" ")
+
+	const getNameTokens = (value = "") =>
+		normalizeIdentityText(value).split(" ").filter(Boolean)
+
+	const getTokenOverlapSimilarity = (left = "", right = "") => {
+		const leftTokens = new Set(getNameTokens(left))
+		const rightTokens = new Set(getNameTokens(right))
+		const tokenCount = Math.max(leftTokens.size, rightTokens.size)
+		if (!tokenCount) return 0
+		let matches = 0
+		leftTokens.forEach((token) => {
+			if (rightTokens.has(token)) matches += 1
+		})
+		return Number((matches / tokenCount).toFixed(4))
+	}
+
+	const getLevenshteinDistance = (left = "", right = "") => {
+		const a = normalizeIdentityText(left)
+		const b = normalizeIdentityText(right)
+		if (a === b) return 0
+		if (!a.length) return b.length
+		if (!b.length) return a.length
+
+		const previous = Array.from({ length: b.length + 1 }, (_, index) => index)
+		const current = Array(b.length + 1).fill(0)
+
+		for (let i = 1; i <= a.length; i += 1) {
+			current[0] = i
+			for (let j = 1; j <= b.length; j += 1) {
+				const cost = a[i - 1] === b[j - 1] ? 0 : 1
+				current[j] = Math.min(
+					current[j - 1] + 1,
+					previous[j] + 1,
+					previous[j - 1] + cost,
+				)
+			}
+			for (let j = 0; j <= b.length; j += 1) previous[j] = current[j]
+		}
+
+		return previous[b.length]
+	}
+
+	const getLevenshteinSimilarity = (left = "", right = "") => {
+		const a = normalizeIdentityText(left)
+		const b = normalizeIdentityText(right)
+		const maxLength = Math.max(a.length, b.length)
+		if (!maxLength) return 0
+		return Number((1 - getLevenshteinDistance(a, b) / maxLength).toFixed(4))
+	}
+
+	const buildScannedFullName = (extracted = {}) =>
+		normalizeSpace([
+			extracted.firstName,
+			extracted.lastName,
+		].filter(Boolean).join(" ")) || extracted.fullName || ""
+
+	const normalizeSpace = (value = "") => String(value).replace(/\s+/g, " ").trim()
+
+	const isUsableIdentityName = (value = "") => {
+		const normalized = normalizeIdentityText(value)
+		if (!normalized) return false
+		const tokens = normalized.split(" ").filter(Boolean)
+		if (tokens.length < 2) return false
+		return !/\b(registration|certificate|program|course|student|number|semester|section|final|remarks|average)\b/.test(normalized)
+	}
+
+	const resolveExpectedCogIdentity = () => {
+		const corExtracted = documentScanResult.cor || {}
+		const corFullName = buildScannedFullName(corExtracted) || corExtracted.fullName || ""
+		const formFullName = normalizeSpace([fname, mname, lname].filter(Boolean).join(" "))
+		const expectedName = isUsableIdentityName(corFullName) ? corFullName : formFullName
+		const expectedStudentNumber =
+			normalizeStudentNumber(corExtracted.studentId) ||
+			normalizeStudentNumber(userId)
+
+		return {
+			studentNumber: expectedStudentNumber,
+			name: expectedName,
+			source: {
+				studentNumber: corExtracted.studentId ? "COR scanned student number" : "student form ID",
+				name: isUsableIdentityName(corFullName) ? "COR scanned full name" : "student form fields",
+				corExtracted,
+				form: {
+					studentNumber: userId,
+					firstName: fname,
+					middleName: mname,
+					lastName: lname,
+				},
+			},
+		}
+	}
+
+	const splitNameParts = (name = "") => {
+		const cleaned = normalizeSpace(name)
+		if (!cleaned) return { firstName: "", middleName: "", lastName: "" }
+
+		if (cleaned.includes(",")) {
+			const [lastPart, restPart] = cleaned.split(",", 2).map((part) => normalizeSpace(part))
+			const rest = restPart.split(" ").filter(Boolean)
+			return {
+				firstName: rest[0] || "",
+				middleName: rest.slice(1).join(" "),
+				lastName: lastPart || "",
+			}
+		}
+
+		const parts = cleaned.split(" ").filter(Boolean)
+		if (parts.length < 2) return { firstName: "", middleName: "", lastName: "" }
+		return {
+			firstName: parts[0] || "",
+			middleName: parts.slice(1, -1).join(" "),
+			lastName: parts[parts.length - 1] || "",
+		}
+	}
+
+	const validateCogIdentity = (extracted = {}) => {
+		const expectedIdentity = resolveExpectedCogIdentity()
+		const expectedStudentNumber = expectedIdentity.studentNumber
+		const scannedStudentNumber = normalizeStudentNumber(extracted.studentId)
+		const expectedName = expectedIdentity.name
+		const scannedName = buildScannedFullName(extracted)
+		const sortedExpectedName = getTokenSortedName(expectedName)
+		const sortedScannedName = getTokenSortedName(scannedName)
+		const nameSimilarity = Math.max(
+			getLevenshteinSimilarity(sortedExpectedName, sortedScannedName),
+			getTokenOverlapSimilarity(expectedName, scannedName),
+		)
+		const studentNumberSimilarity = expectedStudentNumber && scannedStudentNumber && expectedStudentNumber === scannedStudentNumber ? 1 : 0
+		const score = Number(((studentNumberSimilarity * 0.75) + (nameSimilarity * 0.25)).toFixed(4))
+		const canValidate = Boolean(expectedStudentNumber && scannedStudentNumber && expectedName && scannedName)
+		const hasExactStudentNumberMatch = studentNumberSimilarity === 1
+		const canUseNameRule = Boolean(expectedName && scannedName)
+		const passed = hasExactStudentNumberMatch && (
+			canUseNameRule
+				? score >= 0.85 && nameSimilarity >= 0.7
+				: true
+		)
+		const failedRules = []
+		const skippedRules = []
+
+		if (!expectedStudentNumber) failedRules.push("Missing expected student number from COR/form.")
+		if (!scannedStudentNumber) failedRules.push("Missing scanned student number from COG.")
+		if (!expectedName) skippedRules.push("Expected student name was not extracted from COR/form, so name matching was skipped.")
+		if (!scannedName) skippedRules.push("Scanned student name was not extracted from COG, so name matching was skipped.")
+		if (expectedStudentNumber && scannedStudentNumber && expectedStudentNumber !== scannedStudentNumber) {
+			failedRules.push(`Student number mismatch: expected ${expectedStudentNumber}, scanned ${scannedStudentNumber}.`)
+		}
+		if (canUseNameRule && nameSimilarity < 0.7) {
+			failedRules.push(`Name similarity too low: ${nameSimilarity}. Required at least 0.70.`)
+		}
+		if (canUseNameRule && score < 0.85) {
+			failedRules.push(`Overall identity score too low: ${score}. Required at least 0.85.`)
+		}
+		const blockingReason =
+			failedRules[0] ||
+			(!canUseNameRule && hasExactStudentNumberMatch
+				? "Name check skipped because one side has no readable name."
+				: "No blocking rule failed.")
+
+		return {
+			algorithm: "Weighted Record Linkage with Levenshtein Similarity",
+			threshold: 0.85,
+			passed,
+			canValidate,
+			score,
+			studentNumberSimilarity,
+			nameSimilarity,
+			nameSource: expectedIdentity.source.name,
+			studentNumberSource: expectedIdentity.source.studentNumber,
+			blockingReason,
+			failedRules,
+			skippedRules,
+			sourceFields: expectedIdentity.source,
+			comparisonSteps: [
+				{
+					rule: "Student number exact match",
+					expected: expectedStudentNumber,
+					scanned: scannedStudentNumber,
+					passed: hasExactStudentNumberMatch,
+				},
+				{
+					rule: "Readable name available",
+					expected: expectedName,
+					scanned: scannedName,
+					passed: canUseNameRule,
+				},
+				{
+					rule: "Name similarity >= 0.70",
+					expected: ">= 0.70",
+					scanned: nameSimilarity,
+					passed: !canUseNameRule || nameSimilarity >= 0.7,
+				},
+				{
+					rule: "Weighted score >= 0.85",
+					expected: ">= 0.85",
+					scanned: score,
+					passed: !canUseNameRule || score >= 0.85,
+				},
+			],
+			normalized: {
+				expectedName: normalizeIdentityText(expectedName),
+				scannedName: normalizeIdentityText(scannedName),
+				sortedExpectedName,
+				sortedScannedName,
+				expectedStudentNumber,
+				scannedStudentNumber,
+			},
+			rules: {
+				studentNumber: "Must match exactly.",
+				nameSimilarity: "Must be at least 0.70.",
+				overallScore: "Must be at least 0.85.",
+				weights: "Student number 75%, name similarity 25%.",
+			},
+			expected: {
+				studentNumber: expectedStudentNumber,
+				name: expectedName,
+			},
+			scanned: {
+				studentNumber: scannedStudentNumber,
+				name: scannedName,
+			},
+			explanation: passed
+				? canUseNameRule
+					? "The COG identity matches the COR/form identity."
+					: "The COG student number matches exactly. Name matching was skipped because one document did not expose a readable name."
+				: "The COG identity does not match the COR/form identity closely enough, so GWA autofill is blocked.",
+		}
+	}
+
 	const applyScannedStudentData = (extracted = {}) => {
 		if (!extracted || typeof extracted !== "object") return
 
 		const isCorScan = extracted.documentType === "cor"
 		const isCogScan = extracted.documentType === "cog"
+		const fallbackName = splitNameParts(extracted.fullName)
+		const scannedFirstName = extracted.firstName || fallbackName.firstName
+		const scannedLastName = extracted.lastName || fallbackName.lastName
 
 		if (extracted.studentId && (!userId.trim() || isCorScan)) setUserId(extracted.studentId)
-		if (extracted.firstName && (!fname.trim() || isCorScan)) setFname(extracted.firstName)
-		if (extracted.middleName && (!mname.trim() || isCorScan)) setMname(extracted.middleName)
-		if (extracted.lastName && (!lname.trim() || isCorScan)) setLname(extracted.lastName)
+		if (scannedFirstName && (!fname.trim() || isCorScan)) setFname(scannedFirstName)
+		if (scannedLastName && (!lname.trim() || isCorScan)) setLname(scannedLastName)
 		if (extracted.course && (!course || isCorScan)) setCourse(extracted.course)
 		if (extracted.year && (!year || isCorScan)) setYear(String(extracted.year))
-		if (extracted.section && (!section || isCorScan)) setSection(extracted.section)
 		if (extracted.gwa && (!gwa.trim() || isCogScan)) setGwa(extracted.gwa)
 
-		if (Array.isArray(extracted.academicConcernTerms) && extracted.academicConcernTerms.length > 0) {
+		if (isCorScan && Array.isArray(extracted.academicConcernTerms) && extracted.academicConcernTerms.length > 0) {
 			setAcademicConcernTerms((current) =>
 				Array.from(new Set([...current, ...extracted.academicConcernTerms])),
 			)
 		}
 	}
 
-	const logDocumentScanResult = (documentType, extracted = {}) => {
+	const logDocumentScanResult = (documentType, extracted = {}, identityCheck = null) => {
 		const label = `${documentType.toUpperCase()} document scan`
 		const gradeDebug = extracted?.gradeDebug || {}
-		const grades = Array.isArray(gradeDebug.grades) ? gradeDebug.grades : []
-		const concernMatches = Array.isArray(gradeDebug.concernMatches)
-			? gradeDebug.concernMatches
-			: []
+		const gwaDebug = extracted?.gwaDebug || {}
 
 		console.groupCollapsed(`[BulsuScholar] ${label}`)
 		console.log("Autofill fields gathered:", {
@@ -287,29 +578,128 @@ export default function SignupPage() {
 		})
 		console.log("Raw OCR preview:", extracted?.rawTextPreview || "")
 		console.log(
-			"Grade detection rule:",
+			"COG reading rule:",
 			gradeDebug.explanation ||
-				"Academic concern is detected from final grades 4.0/5.0 or remarks INC, UD, or OD.",
+				"COG scanning extracts only identity fields and the printed GWA.",
 		)
 		console.log(
-			"Grade extraction method:",
-			gradeDebug.extractionMethod || "Document parser fallback",
+			"GWA extraction method:",
+			gradeDebug.extractionMethod || "GWA-only extraction",
 		)
-
-		if (grades.length > 0) {
-			console.table(grades)
-			console.log("Computed GWA from gathered grades:", gradeDebug.computedAverage || extracted?.gwa || "Not detected")
-		} else {
-			console.info("No grade rows were gathered from this scan.")
-		}
-
-		if (concernMatches.length > 0) {
-			console.warn("Why an academic concern was detected:")
-			console.table(concernMatches)
-		} else {
-			console.info("No 5.0, 4.0, INC, UD, or OD was detected from gathered grade rows.")
+		console.log("Printed GWA detected:", extracted?.gwa || "Not detected")
+		console.log("GWA extraction debug:", {
+			value: gwaDebug.value || extracted?.gwa || "",
+			matchedRule: gwaDebug.matchedRule || "No GWA rule matched",
+			matchedText: gwaDebug.matchedText || "",
+			nearbyText: gwaDebug.nearbyText || "",
+			attemptedRules: gwaDebug.attemptedRules || [],
+		})
+		if (identityCheck) {
+			console.log("Identity matching algorithm:", identityCheck.algorithm)
+			console.table([{
+				score: identityCheck.score,
+				threshold: identityCheck.threshold,
+				studentNumberSimilarity: identityCheck.studentNumberSimilarity,
+				nameSimilarity: identityCheck.nameSimilarity,
+				passed: identityCheck.passed,
+				nameSource: identityCheck.nameSource,
+				studentNumberSource: identityCheck.studentNumberSource,
+				blockingReason: identityCheck.blockingReason,
+			}])
+			console.log("Identity matching rules:", identityCheck.rules)
+			console.table(identityCheck.comparisonSteps || [])
+			console.log("Identity source fields:", identityCheck.sourceFields)
+			console.log("Identity comparison:", {
+				expected: identityCheck.expected,
+				scanned: identityCheck.scanned,
+				normalized: identityCheck.normalized,
+				explanation: identityCheck.explanation,
+			})
+			if (identityCheck.failedRules?.length) {
+				console.warn("COG identity mismatch reason:")
+				console.table(identityCheck.failedRules.map((reason, index) => ({
+					check: index + 1,
+					reason,
+				})))
+			}
+			if (identityCheck.skippedRules?.length) {
+				console.info("COG identity skipped checks:")
+				console.table(identityCheck.skippedRules.map((reason, index) => ({
+					check: index + 1,
+					reason,
+				})))
+			}
+			if (!identityCheck.failedRules?.length) {
+				console.info("COG identity matched required rules.")
+			} else {
+				console.info("COG identity did not match required rules.")
+			}
 		}
 		console.groupEnd()
+	}
+
+	const getPreviewUrlForFile = (file) => {
+		if (!file) return ""
+		if (file === corFile) return documentPreviewUrls.cor
+		if (file === cogFile) return documentPreviewUrls.cog
+		return ""
+	}
+
+	const getScannedCorStudentNumber = () => normalizeStudentNumber(documentScanResult.cor?.studentId)
+
+	const validateCorStudentNumberLock = () => {
+		const scannedCorStudentNumber = getScannedCorStudentNumber()
+		const submittedStudentNumber = normalizeStudentNumber(userId)
+		if (!scannedCorStudentNumber) {
+			toast.error("Please wait for the COR scan to detect the student number before continuing.")
+			scrollToSection("section-cor")
+			return false
+		}
+		if (scannedCorStudentNumber !== submittedStudentNumber) {
+			toast.error("Student ID must match the uploaded COR. Please upload your own COR.")
+			console.warn("Signup blocked: COR student number mismatch.", {
+				scannedCorStudentNumber,
+				submittedStudentNumber,
+				corScan: documentScanResult.cor,
+			})
+			scrollToSection("section-account")
+			return false
+		}
+		return true
+	}
+
+	const validateUniqueSignupFields = async () => {
+		const normalizedEmail = normalizeEmail(email)
+		const normalizedCpNumber = normalizeCpNumber(cpNumber)
+
+		const [emailOwner, cpOwner] = await Promise.all([
+			findStudentAccountByUniqueField("email", normalizedEmail),
+			findStudentAccountByUniqueField("cpNumber", normalizedCpNumber),
+		])
+
+		if (emailOwner) {
+			toast.error("This email is already used by another student account.")
+			console.warn("Signup blocked: duplicate student email.", {
+				email: normalizedEmail,
+				existingStudentId: emailOwner.record?.id,
+				table: emailOwner.table,
+			})
+			scrollToSection("section-account")
+			return false
+		}
+
+		if (cpOwner) {
+			toast.error("This CP number is already used by another student account.")
+			console.warn("Signup blocked: duplicate student CP number.", {
+				cpNumber: normalizedCpNumber,
+				existingStudentId: cpOwner.record?.id,
+				table: cpOwner.table,
+			})
+			scrollToSection("section-personal")
+			return false
+		}
+
+		return true
 	}
 
 	const scanUploadedDocument = async (file, documentType) => {
@@ -319,8 +709,18 @@ export default function SignupPage() {
 		try {
 			const result = await scanStudentDocument(file, documentType)
 			const extracted = result?.extracted || null
+			const identityCheck = documentType === "cog" ? validateCogIdentity(extracted) : null
 			setDocumentScanResult((current) => ({ ...current, [documentType]: extracted }))
-			logDocumentScanResult(documentType, extracted)
+			logDocumentScanResult(documentType, extracted, identityCheck)
+
+			if (identityCheck && !identityCheck.passed) {
+				setCogFile(null)
+				setGwa("")
+				toast.error("COG identity does not match the COR/student information. Please upload the correct COG.")
+				setDocumentScanState((current) => ({ ...current, [documentType]: "error" }))
+				return
+			}
+
 			applyScannedStudentData(extracted)
 			toast.success(`${documentType.toUpperCase()} scanned. Review the autofilled data before submitting.`)
 			setDocumentScanState((current) => ({ ...current, [documentType]: "done" }))
@@ -333,8 +733,14 @@ export default function SignupPage() {
 
 	const processSignupDocumentFile = (file, documentType, resetInput) => {
 		if (!file) {
-			if (documentType === "cor") setCorFile(null)
-			if (documentType === "cog") setCogFile(null)
+			if (documentType === "cor") {
+				setCorFile(null)
+				setDocumentScanResult((current) => ({ ...current, cor: null }))
+			}
+			if (documentType === "cog") {
+				setCogFile(null)
+				setDocumentScanResult((current) => ({ ...current, cog: null }))
+			}
 			return
 		}
 
@@ -354,7 +760,7 @@ export default function SignupPage() {
 		scanUploadedDocument(file, documentType)
 	}
 
-	const handleReviewSubmit = (e) => {
+	const handleReviewSubmit = async (e) => {
 		e.preventDefault()
 
 		// Validate User ID
@@ -393,8 +799,8 @@ export default function SignupPage() {
 		}
 
 		// Validate CP Number
-		if (cpNumber.trim().length < 11) {
-			toast.error("Please enter a valid 11-digit CP Number")
+		if (!isValidCpNumber(cpNumber)) {
+			toast.error("CP Number must be 11 digits and start with 09")
 			scrollToSection("section-personal")
 			return
 		}
@@ -442,6 +848,17 @@ export default function SignupPage() {
 			return
 		}
 
+		if (!validateCorStudentNumberLock()) return
+
+		try {
+			const uniqueFieldsAreValid = await validateUniqueSignupFields()
+			if (!uniqueFieldsAreValid) return
+		} catch (error) {
+			console.error("Signup uniqueness validation failed:", error)
+			toast.error("Unable to verify email or CP number uniqueness. Please try again.")
+			return
+		}
+
 		if (!isIrregularStudent || (shouldShowAcademicDetailQuestions && (!academicConcernReason.trim() || !preferredScholarshipSupport.trim()))) {
 			toast.error("Please answer the student status questions.")
 			scrollToSection("section-academic-status")
@@ -467,7 +884,7 @@ export default function SignupPage() {
 			!!fname.trim() &&
 			!!lname.trim() &&
 			!!cpNumber.trim() &&
-			cpNumber.trim().length >= 11 &&
+			isValidCpNumber(cpNumber) &&
 			!!street.trim() &&
 			!!city.trim() &&
 			!!province.trim() &&
@@ -564,8 +981,8 @@ export default function SignupPage() {
 		}
 
 		// Validate CP Number
-		if (cpNumber.trim().length < 11) {
-			toast.error("Please enter a valid 11-digit CP Number")
+		if (!isValidCpNumber(cpNumber)) {
+			toast.error("CP Number must be 11 digits and start with 09")
 			scrollToSection("section-personal")
 			return
 		}
@@ -619,8 +1036,12 @@ export default function SignupPage() {
 			return
 		}
 
+		if (!validateCorStudentNumberLock()) return
+
 		// Check if user ID exists in Supabase
 		const studentId = userId.trim()
+		const normalizedSignupEmail = normalizeEmail(email)
+		const normalizedSignupCpNumber = normalizeCpNumber(cpNumber)
 		try {
 			const [studentExists, pendingExists, providerExists, adminExists] =
 				await Promise.all([
@@ -644,12 +1065,34 @@ export default function SignupPage() {
 				return
 			}
 
+			const uniqueFieldsAreValid = await validateUniqueSignupFields()
+			if (!uniqueFieldsAreValid) return
+
+			const corHash = await getFileSha256(corFile)
+			await validateStudentSignupWorkflow({
+				studentId,
+				auth: {
+					email: normalizedSignupEmail,
+				},
+				cor: {
+					hash: corHash,
+					studentId: documentScanResult.cor?.studentId || studentId,
+					academicYear: documentScanResult.cor?.academicYear || "",
+					semester: documentScanResult.cor?.semester || "",
+				},
+				student: {
+					email: normalizedSignupEmail,
+					cpNumber: normalizedSignupCpNumber,
+					documentScan: documentScanResult,
+				},
+			})
+
 			console.log(
 				"SignupPage: Starting Supabase Auth signUp for email:",
-				email.trim(),
+				normalizedSignupEmail,
 			)
 			const { data: authData, error: authError } = await supabase.auth.signUp({
-				email: email.trim(),
+				email: normalizedSignupEmail,
 				password,
 				options: {
 					emailRedirectTo: `${window.location.origin}/confirm-email`,
@@ -718,11 +1161,11 @@ export default function SignupPage() {
 			const registrationDraft = {
 				course,
 				major: major.trim(),
-				email: email.trim(),
+				email: normalizedSignupEmail,
 				fname: fname.trim(),
 				lname: lname.trim(),
 				mname: mname.trim(),
-				cpNumber: cpNumber.trim(),
+				cpNumber: normalizedSignupCpNumber,
 				street: street.trim(),
 				city: city.trim(),
 				province: province.trim(),
@@ -752,6 +1195,17 @@ export default function SignupPage() {
 				db,
 				registrationDraft,
 			)
+			console.info("SignupPage: Grantor roster matches found:", {
+				count: matchedGrantors.length,
+				matches: matchedGrantors.map((match) => ({
+					id: match.id || "",
+					studentId: match.studentId || match.studentnumber || match.studentNumber || "",
+					grantorId: match.grantorId || "",
+					grantorName: match.grantorName || "",
+					scholarshipName: match.scholarshipName || match.scholarshipTitle || "",
+					matchReason: match.matchReason || "",
+				})),
+			})
 			const matchedScholarships = buildGrantorMatchScholarships(
 				matchedGrantors,
 				registrationDraft,
@@ -790,6 +1244,56 @@ export default function SignupPage() {
 			// Let's stick to auto-verify for now as there are no "blocking" scholarship requirements anymore during signup.
 
 			const isAutoVerified = true
+
+			const finalizeResult = await finalizeStudentSignupWorkflow({
+				studentId,
+				isAutoVerified,
+				auth: {
+					userId: authData?.user?.id || "",
+					email: authData?.user?.email || normalizedSignupEmail,
+				},
+				cor: {
+					hash: corHash,
+					studentId: documentScanResult.cor?.studentId || studentId,
+					academicYear: documentScanResult.cor?.academicYear || "",
+					semester: documentScanResult.cor?.semester || "",
+				},
+				student: {
+					...baseData,
+					isValidated: isAutoVerified,
+					isPending: !isAutoVerified,
+					validatedAt: isAutoVerified ? serverTimestamp() : null,
+					createdAt: serverTimestamp(),
+				},
+			})
+
+			console.log("SignupPage: Student document saved through Python workflow", finalizeResult)
+
+			sendEmailNotification(
+				email.trim(),
+				`${fname.trim()} ${lname.trim()}`,
+				"Welcome to BulsuScholar!",
+				getWelcomeEmailBody(`${fname.trim()} ${lname.trim()}`),
+			).catch((err) => console.error("Welcome email failed:", err))
+
+			toast.success(
+				isAutoVerified
+					? "Congratulations! Your account has been successfully created."
+					: "Your application has been submitted for review.",
+			)
+			if (matchedScholarships.length === 1) {
+				toast.info(
+					`Matched grantor found: ${matchedScholarships[0].name}. Upload the required documents first before requesting materials.`,
+				)
+			} else if (matchedScholarships.length >= 2) {
+				toast.info(
+					"Multiple grantor matches were found. Choose one matched grantor in the scholarship section before requesting materials.",
+				)
+			}
+
+			setVerificationStatus(isAutoVerified ? "auto-verified" : "pending-review")
+			setIsPending(true)
+			return
 
 			if (isAutoVerified) {
 				await upsertStudent(
@@ -1235,16 +1739,17 @@ export default function SignupPage() {
 									User Id <span className="required">*</span>
 								</label>
 								<div className="login-input-wrap">
-									<HiOutlineMail className="login-input-icon" aria-hidden />
+									<HiOutlineIdentification className="login-input-icon" aria-hidden />
 									<input
 										id="signup-user-id"
 										type="text"
 										className="login-input"
-										placeholder="Enter your User Id"
+										placeholder="Upload COR to detect your Student ID"
 										value={userId}
 										onChange={(e) =>
 											setUserId(e.target.value.replace(/\D/g, ""))
 										}
+										readOnly={Boolean(getScannedCorStudentNumber())}
 										autoComplete="username"
 										autoCapitalize="off"
 									/>
@@ -1475,7 +1980,7 @@ export default function SignupPage() {
 												maxLength={11}
 												value={cpNumber}
 												onChange={(e) =>
-													setCpNumber(e.target.value.replace(/\D/g, ""))
+													setCpNumber(normalizeCpNumber(e.target.value).slice(0, 11))
 												}
 											/>
 										</div>
@@ -2050,15 +2555,21 @@ export default function SignupPage() {
 													</span>
 												</div>
 												<div className="signup-review-document-preview">
-													<img
-														src={URL.createObjectURL(corFile)}
-														alt="COR Preview"
-														className="signup-review-document-image"
-														onClick={() => {
-															setPreviewFile(corFile)
-															setShowImagePreview(true)
-														}}
-													/>
+													{documentPreviewUrls.cor ? (
+														<img
+															src={documentPreviewUrls.cor}
+															alt="COR Preview"
+															className="signup-review-document-image"
+															onClick={() => {
+																setPreviewFile(corFile)
+																setShowImagePreview(true)
+															}}
+														/>
+													) : (
+														<button type="button" className="signup-review-document-image signup-review-document-placeholder">
+															Preview
+														</button>
+													)}
 												</div>
 											</div>
 										)}
@@ -2088,15 +2599,21 @@ export default function SignupPage() {
 													</span>
 												</div>
 												<div className="signup-review-document-preview">
-													<img
-														src={URL.createObjectURL(cogFile)}
-														alt="COG Preview"
-														className="signup-review-document-image"
-														onClick={() => {
-															setPreviewFile(cogFile)
-															setShowImagePreview(true)
-														}}
-													/>
+													{documentPreviewUrls.cog ? (
+														<img
+															src={documentPreviewUrls.cog}
+															alt="COG Preview"
+															className="signup-review-document-image"
+															onClick={() => {
+																setPreviewFile(cogFile)
+																setShowImagePreview(true)
+															}}
+														/>
+													) : (
+														<button type="button" className="signup-review-document-image signup-review-document-placeholder">
+															Preview
+														</button>
+													)}
 												</div>
 											</div>
 										)}
@@ -2126,7 +2643,7 @@ export default function SignupPage() {
 				</div>
 			</div>
 
-			{showImagePreview && previewFile && (
+			{showImagePreview && previewFile && getPreviewUrlForFile(previewFile) && (
 				<div
 					className="signup-preview-modal-overlay"
 					onClick={() => setShowImagePreview(false)}
@@ -2143,7 +2660,7 @@ export default function SignupPage() {
 							✕
 						</button>
 						<img
-							src={URL.createObjectURL(previewFile)}
+							src={getPreviewUrlForFile(previewFile)}
 							alt="Document Preview"
 							className="signup-preview-image"
 						/>

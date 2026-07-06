@@ -36,6 +36,7 @@ import {
 	sortStudentAnnouncements,
 } from "../services/announcementService"
 import { GRANTOR_SUBCOLLECTIONS } from "../services/grantorService"
+import { syncStudentGrantorRosterMatches } from "../services/studentGrantorMatchService"
 import {
 	getPortalAccessBlockMessage,
 	getStudentAccessState,
@@ -153,6 +154,7 @@ export default function StudentDashboard() {
 	const { theme, setTheme } = useThemeMode()
 	const forcedLogoutRef = useRef(false)
 	const profileMenuRef = useRef(null)
+	const rosterSyncRef = useRef("")
 
 	useEffect(() => {
 		if (!sessionState.isStudent || !sessionState.storedUserId) {
@@ -190,6 +192,25 @@ export default function StudentDashboard() {
 			navigate("/", { replace: true })
 		}
 	}, [userLoaded, user, navigate])
+
+	useEffect(() => {
+		if (!userLoaded || !user || !sessionState.storedUserId) return
+		const currentScholarships = normalizeScholarshipList(user.scholarships || [])
+		if (currentScholarships.length > 0) return
+		const syncKey = `${sessionState.storedUserId}:${user.updatedAt || user.createdAt || "empty"}`
+		if (rosterSyncRef.current === syncKey) return
+		rosterSyncRef.current = syncKey
+		syncStudentGrantorRosterMatches(user, sessionState.storedUserId)
+			.then((result) => {
+				if (result.synced) {
+					console.info("StudentDashboard: synced grantor roster scholarship match.", {
+						count: result.matches.length,
+						matches: result.matches,
+					})
+				}
+			})
+			.catch((error) => console.error("StudentDashboard: grantor roster sync failed:", error))
+	}, [sessionState.storedUserId, user, userLoaded])
 
 	useEffect(() => {
 		let adminRows = []

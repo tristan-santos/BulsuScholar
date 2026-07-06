@@ -13,13 +13,11 @@ import {
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import {
-	addDoc,
 	collection,
 	collectionGroup,
 	doc,
 	onSnapshot,
 	serverTimestamp,
-	updateDoc,
 } from "../services/supabaseDataService"
 import { db } from "../services/supabaseDataService"
 import "../css/StudentDashboard.css"
@@ -45,6 +43,7 @@ import {
 	getStudentAccessState,
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
+import { applyScholarshipWorkflow } from "../services/workflowService"
 
 function buildAnnouncementImageList(item = {}) {
 	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
@@ -407,12 +406,7 @@ export default function StudentAnnouncementDetailPage() {
 			}
 			const nextScholarships = [...scholarships, nextRecord]
 
-			await updateDoc(doc(db, "students", studentId), {
-				scholarships: nextScholarships,
-				updatedAt: serverTimestamp(),
-			})
-
-			await addDoc(collection(db, "scholarshipApplications"), {
+			const applicationPayload = {
 				studentId,
 				fname: user?.fname || "",
 				mname: user?.mname || "",
@@ -442,9 +436,16 @@ export default function StudentAnnouncementDetailPage() {
 				semesterTag: nextRecord.semesterTag,
 				documentUrls: nextRecord.documentUrls,
 				academicYear: getCurrentAcademicYear(),
-			})
-			if (announcement.grantorId) {
-				await addDoc(collection(db, "grantorNotifications"), {
+			}
+			await applyScholarshipWorkflow({
+				studentId,
+				studentUpdate: {
+					scholarships: nextScholarships,
+					updatedAt: serverTimestamp(),
+				},
+				application: applicationPayload,
+				notifications: {
+					grantor: announcement.grantorId ? {
 					grantorId: announcement.grantorId,
 					type: "application_submitted",
 					title: "New Student Application",
@@ -463,9 +464,8 @@ export default function StudentAnnouncementDetailPage() {
 					authorImageUrl: user?.profileImageUrl || user?.imageUrl || "",
 					read: false,
 					createdAt: serverTimestamp(),
-				})
-			}
-			await addDoc(collection(db, "studentNotifications"), {
+					} : null,
+					student: {
 				studentId,
 				source: "personal",
 				type: "scholarship_application",
@@ -477,6 +477,8 @@ export default function StudentAnnouncementDetailPage() {
 				authorImageUrl: announcement.profileImageUrl || announcement.authorImageUrl || "",
 				read: false,
 				createdAt: serverTimestamp(),
+					},
+				},
 			})
 
 			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
