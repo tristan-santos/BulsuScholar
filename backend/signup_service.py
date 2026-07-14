@@ -5,6 +5,8 @@ from uuid import uuid4
 try:
     from .supabase_ops import (
         build_student_notification_payload,
+        create_admin_notification,
+        create_log,
         create_student_notification,
         supabase_document_get,
         supabase_document_insert,
@@ -15,6 +17,8 @@ try:
 except ImportError:  # pragma: no cover
     from supabase_ops import (
         build_student_notification_payload,
+        create_admin_notification,
+        create_log,
         create_student_notification,
         supabase_document_get,
         supabase_document_insert,
@@ -188,6 +192,29 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
             {"source": "system", "isSystem": True},
         )
     )
+    student_name = student.get("fullName") or " ".join(
+        part for part in [student.get("fname"), student.get("mname"), student.get("lname")] if part
+    ).strip() or student_id
+    admin_notification_result = create_admin_notification({
+        "type": "student_account_created",
+        "title": "New Student Account",
+        "message": f"{student_name} created a student account.",
+        "studentId": student_id,
+        "route": "/admin/students",
+        "actorType": "student",
+        "actorId": student_id,
+        "read": False,
+        "archived": False,
+        "createdAt": utc_now_iso(),
+    })
+    log_result = create_log({
+        "action": "student_account_created",
+        "actorId": student_id,
+        "actorType": "student",
+        "target": student_id,
+        "details": {"table": target_table, "email": validation["email"]},
+        "createdAt": utc_now_iso(),
+    })
 
     return {
         "ok": True,
@@ -195,4 +222,6 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         "table": target_table,
         "student": student_result,
         "notification": notification_result,
+        "adminNotification": admin_notification_result,
+        "log": log_result,
     }

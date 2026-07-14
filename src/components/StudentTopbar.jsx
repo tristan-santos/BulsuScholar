@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
 	HiOutlineAcademicCap,
 	HiOutlineBell,
@@ -58,6 +58,17 @@ function getStudentInitials(user = {}) {
 
 export default function StudentTopbar({ user, theme, setTheme }) {
 	const navigate = useNavigate()
+	const location = useLocation()
+	const currentPath = location.pathname.replace(/\/+$/, "") || "/"
+	const isActiveRoute = useCallback(
+		(path, exact = false) => {
+			const normalizedPath = path.replace(/\/+$/, "") || "/"
+			return exact
+				? currentPath === normalizedPath
+				: currentPath === normalizedPath || currentPath.startsWith(`${normalizedPath}/`)
+		},
+		[currentPath],
+	)
 	const studentId = sessionStorage.getItem("bulsuscholar_userId") || ""
 	const [profileMenuOpen, setProfileMenuOpen] = useState(false)
 	const [studentNotifications, setStudentNotifications] = useState([])
@@ -78,11 +89,43 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 	useEffect(() => {
 		if (!studentId) return undefined
 		setReadAnnouncementIds(loadReadAnnouncementIds(studentId))
-		return onSnapshot(
+		let notificationRows = []
+		let warningRows = []
+		const updateStudentNotificationRows = () => {
+			setStudentNotifications(
+				[...notificationRows, ...warningRows].sort(
+					(a, b) => new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0),
+				),
+			)
+		}
+		const unsubscribeNotifications = onSnapshot(
 			query(collection(db, "studentNotifications"), where("studentId", "==", studentId)),
-			(snap) => setStudentNotifications(snap.docs.map((item) => ({ id: item.id, ...(item.data() || {}) }))),
-			() => setStudentNotifications([]),
+			(snap) => {
+				notificationRows = snap.docs.map((item) => ({ id: item.id, sourceTable: "studentNotifications", ...(item.data() || {}) }))
+				updateStudentNotificationRows()
+			},
+			() => {
+				notificationRows = []
+				updateStudentNotificationRows()
+			},
 		)
+		const unsubscribeWarnings = onSnapshot(
+			query(collection(db, "studentWarning"), where("studentId", "==", studentId)),
+			(snap) => {
+				warningRows = snap.docs
+					.map((item) => ({ id: item.id, sourceTable: "studentWarning", ...(item.data() || {}) }))
+					.filter((item) => item.source === "personal" || item.notificationFallbackTable === "student_warnings")
+				updateStudentNotificationRows()
+			},
+			() => {
+				warningRows = []
+				updateStudentNotificationRows()
+			},
+		)
+		return () => {
+			unsubscribeNotifications()
+			unsubscribeWarnings()
+		}
 	}, [studentId])
 
 	useEffect(() => {
@@ -183,8 +226,9 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 				<div className="student-header-right">
 					<button
 						type="button"
-						className="student-header-notification-btn"
+						className={`student-header-notification-btn ${isActiveRoute("/student-dashboard/inbox") ? "active" : ""}`}
 						aria-label="Open inbox"
+						aria-current={isActiveRoute("/student-dashboard/inbox") ? "page" : undefined}
 						onClick={() => navigate("/student-dashboard/inbox")}
 					>
 						<HiOutlineInbox className="student-header-notification-icon" aria-hidden />
@@ -217,19 +261,19 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 									</div>
 								</div>
 								<nav className="student-verified-dropdown-nav">
-									<button type="button" className="student-verified-dropdown-item" onClick={() => goTo("/student-dashboard")}>
+									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard", true) ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard", true) ? "page" : undefined} onClick={() => goTo("/student-dashboard")}>
 										<HiOutlineHome className="student-verified-dropdown-item-icon" />
 										Dashboard
 									</button>
-									<button type="button" className="student-verified-dropdown-item" onClick={() => goTo("/student-dashboard/profile")}>
+									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/profile") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/profile") ? "page" : undefined} onClick={() => goTo("/student-dashboard/profile")}>
 										<HiOutlineUser className="student-verified-dropdown-item-icon" />
 										My Profile
 									</button>
-									<button type="button" className="student-verified-dropdown-item" onClick={() => goTo("/student-dashboard/announcements")}>
+									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/announcements") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/announcements") ? "page" : undefined} onClick={() => goTo("/student-dashboard/announcements")}>
 										<HiOutlineBell className="student-verified-dropdown-item-icon" />
 										Announcements
 									</button>
-									<button type="button" className="student-verified-dropdown-item" onClick={() => goTo("/student-dashboard/scholarships")}>
+									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/scholarships") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/scholarships") ? "page" : undefined} onClick={() => goTo("/student-dashboard/scholarships")}>
 										<HiOutlineAcademicCap className="student-verified-dropdown-item-icon" />
 										Scholarships
 									</button>

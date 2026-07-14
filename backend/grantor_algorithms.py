@@ -148,6 +148,119 @@ def find_scholar_duplicate(candidate: dict[str, Any] | None = None, existing_rec
     return best_match
 
 
+def get_record_identifier(record: dict[str, Any] | None = None) -> str:
+    record = record or {}
+    return str(
+        record.get("id")
+        or record.get("studentId")
+        or record.get("studentnumber")
+        or record.get("studentNumber")
+        or ""
+    )
+
+
+def is_real_student_account(record: dict[str, Any] | None = None) -> bool:
+    record = record or {}
+    source = str(record.get("sourceCollection") or "").lower()
+    record_id = str(record.get("id") or "")
+    return source == "students" or (record_id and not record_id.startswith("roster_"))
+
+
+def record_completeness_score(record: dict[str, Any] | None = None) -> int:
+    record = record or {}
+    fields = [
+        "studentId",
+        "studentnumber",
+        "studentNumber",
+        "id",
+        "fullName",
+        "fname",
+        "lname",
+        "email",
+        "cpNumber",
+        "contactNumber",
+        "course",
+        "year",
+        "yearLevel",
+        "street",
+        "city",
+        "province",
+        "postalCode",
+    ]
+    return sum(1 for field in fields if record.get(field))
+
+
+def choose_canonical_student_record(records: list[dict[str, Any]]) -> dict[str, Any]:
+    return sorted(
+        records,
+        key=lambda record: (
+            1 if is_real_student_account(record) else 0,
+            0 if record.get("archived") else 1,
+            record_completeness_score(record),
+        ),
+        reverse=True,
+    )[0]
+
+
+def check_student_table_duplicates(records: list[dict[str, Any]] | None = None, options: dict[str, Any] | None = None) -> dict[str, Any]:
+    records = records or []
+    options = options or {}
+    threshold = float(options.get("threshold") or 0.84)
+    groups: list[list[int]] = []
+
+    for index, candidate in enumerate(records):
+        matched_group = None
+        for group in groups:
+            if any(evaluate_scholar_duplicate(candidate, records[member])["isDuplicate"] or evaluate_scholar_duplicate(candidate, records[member])["score"] >= threshold for member in group):
+                matched_group = group
+                break
+        if matched_group is None:
+            groups.append([index])
+        else:
+            matched_group.append(index)
+
+    duplicate_groups = []
+    duplicate_ids: list[str] = []
+    canonical_ids: list[str] = []
+
+    for group in groups:
+        if len(group) < 2:
+            continue
+        group_records = [records[index] for index in group]
+        canonical = choose_canonical_student_record(group_records)
+        canonical_id = get_record_identifier(canonical)
+        canonical_ids.append(canonical_id)
+        duplicates = []
+
+        for record in group_records:
+            record_id = get_record_identifier(record)
+            if record is canonical or record_id == canonical_id:
+                continue
+            evaluation = evaluate_scholar_duplicate(canonical, record)
+            duplicate_ids.append(record_id)
+            duplicates.append({
+                "id": record_id,
+                "record": record,
+                "score": evaluation["score"],
+                "nameSimilarity": evaluation["nameSimilarity"],
+                "reasons": evaluation["reasons"],
+            })
+
+        duplicate_groups.append({
+            "canonicalId": canonical_id,
+            "canonicalRecord": canonical,
+            "duplicates": duplicates,
+        })
+
+    return {
+        "duplicateIds": duplicate_ids,
+        "canonicalIds": canonical_ids,
+        "groups": duplicate_groups,
+        "algorithm": "Weighted Record Linkage with Levenshtein Similarity",
+        "threshold": threshold,
+    }
+
+
 def normalize_middle_initial(value: Any = "") -> str:
     normalized = normalize_match_value(value)
     return normalized[0] if normalized else ""

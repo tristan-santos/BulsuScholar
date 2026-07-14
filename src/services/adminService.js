@@ -357,6 +357,53 @@ function savePdfFile(pdfBytes, filename) {
 	URL.revokeObjectURL(url)
 }
 
+function downloadBackendFile(blob, filename) {
+	const url = URL.createObjectURL(blob)
+	const link = document.createElement("a")
+	link.href = url
+	link.download = filename
+	document.body.appendChild(link)
+	link.click()
+	document.body.removeChild(link)
+	URL.revokeObjectURL(url)
+}
+
+async function readBackendError(response) {
+	const payload = await response.json().catch(() => null)
+	return payload?.detail || `Backend report request failed: ${response.status}`
+}
+
+export async function fetchStudentReportPreview(filters = {}) {
+	const response = await fetch(`${BACKEND_API_URL}/reports/students/preview`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ filters }),
+	})
+	if (!response.ok) throw new Error(await readBackendError(response))
+	const report = await response.json()
+	return {
+		...report,
+		filename: `student-management-${Date.now()}`,
+		csvRows: report.rows || [],
+		pdfRows: report.rows || [],
+		filters,
+	}
+}
+
+export async function downloadStudentReport(format = "pdf", filters = {}) {
+	const normalizedFormat = format === "excel" ? "excel" : "pdf"
+	const response = await fetch(`${BACKEND_API_URL}/reports/students/${normalizedFormat}`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ filters }),
+	})
+	if (!response.ok) throw new Error(await readBackendError(response))
+	const disposition = response.headers.get("content-disposition") || ""
+	const serverFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+	const fallback = `student-management-${Date.now()}.${normalizedFormat === "excel" ? "xlsx" : "pdf"}`
+	downloadBackendFile(await response.blob(), serverFilename || fallback)
+}
+
 async function exportTemplateReportPdf({
 	filename,
 	title,

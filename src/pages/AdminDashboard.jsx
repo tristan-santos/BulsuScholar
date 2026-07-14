@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { addDoc, collection, collectionGroup, doc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from "../services/supabaseDataService"
 import {
@@ -16,17 +16,23 @@ import {
 import { Bar, Doughnut, Line } from "react-chartjs-2"
 import {
 	HiOutlineAcademicCap,
+	HiOutlineArchive,
 	HiOutlineBell,
 	HiOutlineChartBar,
 	HiOutlineChartPie,
 	HiOutlineClock,
 	HiOutlineCloudUpload,
+	HiOutlineDownload,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
 	HiOutlineEye,
+	HiOutlineHome,
+	HiOutlineInbox,
 	HiOutlineLogout,
+	HiOutlineMenu,
 	HiOutlineMoon,
 	HiOutlineRefresh,
+	HiOutlineSearch,
 	HiOutlineShieldCheck,
 	HiOutlineSparkles,
 	HiOutlineSun,
@@ -47,9 +53,9 @@ import TablePagination from "../components/TablePagination"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
-import { createGrantorNotification } from "../services/notificationService"
+import { createGrantorNotification, createStudentNotification } from "../services/notificationService"
 import { materialRequestWorkflow } from "../services/workflowService"
-import { matchAdminGrantorStudents } from "../services/adminMatchingService"
+import { checkAdminStudentDuplicates, matchAdminGrantorStudents } from "../services/adminMatchingService"
 import {
 	GRANTOR_SUBCOLLECTIONS,
 	isAnnouncementArchived,
@@ -58,10 +64,11 @@ import {
 } from "../services/grantorService"
 import {
 	downloadCsvReport,
+	downloadStudentReport,
 	exportComplianceReportPdf,
 	exportScholarshipsReportPdf,
 	exportSoeRequestsReportPdf,
-	exportStudentsReportPdf,
+	fetchStudentReportPreview,
 	filterStudentRows,
 	formatDate,
 	mapScholarshipRows,
@@ -83,11 +90,15 @@ import {
 	getScholarshipTrackingStepBadgeLabel,
 	getScholarshipTrackingStatusLabel,
 } from "../services/scholarshipTrackingService"
+import { convertPdfToImage } from "../utils/pdfConverter"
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip, Legend)
 
 const ADMIN_SECTIONS = [
 	{ id: "dashboard", label: "Dashboard", icon: HiOutlineAcademicCap, path: "/admin/dashboard" },
+	{ id: "inbox", label: "Inbox", icon: HiOutlineInbox, path: "/admin/inbox", topbarOnly: true },
+	{ id: "notifications", label: "Notifications", icon: HiOutlineBell, path: "/admin/notifications", topbarOnly: true },
+	{ id: "logs", label: "System Logs", icon: HiOutlineDocumentText, path: "/admin/logs", topbarOnly: true },
 	{ id: "students", label: "Student Management", icon: HiOutlineUsers, path: "/admin/students" },
 	{ id: "grantors", label: "Grantor Management", icon: HiOutlineUserGroup, path: "/admin/grantors" },
 	{ id: "scholarships", label: "Scholarship Programs", icon: HiOutlineDocumentText, path: "/admin/scholarships" },
@@ -196,6 +207,10 @@ function buildGrantorScholarFullName(scholar = {}) {
 	)
 }
 
+function getGrantorScholarProgramName(scholar = {}) {
+	return String(scholar.scholarshipTitle || scholar.scholarshipName || scholar.programName || "").trim()
+}
+
 function buildGrantorScholarAddress(scholar = {}) {
 	return [scholar.street, scholar.city, scholar.province, scholar.postalCode]
 		.filter(Boolean)
@@ -253,6 +268,38 @@ function formatCountdown(targetDate) {
 	if (diff <= 0) return "Eligible now"
 	const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
 	return `${days} day${days === 1 ? "" : "s"} remaining`
+}
+
+function formatRelativeTime(value) {
+	const date = toJsDate(value)
+	if (!date) return "Recently"
+	const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+	if (seconds < 60) return "Just now"
+	const minutes = Math.floor(seconds / 60)
+	if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`
+	const hours = Math.floor(minutes / 60)
+	if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`
+	const days = Math.floor(hours / 24)
+	if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`
+	return formatDate(date)
+}
+
+function toAdminNotificationTitle(item = {}) {
+	if (item.title) return item.title
+	const action = String(item.action || item.type || "System activity").replace(/[_-]+/g, " ").trim()
+	return action ? action.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "System Activity"
+}
+
+function toAdminNotificationMessage(item = {}) {
+	if (item.message) return item.message
+	if (typeof item.details === "string") return item.details
+	if (item.details && typeof item.details === "object") {
+		return Object.entries(item.details)
+			.slice(0, 3)
+			.map(([key, value]) => `${key.replace(/[_-]+/g, " ")}: ${String(value)}`)
+			.join(" | ")
+	}
+	return "A new activity was recorded in BulsuScholar."
 }
 
 function toStatusClass(status = "") {
@@ -618,6 +665,12 @@ function EmptyStateRow({ colSpan }) {
 	)
 }
 
+function getInitials(value = "") {
+	const parts = String(value || "").trim().split(/\s+/).filter(Boolean)
+	if (parts.length === 0) return "ST"
+	return `${parts[0]?.[0] || ""}${parts.length > 1 ? parts[parts.length - 1]?.[0] || "" : parts[0]?.[1] || ""}`.toUpperCase()
+}
+
 function LoadingBars() {
 	return (
 		<div className="admin-loading-state" role="status" aria-live="polite">
@@ -662,6 +715,55 @@ function SectionTabs({ tabs, value, onChange, className = "" }) {
 	)
 }
 
+function AdminFilterSelect({ label, value, options, onChange }) {
+	const [isOpen, setIsOpen] = useState(false)
+	const selectRef = useRef(null)
+	const currentLabel = options.find((option) => option.value === value)?.label || value
+
+	useEffect(() => {
+		if (!isOpen) return undefined
+		const closeOnOutsideClick = (event) => {
+			if (!selectRef.current?.contains(event.target)) setIsOpen(false)
+		}
+		document.addEventListener("mousedown", closeOnOutsideClick)
+		return () => document.removeEventListener("mousedown", closeOnOutsideClick)
+	}, [isOpen])
+
+	return (
+		<div className="admin-filter-select" ref={selectRef}>
+			<button
+				type="button"
+				className={`admin-filter-select__button ${isOpen ? "active" : ""}`}
+				onClick={() => setIsOpen((open) => !open)}
+				aria-haspopup="listbox"
+				aria-expanded={isOpen}
+				aria-label={label}
+			>
+				<span>{currentLabel}</span>
+			</button>
+			{isOpen ? (
+				<div className="admin-filter-select__menu" role="listbox" aria-label={label}>
+					{options.map((option) => (
+						<button
+							key={option.value}
+							type="button"
+							className={option.value === value ? "active" : ""}
+							role="option"
+							aria-selected={option.value === value}
+							onClick={() => {
+								onChange(option.value)
+								setIsOpen(false)
+							}}
+						>
+							{option.label}
+						</button>
+					))}
+				</div>
+			) : null}
+		</div>
+	)
+}
+
 import {
 	sendEmailNotification,
 	getSoeApprovalEmailBody,
@@ -700,6 +802,10 @@ export default function AdminDashboard() {
 	const [studentArchiveTrendRange, setStudentArchiveTrendRange] = useState("monthly")
 	const [selectedStudentId, setSelectedStudentId] = useState("")
 	const [selectedScholarshipTrackingKey, setSelectedScholarshipTrackingKey] = useState("")
+	const [adminStudentDuplicateAudit, setAdminStudentDuplicateAudit] = useState({ duplicateIds: [], groups: [] })
+	const [previewDocument, setPreviewDocument] = useState(null)
+	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
+	const [isPreviewLoading, setIsPreviewLoading] = useState(false)
 
 	const [grantorTab, setGrantorTab] = useState("overview")
 	const [grantorSearch, setGrantorSearch] = useState("")
@@ -755,6 +861,18 @@ export default function AdminDashboard() {
 	})
 	const [isPostingAnnouncement, setIsPostingAnnouncement] = useState(false)
 	const [isBusy, setIsBusy] = useState(false)
+	const [adminNotifications, setAdminNotifications] = useState([])
+	const [systemLogs, setSystemLogs] = useState([])
+	const [notificationSearch, setNotificationSearch] = useState("")
+	const [notificationFilter, setNotificationFilter] = useState("inbox")
+	const [selectedAdminNotificationIds, setSelectedAdminNotificationIds] = useState([])
+	const [logSearch, setLogSearch] = useState("")
+	const [logTypeFilter, setLogTypeFilter] = useState("all")
+	const [logActorFilter, setLogActorFilter] = useState("all")
+	const [logDateFrom, setLogDateFrom] = useState("")
+	const [logDateTo, setLogDateTo] = useState("")
+	const [adminMenuOpen, setAdminMenuOpen] = useState(false)
+	const adminMenuRef = useRef(null)
 
 	const setTablePage = useCallback((tableKey, page) => {
 		setTablePages((prev) => ({ ...prev, [tableKey]: page }))
@@ -764,6 +882,47 @@ export default function AdminDashboard() {
 		const storedType = sessionStorage.getItem("bulsuscholar_userType")
 		if (storedType !== "admin") navigate("/", { replace: true })
 	}, [navigate])
+
+	useEffect(() => {
+		const unsubscribeLogs = onSnapshot(
+			collection(db, "systemLogs"),
+			(snapshot) => {
+				const rows = snapshot.docs.map((item) => ({ id: item.id, sourceTable: "systemLogs", ...(item.data() || {}) }))
+				setAdminNotifications(
+					rows
+						.filter((item) => item.notificationFallbackTable === "adminNotifications")
+						.sort((left, right) => {
+							const leftDate = toJsDate(left.createdAt || left.created_at || left.timestamp)?.getTime() || 0
+							const rightDate = toJsDate(right.createdAt || right.created_at || right.timestamp)?.getTime() || 0
+							return rightDate - leftDate
+						}),
+				)
+				setSystemLogs(
+					rows
+						.filter((item) => item.notificationFallbackTable !== "adminNotifications")
+						.sort((left, right) => {
+							const leftDate = toJsDate(left.createdAt || left.created_at || left.timestamp)?.getTime() || 0
+							const rightDate = toJsDate(right.createdAt || right.created_at || right.timestamp)?.getTime() || 0
+							return rightDate - leftDate
+						}),
+				)
+			},
+			(error) => {
+				console.error("Unable to load backend system logs.", error)
+				setSystemLogs([])
+				setAdminNotifications([])
+			},
+		)
+		return unsubscribeLogs
+	}, [])
+
+	useEffect(() => {
+		const handleOutsideClick = (event) => {
+			if (adminMenuRef.current && !adminMenuRef.current.contains(event.target)) setAdminMenuOpen(false)
+		}
+		document.addEventListener("mousedown", handleOutsideClick)
+		return () => document.removeEventListener("mousedown", handleOutsideClick)
+	}, [])
 
 	useEffect(() => {
 		setSelectedStudentIds([])
@@ -778,6 +937,93 @@ export default function AdminDashboard() {
 			navigate("/admin/dashboard", { replace: true })
 		}
 	}, [location.pathname, navigate])
+
+	const unreadAdminNotifications = useMemo(
+		() => adminNotifications.filter((item) => item.read !== true && item.archived !== true),
+		[adminNotifications],
+	)
+
+	const visibleAdminNotifications = useMemo(() => {
+		const keyword = notificationSearch.trim().toLowerCase()
+		return adminNotifications.filter((item) => {
+			const archived = item.archived === true
+			if (notificationFilter === "inbox" && archived) return false
+			if (notificationFilter === "unread" && (archived || item.read === true)) return false
+			if (notificationFilter === "read" && (archived || item.read !== true)) return false
+			if (notificationFilter === "archived" && !archived) return false
+			if (!keyword) return true
+			return `${toAdminNotificationTitle(item)} ${toAdminNotificationMessage(item)} ${item.type || ""}`.toLowerCase().includes(keyword)
+		})
+	}, [adminNotifications, notificationFilter, notificationSearch])
+
+	const logTypeOptions = useMemo(
+		() => [...new Set(systemLogs.map((item) => String(item.action || item.type || "system")).filter(Boolean))].sort(),
+		[systemLogs],
+	)
+
+	const logActorOptions = useMemo(
+		() => [...new Set(systemLogs.map((item) => String(item.actorType || "system")).filter(Boolean))].sort(),
+		[systemLogs],
+	)
+
+	const visibleSystemLogs = useMemo(() => {
+		const keyword = logSearch.trim().toLowerCase()
+		const fromDate = logDateFrom ? startOfDay(logDateFrom) : null
+		const toDate = logDateTo ? endOfDay(logDateTo) : null
+		return systemLogs.filter((item) => {
+			const action = String(item.action || item.type || "system")
+			const actorType = String(item.actorType || "system")
+			const createdDate = toJsDate(item.createdAt || item.created_at || item.timestamp)
+			if (logTypeFilter !== "all" && action !== logTypeFilter) return false
+			if (logActorFilter !== "all" && actorType !== logActorFilter) return false
+			if (fromDate && (!createdDate || createdDate < fromDate)) return false
+			if (toDate && (!createdDate || createdDate > toDate)) return false
+			if (!keyword) return true
+			return `${action} ${actorType} ${item.actorId || ""} ${item.target || ""} ${toAdminNotificationMessage(item)}`.toLowerCase().includes(keyword)
+		})
+	}, [logActorFilter, logDateFrom, logDateTo, logSearch, logTypeFilter, systemLogs])
+
+	const markAdminNotificationRead = useCallback(async (notification) => {
+		if (!notification?.id || notification.read === true) return
+		try {
+			await setDoc(doc(db, notification.sourceTable || "adminNotifications", notification.id), { read: true, readAt: new Date().toISOString() }, { merge: true })
+		} catch (error) {
+			console.error("Unable to mark administrator notification as read.", error)
+			toast.error("Unable to update this inbox message.")
+		}
+	}, [])
+
+	const markAllAdminNotificationsRead = useCallback(async () => {
+		if (unreadAdminNotifications.length === 0) return
+		try {
+			await Promise.all(
+				unreadAdminNotifications.map((notification) =>
+					setDoc(doc(db, notification.sourceTable || "adminNotifications", notification.id), { read: true, readAt: new Date().toISOString() }, { merge: true }),
+				),
+			)
+			toast.success("All admin inbox messages are marked as read.")
+		} catch (error) {
+			console.error("Unable to mark all administrator notifications as read.", error)
+			toast.error("Unable to update the administrator inbox.")
+		}
+	}, [unreadAdminNotifications])
+
+	const archiveAdminNotifications = useCallback(async (notifications = []) => {
+		const rows = notifications.filter((item) => item?.id)
+		if (rows.length === 0) return
+		try {
+			await Promise.all(
+				rows.map((notification) =>
+					setDoc(doc(db, notification.sourceTable || "adminNotifications", notification.id), { archived: true, archivedAt: new Date().toISOString(), read: true }, { merge: true }),
+				),
+			)
+			setSelectedAdminNotificationIds([])
+			toast.success(`${rows.length} notification${rows.length === 1 ? "" : "s"} archived.`)
+		} catch (error) {
+			console.error("Unable to archive administrator notifications.", error)
+			toast.error("Unable to archive the selected notifications.")
+		}
+	}, [])
 
 	useEffect(() => {
 		const markLoaded = (key) => {
@@ -892,19 +1138,7 @@ export default function AdminDashboard() {
 		[studentsRaw],
 	)
 
-	const baseStudentRows = useMemo(() => mapStudents(allStudentsRaw), [allStudentsRaw])
-	const scholarshipRows = useMemo(() => mapScholarshipRows(allStudentsRaw, applicationsRaw), [allStudentsRaw, applicationsRaw])
-
-	const studentsByCourse = useMemo(
-		() => [...new Set(baseStudentRows.map((row) => row.course).filter(Boolean).filter((value) => value !== "-"))].sort(),
-		[baseStudentRows],
-	)
-	const studentsByYear = useMemo(
-		() => [...new Set(baseStudentRows.map((row) => row.yearLevel).filter(Boolean).filter((value) => value !== "-"))].sort(),
-		[baseStudentRows],
-	)
-
-	const studentProfiles = useMemo(
+	const studentAccountProfiles = useMemo(
 		() =>
 			allStudentsRaw.map((student) => {
 				const restrictionState = getStudentRestrictionState(student)
@@ -919,6 +1153,122 @@ export default function AdminDashboard() {
 				}
 			}),
 		[allStudentsRaw],
+	)
+
+	const rosterPendingStudentProfiles = useMemo(() => {
+		const accountByStudentId = new Map(
+			studentAccountProfiles.map((student) => [normalizeGrantorScholarLookupValue(student.id), student]),
+		)
+		const pendingRows = new Map()
+
+		grantorScholarsRaw.forEach((scholar) => {
+			const scholarStudentId = normalizeGrantorScholarLookupValue(scholar.studentId)
+			const matchedAccount =
+				(scholarStudentId && accountByStudentId.get(scholarStudentId)) ||
+				studentAccountProfiles.find((student) => matchesGrantorScholarToStudent(student, scholar))
+
+			if (matchedAccount) return
+
+			const fullName = buildGrantorScholarFullName(scholar)
+			const pendingKey =
+				scholarStudentId ||
+				normalizeGrantorScholarLookupValue(fullName) ||
+				`${scholar.grantorId || scholar.providerType || "grantor"}_${scholar.id}`
+
+			if (pendingRows.has(pendingKey)) return
+
+			pendingRows.set(pendingKey, {
+				id: `roster_${pendingKey}`,
+				studentId: scholar.studentId || "-",
+				fname: scholar.fname || "",
+				mname: scholar.mname || "",
+				lname: scholar.lname || "",
+				fullName,
+				email: scholar.email || "",
+				cpNumber: scholar.cpNumber || "",
+				street: scholar.street || "",
+				city: scholar.city || "",
+				province: scholar.province || "",
+				postalCode: scholar.postalCode || "",
+				course: scholar.course || "-",
+				year: scholar.yearLevel || "-",
+				yearLevel: scholar.yearLevel || "-",
+				scholarships: [],
+				restrictionState: { accountAccess: false, scholarshipEligibility: false },
+				sourceCollection: "grantorRoster",
+				rosterScholarId: scholar.id,
+				grantorId: scholar.grantorId || "",
+				providerType: scholar.providerType || "",
+				archived: scholar.archived === true,
+				recordStatus: scholar.archived === true ? "Archived" : "Pending",
+				createdAt: scholar.createdAt || null,
+				updatedAt: scholar.updatedAt || null,
+			})
+		})
+
+		return [...pendingRows.values()]
+	}, [grantorScholarsRaw, studentAccountProfiles])
+
+	const studentProfiles = useMemo(
+		() => [...studentAccountProfiles, ...rosterPendingStudentProfiles],
+		[rosterPendingStudentProfiles, studentAccountProfiles],
+	)
+
+	useEffect(() => {
+		if (studentProfiles.length < 2) {
+			setAdminStudentDuplicateAudit({ duplicateIds: [], groups: [] })
+			return undefined
+		}
+
+		let active = true
+		checkAdminStudentDuplicates(studentProfiles)
+			.then((result) => {
+				if (!active) return
+				setAdminStudentDuplicateAudit({
+					duplicateIds: Array.isArray(result.duplicateIds) ? result.duplicateIds : [],
+					groups: Array.isArray(result.groups) ? result.groups : [],
+					algorithm: result.algorithm || "",
+				})
+			})
+			.catch((error) => {
+				console.warn("Python admin duplicate audit unavailable. Showing unfiltered student rows.", error)
+				if (active) setAdminStudentDuplicateAudit({ duplicateIds: [], groups: [] })
+			})
+
+		return () => {
+			active = false
+		}
+	}, [studentProfiles])
+
+	const uniqueStudentProfiles = useMemo(() => {
+		const duplicateIds = new Set(adminStudentDuplicateAudit.duplicateIds || [])
+		return studentProfiles.filter((student) => !duplicateIds.has(student.id))
+	}, [adminStudentDuplicateAudit.duplicateIds, studentProfiles])
+
+	const baseStudentRows = useMemo(
+		() =>
+			uniqueStudentProfiles.map((student) => ({
+				id: student.id || "-",
+				fullName: student.fullName || studentFullName(student),
+				email: student.email || "",
+				fname: student.fname || "",
+				scholarships: Array.isArray(student.scholarships) ? student.scholarships : [],
+				course: student.course || "-",
+				yearLevel: student.year || student.yearLevel || "-",
+				recordStatus: student.recordStatus || (student.archived === true ? "Archived" : "Active"),
+				restrictionSummary: "-",
+			})),
+		[uniqueStudentProfiles],
+	)
+	const scholarshipRows = useMemo(() => mapScholarshipRows(allStudentsRaw, applicationsRaw), [allStudentsRaw, applicationsRaw])
+
+	const studentsByCourse = useMemo(
+		() => [...new Set(baseStudentRows.map((row) => row.course).filter(Boolean).filter((value) => value !== "-"))].sort(),
+		[baseStudentRows],
+	)
+	const studentsByYear = useMemo(
+		() => [...new Set(baseStudentRows.map((row) => row.yearLevel).filter(Boolean).filter((value) => value !== "-"))].sort(),
+		[baseStudentRows],
 	)
 
 	const selectedStudent = useMemo(
@@ -946,39 +1296,50 @@ export default function AdminDashboard() {
 
 	const filteredStudents = useMemo(() => {
 		const allowedIds = new Set(filteredStudentsBase.map((row) => row.id))
-		return studentProfiles.filter((student) => {
+		return uniqueStudentProfiles.filter((student) => {
 			if (!allowedIds.has(student.id)) return false
 			return toStudentLifecycle(student) === studentViewTab
 		})
-	}, [filteredStudentsBase, studentProfiles, studentViewTab])
+	}, [filteredStudentsBase, studentViewTab, uniqueStudentProfiles])
 
 	const studentTabCounts = useMemo(
 		() => ({
-			students: studentProfiles.filter((student) => toStudentLifecycle(student) === "students").length,
-			archived: studentProfiles.filter((student) => toStudentLifecycle(student) === "archived").length,
+			students: uniqueStudentProfiles.filter((student) => toStudentLifecycle(student) === "students").length,
+			archived: uniqueStudentProfiles.filter((student) => toStudentLifecycle(student) === "archived").length,
 		}),
-		[studentProfiles],
+		[uniqueStudentProfiles],
 	)
 
-	const currentStudentReportRows = useMemo(
-		() => filteredStudents.map((student) => toStudentReportRow(student)),
-		[filteredStudents],
-	)
+	const studentManagementStats = useMemo(() => {
+		const activeStudents = uniqueStudentProfiles.filter((student) => toStudentLifecycle(student) === "students")
+		const archivedStudents = uniqueStudentProfiles.filter((student) => toStudentLifecycle(student) === "archived")
+		const scholars = activeStudents.filter((student) => {
+			const hasProfileScholarship = normalizeScholarshipList(student.scholarships || []).length > 0
+			const hasGrantorScholarship = grantorScholarsRaw.some((scholar) => {
+				if (scholar.archived === true) return false
+				if (!getGrantorScholarProgramName(scholar)) return false
+				const directMatchId =
+					grantorScholarStudentRecordLookup.get(
+						`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`,
+					) || ""
+				return directMatchId === student.id || matchesGrantorScholarToStudent(student, scholar)
+			})
+			return hasProfileScholarship || hasGrantorScholarship
+		}).length
+		const withWarnings = activeStudents.filter((student) => student.soeComplianceWarning || Number(student.complianceViolationCount || 0) > 0).length
+		return {
+			total: uniqueStudentProfiles.length,
+			active: activeStudents.filter((student) => student.recordStatus === "Active").length,
+			scholars,
+			archived: archivedStudents.length,
+			warnings: withWarnings,
+		}
+	}, [grantorScholarStudentRecordLookup, grantorScholarsRaw, uniqueStudentProfiles])
 
 	const allStudentReportRows = useMemo(
 		() => studentProfiles.map((student) => toStudentReportRow(student)),
 		[studentProfiles],
 	)
-
-	const visibleStudentReportRows = useMemo(
-		() => (studentViewTab === "overview" ? allStudentReportRows : currentStudentReportRows),
-		[allStudentReportRows, currentStudentReportRows, studentViewTab],
-	)
-
-	const studentReportFilterLabel =
-		studentViewTab === "overview"
-			? `View: overview | Managed Records: ${studentProfiles.length} | Archived: ${studentTabCounts.archived}`
-			: `View: ${studentViewTab} | Search: ${studentSearch || "-"} | Course: ${studentCourse} | Year: ${studentYear}`
 
 	const studentArchiveDates = useMemo(
 		() =>
@@ -1195,6 +1556,7 @@ export default function AdminDashboard() {
 		if (!selectedStudent?.id) return []
 
 		const matchedRows = [...activeGrantorScholars, ...archivedGrantorScholars].filter((scholar) => {
+			if (!getGrantorScholarProgramName(scholar)) return false
 			const directMatchId =
 				grantorScholarStudentRecordLookup.get(
 					`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`,
@@ -1206,7 +1568,7 @@ export default function AdminDashboard() {
 			...new Map(
 				matchedRows.map((scholar) => {
 					const provider = scholar.providerType || toProviderType(scholar.grantorName || scholar.scholarshipTitle)
-					const scholarshipName = scholar.scholarshipTitle || scholar.grantorName || "Scholarship"
+					const scholarshipName = getGrantorScholarProgramName(scholar)
 					return [
 						`${provider}::${scholarshipName.toLowerCase()}`,
 						{
@@ -1224,8 +1586,9 @@ export default function AdminDashboard() {
 	const scholarshipOverviewRows = useMemo(() => {
 		const rows = new Map()
 		activeGrantorScholars.forEach((scholar) => {
+			const programName = getGrantorScholarProgramName(scholar)
+			if (!programName) return
 			const provider = scholar.providerType || toProviderType(scholar.grantorName || scholar.scholarshipTitle)
-			const programName = scholar.scholarshipTitle || scholar.grantorName || "Scholarship"
 			const key = `${provider}::${programName.toLowerCase()}`
 			if (!rows.has(key)) {
 				rows.set(key, {
@@ -1243,7 +1606,7 @@ export default function AdminDashboard() {
 	}, [activeGrantorScholars])
 
 	const scholarshipProviderOptions = useMemo(() => {
-		const rows = [...activeGrantorScholars, ...archivedGrantorScholars]
+		const rows = [...activeGrantorScholars, ...archivedGrantorScholars].filter((row) => getGrantorScholarProgramName(row))
 		const options = new Map()
 		rows.forEach((row) => {
 			const provider =
@@ -1280,6 +1643,7 @@ export default function AdminDashboard() {
 			.map((student) => {
 				const normalizedStudentId = normalizeGrantorScholarLookupValue(student.id)
 				const matches = activeGrantorScholars.filter((scholar) => {
+					if (!getGrantorScholarProgramName(scholar)) return false
 					const scholarStudentId = normalizeGrantorScholarLookupValue(scholar.studentId)
 					return (
 						(normalizedStudentId && scholarStudentId && scholarStudentId === normalizedStudentId) ||
@@ -1298,7 +1662,7 @@ export default function AdminDashboard() {
 						]),
 					).values(),
 				]
-				const scholarshipTitles = [...new Set(matches.map((scholar) => scholar.scholarshipTitle || scholar.grantorName || "Scholarship"))]
+				const scholarshipTitles = [...new Set(matches.map((scholar) => getGrantorScholarProgramName(scholar)))]
 				return { student, matches, distinctGrantors, scholarshipTitles }
 			})
 			.filter((entry) => entry.matches.length > 0)
@@ -1552,10 +1916,71 @@ export default function AdminDashboard() {
 		})
 	}, [latestScholarshipMaterialRequests, latestScholarshipSoeDownloads, studentProfiles])
 
+	const studentTrackingById = useMemo(() => {
+		const trackingByStudent = new Map()
+		allScholarshipTrackingRows.forEach((row) => {
+			const existing = trackingByStudent.get(row.studentId)
+			const isInactive = ["Rejected", "Cancelled", "Withdrawn"].includes(row.status)
+			if (!existing || (!isInactive && ["Rejected", "Cancelled", "Withdrawn"].includes(existing.status))) {
+				trackingByStudent.set(row.studentId, row)
+			}
+		})
+		return trackingByStudent
+	}, [allScholarshipTrackingRows])
+
+	const selectedStudentTracking = selectedStudent?.id ? studentTrackingById.get(selectedStudent.id) || null : null
+
+	useEffect(() => {
+		if (!previewDocument?.url) {
+			setPreviewBlobUrl("")
+			setIsPreviewLoading(false)
+			return undefined
+		}
+
+		let cancelled = false
+		let objectUrl = ""
+		setIsPreviewLoading(true)
+		setPreviewBlobUrl("")
+
+		fetch(previewDocument.url)
+			.then((response) => {
+				if (!response.ok) throw new Error(`preview_failed_${response.status}`)
+				return response.blob()
+			})
+			.then(async (blob) => {
+				if (cancelled) return
+				if (previewDocument.isPdf) {
+					const pdfFile = new File([blob], previewDocument.name || "document.pdf", {
+						type: "application/pdf",
+					})
+					const previewImageBlob = await convertPdfToImage(pdfFile)
+					if (cancelled) return
+					objectUrl = URL.createObjectURL(previewImageBlob)
+				} else {
+					objectUrl = URL.createObjectURL(blob)
+				}
+				setPreviewBlobUrl(objectUrl)
+			})
+			.catch((error) => {
+				if (cancelled) return
+				console.error("Failed to load admin student document preview:", error)
+				toast.error("Unable to preview the document. You can still download it.")
+			})
+			.finally(() => {
+				if (!cancelled) setIsPreviewLoading(false)
+			})
+
+		return () => {
+			cancelled = true
+			if (objectUrl) URL.revokeObjectURL(objectUrl)
+		}
+	}, [previewDocument])
+
 	const scholarshipStudentRows = useMemo(
 		() =>
-			mergeGrantorScholarRows(activeGrantorScholars.map((scholar) => {
+			mergeGrantorScholarRows(activeGrantorScholars.filter((scholar) => getGrantorScholarProgramName(scholar)).map((scholar) => {
 				const provider = scholar.providerType || toProviderType(scholar.grantorName || scholar.scholarshipTitle)
+				const programName = getGrantorScholarProgramName(scholar)
 				const studentRecordId =
 					grantorScholarStudentRecordLookup.get(
 						`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`,
@@ -1564,7 +1989,7 @@ export default function AdminDashboard() {
 					trackingKey: `grantor_scholar::${scholar.grantorId || provider}::${scholar.id}`,
 					studentId: scholar.studentId || "-",
 					fullName: buildGrantorScholarFullName(scholar),
-					scholarship: scholar.scholarshipTitle || scholar.grantorName || "Scholarship",
+					scholarship: programName,
 					provider,
 					grantorName: scholar.grantorName || toProviderLabel(provider),
 					yearLevel: scholar.yearLevel || "-",
@@ -1598,8 +2023,9 @@ export default function AdminDashboard() {
 
 	const archivedScholarshipRows = useMemo(
 		() =>
-			mergeGrantorScholarRows(archivedGrantorScholars.map((scholar) => {
+			mergeGrantorScholarRows(archivedGrantorScholars.filter((scholar) => getGrantorScholarProgramName(scholar)).map((scholar) => {
 				const provider = scholar.providerType || toProviderType(scholar.grantorName || scholar.scholarshipTitle)
+				const programName = getGrantorScholarProgramName(scholar)
 				const studentRecordId =
 					grantorScholarStudentRecordLookup.get(
 						`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`,
@@ -1608,7 +2034,7 @@ export default function AdminDashboard() {
 					trackingKey: `archived_grantor_scholar::${scholar.grantorId || provider}::${scholar.id}`,
 					studentId: scholar.studentId || "-",
 					fullName: buildGrantorScholarFullName(scholar),
-					scholarship: scholar.scholarshipTitle || scholar.grantorName || "Scholarship",
+					scholarship: programName,
 					provider,
 					grantorName: scholar.grantorName || toProviderLabel(provider),
 					yearLevel: scholar.yearLevel || "-",
@@ -1850,8 +2276,11 @@ export default function AdminDashboard() {
 		() =>
 			grantorScholarsRaw.filter(
 				(row) =>
-					scholarshipProvider === "All" ||
-					(row.providerType || toProviderType(row.grantorName || row.scholarshipTitle)) === scholarshipProvider,
+					getGrantorScholarProgramName(row) &&
+					(
+						scholarshipProvider === "All" ||
+						(row.providerType || toProviderType(row.grantorName || row.scholarshipTitle)) === scholarshipProvider
+					),
 			),
 		[grantorScholarsRaw, scholarshipProvider],
 	)
@@ -1940,8 +2369,11 @@ export default function AdminDashboard() {
 		() =>
 			archivedGrantorScholars.filter(
 				(row) =>
-					scholarshipProvider === "All" ||
-					(row.providerType || toProviderType(row.grantorName || row.scholarshipTitle)) === scholarshipProvider,
+					getGrantorScholarProgramName(row) &&
+					(
+						scholarshipProvider === "All" ||
+						(row.providerType || toProviderType(row.grantorName || row.scholarshipTitle)) === scholarshipProvider
+					),
 			).length,
 		[archivedGrantorScholars, scholarshipProvider],
 	)
@@ -2608,6 +3040,44 @@ export default function AdminDashboard() {
 		setSelectedStudentId("")
 	}
 
+	const isPreviewPdf = (file = {}) => {
+		const type = String(file?.type || file?.contentType || "").toLowerCase()
+		const name = String(file?.name || file?.url || "").toLowerCase()
+		return type.includes("pdf") || name.includes(".pdf")
+	}
+
+	const openDocumentPreview = (document) => {
+		if (!document?.url) return
+		setPreviewDocument({
+			title: document.title || document.label || "Document",
+			url: document.url,
+			name: document.name || document.title || document.label || "document",
+			isPdf: isPreviewPdf(document),
+		})
+	}
+
+	const closeDocumentPreview = () => setPreviewDocument(null)
+
+	const downloadPreviewDocument = async () => {
+		if (!previewDocument?.url) return
+		try {
+			const response = await fetch(previewDocument.url)
+			if (!response.ok) throw new Error(`download_failed_${response.status}`)
+			const blob = await response.blob()
+			const url = URL.createObjectURL(blob)
+			const link = document.createElement("a")
+			link.href = url
+			link.download = previewDocument.name || "document"
+			document.body.appendChild(link)
+			link.click()
+			document.body.removeChild(link)
+			URL.revokeObjectURL(url)
+		} catch (error) {
+			console.error("Failed to download admin student document:", error)
+			toast.error("Unable to download the document.")
+		}
+	}
+
 	const closeScholarshipTrackingModal = () => {
 		setSelectedScholarshipTrackingKey("")
 	}
@@ -2732,6 +3202,32 @@ export default function AdminDashboard() {
 					{ merge: true },
 				)
 			}
+
+			const isDocumentReview = currentStep.id === "document_review"
+			await createStudentNotification({
+				studentId: selectedScholarshipTrackingRow.studentId,
+				source: "personal",
+				type: "scholarship_progress",
+				title: isDocumentReview ? "Document Review Passed" : `${currentStep.label} Completed`,
+				message: isDocumentReview
+					? `BulsuScholar Admin reviewed your submitted documents and marked them as passed for ${updatedScholarship.name || "your scholarship application"}.`
+					: `BulsuScholar Admin completed the ${currentStep.label.toLowerCase()} stage for ${updatedScholarship.name || "your scholarship application"}.`,
+				grantorId: updatedScholarship.grantorId || updatedScholarship.providerId || "",
+				grantorName: updatedScholarship.grantorName || updatedScholarship.providerLabel || "",
+				applicationNumber:
+					matchingApplication?.applicationNumber ||
+					matchingApplication?.requestNumber ||
+					updatedScholarship.applicationNumber ||
+					updatedScholarship.requestNumber ||
+					"",
+				scholarshipId: updatedScholarship.id || "",
+				scholarshipName: updatedScholarship.name || "",
+				stageId: currentStep.id,
+				stageLabel: currentStep.label,
+				authorName: "BulsuScholar Admin",
+				read: false,
+				createdAt: serverTimestamp(),
+			})
 		}, `${currentStep.label} completed. The student can now move to the next step.`)
 	}
 
@@ -3422,28 +3918,6 @@ export default function AdminDashboard() {
 		navigate("/", { replace: true })
 	}
 
-	const createStudentPreviewConfig = (rows, filterLabel) => ({
-		key: "students",
-		title: "Student Management Report",
-		description: "Live pre-flight preview of the current student export.",
-		filterLabel,
-		filename: `students-report-${Date.now()}`,
-		stats: [
-			{ label: "Records", value: rows.length },
-			{ label: "Archived", value: rows.filter((row) => row.recordStatus === "Archived").length },
-		],
-		columns: ["Student ID", "Full Name", "Course", "Year Level", "Record Status", "Restrictions"],
-		csvRows: rows.map((row) => [
-			row.id,
-			row.fullName,
-			row.course,
-			row.yearLevel,
-			row.recordStatus,
-			row.restrictionSummary,
-		]),
-		pdfRows: rows,
-	})
-
 	function createScholarshipPreviewConfig(rows, filterLabel, options = {}) {
 		const defaultColumns = ["Program Name", "Provider Type", "Total Slots", "Active Recipients", "Status"]
 		const defaultCsvRows = rows.map((row) => [
@@ -3564,14 +4038,27 @@ export default function AdminDashboard() {
 		setReportExportFormat("pdf")
 	}
 
+	const openStudentReportPreview = async (filters) => {
+		if (isReportExporting) return
+		setIsReportExporting(true)
+		try {
+			openReportPreview(await fetchStudentReportPreview(filters))
+		} catch (error) {
+			console.error(error)
+			toast.error(error.message || "Unable to load the student report preview.")
+		} finally {
+			setIsReportExporting(false)
+		}
+	}
+
 	const exportPreviewReport = async () => {
 		if (!reportPreview || isReportExporting) return
 		setIsReportExporting(true)
 		try {
-			if (reportExportFormat === "csv") {
+			if (reportPreview.key === "students") {
+				await downloadStudentReport(reportExportFormat, reportPreview.filters)
+			} else if (reportExportFormat === "csv") {
 				downloadCsvReport(`${reportPreview.filename}.csv`, reportPreview.columns, reportPreview.csvRows)
-			} else if (reportPreview.key === "students") {
-				await exportStudentsReportPdf(reportPreview.pdfRows, reportPreview.filterLabel, logo2)
 			} else if (reportPreview.key === "scholarships") {
 				await exportScholarshipsReportPdf(
 					reportPreview.pdfRows,
@@ -3599,6 +4086,7 @@ export default function AdminDashboard() {
 		if (!reportPreview) return null
 		const previewRows = reportPreviewTablePage.rows
 		const csvPreview = buildCsvPreview(reportPreview.columns, reportPreview.csvRows)
+		const isStudentReport = reportPreview.key === "students"
 		return (
 			<div className="admin-detail-backdrop" role="presentation" onClick={closeReportPreview}>
 				<div className="admin-detail-shell admin-detail-shell--report" onClick={(event) => event.stopPropagation()}>
@@ -3622,8 +4110,8 @@ export default function AdminDashboard() {
 								<button type="button" className={reportExportFormat === "pdf" ? "active" : ""} onClick={() => setReportExportFormat("pdf")}>
 									PDF
 								</button>
-								<button type="button" className={reportExportFormat === "csv" ? "active" : ""} onClick={() => setReportExportFormat("csv")}>
-									CSV
+								<button type="button" className={reportExportFormat === (isStudentReport ? "excel" : "csv") ? "active" : ""} onClick={() => setReportExportFormat(isStudentReport ? "excel" : "csv")}>
+									{isStudentReport ? "Excel" : "CSV"}
 								</button>
 							</div>
 						</div>
@@ -3643,9 +4131,9 @@ export default function AdminDashboard() {
 										Showing {reportPreviewTablePage.startIndex}-{reportPreviewTablePage.endIndex} of {reportPreview.csvRows.length} rows
 									</span>
 								</div>
-								{reportExportFormat === "pdf" ? (
+								{reportExportFormat === "pdf" || isStudentReport ? (
 									<>
-										<div className="admin-table-wrap">
+										<div className="admin-table-wrap admin-report-table-scroll">
 											<table className="admin-management-table admin-management-table--preview">
 												<thead>
 													<tr>
@@ -3692,37 +4180,126 @@ export default function AdminDashboard() {
 	}
 
 	const renderSection = () => {
+		if (activeSection === "inbox") {
+			return (
+				<section className="admin-inbox-page admin-inbox-overview">
+					<header className="admin-inbox-head">
+						<div>
+							<span className="admin-page-eyebrow">Personal Inbox</span>
+							<h2>Messages</h2>
+							<p>Actionable notifications and backend activity are separated for easier review.</p>
+						</div>
+					</header>
+					<section className="admin-inbox-preview-section">
+						<header><div><HiOutlineInbox /><span><strong>Notifications</strong><small>{unreadAdminNotifications.length} unread</small></span></div><Link to="/admin/notifications">See all</Link></header>
+						<div className="admin-inbox-list admin-inbox-list--limited">
+							{adminNotifications.filter((item) => item.archived !== true).length === 0 ? (
+								<div className="admin-inbox-empty admin-inbox-empty--compact"><HiOutlineInbox /><strong>No notifications yet.</strong></div>
+							) : adminNotifications.filter((item) => item.archived !== true).slice(0, 5).map((notification) => (
+								<button key={notification.id} type="button" className={`admin-inbox-item ${notification.read === true ? "" : "unread"}`} onClick={() => { markAdminNotificationRead(notification); if (notification.route) navigate(notification.route) }}>
+									<span className="admin-inbox-item-icon"><HiOutlineBell /></span>
+									<span className="admin-inbox-item-copy"><strong>{toAdminNotificationTitle(notification)}</strong><small>{toAdminNotificationMessage(notification)}</small></span>
+									<span className="admin-inbox-item-meta"><time>{formatRelativeTime(notification.createdAt || notification.created_at)}</time>{notification.read !== true ? <i aria-label="Unread" /> : <HiOutlineShieldCheck aria-label="Read" />}</span>
+								</button>
+							))}
+						</div>
+					</section>
+					<section className="admin-inbox-preview-section admin-inbox-preview-section--logs">
+						<header><div><HiOutlineDocumentText /><span><strong>System Logs</strong><small>Backend activity records</small></span></div><Link to="/admin/logs">See all</Link></header>
+						<div className="admin-log-preview-list">
+							{systemLogs.length === 0 ? <div className="admin-inbox-empty admin-inbox-empty--compact"><HiOutlineDocumentText /><strong>No backend logs yet.</strong></div> : systemLogs.slice(0, 7).map((log) => (
+								<div className="admin-log-preview-row" key={log.id}><span>{toAdminNotificationTitle(log)}</span><small>{log.actorType || "system"}</small><time>{formatRelativeTime(log.createdAt || log.created_at)}</time></div>
+							))}
+						</div>
+					</section>
+				</section>
+			)
+		}
+
+		if (activeSection === "notifications") {
+			const selectedRows = visibleAdminNotifications.filter((item) => selectedAdminNotificationIds.includes(item.id))
+			return (
+				<section className="admin-notifications-page">
+					<header className="admin-inbox-head"><div><span className="admin-page-eyebrow">Administrator Inbox</span><h2>Notifications</h2><p>Review, search, mark, and archive administrator updates.</p></div><Link className="admin-page-back-link" to="/admin/inbox">Back to inbox</Link></header>
+					<div className="admin-mail-toolbar">
+						<label className="admin-mail-search"><HiOutlineSearch /><input value={notificationSearch} onChange={(event) => setNotificationSearch(event.target.value)} placeholder="Search notifications" /></label>
+						<select value={notificationFilter} onChange={(event) => { setNotificationFilter(event.target.value); setSelectedAdminNotificationIds([]) }} aria-label="Filter notifications"><option value="inbox">Inbox</option><option value="unread">Unread</option><option value="read">Read</option><option value="archived">Archived</option></select>
+						<button type="button" onClick={markAllAdminNotificationsRead} disabled={unreadAdminNotifications.length === 0}><HiOutlineShieldCheck /> Mark all read</button>
+						<button type="button" onClick={() => archiveAdminNotifications(selectedRows)} disabled={selectedRows.length === 0}><HiOutlineArchive /> Archive{selectedRows.length ? ` (${selectedRows.length})` : ""}</button>
+					</div>
+					<div className="admin-mail-list">
+						{visibleAdminNotifications.length === 0 ? <div className="admin-inbox-empty"><HiOutlineInbox /><strong>No matching notifications.</strong><span>Try another search or filter.</span></div> : visibleAdminNotifications.map((notification) => (
+							<div key={notification.id} className={`admin-mail-row ${notification.read === true ? "" : "unread"}`}>
+								<input type="checkbox" checked={selectedAdminNotificationIds.includes(notification.id)} onChange={(event) => setSelectedAdminNotificationIds((current) => event.target.checked ? [...new Set([...current, notification.id])] : current.filter((id) => id !== notification.id))} aria-label={`Select ${toAdminNotificationTitle(notification)}`} />
+								<button type="button" className="admin-mail-row-main" onClick={() => { markAdminNotificationRead(notification); if (notification.route) navigate(notification.route) }}>
+									<span className="admin-mail-sender">{notification.actorType || "BulsuScholar"}</span><span className="admin-mail-subject"><strong>{toAdminNotificationTitle(notification)}</strong><small>{toAdminNotificationMessage(notification)}</small></span><time>{formatRelativeTime(notification.createdAt || notification.created_at)}</time>
+								</button>
+								{notification.archived !== true ? <button type="button" className="admin-mail-archive" onClick={() => archiveAdminNotifications([notification])} aria-label="Archive notification"><HiOutlineArchive /></button> : null}
+							</div>
+						))}
+					</div>
+				</section>
+			)
+		}
+
+		if (activeSection === "logs") {
+			return (
+				<section className="admin-logs-page">
+					<header className="admin-inbox-head"><div><span className="admin-page-eyebrow">Backend Records</span><h2>System Logs</h2><p>Read-only activity generated by backend services.</p></div><Link className="admin-page-back-link" to="/admin/inbox">Back to inbox</Link></header>
+					<div className="admin-log-filters">
+						<label className="admin-mail-search"><HiOutlineSearch /><input value={logSearch} onChange={(event) => setLogSearch(event.target.value)} placeholder="Search action, actor, target, or details" /></label>
+						<select value={logTypeFilter} onChange={(event) => setLogTypeFilter(event.target.value)} aria-label="Filter logs by type"><option value="all">All types</option>{logTypeOptions.map((type) => <option key={type} value={type}>{type.replace(/[_-]+/g, " ")}</option>)}</select>
+						<select value={logActorFilter} onChange={(event) => setLogActorFilter(event.target.value)} aria-label="Filter logs by actor"><option value="all">All actors</option>{logActorOptions.map((actor) => <option key={actor} value={actor}>{actor}</option>)}</select>
+						<label className="admin-log-date"><span>From</span><input type="date" value={logDateFrom} onChange={(event) => setLogDateFrom(event.target.value)} /></label>
+						<label className="admin-log-date"><span>To</span><input type="date" value={logDateTo} min={logDateFrom || undefined} onChange={(event) => setLogDateTo(event.target.value)} /></label>
+						<button type="button" onClick={() => { setLogSearch(""); setLogTypeFilter("all"); setLogActorFilter("all"); setLogDateFrom(""); setLogDateTo("") }}><HiOutlineRefresh /> Reset</button>
+					</div>
+					<div className="admin-log-table-wrap"><table className="admin-log-table"><thead><tr><th>Date</th><th>Type</th><th>Actor</th><th>Actor ID</th><th>Target</th><th>Details</th></tr></thead><tbody>{visibleSystemLogs.length === 0 ? <tr><td colSpan="6">No system logs matched the selected filters.</td></tr> : visibleSystemLogs.map((log) => <tr key={log.id}><td>{formatDate(log.createdAt || log.created_at)}</td><td><span>{String(log.action || log.type || "system").replace(/[_-]+/g, " ")}</span></td><td>{log.actorType || "system"}</td><td>{log.actorId || "-"}</td><td>{log.target || "-"}</td><td>{toAdminNotificationMessage(log)}</td></tr>)}</tbody></table></div>
+					<p className="admin-log-result-count">Showing {visibleSystemLogs.length} of {systemLogs.length} backend logs</p>
+				</section>
+			)
+		}
+
 		if (activeSection === "dashboard") {
 			return (
-				<section className="admin-management-panel">
-					<div className="admin-panel-head">
+				<section className="admin-dashboard-overview">
+					<header className="admin-overview-head">
 						<div>
-							<h2>Management Dashboard</h2>
-							<p className="admin-panel-copy">Modernized analytics for applicant flow, grantor share, and materials request traffic.</p>
+							<span className="admin-page-eyebrow">System Overview</span>
+							<h2>Welcome Back, Administrator</h2>
+							<p>Monitor student activity, scholarship coverage, grantors, and pending requests.</p>
 						</div>
-					</div>
+						<span className="admin-overview-date">{new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>
+					</header>
 					<section className="admin-kpi-grid">
 						{[
 							{
 								id: "students",
 								label: "Total Students",
 								value: metrics.totalStudents,
-								description: "Registered student accounts currently visible in the system.",
+								description: "Active student accounts",
 								icon: HiOutlineUsers,
 							},
 							{
-								id: "soe",
-								label: "Total Material Requests",
-								value: metrics.totalSoeRequests,
-								description: "All submitted material requests recorded across the platform.",
-								icon: HiOutlineDocumentText,
+								id: "grantors",
+								label: "Grantors",
+								value: grantorRows.length,
+								description: "Registered scholarship providers",
+								icon: HiOutlineUserGroup,
 							},
 							{
 								id: "scholars",
 								label: "Total Scholars",
 								value: metrics.totalScholars,
-								description: "Scholarship records attached to active student accounts.",
+								description: "Active scholarship records",
 								icon: HiOutlineAcademicCap,
+							},
+							{
+								id: "requests",
+								label: "Pending Requests",
+								value: soeRows.filter((row) => row.reviewState === "incoming").length,
+								description: "Materials awaiting review",
+								icon: HiOutlineClock,
 							},
 						].map((card) => {
 							const Icon = card.icon
@@ -3740,7 +4317,7 @@ export default function AdminDashboard() {
 							)
 						})}
 					</section>
-					<section className="admin-analytics-grid admin-analytics-grid--primary">
+					<section className="admin-overview-grid">
 						<article className="admin-analytics-card admin-analytics-card--wide admin-trend-card">
 							<div className="admin-trend-head">
 								<div>
@@ -3762,6 +4339,15 @@ export default function AdminDashboard() {
 							<div className="admin-chart-wrap admin-chart-wrap--lg">
 								{isAnalyticsLoading ? <LoadingBars note="Loading applicant trend analytics..." /> : <Line data={applicantTrackingData} options={lineChartOptions} />}
 							</div>
+						</article>
+						<article className="admin-overview-actions">
+							<div className="admin-trend-head admin-trend-head--compact"><div><span className="admin-page-eyebrow">Quick Access</span><h3>Management Areas</h3><p>Open the sections used most often.</p></div></div>
+							<nav>
+								<Link to="/admin/students"><span><HiOutlineUsers /></span><div><strong>Student Management</strong><small>{metrics.totalStudents} active accounts</small></div></Link>
+								<Link to="/admin/grantors"><span><HiOutlineUserGroup /></span><div><strong>Grantor Management</strong><small>{grantorRows.length} registered providers</small></div></Link>
+								<Link to="/admin/requirements"><span><HiOutlineDocumentText /></span><div><strong>Requirements</strong><small>{soeRows.filter((row) => row.reviewState === "incoming").length} pending requests</small></div></Link>
+								<Link to="/admin/reports"><span><HiOutlineChartBar /></span><div><strong>Reports</strong><small>Generate system records</small></div></Link>
+							</nav>
 						</article>
 						<article className="admin-analytics-card">
 							<div className="admin-trend-head admin-trend-head--compact">
@@ -3816,49 +4402,24 @@ export default function AdminDashboard() {
 
 		if (activeSection === "students") {
 			return (
-				<section className="admin-management-panel">
+				<section className="admin-management-panel admin-student-management">
 					<div className="admin-panel-head">
-						<div>
-							<h2>Student Management</h2>
-							<p className="admin-panel-copy">Granular access control with archive-safe workflows.</p>
+						<div className="admin-student-title">
+							<span aria-hidden="true"><HiOutlineUsers /></span>
+							<div>
+								<h2>Student Management</h2>
+								<p className="admin-panel-copy">Search, review, archive, and report on live student records.</p>
+							</div>
 						</div>
 						<div className="admin-head-actions">
 							<button
 								type="button"
-								className="admin-export-btn admin-export-btn--mini"
-								onClick={() =>
-									openReportPreview(
-										createStudentPreviewConfig(
-											visibleStudentReportRows,
-											studentReportFilterLabel,
-										),
-									)
-								}
+								className="admin-student-report-btn"
+								disabled={isReportExporting}
+								onClick={() => openStudentReportPreview({ view: studentViewTab, search: studentSearch, course: studentCourse, year: studentYear })}
 							>
-								<HiOutlineEye /> Generate Preview
+								<HiOutlineDocumentText /> {isReportExporting ? "Preparing..." : "Generate Report"}
 							</button>
-						</div>
-					</div>
-					<div className="admin-tabs-row">
-						<SectionTabs
-							tabs={[
-								{ id: "overview", label: "Overview", icon: HiOutlineChartBar },
-								{ id: "students", label: "Students", count: studentTabCounts.students, icon: HiOutlineUsers },
-								{ id: "archived", label: "Archived", count: studentTabCounts.archived, icon: HiOutlineTrash },
-							]}
-							value={studentViewTab}
-							onChange={setStudentViewTab}
-						/>
-						<div className="admin-tabs-row__actions">
-							{studentViewTab === "students" && selectedStudentIds.length > 0 && (
-								<button
-									type="button"
-									className="admin-danger-btn admin-danger-btn--mini"
-									onClick={() => openBatchArchiveConfirmation()}
-								>
-									<HiOutlineTrash /> Archive ({selectedStudentIds.length})
-								</button>
-							)}
 						</div>
 					</div>
 					{studentViewTab === "overview" ? (
@@ -3914,24 +4475,66 @@ export default function AdminDashboard() {
 						</section>
 					) : (
 						<>
-							<div className="admin-filter-bar">
-								<input type="text" placeholder="Search student ID or name" value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} />
-								<select value={studentCourse} onChange={(event) => setStudentCourse(event.target.value)}>
-									<option value="All">All Courses</option>
-									{studentsByCourse.map((course) => (
-										<option key={course} value={course}>
-											{course}
-										</option>
-									))}
-								</select>
-								<select value={studentYear} onChange={(event) => setStudentYear(event.target.value)}>
-									<option value="All">All Year Levels</option>
-									{studentsByYear.map((year) => (
-										<option key={year} value={year}>
-											{year}
-										</option>
-									))}
-								</select>
+							<div className="admin-student-stats-row" aria-label="Student management statistics">
+								<article>
+									<HiOutlineUsers />
+									<span>Total Students</span>
+									<strong>{studentManagementStats.total}</strong>
+								</article>
+								<article>
+									<HiOutlineShieldCheck />
+									<span>Active Records</span>
+									<strong>{studentManagementStats.active}</strong>
+								</article>
+								<article>
+									<HiOutlineAcademicCap />
+									<span>Active Scholars</span>
+									<strong>{studentManagementStats.scholars}</strong>
+								</article>
+								<article>
+									<HiOutlineArchive />
+									<span>Archived</span>
+									<strong>{studentManagementStats.archived}</strong>
+								</article>
+							</div>
+							<div className="admin-student-pagination-row">
+								<SectionTabs
+									tabs={[
+										{ id: "students", label: "Students", count: studentTabCounts.students, icon: HiOutlineUsers },
+										{ id: "archived", label: "Archived", count: studentTabCounts.archived, icon: HiOutlineTrash },
+									]}
+									value={studentViewTab}
+									onChange={setStudentViewTab}
+									className="admin-student-inline-tabs"
+								/>
+								<button
+									type="button"
+									className="admin-student-archive-btn"
+									disabled={studentViewTab !== "students" || selectedStudentIds.length === 0}
+									onClick={() => openBatchArchiveConfirmation()}
+								>
+									<HiOutlineTrash /> Archive {selectedStudentIds.length > 0 ? `(${selectedStudentIds.length})` : ""}
+								</button>
+							</div>
+							<div className="admin-student-command-row">
+								<div className="admin-student-toolbar">
+									<label className="admin-student-search" aria-label="Search student records">
+										<HiOutlineSearch />
+										<input type="text" placeholder="Search student ID or name" value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} />
+									</label>
+									<AdminFilterSelect
+										label="Filter by course"
+										value={studentCourse}
+										options={[{ value: "All", label: "All Courses" }, ...studentsByCourse.map((course) => ({ value: course, label: course }))]}
+										onChange={setStudentCourse}
+									/>
+									<AdminFilterSelect
+										label="Filter by year level"
+										value={studentYear}
+										options={[{ value: "All", label: "All Year Levels" }, ...studentsByYear.map((year) => ({ value: year, label: year }))]}
+										onChange={setStudentYear}
+									/>
+								</div>
 							</div>
 							<div className="admin-table-wrap">
 								<table className="admin-management-table admin-management-table--roomy">
@@ -3941,11 +4544,15 @@ export default function AdminDashboard() {
 												<input
 													type="checkbox"
 													checked={
-														studentsTablePage.rows.length > 0 &&
-														studentsTablePage.rows.every((s) => selectedStudentIds.includes(s.id))
+														studentsTablePage.rows.filter((s) => s.sourceCollection === "students").length > 0 &&
+														studentsTablePage.rows
+															.filter((s) => s.sourceCollection === "students")
+															.every((s) => selectedStudentIds.includes(s.id))
 													}
 													onChange={(e) => {
-														const rowIds = studentsTablePage.rows.map((s) => s.id)
+														const rowIds = studentsTablePage.rows
+															.filter((s) => s.sourceCollection === "students")
+															.map((s) => s.id)
 														if (e.target.checked) {
 															setSelectedStudentIds((prev) => [...new Set([...prev, ...rowIds])])
 														} else {
@@ -3966,40 +4573,47 @@ export default function AdminDashboard() {
 										{filteredStudents.length === 0 ? (
 											<EmptyStateRow colSpan={7} />
 										) : (
-											studentsTablePage.rows.map((student) => (
-												<tr key={student.id}>
-													<td>
-														<input
-															type="checkbox"
-															checked={selectedStudentIds.includes(student.id)}
-															onChange={(e) => {
-																if (e.target.checked) {
-																	setSelectedStudentIds((prev) => [...prev, student.id])
-																} else {
-																	setSelectedStudentIds((prev) => prev.filter((id) => id !== student.id))
-																}
-															}}
-														/>
-													</td>
-													<td>{student.id}</td>
-													<td>{student.fullName}</td>
-													<td>{student.course || "-"}</td>
-													<td>{student.year || "-"}</td>
-													<td>
-														<span className={toStatusClass(student.recordStatus)}>{student.recordStatus}</span>
-													</td>
-													<td>
-														<button
-															type="button"
-															className="admin-table-btn admin-table-btn--mini admin-table-btn--view"
-															onClick={() => setSelectedStudentId(student.id)}
-														>
-															<HiOutlineEye />
-															View Information
-														</button>
-													</td>
-												</tr>
-											))
+											studentsTablePage.rows.map((student) => {
+												const statusText = student.recordStatus || "Active"
+												const statusKey = statusText.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+												return (
+													<tr key={student.id}>
+														<td>
+															<input
+																type="checkbox"
+																disabled={student.sourceCollection !== "students"}
+																checked={selectedStudentIds.includes(student.id)}
+																onChange={(e) => {
+																	if (e.target.checked) {
+																		setSelectedStudentIds((prev) => [...prev, student.id])
+																	} else {
+																		setSelectedStudentIds((prev) => prev.filter((id) => id !== student.id))
+																	}
+																}}
+															/>
+														</td>
+														<td>{student.studentId || student.id}</td>
+														<td>{student.fullName}</td>
+														<td>{student.course || "-"}</td>
+														<td>{student.year || "-"}</td>
+														<td>
+															<span className={`admin-student-status admin-student-status--${statusKey}`}>
+																{statusText}
+															</span>
+														</td>
+														<td>
+															<button
+																type="button"
+																className="admin-student-action-btn"
+																onClick={() => setSelectedStudentId(student.id)}
+															>
+																<HiOutlineEye />
+																View
+															</button>
+														</td>
+													</tr>
+												)
+											})
 										)}
 									</tbody>
 								</table>
@@ -4971,17 +5585,17 @@ export default function AdminDashboard() {
 										<span>Rows</span>
 									</div>
 									<div className="admin-report-card__metric">
-										<strong>{studentTabCounts.blocked}</strong>
-										<span>Blocked</span>
+										<strong>{studentTabCounts.archived}</strong>
+										<span>Archived</span>
 									</div>
 								</div>
 								<div className="admin-report-card__chips">
 									<span>PDF</span>
-									<span>CSV</span>
+									<span>Excel</span>
 									<span>Access and lifecycle</span>
 								</div>
 								<div className="admin-report-card-actions">
-									<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => openReportPreview(createStudentPreviewConfig(allStudentReportRows, "All student records"))}>
+									<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => openStudentReportPreview({ view: "all", search: "", course: "All", year: "All" })}>
 										<HiOutlineEye /> Generate Preview
 									</button>
 								</div>
@@ -5297,16 +5911,51 @@ export default function AdminDashboard() {
 
 	return (
 		<div className={`admin-portal ${theme === "dark" ? "admin-portal--dark" : ""}`}>
-			<aside className="admin-sidebar">
-				<div className="admin-sidebar-brand">
-					<img src={logo2} alt="BulsuScholar" />
+			<header className="admin-topbar">
+				<Link to="/admin/dashboard" className="admin-topbar-brand" aria-label="Go to admin dashboard">
+					<img src={logo2} alt="" />
 					<div>
-						<h1>BulsuScholar</h1>
-						<p>Admin Portal</p>
+						<strong>BulsuScholar</strong>
+						<span>Admin Portal</span>
+					</div>
+				</Link>
+				<div className="admin-topbar-actions">
+					<Link to="/admin/inbox" className={`admin-topbar-inbox ${["inbox", "notifications", "logs"].includes(activeSection) ? "active" : ""}`} aria-label="Open administrator inbox">
+						<HiOutlineInbox />
+						{unreadAdminNotifications.length > 0 ? <span>{unreadAdminNotifications.length > 99 ? "99+" : unreadAdminNotifications.length}</span> : null}
+					</Link>
+					<div className="admin-account" ref={adminMenuRef}>
+						<button type="button" className="admin-account-btn" onClick={() => setAdminMenuOpen((open) => !open)} aria-label="Open administrator menu" aria-expanded={adminMenuOpen} aria-haspopup="menu">
+							<span className="admin-topbar-avatar">AD</span>
+							<HiOutlineMenu className="admin-account-menu-icon" />
+						</button>
+						{adminMenuOpen ? (
+							<div className="admin-account-menu" role="menu">
+								<div className="admin-account-card">
+									<span className="admin-topbar-avatar admin-topbar-avatar--large">AD</span>
+									<div><strong>Administrator</strong><p>System Manager</p></div>
+								</div>
+								<nav className="admin-account-links">
+									<Link to="/admin/dashboard" onClick={() => setAdminMenuOpen(false)}><HiOutlineHome /> Dashboard</Link>
+									<Link to="/admin/inbox" onClick={() => setAdminMenuOpen(false)}><HiOutlineInbox /> Inbox{unreadAdminNotifications.length > 0 ? <span>{unreadAdminNotifications.length}</span> : null}</Link>
+								</nav>
+								<div className="admin-account-theme">
+									<span>Theme</span>
+									<div>
+										<button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}><HiOutlineSun /> Light</button>
+										<button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}><HiOutlineMoon /> Dark</button>
+									</div>
+								</div>
+								<button type="button" className="admin-account-logout" onClick={handleLogout}><HiOutlineLogout /> Logout</button>
+							</div>
+						) : null}
 					</div>
 				</div>
+			</header>
+			<aside className="admin-sidebar">
+				<span className="admin-sidebar-label">Workspace</span>
 				<nav className="admin-sidebar-nav">
-					{ADMIN_SECTIONS.map((section) => {
+					{ADMIN_SECTIONS.filter((section) => !section.topbarOnly).map((section) => {
 						const Icon = section.icon
 						const isActive = activeSection === section.id
 						return (
@@ -5317,26 +5966,6 @@ export default function AdminDashboard() {
 						)
 					})}
 				</nav>
-				<div className="admin-sidebar-bottom">
-					<div className="admin-theme-switch admin-theme-switch--sidebar">
-						<button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}>
-							<HiOutlineSun /> Light
-						</button>
-						<button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}>
-							<HiOutlineMoon /> Dark
-						</button>
-					</div>
-					<div className="admin-sidebar-profile">
-						<HiOutlineUserGroup />
-						<div>
-							<strong>Administrator</strong>
-							<p>System Manager</p>
-						</div>
-					</div>
-					<button type="button" className="admin-sidebar-logout" onClick={handleLogout}>
-						<HiOutlineLogout /> Logout
-					</button>
-				</div>
 			</aside>
 			<main className="admin-workspace">{renderSection()}</main>
 			{showAnnouncementSchedule ? (
@@ -5494,12 +6123,21 @@ export default function AdminDashboard() {
 							<HiX />
 						</button>
 						<div className="admin-detail-modal admin-detail-modal--student" role="dialog" aria-modal="true" aria-label="Student details">
-						<div className="admin-detail-info">
-							<div className="admin-detail-header">
-								<img src={selectedStudent.profileImageUrl || selectedStudent.imageUrl || logo2} alt={selectedStudent.fullName} className="admin-detail-avatar" />
+						<div className="admin-detail-info admin-student-detail-info">
+							<div className="admin-detail-header admin-student-modal-header">
+								<div className="admin-detail-avatar admin-detail-avatar--student">
+									{selectedStudent.profileImageUrl || selectedStudent.profilePhotoUrl || selectedStudent.photoURL || selectedStudent.avatarUrl || selectedStudent.imageUrl ? (
+										<img
+											src={selectedStudent.profileImageUrl || selectedStudent.profilePhotoUrl || selectedStudent.photoURL || selectedStudent.avatarUrl || selectedStudent.imageUrl}
+											alt={selectedStudent.fullName}
+										/>
+									) : (
+										<span>{getInitials(selectedStudent.fullName)}</span>
+									)}
+								</div>
 								<div>
 									<h3>{selectedStudent.fullName}</h3>
-									<p className="admin-detail-meta">Student ID: {selectedStudent.id}</p>
+									<p className="admin-student-header-id">Student ID: {selectedStudent.studentId || selectedStudent.id}</p>
 									<div className="admin-chip-stack">
 										<span className={toStatusClass(selectedStudent.recordStatus)}>{selectedStudent.recordStatus}</span>
 										{selectedStudent.soeComplianceWarning ? <span className="admin-inline-chip">Compliance Warning</span> : null}
@@ -5507,42 +6145,53 @@ export default function AdminDashboard() {
 									</div>
 								</div>
 							</div>
-							<div className="admin-detail-grid">
-								<p className="admin-detail-meta">Course: {selectedStudent.course || "-"}</p>
-								<p className="admin-detail-meta">Year & Section: {[selectedStudent.year || "-", selectedStudent.section || selectedStudent.yearSection || "-"].join(" / ")}</p>
-								<p className="admin-detail-meta">CP Number: {selectedStudent.cpNumber || "-"}</p>
-								<p className="admin-detail-meta">
-									Address:{" "}
-									{[
-										selectedStudent.street || "",
-										selectedStudent.city || "",
-										selectedStudent.province || "",
-										selectedStudent.postalCode || "",
-									]
-										.filter(Boolean)
-										.join(", ") || "-"}
-								</p>
-								<p className="admin-detail-meta">Last SOE Request: {selectedStudentLastSoe}</p>
-								<p className="admin-detail-meta">Compliance Violations: {Number(selectedStudent.complianceViolationCount || 0)}</p>
+							<h4 className="admin-student-detail-divider"><span>Student Information</span></h4>
+							<div className="admin-detail-grid admin-student-detail-grid">
+								<p className="admin-detail-meta"><span>Full Name</span><strong>{selectedStudent.fullName}</strong></p>
+								<p className="admin-detail-meta"><span>Email</span><strong>{selectedStudent.email || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Contact Number</span><strong>{selectedStudent.cpNumber || selectedStudent.contactNumber || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Record Status</span><strong>{selectedStudent.recordStatus}</strong></p>
+							</div>
+							<h4 className="admin-student-detail-divider"><span>Academic Information</span></h4>
+							<div className="admin-detail-grid admin-student-detail-grid">
+								<p className="admin-detail-meta"><span>Course</span><strong>{selectedStudent.course || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Year Level</span><strong>{selectedStudent.year || selectedStudent.yearLevel || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Section</span><strong>{selectedStudent.section || selectedStudent.yearSection || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Current GWA</span><strong>{selectedStudent.gwa || selectedStudent.currentGwa || selectedStudent.currentGWA || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Irregular Student</span><strong>{selectedStudent.isIrregular === true || selectedStudent.irregularStudent === true ? "Yes" : "No"}</strong></p>
+							</div>
+							<h4 className="admin-student-detail-divider"><span>Address</span></h4>
+							<div className="admin-detail-grid admin-student-detail-grid">
+								<p className="admin-detail-meta"><span>Street / Subdivision</span><strong>{selectedStudent.street || selectedStudent.subdivision || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>City / Municipality</span><strong>{selectedStudent.city || selectedStudent.municipality || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Province</span><strong>{selectedStudent.province || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Postal Code</span><strong>{selectedStudent.postalCode || selectedStudent.zipCode || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Last SOE Request</span><strong>{selectedStudentLastSoe}</strong></p>
 							</div>
 						</div>
 						<div className="admin-detail-docs">
 							<strong>Documents</strong>
 							{[
-								{ label: "View COR", url: selectedStudent.corFile?.url },
-								{ label: "View COG", url: selectedStudent.cogFile?.url },
-								{ label: "View School ID", url: selectedStudent.schoolIdFile?.url || selectedStudent.studentIdFile?.url },
+								{ label: "View COR", title: "Certificate of Registration", url: selectedStudent.corFile?.url, name: selectedStudent.corFile?.name || "COR" },
+								{ label: "View COG", title: "Certificate of Grades", url: selectedStudent.cogFile?.url, name: selectedStudent.cogFile?.name || "COG" },
+								{ label: "View School ID", title: "School ID", url: selectedStudent.schoolIdFile?.url || selectedStudent.studentIdFile?.url, name: selectedStudent.schoolIdFile?.name || selectedStudent.studentIdFile?.name || "School ID" },
 								{
 									label: "View Application Form",
+									title: "Scholarship Application Form",
 									url:
 										selectedStudent.scholarshipApplicationFile?.url ||
 										selectedStudent.applicationFormFile?.url,
+									name:
+										selectedStudent.scholarshipApplicationFile?.name ||
+										selectedStudent.applicationFormFile?.name ||
+										"Application Form",
 								},
 							].map((document) =>
 								document.url ? (
-									<a key={document.label} href={document.url} target="_blank" rel="noreferrer">
+									<button key={document.label} type="button" onClick={() => openDocumentPreview(document)}>
+										<HiOutlineEye />
 										{document.label}
-									</a>
+									</button>
 								) : (
 									<span key={document.label} className="admin-detail-docs-empty">
 										{document.label} Unavailable
@@ -5552,6 +6201,10 @@ export default function AdminDashboard() {
 						</div>
 						<div className="admin-detail-scholarships">
 							<strong>Scholarships</strong>
+							<div className="admin-student-current-stage admin-student-current-stage--scholarship">
+								<div><span>Current Tracking</span><strong>{selectedStudentTracking?.currentStepLabel || "Account Created"}</strong></div>
+								<p>{selectedStudentTracking ? `${selectedStudentTracking.scholarship} | ${selectedStudentTracking.currentStepOwnerLabel || "Student"}` : "No active scholarship tracking record."}</p>
+							</div>
 							{selectedStudentGrantorScholarships.length > 0 ? (
 								selectedStudentGrantorScholarships.map((entry, index) => (
 									<div
@@ -5587,6 +6240,49 @@ export default function AdminDashboard() {
 							</button>
 						</div>
 					</div>
+					</div>
+				</div>
+			) : null}
+
+			{previewDocument ? (
+				<div
+					className="admin-document-preview-backdrop"
+					role="dialog"
+					aria-modal="true"
+					aria-label={`${previewDocument.title} preview`}
+					onClick={closeDocumentPreview}
+				>
+					<div className="admin-document-preview-modal" onClick={(event) => event.stopPropagation()}>
+						<header className="admin-document-preview-head">
+							<div>
+								<span>Document Preview</span>
+								<h3>{previewDocument.title}</h3>
+								<p>{previewDocument.name}</p>
+							</div>
+							<div className="admin-document-preview-actions">
+								<button type="button" className="admin-document-preview-download" onClick={downloadPreviewDocument}>
+									<HiOutlineDownload /> Download
+								</button>
+								<button type="button" className="admin-document-preview-close" onClick={closeDocumentPreview} aria-label="Close document preview">
+									<HiX />
+								</button>
+							</div>
+						</header>
+						<div className="admin-document-preview-body">
+							{isPreviewLoading ? (
+								<div className="admin-document-preview-state">
+									<HiOutlineDocumentText />
+									<span>Loading preview...</span>
+								</div>
+							) : !previewBlobUrl ? (
+								<div className="admin-document-preview-state">
+									<HiOutlineDocumentText />
+									<span>Preview is unavailable.</span>
+								</div>
+							) : (
+								<img src={previewBlobUrl} alt={`${previewDocument.title} preview`} className="admin-document-preview-image" />
+							)}
+						</div>
 					</div>
 				</div>
 			) : null}

@@ -88,6 +88,16 @@ function isOlderThanSevenDays(value) {
 	return Date.now() - date.getTime() > sevenDaysMs
 }
 
+function isScholarshipFrozen(entry = {}) {
+	const status = String(entry?.status || "").toLowerCase()
+	return (
+		entry?.frozen === true ||
+		entry?.archived === true ||
+		status.includes("archived") ||
+		status.includes("frozen")
+	)
+}
+
 function isScholarshipActiveOrPending(status = "") {
 	const normalized = String(status).toLowerCase()
 	if (!normalized) return true
@@ -598,6 +608,9 @@ export default function StudentScholarshipsPage() {
 	const getMaterialRequestButtonState = useCallback(
 		(entry, materialKey) => {
 			const config = getMaterialRequestType(materialKey)
+			if (isScholarshipFrozen(entry)) {
+				return { disabled: true, label: "Frozen" }
+			}
 			const requestState = getMaterialStateForScholarship(entry, materialKey)
 			if (requestState === "approved") {
 				return { disabled: true, label: "Approved" }
@@ -616,6 +629,13 @@ export default function StudentScholarshipsPage() {
 	const getMaterialDownloadGate = useCallback(
 		(entry = null, materialKey = "soe") => {
 			const config = getMaterialRequestType(materialKey)
+			if (isScholarshipFrozen(entry)) {
+				return {
+					canDownload: false,
+					label: "Frozen",
+					reason: "This scholarship record was archived by the grantor. You cannot download or request SOE until it is restored.",
+				}
+			}
 			const latestRequest = getLatestMaterialRequest(entry?.id || "")
 			const approvalState = latestRequest
 				? getMaterialRequestState(latestRequest, materialKey)
@@ -824,6 +844,12 @@ export default function StudentScholarshipsPage() {
 			nextActionHelp = "Go to Profile, open your document uploads, then add your scholarship application form."
 			summaryTone = "current"
 			nextPanelTone = "pending"
+		} else if (trackingProgress.currentStep?.id === "document_review") {
+			nextActionTitle = "Document Review"
+			nextActionCopy = "Your submitted documents are ready for review by the scholarship office and your assigned grantor."
+			nextActionHelp = "No upload action is needed right now. Wait for document review to be completed before the next stage."
+			summaryTone = "current"
+			nextPanelTone = "pending"
 		} else if (trackingProgress.currentStep?.id === "admin_review") {
 			nextActionTitle = "Wait for admin review"
 			nextActionCopy = "Your application is now under scholarship office review."
@@ -938,10 +964,7 @@ export default function StudentScholarshipsPage() {
 	])
 	const shouldShowScholarshipWorkspace =
 		!kwspEntry ||
-		hasMultipleScholarshipChoices ||
-		["request_materials", "download_materials", "signing_materials"].includes(
-			kwspTracking.highlightedStepId,
-		)
+		hasMultipleScholarshipChoices
 
 	const persistScholarships = async (nextScholarships, message = "") => {
 		await materialRequestWorkflow({
@@ -1137,6 +1160,10 @@ export default function StudentScholarshipsPage() {
 			const selected = scholarships.find((item) => item.id === target.id)
 			if (!selected) {
 				toast.error("Scholarship record not found.")
+				return
+			}
+			if (isScholarshipFrozen(selected)) {
+				toast.warning("This scholarship was archived by the grantor. Your application is frozen and cannot proceed until it is restored.")
 				return
 			}
 			const selectedDocumentCheck = validateScholarshipDocuments(user, selected.name)
@@ -1453,6 +1480,10 @@ export default function StudentScholarshipsPage() {
 	const handleDownloadSoe = (target) => {
 		if (!target) return
 		if (isScholarshipActionBlocked()) return
+		if (isScholarshipFrozen(target)) {
+			toast.warning("This scholarship was archived by the grantor. SOE download is unavailable until it is restored.")
+			return
+		}
 		if (hasMultipleScholarshipChoices) {
 			toast.info("Choose one scholarship first before downloading SOE.")
 			return
@@ -2014,6 +2045,84 @@ export default function StudentScholarshipsPage() {
 												</div>
 											</div>
 										</div>
+										{kwspEntry ? (() => {
+											const entry = kwspEntry
+											const entryFrozen = isScholarshipFrozen(entry)
+											const entryTrackingProgress = getTrackingProgressForScholarship(entry)
+											const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
+											const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
+											const soeDownloadGate = getMaterialDownloadGate(entry, "soe")
+
+											return (
+												<div className="student-kwsp-soe-box">
+													<div className="student-kwsp-soe-copy">
+														<span>SOE Request</span>
+														<strong>{soeRequestLabel}</strong>
+														<p>
+															{entryFrozen
+																? "This scholarship was archived by the grantor. You cannot proceed to the next step or request SOE until it is restored."
+																: entryTrackingProgress.canRequestMaterials
+																? "Request or download your SOE once the scholarship office approves the material stage."
+																: `Current step: ${entryTrackingProgress.currentStepLabel}. Finish this stage before requesting SOE.`}
+														</p>
+													</div>
+													<div className="student-kwsp-soe-actions">
+														<button
+															type="button"
+															className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
+															disabled={
+																isMutating ||
+																entryFrozen ||
+																entry.adminBlocked === true ||
+																hasScholarshipActionBlock ||
+																!entryTrackingProgress.canRequestMaterials ||
+																soeRequestButtonState.disabled
+															}
+															onClick={() => handleRequestMaterial(entry, "soe")}
+														>
+															<HiOutlineDocumentText />
+															{studentAccessState.isPortalAccessBlocked
+																? "Access Blocked"
+																: entryFrozen
+																	? "Frozen"
+																: hasComplianceBlock
+																	? "Compliance Hold"
+																	: entry.adminBlocked === true
+																		? "Blocked by Office"
+																		: soeRequestButtonState.label}
+														</button>
+														<button
+															type="button"
+															className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
+															disabled={
+																hasScholarshipActionBlock ||
+																entryFrozen ||
+																isExportingSoe ||
+																isDownloadingSoe ||
+																!soeDownloadGate.canDownload
+															}
+															title={
+																soeDownloadGate.canDownload
+																	? "Download your approved SOE"
+																	: soeDownloadGate.reason
+															}
+															onClick={() => handleDownloadSoe(entry)}
+														>
+															<HiOutlineDocumentText />
+															{studentAccessState.isPortalAccessBlocked
+																? "Access Blocked"
+																: entryFrozen
+																	? "Frozen"
+																: hasComplianceBlock
+																	? "Compliance Hold"
+																	: isExportingSoe || isDownloadingSoe
+																		? "Processing..."
+																		: soeDownloadGate.label}
+														</button>
+													</div>
+												</div>
+											)
+										})() : null}
 									</section>
 									<section className="student-kwsp-step-list">
 										{kwspTracking.steps.map((step, index) => (
@@ -2071,6 +2180,7 @@ export default function StudentScholarshipsPage() {
 							) : (
 								<div className="student-scholarship-cards">
 									{scholarships.map((entry) => {
+										const entryFrozen = isScholarshipFrozen(entry)
 										const entryTrackingProgress = getTrackingProgressForScholarship(entry)
 										const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
 										const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
@@ -2081,6 +2191,7 @@ export default function StudentScholarshipsPage() {
 												key={entry.id}
 												className={`student-scholarship-card ${
 													entry.adminBlocked === true || hasScholarshipActionBlock
+													|| entryFrozen
 														? "student-scholarship-card--blocked"
 														: ""
 												}`.trim()}
@@ -2100,6 +2211,11 @@ export default function StudentScholarshipsPage() {
 												{entry.matchSource === "grantor_roster" ? (
 													<p className="student-scholarship-card-note">
 														Matched grantor: {entry.matchedGrantorName || entry.name}. Upload the required COR and COG before completing the form stage.
+													</p>
+												) : null}
+												{entryFrozen ? (
+													<p className="student-scholarship-card-note student-scholarship-card-note--warning">
+														<HiOutlineExclamation aria-hidden /> Archived by grantor. Your application is frozen and cannot proceed until it is restored.
 													</p>
 												) : null}
 												{!hasMultipleScholarshipChoices && !entryTrackingProgress.canRequestMaterials ? (
@@ -2124,6 +2240,7 @@ export default function StudentScholarshipsPage() {
 															className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
 															disabled={
 																isMutating ||
+																entryFrozen ||
 																studentAccessState.isPortalAccessBlocked ||
 																studentAccessState.soeComplianceBlocked ||
 																(entry.adminBlocked === true && !canResolveMultipleScholarshipConflict)
@@ -2133,6 +2250,8 @@ export default function StudentScholarshipsPage() {
 															<HiOutlineCheckCircle />
 															{studentAccessState.isPortalAccessBlocked
 																? "Access Blocked"
+																: entryFrozen
+																? "Frozen"
 																: hasComplianceBlock
 																? "Compliance Hold"
 																: entry.adminBlocked === true && !canResolveMultipleScholarshipConflict
@@ -2146,6 +2265,7 @@ export default function StudentScholarshipsPage() {
 																className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
 																disabled={
 																	isMutating ||
+																	entryFrozen ||
 																	entry.adminBlocked === true ||
 																	hasScholarshipActionBlock ||
 																	!entryTrackingProgress.canRequestMaterials ||
@@ -2156,6 +2276,8 @@ export default function StudentScholarshipsPage() {
 																<HiOutlineDocumentText />
 																{studentAccessState.isPortalAccessBlocked
 																	? "Access Blocked"
+																	: entryFrozen
+																		? "Frozen"
 																	: hasComplianceBlock
 																		? "Compliance Hold"
 																		: entry.adminBlocked === true
@@ -2167,6 +2289,7 @@ export default function StudentScholarshipsPage() {
 																className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
 																disabled={
 																	hasScholarshipActionBlock ||
+																	entryFrozen ||
 																	isExportingSoe ||
 																	isDownloadingSoe ||
 																	!soeDownloadGate.canDownload
@@ -2181,6 +2304,8 @@ export default function StudentScholarshipsPage() {
 																<HiOutlineDocumentText />
 																{studentAccessState.isPortalAccessBlocked
 																	? "Access Blocked"
+																	: entryFrozen
+																		? "Frozen"
 																	: hasComplianceBlock
 																		? "Compliance Hold"
 																		: isExportingSoe || isDownloadingSoe
@@ -2198,84 +2323,72 @@ export default function StudentScholarshipsPage() {
 							)}
 						</div>
 
-						<div className="student-scholarship-board" ref={availableProgramsRef}>
-							<div className="student-scholarship-board-head">
-								<div>
-									<span>Program Catalog</span>
-									<h3>Available Programs</h3>
+						{!hasActiveOrPendingScholarship ? (
+							<div className="student-scholarship-board" ref={availableProgramsRef}>
+								<div className="student-scholarship-board-head">
+									<div>
+										<span>Program Catalog</span>
+										<h3>Available Programs</h3>
+									</div>
+									<strong>{scholarshipCatalog.length} listed</strong>
 								</div>
-								<strong>{scholarshipCatalog.length} listed</strong>
-							</div>
-							<div className="student-program-grid">
-								{scholarshipCatalog.map((catalogItem) => {
-									const hasThisActiveApplication = scholarships.some(
-										(item) =>
-											item.providerType === catalogItem.providerType &&
-											isScholarshipActiveOrPending(item.status),
-									)
-									const blockedByGrantor = blockedProviderTypes.has(
-										catalogItem.providerType,
-									)
-									const blockedByExclusivity =
-										hasActiveOrPendingScholarship &&
-										!activeOrPendingProviderTypes.has(catalogItem.providerType)
-									const applyDisabled =
-										blockedByGrantor ||
-										hasLockedScholarship ||
-										hasThisActiveApplication ||
-										blockedByExclusivity ||
-										hasScholarshipActionBlock ||
-										isMutating
-									const tooltip = hasScholarshipActionBlock
-										? scholarshipActionBlockMessage
-										: blockedByGrantor
-											? `Applications for ${
-													blockedProviderLabels[catalogItem.providerType] || catalogItem.name
-											  } are currently closed.`
-										: blockedByExclusivity
-											? applicationLockTooltip
-											: hasThisActiveApplication
-												? "Application already submitted for this scholarship."
+								<div className="student-program-grid">
+									{scholarshipCatalog.map((catalogItem) => {
+										const blockedByGrantor = blockedProviderTypes.has(
+											catalogItem.providerType,
+										)
+										const applyDisabled =
+											blockedByGrantor ||
+											hasLockedScholarship ||
+											hasScholarshipActionBlock ||
+											isMutating
+										const tooltip = hasScholarshipActionBlock
+											? scholarshipActionBlockMessage
+											: blockedByGrantor
+												? `Applications for ${
+														blockedProviderLabels[catalogItem.providerType] || catalogItem.name
+												  } are currently closed.`
 												: ""
-									const isAnnouncementFocused =
-										announcementFocusProviderType === catalogItem.providerType
+										const isAnnouncementFocused =
+											announcementFocusProviderType === catalogItem.providerType
 
-									return (
-										<article
-											key={catalogItem.providerType}
-											className={`student-program-card ${
-												isAnnouncementFocused ? "student-program-card--highlight" : ""
-											}`.trim()}
-										>
-											<h4>{catalogItem.name}</h4>
-											<p>
-												{catalogItem.requiresFullDocs
-													? "Requires COR and COG"
-													: "Requires COR and COG"}
-											</p>
-											<div className="student-program-actions">
-												<button
-													type="button"
-													className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
-													disabled={applyDisabled}
-													title={tooltip}
-													onClick={() => applyScholarship(catalogItem)}
-												>
-													{hasScholarshipActionBlock
-														? "Blocked"
-														: blockedByGrantor
-															? "Apply Closed"
-														: hasLockedScholarship
-															? "Finalized"
-															: "Apply"}
-												</button>
-											</div>
-											{tooltip && <span className="student-program-tooltip">{tooltip}</span>}
-										</article>
-									)
-								})}
+										return (
+											<article
+												key={catalogItem.providerType}
+												className={`student-program-card ${
+													isAnnouncementFocused ? "student-program-card--highlight" : ""
+												}`.trim()}
+											>
+												<h4>{catalogItem.name}</h4>
+												<p>
+													{catalogItem.requiresFullDocs
+														? "Requires COR and COG"
+														: "Requires COR and COG"}
+												</p>
+												<div className="student-program-actions">
+													<button
+														type="button"
+														className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
+														disabled={applyDisabled}
+														title={tooltip}
+														onClick={() => applyScholarship(catalogItem)}
+													>
+														{hasScholarshipActionBlock
+															? "Blocked"
+															: blockedByGrantor
+																? "Apply Closed"
+															: hasLockedScholarship
+																? "Finalized"
+																: "Apply"}
+													</button>
+												</div>
+												{tooltip && <span className="student-program-tooltip">{tooltip}</span>}
+											</article>
+										)
+									})}
+								</div>
 							</div>
-						</div>
+						) : null}
 						</section>
 					) : null}
 

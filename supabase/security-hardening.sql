@@ -31,7 +31,7 @@ create table if not exists student_document_usage (
 	updated_at timestamptz not null default now()
 );
 
-create table if not exists systemLogs (
+create table if not exists "systemLogs" (
 	id text primary key,
 	data jsonb not null default '{}'::jsonb,
 	created_at timestamptz not null default now(),
@@ -73,7 +73,7 @@ create index if not exists student_document_usage_student_id_idx on student_docu
 create index if not exists student_notifications_data_gin on "studentNotifications" using gin (data);
 create index if not exists grantor_notifications_data_gin on "grantorNotifications" using gin (data);
 create index if not exists student_document_usage_data_gin on student_document_usage using gin (data);
-create index if not exists system_logs_data_gin on systemLogs using gin (data);
+create index if not exists system_logs_data_gin on "systemLogs" using gin (data);
 
 do $$
 declare

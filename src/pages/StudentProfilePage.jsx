@@ -15,6 +15,9 @@ import {
 import {
 	HiOutlineCamera,
 	HiOutlineDocumentText,
+	HiOutlineDownload,
+	HiOutlineEye,
+	HiOutlineX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
@@ -26,9 +29,11 @@ import {
 	normalizeScholarshipList,
 } from "../services/scholarshipService"
 import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
-import { isPdf, convertPdfToImageFile } from "../utils/pdfConverter"
+import { isPdf, convertPdfToImage, convertPdfToImageFile } from "../utils/pdfConverter"
 import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
 import StudentTopbar from "../components/StudentTopbar"
+import { exportApplicationFormPdfDocument } from "../services/applicationFormService"
+import { scanStudentDocument } from "../services/documentScanService"
 import "../css/StudentDashboard.css"
 import useThemeMode from "../hooks/useThemeMode"
 
@@ -63,6 +68,128 @@ function canUploadDocument(file, semesterTag) {
 	return Boolean(file.requiresReupload || file.resetRequired || file.uploadResetRequired)
 }
 
+function normalizeIdentityText(value = "") {
+	return String(value || "")
+		.toLowerCase()
+		.replace(/[^a-z0-9ñ\s]/gi, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+}
+
+function normalizeStudentNumber(value = "") {
+	return String(value || "").replace(/\D/g, "")
+}
+
+function getLevenshteinDistance(left = "", right = "") {
+	const a = normalizeIdentityText(left)
+	const b = normalizeIdentityText(right)
+	if (a === b) return 0
+	if (!a) return b.length
+	if (!b) return a.length
+
+	const matrix = Array.from({ length: b.length + 1 }, (_, row) => [row])
+	for (let column = 0; column <= a.length; column += 1) {
+		matrix[0][column] = column
+	}
+
+	for (let row = 1; row <= b.length; row += 1) {
+		for (let column = 1; column <= a.length; column += 1) {
+			const substitutionCost = a[column - 1] === b[row - 1] ? 0 : 1
+			matrix[row][column] = Math.min(
+				matrix[row - 1][column] + 1,
+				matrix[row][column - 1] + 1,
+				matrix[row - 1][column - 1] + substitutionCost,
+			)
+		}
+	}
+
+	return matrix[b.length][a.length]
+}
+
+function getLevenshteinSimilarity(left = "", right = "") {
+	const a = normalizeIdentityText(left)
+	const b = normalizeIdentityText(right)
+	if (!a && !b) return 1
+	if (!a || !b) return 0
+	const maxLength = Math.max(a.length, b.length)
+	return Number((1 - getLevenshteinDistance(a, b) / maxLength).toFixed(4))
+}
+
+function tokenSortName(value = "") {
+	return normalizeIdentityText(value).split(" ").filter(Boolean).sort().join(" ")
+}
+
+function buildFullNameFromParts(data = {}) {
+	return [data?.fname, data?.mname, data?.lname].filter(Boolean).join(" ").trim()
+}
+
+function buildScannedName(extracted = {}) {
+	return (
+		extracted.fullName ||
+		[extracted.firstName, extracted.middleName, extracted.lastName].filter(Boolean).join(" ")
+	).trim()
+}
+
+function validateApplicationFormIdentity({ student = {}, studentId = "", extracted = {} }) {
+	const expectedStudentNumber = normalizeStudentNumber(
+		student?.studentnumber || student?.studentId || studentId,
+	)
+	const scannedStudentNumber = normalizeStudentNumber(extracted?.studentId)
+	const expectedName = buildFullNameFromParts(student)
+	const scannedName = buildScannedName(extracted)
+	const expectedSortedName = tokenSortName(expectedName)
+	const scannedSortedName = tokenSortName(scannedName)
+	const nameSimilarity = getLevenshteinSimilarity(expectedSortedName, scannedSortedName)
+	const hasReadableName = Boolean(expectedSortedName && scannedSortedName)
+	const passed = hasReadableName && nameSimilarity >= 0.7
+	const failedRules = []
+
+	if (!expectedName) failedRules.push("Missing expected student name from the account.")
+	if (!scannedName) failedRules.push("Student name was not readable in the uploaded application form.")
+	if (hasReadableName && nameSimilarity < 0.7) {
+		failedRules.push(`Name similarity too low: ${nameSimilarity}. Required at least 0.70.`)
+	}
+
+	return {
+		algorithm: "Weighted Record Linkage with Levenshtein Similarity",
+		passed,
+		thresholds: {
+			studentNumber: "Skipped for application form because the template has no student number field",
+			nameSimilarity: ">= 0.70",
+		},
+		score: nameSimilarity,
+		studentNumberMatched: Boolean(
+			expectedStudentNumber &&
+				scannedStudentNumber &&
+				expectedStudentNumber === scannedStudentNumber,
+		),
+		studentNumberRuleSkipped: true,
+		nameSimilarity,
+		failedRules,
+		expected: {
+			studentNumber: expectedStudentNumber,
+			name: expectedName,
+		},
+		scanned: {
+			studentNumber: scannedStudentNumber,
+			name: scannedName,
+		},
+		normalized: {
+			expectedName: normalizeIdentityText(expectedName),
+			scannedName: normalizeIdentityText(scannedName),
+			expectedSortedName,
+			scannedSortedName,
+		},
+		rawExtracted: extracted,
+	}
+}
+
+function isPreviewPdf(file = {}) {
+	const type = String(file?.type || file?.contentType || "").toLowerCase()
+	const name = String(file?.name || file?.url || "").toLowerCase()
+	return type.includes("pdf") || name.includes(".pdf")
+}
+
 export default function StudentProfilePage() {
 	const navigate = useNavigate()
 	const [user, setUser] = useState(null)
@@ -71,12 +198,16 @@ export default function StudentProfilePage() {
 	const [userMenuOpen, setUserMenuOpen] = useState(false)
 	const [isSaving, setIsSaving] = useState(false)
 	const [isPhotoUploading, setIsPhotoUploading] = useState(false)
+	const [isDownloadingApplicationForm, setIsDownloadingApplicationForm] = useState(false)
 	const [isDocumentUploading, setIsDocumentUploading] = useState({
 		cog: false,
 		schoolId: false,
 		applicationForm: false,
 	})
 	const [isLightboxOpen, setIsLightboxOpen] = useState(false)
+	const [previewDocument, setPreviewDocument] = useState(null)
+	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
+	const [isPreviewLoading, setIsPreviewLoading] = useState(false)
 	const userMenuRef = useRef(null)
 	const forcedLogoutRef = useRef(false)
 	const fileInputRef = useRef(null)
@@ -89,6 +220,10 @@ export default function StudentProfilePage() {
 	const canUploadCog = canUploadDocument(user?.cogFile, currentSemesterTag)
 	const canUploadSchoolId = canUploadDocument(user?.schoolIdFile, currentSemesterTag)
 	const canUploadApplicationForm = canUploadDocument(user?.scholarshipApplicationFile, currentSemesterTag)
+	const applicationScholarship = normalizeScholarshipList(user?.scholarships || []).find((item) => {
+		const status = String(item?.status || "").toLowerCase()
+		return !["rejected", "denied", "cancelled", "canceled", "expired"].some((value) => status.includes(value))
+	}) || null
 
 	const [formData, setFormData] = useState({
 		fname: "",
@@ -118,6 +253,40 @@ export default function StudentProfilePage() {
 		setIsLightboxOpen(true)
 	}
 
+	const openDocumentPreview = (title, file) => {
+		if (!file?.url) return
+		setPreviewDocument({
+			title,
+			url: file.url,
+			name: file.name || title,
+			isPdf: isPreviewPdf(file),
+		})
+	}
+
+	const closeDocumentPreview = () => {
+		setPreviewDocument(null)
+	}
+
+	const downloadPreviewDocument = async () => {
+		if (!previewDocument?.url) return
+		try {
+			const response = await fetch(previewDocument.url)
+			if (!response.ok) throw new Error(`download_failed_${response.status}`)
+			const blob = await response.blob()
+			const url = URL.createObjectURL(blob)
+			const link = document.createElement("a")
+			link.href = url
+			link.download = previewDocument.name || `${previewDocument.title}.pdf`
+			document.body.appendChild(link)
+			link.click()
+			document.body.removeChild(link)
+			URL.revokeObjectURL(url)
+		} catch (error) {
+			console.error("Failed to download document:", error)
+			toast.error("Unable to download the document.")
+		}
+	}
+
 	const triggerPhotoUpload = () => {
 		fileInputRef.current?.click()
 	}
@@ -132,6 +301,29 @@ export default function StudentProfilePage() {
 			return
 		}
 		schoolIdFileInputRef.current?.click()
+	}
+
+	const handleDownloadApplicationForm = async () => {
+		if (!user || !userId || isDownloadingApplicationForm) return
+		if (!applicationScholarship) {
+			toast.info("Apply for a scholarship before downloading its application form.")
+			return
+		}
+
+		setIsDownloadingApplicationForm(true)
+		try {
+			await exportApplicationFormPdfDocument({
+				student: user,
+				studentId: userId,
+				scholarship: applicationScholarship,
+			})
+			toast.success("Application form downloaded.")
+		} catch (error) {
+			console.error("Failed to generate application form:", error)
+			toast.error("Unable to download the application form.")
+		} finally {
+			setIsDownloadingApplicationForm(false)
+		}
 	}
 
 	const syncScholarshipApplicationDocuments = async ({
@@ -253,14 +445,16 @@ export default function StudentProfilePage() {
 		const mimeType = String(file.type || "").toLowerCase()
 		const isApplicationFormUpload = type === "applicationForm"
 		const isAllowedFile = isApplicationFormUpload
-			? mimeType.startsWith("image/") || /\.(png|jpe?g)$/i.test(file.name || "")
+			? mimeType.startsWith("image/") ||
+				mimeType === "application/pdf" ||
+				/\.(png|jpe?g|pdf)$/i.test(file.name || "")
 			: mimeType.startsWith("image/") ||
 				mimeType === "application/pdf" ||
 				/\.(png|jpe?g|pdf)$/i.test(file.name || "")
 		if (!isAllowedFile) {
 			toast.error(
 				isApplicationFormUpload
-					? "Scholarship application must be uploaded as PNG, JPG, or JPEG."
+					? "Scholarship application must be uploaded as PDF, PNG, JPG, or JPEG."
 					: "Only PNG, JPG, JPEG, and PDF files are allowed.",
 			)
 			return
@@ -269,12 +463,50 @@ export default function StudentProfilePage() {
 		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
 		try {
 			let fileToUpload = file
+			let applicationFormScan = null
 
 			// Convert PDF to image if needed (for COR and School ID)
 			if (isPdf(file) && (type === "cog" || type === "schoolId")) {
 				toast.info("Converting PDF to image...")
 				fileToUpload = await convertPdfToImageFile(file)
 				toast.success("PDF converted successfully!")
+			}
+
+			if (type === "applicationForm") {
+				toast.info("Checking application form identity...")
+				const scanResult = await scanStudentDocument(file, "application_form")
+				const extracted = scanResult?.extracted || {}
+				const identityCheck = validateApplicationFormIdentity({
+					student: user || {},
+					studentId: userId,
+					extracted,
+				})
+				applicationFormScan = {
+					checkedAt: new Date().toISOString(),
+					passed: identityCheck.passed,
+					extracted,
+					identityCheck,
+				}
+				console.log("Application form identity comparison:", {
+					expected: identityCheck.expected,
+					scanned: identityCheck.scanned,
+					normalized: identityCheck.normalized,
+					score: identityCheck.score,
+					nameSimilarity: identityCheck.nameSimilarity,
+					studentNumberMatched: identityCheck.studentNumberMatched,
+					studentNumberRuleSkipped: identityCheck.studentNumberRuleSkipped,
+					failedRules: identityCheck.failedRules,
+					algorithm: identityCheck.algorithm,
+					rawExtracted: extracted,
+				})
+
+				if (!identityCheck.passed) {
+					toast.error(
+						identityCheck.failedRules[0] ||
+							"Uploaded application form does not match your student information.",
+					)
+					return
+				}
 			}
 
 			const uploadResult = await uploadToStorage(fileToUpload)
@@ -291,6 +523,7 @@ export default function StudentProfilePage() {
 				size: uploadResult.size || fileToUpload.size,
 				uploadedAt: new Date().toISOString(),
 				semesterTag: currentSemesterTag,
+				...(applicationFormScan ? { scan: applicationFormScan } : {}),
 			}
 
 			await setDoc(
@@ -336,6 +569,52 @@ export default function StudentProfilePage() {
 		document.addEventListener("mousedown", handleClickOutside)
 		return () => document.removeEventListener("mousedown", handleClickOutside)
 	}, [userMenuOpen])
+
+	useEffect(() => {
+		if (!previewDocument?.url) {
+			setPreviewBlobUrl("")
+			setIsPreviewLoading(false)
+			return undefined
+		}
+
+		let cancelled = false
+		let objectUrl = ""
+		setIsPreviewLoading(true)
+		setPreviewBlobUrl("")
+
+		fetch(previewDocument.url)
+			.then((response) => {
+				if (!response.ok) throw new Error(`preview_failed_${response.status}`)
+				return response.blob()
+			})
+			.then(async (blob) => {
+				if (cancelled) return
+				if (previewDocument.isPdf) {
+					const pdfFile = new File([blob], previewDocument.name || "document.pdf", {
+						type: "application/pdf",
+					})
+					const previewImageBlob = await convertPdfToImage(pdfFile)
+					if (cancelled) return
+					objectUrl = URL.createObjectURL(previewImageBlob)
+				} else {
+					objectUrl = URL.createObjectURL(blob)
+				}
+				setPreviewBlobUrl(objectUrl)
+			})
+			.catch((error) => {
+				if (cancelled) return
+				console.error("Failed to load document preview:", error)
+				toast.error("Unable to preview the document. You can still download it.")
+			})
+			.finally(() => {
+				if (!cancelled) setIsPreviewLoading(false)
+			})
+
+		return () => {
+			cancelled = true
+			if (objectUrl) URL.revokeObjectURL(objectUrl)
+		}
+	}, [previewDocument])
 
 	useEffect(() => {
 		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
@@ -701,9 +980,13 @@ export default function StudentProfilePage() {
 											<p>{documentStatus(user?.corFile, currentSemesterTag)}</p>
 										</div>
 										{user?.corFile?.url ? (
-											<a href={user.corFile.url} target="_blank" rel="noreferrer" className="student-vault-link">
+											<button
+												type="button"
+												className="student-vault-link"
+												onClick={() => openDocumentPreview("Certificate of Registration (COR)", user.corFile)}
+											>
 												<HiOutlineDocumentText aria-hidden /> View COR
-											</a>
+											</button>
 										) : null}
 									</article>
 									<article className="student-vault-card">
@@ -713,14 +996,13 @@ export default function StudentProfilePage() {
 										</div>
 										<div className="student-vault-actions">
 											{user?.cogFile?.url ? (
-												<a
-													href={user.cogFile.url}
-													target="_blank"
-													rel="noreferrer"
+												<button
+													type="button"
 													className="student-vault-link"
+													onClick={() => openDocumentPreview("Certificate of Grades (COG)", user.cogFile)}
 												>
 													<HiOutlineDocumentText aria-hidden /> View COG
-												</a>
+												</button>
 											) : null}
 											{canUploadCog ? (
 												<button
@@ -752,14 +1034,13 @@ export default function StudentProfilePage() {
 										</div>
 										<div className="student-vault-actions">
 											{user?.schoolIdFile?.url ? (
-												<a
-													href={user.schoolIdFile.url}
-													target="_blank"
-													rel="noreferrer"
+												<button
+													type="button"
 													className="student-vault-link"
+													onClick={() => openDocumentPreview("Student ID", user.schoolIdFile)}
 												>
 													<HiOutlineDocumentText aria-hidden /> View Student ID
-												</a>
+												</button>
 											) : null}
 											{canUploadSchoolId ? (
 												<button
@@ -786,22 +1067,35 @@ export default function StudentProfilePage() {
 											/>
 										</div>
 									</article>
-									<article className="student-vault-card">
+									<article className="student-vault-card student-vault-card--application">
 										<div>
 											<h4>Scholarship Application</h4>
 											<p>{documentStatus(user?.scholarshipApplicationFile, currentSemesterTag)}</p>
 										</div>
 										<div className="student-vault-actions">
 											{user?.scholarshipApplicationFile?.url ? (
-												<a
-													href={user.scholarshipApplicationFile.url}
-													target="_blank"
-													rel="noreferrer"
+												<button
+													type="button"
 													className="student-vault-link"
+													onClick={() =>
+														openDocumentPreview(
+															"Scholarship Application Form",
+															user.scholarshipApplicationFile,
+														)
+													}
 												>
-													<HiOutlineDocumentText aria-hidden /> View Application
-												</a>
+													<HiOutlineEye aria-hidden /> View Form
+												</button>
 											) : null}
+											<button
+												type="button"
+												className="student-vault-link"
+												onClick={handleDownloadApplicationForm}
+												disabled={isDownloadingApplicationForm}
+											>
+												<HiOutlineDownload aria-hidden />
+												{isDownloadingApplicationForm ? "Preparing..." : "Download Form"}
+											</button>
 											{canUploadApplicationForm ? (
 												<button
 													type="button"
@@ -817,7 +1111,7 @@ export default function StudentProfilePage() {
 											<input
 												ref={applicationFormFileInputRef}
 												type="file"
-												accept=".png,.jpg,.jpeg,image/*"
+												accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
 												className="student-profile-file-input"
 												onChange={(e) => {
 													const file = e.target.files?.[0]
@@ -857,6 +1151,65 @@ export default function StudentProfilePage() {
 									alt="Profile preview"
 									className="student-photo-lightbox-image"
 								/>
+							</div>
+						</div>
+					)}
+
+					{previewDocument && (
+						<div
+							className="student-document-preview-backdrop"
+							role="dialog"
+							aria-modal="true"
+							aria-label={`${previewDocument.title} preview`}
+							onClick={closeDocumentPreview}
+						>
+							<div
+								className="student-document-preview-modal"
+								onClick={(e) => e.stopPropagation()}
+							>
+								<header className="student-document-preview-head">
+									<div>
+										<span>Document Preview</span>
+										<h3>{previewDocument.title}</h3>
+										<p>{previewDocument.name}</p>
+									</div>
+									<div className="student-document-preview-actions">
+										<button
+											type="button"
+											className="student-document-preview-open"
+											onClick={downloadPreviewDocument}
+										>
+											<HiOutlineDownload aria-hidden /> Download
+										</button>
+										<button
+											type="button"
+											className="student-document-preview-close"
+											onClick={closeDocumentPreview}
+											aria-label="Close document preview"
+										>
+											<HiOutlineX aria-hidden />
+										</button>
+									</div>
+								</header>
+								<div className="student-document-preview-body">
+									{isPreviewLoading ? (
+										<div className="student-document-preview-state">
+											<HiOutlineDocumentText aria-hidden />
+											<span>Loading preview...</span>
+										</div>
+									) : !previewBlobUrl ? (
+										<div className="student-document-preview-state">
+											<HiOutlineDocumentText aria-hidden />
+											<span>Preview is unavailable.</span>
+										</div>
+									) : (
+										<img
+											src={previewBlobUrl}
+											alt={`${previewDocument.title} preview`}
+											className="student-document-preview-image"
+										/>
+									)}
+								</div>
 							</div>
 						</div>
 					)}

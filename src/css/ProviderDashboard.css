@@ -584,7 +584,7 @@
 	gap: 0.4rem;
 	width: 100%;
 	min-height: 36px;
-	margin-top: auto;
+	margin-top: 0.75rem;
 	border: 1px solid #00633c;
 	border-radius: 5px;
 	background: transparent;
@@ -686,7 +686,18 @@
 .grantor-profile-form-grid select:focus { border-color: #00633c; outline: 2px solid rgba(0, 99, 60, 0.1); }
 .grantor-profile-form-grid input:disabled,
 .grantor-profile-form-grid select:disabled { background: #f4f7f5; color: #94a3b8; }
-.grantor-profile-form-actions { display: flex; justify-content: flex-end; margin-top: 0.9rem; padding-top: 0.75rem; border-top: 1px solid #e5ece8; }
+.grantor-profile-form-actions {
+	position: sticky;
+	bottom: 0;
+	z-index: 2;
+	display: flex;
+	justify-content: flex-end;
+	margin: 0.9rem -1.2rem -1rem;
+	padding: 0.75rem 1.2rem 1rem;
+	border-top: 1px solid #e5ece8;
+	background: rgba(255, 255, 255, 0.96);
+	backdrop-filter: blur(8px);
+}
 
 @media (min-width: 769px) {
 	.grantor-workspace--profile {
@@ -719,12 +730,12 @@
 .grantor-applications-summary span { overflow: hidden; color: #64748b; font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
 .grantor-applications-summary strong { color: #17342a; font-size: 1rem; font-weight: 600; }
 
-.grantor-applications-filters { display: grid; grid-template-columns: minmax(260px, 1fr) 180px; gap: 1rem; padding: 0.85rem 0; border-bottom: 1px solid #dce7e1; }
-.grantor-applications-filters .grantor-search-field { min-height: 40px; }
+.grantor-applications-filters { display: grid; grid-template-columns: auto minmax(320px, 1fr) minmax(170px, 210px); align-items: center; gap: 0.75rem; padding: 0.85rem 0; border-bottom: 1px solid #dce7e1; }
+.grantor-applications-filters .grantor-search-field { min-height: 40px; min-width: 0; }
 .grantor-applications-filters input,
 .grantor-applications-filters select { width: 100%; height: 40px; border: 0; border-bottom: 1px solid #9fb2a8; border-radius: 0; background: #fff; color: #17342a; font: inherit; font-size: 0.78rem; }
 .grantor-applications-filters input { padding: 0 0.4rem 0 2rem; }
-.grantor-applications-filters select { padding: 0 0.35rem; }
+.grantor-applications-filters select { padding: 0 0.35rem; min-width: 0; }
 .grantor-applications-filters input:focus,
 .grantor-applications-filters select:focus { border-bottom-color: #00633c; outline: 0; }
 
@@ -813,13 +824,17 @@
 .grantor-announcement-compose-form label { display: grid; gap: 0.35rem; min-width: 0; color: #52675f; font-size: 0.7rem; font-weight: 600; }
 .grantor-announcement-requirements { display: grid; gap: 0.45rem; min-width: 0; }
 .grantor-announcement-requirements > span { color: #52675f; font-size: 0.7rem; font-weight: 600; }
-.grantor-announcement-requirements > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 0.45rem; min-height: 39px; }
+.grantor-announcement-requirements { grid-column: 1 / -1; }
+.grantor-announcement-requirements > div { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; min-height: 39px; }
 .grantor-announcement-requirements label { display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.35rem; min-width: 0; min-height: 31px; padding: 0 0.55rem; border: 1px solid #cddbd4; border-radius: 4px; background: #fff; color: #17342a; font-size: 0.72rem; font-weight: 500; cursor: pointer; }
 .grantor-announcement-compose-form .grantor-announcement-requirements input[type="checkbox"] { flex: 0 0 14px; width: 14px; height: 14px; padding: 0; accent-color: #00633c; }
-.grantor-announcement-requirements label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grantor-announcement-requirements label span { white-space: nowrap; }
+.grantor-announcement-checkbox-control { display: flex; align-items: center; gap: 0.5rem; min-height: 39px; padding: 0 0.65rem; border: 1px solid #cddbd4; border-radius: 4px; background: #fff; color: #17342a; font-size: 0.74rem; font-weight: 500; cursor: pointer; }
+.grantor-announcement-compose-form .grantor-announcement-checkbox-control input[type="checkbox"] { flex: 0 0 14px; width: 14px; height: 14px; padding: 0; accent-color: #00633c; }
 .grantor-announcement-other-requirements { display: grid; grid-column: 1 / -1; gap: 0.55rem; }
 .grantor-announcement-other-add { justify-self: start; min-height: 32px; padding: 0 0.7rem; border: 1px solid #00633c; border-radius: 4px; background: transparent; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
 .grantor-announcement-other-add:hover { background: #edf7f2; }
+.grantor-announcement-other-add:disabled { border-color: #cbd5e1; background: transparent; color: #94a3b8; cursor: not-allowed; }
 .grantor-announcement-other-list { display: grid; gap: 0.55rem; }
 .grantor-announcement-other-row { display: grid; grid-template-columns: minmax(180px, 1fr) 120px 130px 32px; align-items: end; gap: 0.55rem; padding: 0.65rem; border: 1px solid #dce7e1; border-radius: 5px; background: #fff; }
 .grantor-announcement-other-row label { display: grid; gap: 0.32rem; }
@@ -915,6 +930,7 @@
 .grantor-announcement-view-modal > footer span { display: inline-flex; align-items: center; gap: 0.4rem; color: #00633c; font-size: 0.72rem; font-weight: 500; }
 
 .grantor-calendar-modal { width: min(430px, calc(100vw - 2rem)); padding: 1rem; border: 1px solid #cddbd4; border-radius: 7px; background: #fff; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22); }
+.grantor-calendar-backdrop { z-index: 160; }
 .grantor-calendar-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding-bottom: 0.8rem; border-bottom: 1px solid #e1e9e5; }
 .grantor-calendar-modal > header h3 { margin: 0; color: #17342a; font-size: 1rem; font-weight: 600; }
 .grantor-calendar-modal > header p { margin: 0.2rem 0 0; color: #64748b; font-size: 0.7rem; }
@@ -2712,6 +2728,7 @@
 .grantor-portal--dark .grantor-profile-account-meta .grantor-profile-apply-control,
 .grantor-portal--dark .grantor-profile-form > section + section,
 .grantor-portal--dark .grantor-profile-form-actions { border-color: #334155; }
+.grantor-portal--dark .grantor-profile-form-actions { background: rgba(17, 24, 39, 0.96); }
 .grantor-portal--dark .grantor-profile-form-grid label { color: #cbd5e1; }
 .grantor-portal--dark .grantor-profile-form-grid input,
 .grantor-portal--dark .grantor-profile-form-grid select { border-color: #475569; background: #0f172a; color: #f8fafc; }
@@ -2769,6 +2786,7 @@
 .grantor-portal--dark .grantor-announcement-calendar-btn,
 .grantor-portal--dark .grantor-announcement-images label,
 .grantor-portal--dark .grantor-announcement-requirements label,
+.grantor-portal--dark .grantor-announcement-checkbox-control,
 .grantor-portal--dark .grantor-announcement-other-row,
 .grantor-portal--dark .grantor-announcement-other-row select,
 .grantor-portal--dark .grantor-announcement-other-row > button,
@@ -2805,6 +2823,7 @@
 .grantor-portal--dark .grantor-announcement-history h3,
 .grantor-portal--dark .grantor-announcement-images label span,
 .grantor-portal--dark .grantor-announcement-requirements label,
+.grantor-portal--dark .grantor-announcement-checkbox-control,
 .grantor-portal--dark .grantor-announcement-other-row select,
 .grantor-portal--dark .grantor-announcement-card h4,
 .grantor-portal--dark .grantor-announcement-author strong,
@@ -2826,11 +2845,14 @@
 .grantor-portal--dark .grantor-announcement-compose-form textarea,
 .grantor-portal--dark .grantor-announcement-calendar-btn,
 .grantor-portal--dark .grantor-announcement-requirements label,
+.grantor-portal--dark .grantor-announcement-checkbox-control,
 .grantor-portal--dark .grantor-announcement-other-row,
 .grantor-portal--dark .grantor-announcement-other-row select { border-color: #475569; }
 .grantor-portal--dark .grantor-announcement-requirements > span { color: #cbd5e1; }
 .grantor-portal--dark .grantor-announcement-other-add { border-color: #34d399; color: #6ee7b7; }
 .grantor-portal--dark .grantor-announcement-other-add:hover { background: rgba(0, 99, 60, 0.2); }
+.grantor-portal--dark .grantor-announcement-other-add:disabled,
+.grantor-portal--dark .grantor-announcement-other-add:disabled:hover { border-color: #475569; background: transparent; color: #64748b; }
 .grantor-portal--dark .grantor-announcement-other-row > button { border-color: #7f1d1d; color: #fca5a5; }
 .grantor-portal--dark .grantor-announcement-compose-form input.is-missing,
 .grantor-portal--dark .grantor-announcement-compose-form textarea.is-missing,
@@ -3298,12 +3320,12 @@
 
 /* Grantor application review modal refresh */
 .admin-detail-shell--student:has(.grantor-modal) {
-	width: min(680px, calc(100vw - 2rem));
+	width: min(560px, calc(100vw - 2rem));
 	margin: clamp(2.5rem, 9vh, 5.5rem) auto 1.5rem;
 }
 
 .grantor-modal.admin-detail-modal--student {
-	width: min(680px, calc(100vw - 2rem));
+	width: min(560px, calc(100vw - 2rem));
 	max-height: min(86vh, 760px);
 	overflow: auto;
 	border: 1px solid #dce7e1;
@@ -3411,7 +3433,9 @@
 
 .grantor-application-section-stack {
 	display: grid;
-	gap: 0.65rem;
+	grid-template-columns: minmax(0, 1fr);
+	align-items: start;
+	gap: 0.75rem;
 	margin-top: 0.65rem;
 }
 
@@ -3419,6 +3443,7 @@
 	border-color: transparent;
 	background: #fbfdfc;
 	box-shadow: none;
+	grid-row: auto;
 }
 
 .grantor-application-card h4 {
@@ -3445,15 +3470,15 @@
 
 .grantor-application-info-list {
 	display: grid;
-	grid-template-columns: 1fr;
-	gap: 0;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0 1.5rem;
 }
 
 .grantor-application-info-list p {
-	display: grid;
-	grid-template-columns: 150px minmax(0, 1fr);
-	align-items: start;
-	gap: 0.75rem;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.28rem;
 	margin: 0;
 	padding: 0.55rem 0;
 	border: 0;
@@ -3472,11 +3497,16 @@
 	font-size: 0.72rem;
 }
 
+.grantor-application-info-list span::after {
+	content: ":";
+}
+
 .grantor-application-info-list strong {
 	font-size: 0.82rem;
 	font-weight: 600;
 	line-height: 1.45;
-	text-align: right;
+	text-align: left;
+	overflow-wrap: anywhere;
 }
 
 .grantor-document-link {
@@ -3485,11 +3515,13 @@
 	border-radius: 0;
 	background: transparent;
 	color: #17342a;
+	font-family: inherit;
+	cursor: pointer;
 }
 
 .grantor-application-card--documents .grantor-document-links {
-	grid-template-columns: 1fr;
-	gap: 0;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.45rem 0.65rem;
 }
 
 .grantor-document-link strong {
@@ -3508,11 +3540,321 @@
 .grantor-document-link.is-disabled {
 	color: #94a3b8;
 	opacity: 1;
+	cursor: not-allowed;
 }
 
 .grantor-document-link.is-disabled strong {
 	border-color: transparent;
 	color: #94a3b8;
+}
+
+.grantor-document-preview-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 180;
+	display: grid;
+	place-items: center;
+	padding: 1.25rem;
+	background: rgba(15, 23, 42, 0.64);
+	backdrop-filter: blur(6px);
+}
+
+.grantor-document-preview-modal {
+	width: min(900px, 100%);
+	max-height: min(84vh, 800px);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid #dce7e1;
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 0 22px 70px rgba(15, 23, 42, 0.22);
+}
+
+.grantor-document-preview-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem 1.1rem;
+	border-bottom: 1px solid #dce7e1;
+}
+
+.grantor-document-preview-head span {
+	display: block;
+	margin-bottom: 0.2rem;
+	color: #00633c;
+	font-size: 0.68rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+}
+
+.grantor-document-preview-head h3 {
+	margin: 0;
+	color: #17342a;
+	font-size: 1rem;
+	font-weight: 600;
+}
+
+.grantor-document-preview-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+}
+
+.grantor-document-preview-download,
+.grantor-document-preview-close {
+	min-height: 34px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.35rem;
+	border: 1px solid #b9d8ca;
+	border-radius: 6px;
+	background: #fff;
+	color: #00633c;
+	font-family: inherit;
+	font-size: 0.75rem;
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.grantor-document-preview-download {
+	padding: 0 0.75rem;
+}
+
+.grantor-document-preview-close {
+	width: 34px;
+	padding: 0;
+}
+
+.grantor-document-preview-body {
+	min-height: 420px;
+	flex: 1;
+	display: grid;
+	place-items: center;
+	overflow: auto;
+	background: #f8fffb;
+}
+
+.grantor-document-preview-image {
+	width: 100%;
+	max-width: 860px;
+	max-height: min(68vh, 660px);
+	object-fit: contain;
+	padding: 1rem;
+}
+
+.grantor-document-preview-state {
+	min-height: 280px;
+	display: grid;
+	place-items: center;
+	align-content: center;
+	gap: 0.65rem;
+	color: #64748b;
+	font-size: 0.82rem;
+}
+
+.grantor-document-preview-state svg {
+	width: 2rem;
+	height: 2rem;
+	color: #00633c;
+}
+
+.grantor-application-tabs {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.2rem;
+	border: 1px solid #dce7e1;
+	border-radius: 8px;
+	background: #fff;
+	white-space: nowrap;
+}
+
+.grantor-application-tabs button {
+	min-height: 34px;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0 0.65rem;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: #52647a;
+	font-family: inherit;
+	font-size: 0.75rem;
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.grantor-application-tabs button.active {
+	background: #eef8f3;
+	color: #00633c;
+}
+
+.grantor-application-tabs button span {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 20px;
+	height: 20px;
+	padding: 0 0.35rem;
+	border-radius: 999px;
+	background: #f1f5f9;
+	color: inherit;
+	font-size: 0.68rem;
+}
+
+.grantor-reject-application-btn {
+	border-color: #dc2626 !important;
+	background: #fff !important;
+	color: #dc2626 !important;
+}
+
+.grantor-reject-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 190;
+	display: grid;
+	place-items: center;
+	padding: 1rem;
+	background: rgba(15, 23, 42, 0.64);
+	backdrop-filter: blur(6px);
+}
+
+.grantor-reject-modal {
+	width: min(520px, 100%);
+	overflow: hidden;
+	border: 1px solid #fecaca;
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 0 22px 70px rgba(127, 29, 29, 0.22);
+}
+
+.grantor-reject-modal-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem 1.1rem;
+	border-bottom: 1px solid #fee2e2;
+}
+
+.grantor-reject-modal-head span {
+	display: block;
+	margin-bottom: 0.2rem;
+	color: #dc2626;
+	font-size: 0.68rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.grantor-reject-modal-head h3 {
+	margin: 0;
+	color: #7f1d1d;
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.grantor-reject-modal-head p {
+	margin: 0.35rem 0 0;
+	color: #7f1d1d;
+	font-size: 0.78rem;
+	line-height: 1.5;
+}
+
+.grantor-reject-modal-head button {
+	width: 34px;
+	height: 34px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid #fecaca;
+	border-radius: 50%;
+	background: #fff;
+	color: #dc2626;
+	cursor: pointer;
+}
+
+.grantor-reject-modal-body {
+	display: grid;
+	gap: 0.85rem;
+	padding: 1rem 1.1rem;
+}
+
+.grantor-reject-modal-body label {
+	display: grid;
+	gap: 0.35rem;
+	color: #17342a;
+	font-size: 0.78rem;
+	font-weight: 600;
+}
+
+.grantor-reject-modal-body select,
+.grantor-reject-modal-body textarea {
+	width: 100%;
+	border: 1px solid #dce7e1;
+	border-radius: 6px;
+	background: #fff;
+	color: #0f172a;
+	font-family: inherit;
+	font-size: 0.82rem;
+}
+
+.grantor-reject-modal-body select {
+	min-height: 40px;
+	padding: 0 0.7rem;
+}
+
+.grantor-reject-modal-body textarea {
+	resize: vertical;
+	min-height: 92px;
+	padding: 0.7rem;
+}
+
+.grantor-reject-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.65rem;
+	padding: 0.9rem 1.1rem 1rem;
+	border-top: 1px solid #f1f5f9;
+}
+
+.grantor-reject-cancel-btn,
+.grantor-reject-confirm-btn {
+	min-height: 36px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	border-radius: 6px;
+	font-family: inherit;
+	font-size: 0.78rem;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.grantor-reject-cancel-btn {
+	border: 1px solid #dce7e1;
+	background: #fff;
+	color: #52647a;
+	padding: 0 0.9rem;
+}
+
+.grantor-reject-confirm-btn {
+	border: 1px solid #dc2626;
+	background: #dc2626;
+	color: #fff;
+	padding: 0 1rem;
+}
+
+.grantor-reject-cancel-btn:disabled,
+.grantor-reject-confirm-btn:disabled {
+	opacity: 0.65;
+	cursor: wait;
 }
 
 .grantor-tracking-step {
@@ -3528,8 +3870,12 @@
 }
 
 .grantor-application-actions {
-	margin-top: 0.65rem;
-	padding-top: 0.7rem;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.55rem;
+	margin-top: 0.7rem;
+	padding-top: 0.75rem;
 	border-top: 0;
 }
 
@@ -3538,13 +3884,33 @@
 	align-items: center;
 	justify-content: center;
 	gap: 0.45rem;
-	border-radius: 6px;
+	min-height: 38px;
+	padding: 0 0.9rem;
+	border-radius: 7px;
+	font-size: 0.78rem;
 	font-weight: 600;
+	line-height: 1;
+	white-space: nowrap;
 }
 
 .grantor-application-actions .admin-export-btn svg {
-	width: 0.95rem;
-	height: 0.95rem;
+	flex: 0 0 auto;
+	width: 0.9rem;
+	height: 0.9rem;
+}
+
+.grantor-application-actions .grantor-reject-application-btn {
+	border-color: #ef4444 !important;
+	background: #fff !important;
+	color: #dc2626 !important;
+	box-shadow: none !important;
+}
+
+.grantor-application-actions .grantor-reject-application-btn:hover {
+	background: #fff5f5 !important;
+	border-color: #dc2626 !important;
+	color: #b91c1c !important;
+	transform: none;
 }
 
 .grantor-application-actions .admin-export-btn:disabled {
@@ -3674,6 +4040,71 @@
 	color: #64748b;
 }
 
+.grantor-portal--dark .grantor-document-preview-modal,
+.grantor-portal--dark .grantor-document-preview-download,
+.grantor-portal--dark .grantor-document-preview-close {
+	border-color: #334155;
+	background: #111827;
+	color: #6ee7b7;
+}
+
+.grantor-portal--dark .grantor-document-preview-head {
+	border-bottom-color: #334155;
+}
+
+.grantor-portal--dark .grantor-document-preview-head h3 {
+	color: #f8fafc;
+}
+
+.grantor-portal--dark .grantor-document-preview-body {
+	background: #0f172a;
+}
+
+.grantor-portal--dark .grantor-application-tabs,
+.grantor-portal--dark .grantor-reject-modal,
+.grantor-portal--dark .grantor-reject-modal-head button,
+.grantor-portal--dark .grantor-reject-cancel-btn {
+	border-color: #334155;
+	background: #111827;
+}
+
+.grantor-portal--dark .grantor-application-tabs button {
+	color: #cbd5e1;
+}
+
+.grantor-portal--dark .grantor-application-tabs button.active {
+	background: rgba(0, 99, 60, 0.24);
+	color: #6ee7b7;
+}
+
+.grantor-portal--dark .grantor-reject-modal-head {
+	border-bottom-color: #334155;
+}
+
+.grantor-portal--dark .grantor-reject-modal-head h3,
+.grantor-portal--dark .grantor-reject-modal-body label {
+	color: #f8fafc;
+}
+
+.grantor-portal--dark .grantor-reject-modal-head p {
+	color: #fecaca;
+}
+
+.grantor-portal--dark .grantor-reject-modal-body select,
+.grantor-portal--dark .grantor-reject-modal-body textarea {
+	border-color: #334155;
+	background: #0f172a;
+	color: #f8fafc;
+}
+
+.grantor-portal--dark .grantor-reject-modal-actions {
+	border-top-color: #334155;
+}
+
+.grantor-portal--dark .grantor-reject-cancel-btn {
+	color: #cbd5e1;
+}
+
 .grantor-portal--dark .grantor-modal.admin-detail-modal--student,
 .grantor-portal--dark .grantor-application-summary-card,
 .grantor-portal--dark .grantor-application-card {
@@ -3721,6 +4152,19 @@
 }
 
 @media (max-width: 860px) {
+	.admin-detail-shell--student:has(.grantor-modal),
+	.grantor-modal.admin-detail-modal--student {
+		width: min(560px, calc(100vw - 2rem));
+	}
+
+	.grantor-application-section-stack {
+		grid-template-columns: 1fr;
+	}
+
+	.grantor-application-card--student {
+		grid-row: auto;
+	}
+
 	.grantor-application-info-list {
 		grid-template-columns: 1fr;
 	}
@@ -3736,6 +4180,11 @@
 	.grantor-application-actions > button {
 		width: 100%;
 	}
+
+	.grantor-application-actions {
+		flex-direction: column-reverse;
+		align-items: stretch;
+	}
 }
 
 @media (max-width: 560px) {
@@ -3748,7 +4197,6 @@
 	}
 
 	.grantor-application-info-list p {
-		grid-template-columns: 1fr;
 		gap: 0.2rem;
 	}
 

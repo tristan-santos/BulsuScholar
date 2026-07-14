@@ -47,6 +47,18 @@ def build_grantor_notification_payload(grantor_id: str, title: str, message: str
     }
 
 
+def build_admin_notification_payload(title: str, message: str, notification_type: str = "notification", extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "title": title,
+        "message": message,
+        "type": notification_type,
+        "read": False,
+        "archived": False,
+        "createdAt": utc_now_iso(),
+        **(extra or {}),
+    }
+
+
 def expand_dotted_keys(payload: dict[str, Any]) -> dict[str, Any]:
     expanded: dict[str, Any] = {}
     for key, value in (payload or {}).items():
@@ -137,7 +149,11 @@ def supabase_rest_insert(table: str, payload: dict[str, Any]) -> dict[str, Any]:
             data = json.loads(response.read().decode("utf-8") or "[]")
             return {"ok": True, "data": data}
     except urllib.error.HTTPError as error:
-        return {"ok": False, "status": error.code, "detail": error.read().decode("utf-8")}
+        detail = error.read().decode("utf-8")
+        reason = "supabase_http_error"
+        if error.code == 404 and "PGRST205" in detail:
+            reason = "missing_or_unloaded_supabase_table"
+        return {"ok": False, "status": error.code, "reason": reason, "table": table, "detail": detail}
 
 
 def supabase_document_insert(table: str, payload: dict[str, Any], parent_id: str | None = None) -> dict[str, Any]:
@@ -327,15 +343,70 @@ def supabase_document_delete(table: str, record_id: str, parent_id: str | None =
 
 
 def create_log(payload: dict[str, Any]) -> dict[str, Any]:
-    return supabase_rest_insert("systemLogs", payload)
+    data = dict(payload)
+    data.setdefault("createdAt", utc_now_iso())
+    return supabase_document_insert("systemLogs", data)
 
 
 def create_student_notification(payload: dict[str, Any]) -> dict[str, Any]:
-    return supabase_document_insert("studentNotifications", payload)
+    data = dict(payload)
+    if not isinstance(data.get("createdAt"), str):
+        data["createdAt"] = utc_now_iso()
+    result = supabase_document_insert("studentNotifications", data)
+    if result.get("reason") == "missing_or_unloaded_supabase_table":
+        fallback_data = {
+            **data,
+            "source": data.get("source") or "personal",
+            "notificationFallbackTable": "student_warnings",
+        }
+        fallback_result = supabase_document_insert("student_warnings", fallback_data)
+        return {
+            **fallback_result,
+            "fallback": True,
+            "requestedTable": "studentNotifications",
+            "table": "student_warnings",
+            "originalError": result,
+        }
+    return result
 
 
 def create_grantor_notification(payload: dict[str, Any]) -> dict[str, Any]:
-    return supabase_document_insert("grantorNotifications", payload)
+    data = dict(payload)
+    if not isinstance(data.get("createdAt"), str):
+        data["createdAt"] = utc_now_iso()
+    result = supabase_document_insert("grantorNotifications", data)
+    if result.get("reason") == "missing_or_unloaded_supabase_table":
+        fallback_data = {
+            **data,
+            "source": data.get("source") or "personal",
+            "notificationFallbackTable": "systemLogs",
+            "action": data.get("type") or "grantor_notification",
+            "actorId": data.get("grantorId") or "",
+            "actorType": "grantor",
+        }
+        fallback_result = supabase_document_insert("systemLogs", fallback_data)
+        return {
+            **fallback_result,
+            "fallback": True,
+            "requestedTable": "grantorNotifications",
+            "table": "systemLogs",
+            "originalError": result,
+        }
+    return result
+
+
+def create_admin_notification(payload: dict[str, Any]) -> dict[str, Any]:
+    data = dict(payload)
+    if not isinstance(data.get("createdAt"), str):
+        data["createdAt"] = utc_now_iso()
+    data.setdefault("read", False)
+    data.setdefault("archived", False)
+    data.update({
+        "notificationFallbackTable": "adminNotifications",
+        "action": data.get("type") or "admin_notification",
+        "actorType": data.get("actorType") or "system",
+    })
+    return supabase_document_insert("systemLogs", data)
 
 
 def update_student_notification(notification_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -346,9 +417,17 @@ def update_grantor_notification(notification_id: str, payload: dict[str, Any]) -
     return supabase_document_update("grantorNotifications", notification_id, payload)
 
 
+def update_admin_notification(notification_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return supabase_document_update("systemLogs", notification_id, payload)
+
+
 def delete_student_notification(notification_id: str) -> dict[str, Any]:
     return supabase_document_delete("studentNotifications", notification_id)
 
 
 def delete_grantor_notification(notification_id: str) -> dict[str, Any]:
     return supabase_document_delete("grantorNotifications", notification_id)
+
+
+def delete_admin_notification(notification_id: str) -> dict[str, Any]:
+    return supabase_document_delete("systemLogs", notification_id)

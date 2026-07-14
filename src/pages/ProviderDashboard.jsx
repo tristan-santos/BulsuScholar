@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
 	collection,
+	deleteDoc,
 	doc,
 	getDoc,
 	getDocs,
 	onSnapshot,
 	query,
 	serverTimestamp,
+	setDoc,
 	where,
 } from "../services/supabaseDataService"
 import {
@@ -34,6 +36,7 @@ import {
 	HiOutlineCalendar,
 	HiOutlineCloudUpload,
 	HiOutlineDocumentText,
+	HiOutlineDownload,
 	HiOutlineEye,
 	HiOutlineExclamationCircle,
 	HiOutlineAcademicCap,
@@ -66,8 +69,8 @@ import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
 import { uploadToStorage } from "../services/storageService"
+import { convertPdfToImage } from "../utils/pdfConverter"
 import {
-	createGrantorNotification,
 	createStudentNotification,
 	deleteGrantorNotification as deleteGrantorNotificationRecord,
 	updateGrantorNotification,
@@ -141,10 +144,19 @@ const COURSE_OPTIONS = [
 ]
 const SCHOLAR_TABS = ["active", "archived"]
 const GRANTOR_COMPLETABLE_STEP_LABELS = {
+	document_review: "Document Review",
 	interview: "Interview",
 	application_review: "Application Review",
 	final_screening: "Final Screening",
 }
+const APPLICATION_REJECTION_REASONS = [
+	"Incomplete Documents",
+	"Information Mismatch",
+	"Does Not Meet Requirements",
+	"Duplicate Scholarship Application",
+	"Outside Application Window",
+	"Other",
+]
 const SCHOLAR_FORM = {
 	studentId: "",
 	fname: "",
@@ -170,6 +182,7 @@ const ANNOUNCEMENT_FORM = {
 	applicationWindow: "",
 	applicationEnabled: false,
 	minimumGrade: "",
+	acceptIrregularStudents: false,
 	requiredDocuments: {
 		cog: false,
 		cor: false,
@@ -570,6 +583,7 @@ export default function ProviderDashboard() {
 	const [yearFilter, setYearFilter] = useState("All")
 	const [applicationSearch, setApplicationSearch] = useState("")
 	const [applicationStatusFilter, setApplicationStatusFilter] = useState("All")
+	const [applicationArchiveTab, setApplicationArchiveTab] = useState("active")
 	const [selectedScholarId, setSelectedScholarId] = useState("")
 	const [selectedScholarIds, setSelectedScholarIds] = useState([])
 	const [hoveredYear, setHoveredYear] = useState("")
@@ -629,6 +643,12 @@ export default function ProviderDashboard() {
 		latestMaterialRequest: null,
 		latestSoeDownload: null,
 	})
+	const [previewDocument, setPreviewDocument] = useState(null)
+	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
+	const [isPreviewLoading, setIsPreviewLoading] = useState(false)
+	const [rejectModalOpen, setRejectModalOpen] = useState(false)
+	const [rejectReason, setRejectReason] = useState(APPLICATION_REJECTION_REASONS[0])
+	const [rejectNotes, setRejectNotes] = useState("")
 	const [busy, setBusy] = useState("")
 	const [tablePages, setTablePages] = useState({})
 	const grantorId = session.storedUserId || ""
@@ -638,6 +658,40 @@ export default function ProviderDashboard() {
 		return `${parts[0]?.[0] || "G"}${parts.length > 1 ? parts[parts.length - 1][0] : ""}`.toUpperCase()
 	}, [grantorName])
 	const grantorProfileImageUrl = profile?.profileImageUrl || profile?.imageUrl || ""
+	const isPreviewPdf = (file = {}) => {
+		const type = String(file?.type || file?.contentType || "").toLowerCase()
+		const name = String(file?.name || file?.url || "").toLowerCase()
+		return type.includes("pdf") || name.includes(".pdf")
+	}
+	const openDocumentPreview = (title, url) => {
+		if (!url) return
+		setPreviewDocument({
+			title,
+			url,
+			name: title,
+			isPdf: isPreviewPdf({ url }),
+		})
+	}
+	const closeDocumentPreview = () => setPreviewDocument(null)
+	const downloadPreviewDocument = async () => {
+		if (!previewDocument?.url) return
+		try {
+			const response = await fetch(previewDocument.url)
+			if (!response.ok) throw new Error(`download_failed_${response.status}`)
+			const blob = await response.blob()
+			const url = URL.createObjectURL(blob)
+			const link = document.createElement("a")
+			link.href = url
+			link.download = previewDocument.name || "document"
+			document.body.appendChild(link)
+			link.click()
+			document.body.removeChild(link)
+			URL.revokeObjectURL(url)
+		} catch (error) {
+			console.error("Failed to download grantor document:", error)
+			toast.error("Unable to download the document.")
+		}
+	}
 	const renderAnnouncementAuthor = (item = {}) => {
 		const isCurrentGrantor = !item.grantorId || item.grantorId === grantorId
 		const authorName = isCurrentGrantor ? "You" : item.grantorName || item.providerLabel || "Grantor"
@@ -846,15 +900,43 @@ export default function ProviderDashboard() {
 
 	useEffect(() => {
 		if (!grantorId) return
-		return onSnapshot(
+		let notificationRows = []
+		let fallbackRows = []
+		const updateGrantorInboxRows = () => {
+			setPersonalNotifications(
+				[...notificationRows, ...fallbackRows].sort(
+					(a, b) => (toJsDate(b.createdAt)?.getTime() || 0) - (toJsDate(a.createdAt)?.getTime() || 0),
+				),
+			)
+		}
+		const unsubscribeNotifications = onSnapshot(
 			query(collection(db, "grantorNotifications"), where("grantorId", "==", grantorId)),
-			(snap) => setPersonalNotifications(
-				snap.docs
-					.map((row) => ({ id: row.id, ...(row.data() || {}) }))
-					.sort((a, b) => (toJsDate(b.createdAt)?.getTime() || 0) - (toJsDate(a.createdAt)?.getTime() || 0)),
-			),
-			() => setPersonalNotifications([]),
+			(snap) => {
+				notificationRows = snap.docs.map((row) => ({ id: row.id, sourceTable: "grantorNotifications", ...(row.data() || {}) }))
+				updateGrantorInboxRows()
+			},
+			() => {
+				notificationRows = []
+				updateGrantorInboxRows()
+			},
 		)
+		const unsubscribeFallback = onSnapshot(
+			query(collection(db, "systemLogs"), where("grantorId", "==", grantorId)),
+			(snap) => {
+				fallbackRows = snap.docs
+					.map((row) => ({ id: row.id, sourceTable: "systemLogs", ...(row.data() || {}) }))
+					.filter((row) => row.notificationFallbackTable === "systemLogs")
+				updateGrantorInboxRows()
+			},
+			() => {
+				fallbackRows = []
+				updateGrantorInboxRows()
+			},
+		)
+		return () => {
+			unsubscribeNotifications()
+			unsubscribeFallback()
+		}
 	}, [grantorId])
 
 	useEffect(() => {
@@ -1008,27 +1090,46 @@ export default function ProviderDashboard() {
 		})
 	}, [applicationMaterialRequests, applicationSoeDownloads, applicationStudents, applications, grantorName, scholars])
 
+	const isRejectedApplication = (row = {}) => {
+		const status = String(row.status || "").toLowerCase()
+		return (
+			row.archived === true ||
+			row.rejected === true ||
+			status.includes("reject") ||
+			status.includes("archiv")
+		)
+	}
+	const activeApplications = useMemo(
+		() => enrichedApplications.filter((row) => !isRejectedApplication(row)),
+		[enrichedApplications],
+	)
+	const rejectedApplications = useMemo(
+		() => enrichedApplications.filter((row) => isRejectedApplication(row)),
+		[enrichedApplications],
+	)
+	const applicationRowsForTab = applicationArchiveTab === "rejected" ? rejectedApplications : activeApplications
 	const visibleApplications = useMemo(() => {
 		const keyword = applicationSearch.trim().toLowerCase()
-		return enrichedApplications.filter((row) => {
+		return applicationRowsForTab.filter((row) => {
 			const matchesStatus = applicationStatusFilter === "All" || String(row.status || "").toLowerCase() === applicationStatusFilter.toLowerCase()
 			const matchesSearch = !keyword || [row.studentId, row.fullName, row.gwa, row.currentStep, row.scholarshipName, row.providerLabel, row.status, row.applicationNumber].some((value) => String(value || "").toLowerCase().includes(keyword))
 			return matchesStatus && matchesSearch
 		})
-	}, [applicationSearch, applicationStatusFilter, enrichedApplications])
+	}, [applicationRowsForTab, applicationSearch, applicationStatusFilter])
 
 	const applicationStatusOptions = useMemo(
-		() => [...new Set(enrichedApplications.map((row) => String(row.status || "Pending").trim()).filter(Boolean))].sort(),
-		[enrichedApplications],
+		() => [...new Set(applicationRowsForTab.map((row) => String(row.status || "Pending").trim()).filter(Boolean))].sort(),
+		[applicationRowsForTab],
 	)
 	const applicationInsights = useMemo(() => {
 		const statusIncludes = (row, values) => values.some((value) => String(row.status || "").toLowerCase().includes(value))
 		return {
-			total: enrichedApplications.length,
-			pending: enrichedApplications.filter((row) => statusIncludes(row, ["pending", "applied", "review"])).length,
-			approved: enrichedApplications.filter((row) => statusIncludes(row, ["approved", "accepted", "complete"])).length,
+			total: activeApplications.length,
+			pending: activeApplications.filter((row) => statusIncludes(row, ["pending", "applied", "review"])).length,
+			approved: activeApplications.filter((row) => statusIncludes(row, ["approved", "accepted", "complete"])).length,
+			rejected: rejectedApplications.length,
 		}
-	}, [enrichedApplications])
+	}, [activeApplications, rejectedApplications])
 
 	const announcementCalendarDays = useMemo(() => {
 		const year = announcementCalendarMonth.getFullYear()
@@ -1051,8 +1152,8 @@ export default function ProviderDashboard() {
 	)
 
 	const visibleApplicationsPage = useMemo(
-		() => paginateRows(visibleApplications, tablePages.grantor_applications || 1, TABLE_PAGE_SIZE),
-		[tablePages, visibleApplications],
+		() => paginateRows(visibleApplications, tablePages[`grantor_applications_${applicationArchiveTab}`] || 1, TABLE_PAGE_SIZE),
+		[applicationArchiveTab, tablePages, visibleApplications],
 	)
 
 	const grantorActionStepLabel = useMemo(
@@ -1075,6 +1176,52 @@ export default function ProviderDashboard() {
 	const allVisibleImportRowsSelected = visibleImportRowIndexes.length > 0 && visibleImportRowIndexes.every((rowIndex) => selectedImportRowIndexes.includes(rowIndex))
 	const importDuplicateCount = Object.keys(importDuplicateMatches).length
 	const editCityOptions = useMemo(() => getCitiesByProvince(editForm.province), [editForm.province])
+
+	useEffect(() => {
+		if (!previewDocument?.url) {
+			setPreviewBlobUrl("")
+			setIsPreviewLoading(false)
+			return undefined
+		}
+
+		let cancelled = false
+		let objectUrl = ""
+		setIsPreviewLoading(true)
+		setPreviewBlobUrl("")
+
+		fetch(previewDocument.url)
+			.then((response) => {
+				if (!response.ok) throw new Error(`preview_failed_${response.status}`)
+				return response.blob()
+			})
+			.then(async (blob) => {
+				if (cancelled) return
+				if (previewDocument.isPdf) {
+					const pdfFile = new File([blob], previewDocument.name || "document.pdf", {
+						type: "application/pdf",
+					})
+					const previewImageBlob = await convertPdfToImage(pdfFile)
+					if (cancelled) return
+					objectUrl = URL.createObjectURL(previewImageBlob)
+				} else {
+					objectUrl = URL.createObjectURL(blob)
+				}
+				setPreviewBlobUrl(objectUrl)
+			})
+			.catch((error) => {
+				if (cancelled) return
+				console.error("Failed to load grantor document preview:", error)
+				toast.error("Unable to preview the document. You can still download it.")
+			})
+			.finally(() => {
+				if (!cancelled) setIsPreviewLoading(false)
+			})
+
+		return () => {
+			cancelled = true
+			if (objectUrl) URL.revokeObjectURL(objectUrl)
+		}
+	}, [previewDocument])
 
 	useEffect(() => {
 		if (!importData?.length || !columnMapping.some(Boolean)) {
@@ -1214,6 +1361,140 @@ export default function ProviderDashboard() {
 			latestMaterialRequest: null,
 			latestSoeDownload: null,
 		})
+	}
+
+	const openRejectModal = () => {
+		if (!applicationModalState.application || !applicationModalState.student) {
+			toast.info("Open an application first before rejecting it.")
+			return
+		}
+		setRejectReason(APPLICATION_REJECTION_REASONS[0])
+		setRejectNotes("")
+		setRejectModalOpen(true)
+	}
+
+	const closeRejectModal = () => {
+		if (busy === "reject_application") return
+		setRejectModalOpen(false)
+		setRejectReason(APPLICATION_REJECTION_REASONS[0])
+		setRejectNotes("")
+	}
+
+	const handleConfirmRejectApplication = async () => {
+		if (!applicationModalState.application || !applicationModalState.student) return
+		if (!rejectReason) {
+			toast.error("Select a rejection reason first.")
+			return
+		}
+
+		setBusy("reject_application")
+		try {
+			const application = applicationModalState.application
+			const student = applicationModalState.student
+			const targetScholarship =
+				applicationModalState.scholarship ||
+				findMatchingScholarshipEntry(student, application)
+			const nextScholarships = normalizeScholarshipList(student.scholarships || []).filter(
+				(item) => {
+					if (!targetScholarship) {
+						return !(
+							item.id === application.scholarshipId ||
+							item.id === application.applicationNumber ||
+							item.applicationNumber === application.applicationNumber ||
+							item.requestNumber === application.requestNumber ||
+							item.providerType === application.providerType
+						)
+					}
+					return !(
+						item.id === targetScholarship.id ||
+						item.applicationNumber === targetScholarship.applicationNumber ||
+						item.requestNumber === targetScholarship.requestNumber ||
+						item.providerType === targetScholarship.providerType
+					)
+				},
+			)
+			const rejectedAt = new Date().toISOString()
+			const scholarshipName =
+				application.scholarshipName ||
+				targetScholarship?.name ||
+				application.providerLabel ||
+				grantorName ||
+				"your scholarship application"
+
+			await adminReviewWorkflow({
+				updates: [
+					{
+						table: "students",
+						id: student.id || application.studentId,
+						data: {
+							scholarships: nextScholarships,
+							updatedAt: serverTimestamp(),
+						},
+					},
+					{
+						table: "scholarship_applications",
+						id: application.id,
+						data: {
+							status: "Rejected",
+							rejected: true,
+							archived: true,
+							rejectionReason: rejectReason,
+							rejectionNotes: rejectNotes.trim(),
+							rejectedAt,
+							rejectedBy: grantorId,
+							rejectedByName: grantorName,
+							updatedAt: serverTimestamp(),
+						},
+					},
+				],
+			})
+
+			try {
+				await createStudentNotification({
+					studentId: student.id || application.studentId,
+					source: "personal",
+					type: "application_rejected",
+					title: "Scholarship Application Rejected",
+					message: `${grantorName} rejected your application for ${scholarshipName}. Reason: ${rejectReason}${rejectNotes.trim() ? ` - ${rejectNotes.trim()}` : ""}`,
+					grantorId,
+					grantorName,
+					applicationNumber: application.applicationNumber || application.requestNumber || application.id || "",
+					rejectionReason: rejectReason,
+					rejectionNotes: rejectNotes.trim(),
+					authorName: grantorName,
+					authorImageUrl: grantorProfileImageUrl,
+					read: false,
+					createdAt: rejectedAt,
+				})
+			} catch (notificationError) {
+				console.error("Application rejected, but student notification failed.", notificationError)
+				toast.warning("Application rejected, but the student inbox notification could not be delivered.")
+			}
+
+			setApplicationModalState((prev) => ({
+				...prev,
+				application: prev.application
+					? {
+							...prev.application,
+							status: "Rejected",
+							rejected: true,
+							archived: true,
+							rejectionReason: rejectReason,
+							rejectionNotes: rejectNotes.trim(),
+							rejectedAt,
+						}
+					: prev.application,
+				student: prev.student ? { ...prev.student, scholarships: nextScholarships } : prev.student,
+			}))
+			setRejectModalOpen(false)
+			closeApplicationModal()
+			toast.success("Application rejected and moved to archived records.")
+		} catch (error) {
+			console.error("Unable to reject application.", error)
+			toast.error("Unable to reject the application right now.")
+		} finally {
+			setBusy("")
+		}
 	}
 
 	const handleUpload = (file) => {
@@ -1456,7 +1737,7 @@ export default function ProviderDashboard() {
 		const currentStep = applicationModalState.trackingProgress?.currentStep
 		const currentStepLabel = getGrantorCompletableStepLabel(currentStep?.id)
 		if (!currentStepLabel) {
-			toast.info("Grantor actions are limited to interview, application review, and final screening.")
+			toast.info("Grantor actions are limited to document review, interview, application review, and final screening.")
 			return
 		}
 
@@ -1541,24 +1822,22 @@ export default function ProviderDashboard() {
 						},
 					},
 				],
-			})
-			await createStudentNotification({
-				studentId: applicationModalState.student.id,
-				source: "personal",
-				type: "scholarship_progress",
-				title: `${currentStepLabel} Completed`,
-				message: `${grantorName} completed the ${currentStepLabel.toLowerCase()} stage for ${nextScholarship.name || "your scholarship application"}.`,
-				grantorId,
-				grantorName,
-				applicationNumber:
-					applicationModalState.application.applicationNumber ||
-					applicationModalState.application.requestNumber ||
-					applicationModalState.application.id ||
-					"",
-				authorName: grantorName,
-				authorImageUrl: grantorProfileImageUrl,
-				read: false,
-				createdAt: serverTimestamp(),
+				stageCompletion: {
+					studentId: applicationModalState.student.id,
+					stepId: currentStep.id,
+					stepLabel: currentStepLabel,
+					actorName: grantorName,
+					grantorId,
+					grantorName,
+					scholarshipId: nextScholarship.id || "",
+					scholarshipName: nextScholarship.name || "your scholarship application",
+					applicationNumber:
+						applicationModalState.application.applicationNumber ||
+						applicationModalState.application.requestNumber ||
+						applicationModalState.application.id ||
+						"",
+					authorImageUrl: grantorProfileImageUrl,
+				},
 			})
 
 			if (completedFinalScreening && scholarRecord) {
@@ -1750,6 +2029,68 @@ export default function ProviderDashboard() {
 		if (!window.confirm("Archive the selected scholars from the active roster?")) return
 		setBusy("archive")
 		try {
+			const selectedScholars = scholars.filter((row) => selectedScholarIds.includes(row.id))
+			const studentUpdates = []
+			const studentNotifications = []
+			await Promise.all(
+				selectedScholars.map(async (scholar) => {
+					const studentId = scholar.studentId || scholar.studentID || scholar.studentNumber || scholar.studentnumber || ""
+					if (!studentId) return
+					const studentSnapshot = await getDoc(doc(db, "students", studentId))
+					if (!studentSnapshot.exists()) return
+					const student = { id: studentSnapshot.id, ...(studentSnapshot.data() || {}) }
+					const normalizedScholarships = normalizeScholarshipList(student.scholarships || [])
+					let changed = false
+					const frozenScholarships = normalizedScholarships.map((entry) => {
+						const entryName = String(entry.name || entry.provider || "").toLowerCase().trim()
+						const scholarName = String(scholar.scholarshipTitle || scholar.grantorName || grantorName || "").toLowerCase().trim()
+						const sameGrantor =
+							(entry.grantorId && entry.grantorId === grantorId) ||
+							(grantorProviderType !== "other" && entry.providerType && entry.providerType === grantorProviderType) ||
+							(entryName && scholarName && entryName === scholarName)
+						if (!sameGrantor) return entry
+						changed = true
+						return {
+							...entry,
+							status: "Archived",
+							archived: true,
+							frozen: true,
+							freezeReason: "Archived by grantor",
+							frozenBy: grantorId,
+							frozenByName: grantorName,
+							frozenAt: serverTimestamp(),
+							archivedAt: serverTimestamp(),
+							updatedAt: serverTimestamp(),
+						}
+					})
+					if (changed) {
+						studentUpdates.push({
+							table: "students",
+							id: student.id,
+							data: {
+								scholarships: frozenScholarships,
+								updatedAt: serverTimestamp(),
+							},
+						})
+					}
+					studentNotifications.push({
+						target: "student",
+						data: {
+							studentId: student.id,
+							source: "personal",
+							type: "scholarship_archived",
+							title: "Scholarship Application Frozen",
+							message: `${grantorName} archived your scholar record. Your application or scholarship access is frozen, so you cannot proceed to the next step or request SOE until it is restored.`,
+							grantorId,
+							grantorName,
+							authorName: grantorName,
+							authorImageUrl: grantorProfileImageUrl,
+							read: false,
+							createdAt: serverTimestamp(),
+						},
+					})
+				}),
+			)
 			await updateGrantorScholarsWorkflow({
 				grantorId,
 				scholarIds: selectedScholarIds,
@@ -1760,6 +2101,24 @@ export default function ProviderDashboard() {
 					updatedAt: serverTimestamp(),
 				},
 			})
+			if (studentUpdates.length || studentNotifications.length) {
+				const workflowResult = await adminReviewWorkflow({
+					updates: studentUpdates,
+					notifications: studentNotifications,
+				})
+				const failedNotifications = (workflowResult?.notifications || []).filter((item) => item?.ok === false)
+				if (failedNotifications.length > 0) {
+					console.warn("Archive notification delivery failed:", failedNotifications)
+					await Promise.all(studentNotifications.map((notification, index) =>
+						setDoc(doc(db, "studentWarning", `archive_${notification.data.studentId}_${Date.now()}_${index}`), {
+							...(notification.data || {}),
+							notificationFallbackTable: "student_warnings",
+							updatedAt: serverTimestamp(),
+						}, { merge: true }),
+					))
+					toast.info("Scholar archived. Student inbox notification was saved through the fallback inbox table.")
+				}
+			}
 			setSelectedScholarIds([])
 			setSelectedScholarId("")
 			toast.success("Selected scholars archived.")
@@ -1779,6 +2138,68 @@ export default function ProviderDashboard() {
 		if (!window.confirm("Return the selected scholars to the active roster?")) return
 		setBusy("unarchive")
 		try {
+			const selectedScholars = scholars.filter((row) => selectedScholarIds.includes(row.id))
+			const studentUpdates = []
+			const studentNotifications = []
+			await Promise.all(
+				selectedScholars.map(async (scholar) => {
+					const studentId = scholar.studentId || scholar.studentID || scholar.studentNumber || scholar.studentnumber || ""
+					if (!studentId) return
+					const studentSnapshot = await getDoc(doc(db, "students", studentId))
+					if (!studentSnapshot.exists()) return
+					const student = { id: studentSnapshot.id, ...(studentSnapshot.data() || {}) }
+					const normalizedScholarships = normalizeScholarshipList(student.scholarships || [])
+					let changed = false
+					const restoredScholarships = normalizedScholarships.map((entry) => {
+						const entryName = String(entry.name || entry.provider || "").toLowerCase().trim()
+						const scholarName = String(scholar.scholarshipTitle || scholar.grantorName || grantorName || "").toLowerCase().trim()
+						const sameGrantor =
+							(entry.grantorId && entry.grantorId === grantorId) ||
+							(grantorProviderType !== "other" && entry.providerType && entry.providerType === grantorProviderType) ||
+							(entryName && scholarName && entryName === scholarName)
+						if (!sameGrantor || (entry.frozen !== true && entry.archived !== true)) return entry
+						changed = true
+						return {
+							...entry,
+							status: "Active",
+							archived: false,
+							frozen: false,
+							freezeReason: "",
+							frozenBy: "",
+							frozenByName: "",
+							frozenAt: null,
+							archivedAt: null,
+							updatedAt: serverTimestamp(),
+						}
+					})
+					if (changed) {
+						studentUpdates.push({
+							table: "students",
+							id: student.id,
+							data: {
+								scholarships: restoredScholarships,
+								updatedAt: serverTimestamp(),
+							},
+						})
+					}
+					studentNotifications.push({
+						target: "student",
+						data: {
+							studentId: student.id,
+							source: "personal",
+							type: "scholarship_restored",
+							title: "Scholarship Application Restored",
+							message: `${grantorName} restored your scholarship record. You can continue your scholarship steps again.`,
+							grantorId,
+							grantorName,
+							authorName: grantorName,
+							authorImageUrl: grantorProfileImageUrl,
+							read: false,
+							createdAt: serverTimestamp(),
+						},
+					})
+				}),
+			)
 			await updateGrantorScholarsWorkflow({
 				grantorId,
 				scholarIds: selectedScholarIds,
@@ -1789,6 +2210,24 @@ export default function ProviderDashboard() {
 					updatedAt: serverTimestamp(),
 				},
 			})
+			if (studentUpdates.length || studentNotifications.length) {
+				const workflowResult = await adminReviewWorkflow({
+					updates: studentUpdates,
+					notifications: studentNotifications,
+				})
+				const failedNotifications = (workflowResult?.notifications || []).filter((item) => item?.ok === false)
+				if (failedNotifications.length > 0) {
+					console.warn("Unarchive notification delivery failed:", failedNotifications)
+					await Promise.all(studentNotifications.map((notification, index) =>
+						setDoc(doc(db, "studentWarning", `unarchive_${notification.data.studentId}_${Date.now()}_${index}`), {
+							...(notification.data || {}),
+							notificationFallbackTable: "student_warnings",
+							updatedAt: serverTimestamp(),
+						}, { merge: true }),
+					))
+					toast.info("Scholar unarchived. Student inbox notification was saved through the fallback inbox table.")
+				}
+			}
 			setSelectedScholarIds([])
 			setSelectedScholarId("")
 			toast.success("Selected scholars unarchived.")
@@ -1828,13 +2267,14 @@ export default function ProviderDashboard() {
 	}
 
 	const addAnnouncementRequirement = () => {
-		setAnnouncementForm((prev) => ({
-			...prev,
-			otherRequirements: [
-				...(Array.isArray(prev.otherRequirements) ? prev.otherRequirements : []),
-				{ name: "", fileType: "pdf", uploadCount: 1 },
-			],
-		}))
+		setAnnouncementForm((prev) => {
+			const requirements = Array.isArray(prev.otherRequirements) ? prev.otherRequirements : []
+			if (requirements.length > 0) return prev
+			return {
+				...prev,
+				otherRequirements: [{ name: "", fileType: "pdf", uploadCount: 1 }],
+			}
+		})
 	}
 
 	const updateAnnouncementRequirement = (index, field, value) => {
@@ -1870,14 +2310,19 @@ export default function ProviderDashboard() {
 				data: {
 					archived: true,
 					status: "Archived",
-					updatedAt: serverTimestamp(),
+					updatedAt: new Date().toISOString(),
 				},
 			})
 			if (selectedAnnouncement?.id === announcementId) setSelectedAnnouncement(null)
 			toast.success("Announcement archived.")
 		} catch (error) {
 			console.error(error)
-			toast.error("Unable to archive announcement right now.")
+			const message = String(error?.message || "")
+			toast.error(
+				message.includes("missing_supabase_server_config")
+					? "Backend Supabase credentials are not configured."
+					: "Unable to archive announcement right now.",
+			)
 		} finally {
 			setBusy("")
 		}
@@ -1912,6 +2357,9 @@ export default function ProviderDashboard() {
 					applicationEnabled: announcementForm.applicationEnabled === true,
 					minimumGrade: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
 					minGwa: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
+					acceptIrregularStudents:
+						announcementForm.applicationEnabled &&
+						announcementForm.acceptIrregularStudents === true,
 					requiredDocuments: announcementForm.applicationEnabled
 						? {
 								cog: announcementForm.requiredDocuments?.cog === true,
@@ -1925,6 +2373,7 @@ export default function ProviderDashboard() {
 							},
 					otherRequirements: announcementForm.applicationEnabled
 						? (Array.isArray(announcementForm.otherRequirements) ? announcementForm.otherRequirements : [])
+								.slice(0, 1)
 								.map((item) => ({
 									name: String(item.name || "").trim(),
 									fileType: String(item.fileType || "pdf").toLowerCase() === "png" ? "png" : "pdf",
@@ -1954,39 +2403,45 @@ export default function ProviderDashboard() {
 				},
 			})
 			const announcementId = announcementResult?.id || announcementResult?.result?.data?.[0]?.id || ""
-			await createGrantorNotification({
-				grantorId,
-				type: "announcement_published",
-				title: "Announcement Published",
-				message: `You published "${announcementForm.title.trim()}".`,
-				announcementId,
-				read: false,
-				createdAt: serverTimestamp(),
-			})
-			const studentsSnapshot = await getDocs(collection(db, "students"))
-			await Promise.all(studentsSnapshot.docs.map((studentDoc) =>
-				createStudentNotification({
-					studentId: studentDoc.id,
-					source: "personal",
-					type: "announcement",
-					title: announcementForm.title.trim(),
-					message: announcementForm.description.trim().slice(0, 180) || "A grantor posted a new scholarship announcement.",
-					announcementId,
-					announcementSource: "grantor",
-					grantorId,
-					authorName: grantorName,
-					authorImageUrl: grantorProfileImageUrl,
-					read: false,
-					createdAt: serverTimestamp(),
-				}),
-			))
+			let notificationFailed = announcementResult?.notification?.ok === false
+			const notificationCreatedAt = new Date().toISOString()
+			try {
+				const studentsSnapshot = await getDocs(collection(db, "students"))
+				const studentNotificationResults = await Promise.allSettled(studentsSnapshot.docs.map((studentDoc) =>
+					createStudentNotification({
+						studentId: studentDoc.id,
+						source: "personal",
+						type: "announcement",
+						title: `New announcement from ${grantorName}`,
+						message: announcementForm.description.trim().slice(0, 180) || "A grantor posted a new scholarship announcement.",
+						announcementId,
+						announcementSource: "grantor",
+						grantorId,
+						authorName: grantorName,
+						authorImageUrl: grantorProfileImageUrl,
+						read: false,
+						createdAt: notificationCreatedAt,
+					}),
+				))
+				notificationFailed = studentNotificationResults.some((result) => result.status === "rejected")
+				if (notificationFailed) {
+					console.error("Some student announcement notifications failed.", studentNotificationResults.filter((result) => result.status === "rejected"))
+				}
+			} catch (notificationError) {
+				notificationFailed = true
+				console.error("Announcement published, but inbox notifications failed.", notificationError)
+			}
 			setAnnouncementForm(ANNOUNCEMENT_FORM)
 			setAnnouncementSubmitAttempted(false)
 			setAnnouncementImageFiles([])
 			setAnnouncementWindowStart("")
 			setAnnouncementWindowEnd("")
 			setShowCreateAnnouncementModal(false)
-			toast.success("Announcement posted for the grantor portal.")
+			if (notificationFailed) {
+				toast.warning("Announcement published, but inbox notifications could not be delivered.")
+			} else {
+				toast.success("Announcement posted for the grantor portal.")
+			}
 		} catch (error) {
 			console.error(error)
 			toast.error("Unable to post announcement right now.")
@@ -2065,11 +2520,26 @@ export default function ProviderDashboard() {
 				postalCode: grantorProfileForm.postalCode.trim(),
 				updatedAt: serverTimestamp(),
 			}
-			await updateGrantorProfileWorkflow({
+			const profileResult = await updateGrantorProfileWorkflow({
 				grantorId,
 				data: payload,
 				updatePortal: true,
 			})
+			if (profileResult?.notification?.ok === false) {
+				await setDoc(doc(db, "systemLogs", `profile_updated_${grantorId}_${Date.now()}`), {
+					grantorId,
+					source: "personal",
+					type: "profile_updated",
+					title: "Profile Updated",
+					message: "Your grantor profile changes were saved.",
+					authorName: payload.providerName,
+					authorImageUrl: grantorProfileImageUrl,
+					notificationFallbackTable: "systemLogs",
+					read: false,
+					createdAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				}, { merge: true })
+			}
 			setProfile((prev) => ({ ...(prev || {}), ...payload }))
 			toast.success("Grantor profile updated.")
 		} catch (error) {
@@ -2126,7 +2596,7 @@ export default function ProviderDashboard() {
 
 		setPasswordRequestSubmitting(true)
 		try {
-			await requestGrantorPasswordChangeWorkflow({
+			const passwordResult = await requestGrantorPasswordChangeWorkflow({
 				grantorId,
 				providerUpdate: {
 					passwordChangeRequested: true,
@@ -2140,10 +2610,27 @@ export default function ProviderDashboard() {
 					type: "password_change_request",
 					title: "Password Change Requested",
 					message: "Your request was sent to the administrator and is awaiting approval.",
+					authorName: grantorName,
+					authorImageUrl: grantorProfileImageUrl,
 					read: false,
 					createdAt: serverTimestamp(),
 				},
 			})
+			if (passwordResult?.notification?.ok === false) {
+				await setDoc(doc(db, "systemLogs", `password_change_request_${grantorId}_${Date.now()}`), {
+					grantorId,
+					source: "personal",
+					type: "password_change_request",
+					title: "Password Change Requested",
+					message: "Your request was sent to the administrator and is awaiting approval.",
+					authorName: grantorName,
+					authorImageUrl: grantorProfileImageUrl,
+					notificationFallbackTable: "systemLogs",
+					read: false,
+					createdAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				}, { merge: true })
+			}
 			toast.success("Password change request sent to the administrator.")
 		} catch (error) {
 			console.error("Unable to request a password change.", error)
@@ -2156,10 +2643,15 @@ export default function ProviderDashboard() {
 	const markGrantorNotificationRead = async (notification) => {
 		if (!notification?.id || notification.read === true) return
 		try {
-			await updateGrantorNotification(notification.id, {
+			const updateData = {
 				read: true,
 				readAt: serverTimestamp(),
-			})
+			}
+			if (notification.sourceTable === "systemLogs") {
+				await setDoc(doc(db, "systemLogs", notification.id), updateData, { merge: true })
+			} else {
+				await updateGrantorNotification(notification.id, updateData)
+			}
 		} catch (error) {
 			console.error("Unable to mark grantor notification as read.", error)
 		}
@@ -2169,10 +2661,15 @@ export default function ProviderDashboard() {
 		if (unreadPersonalNotifications.length === 0) return
 		try {
 			await Promise.all(unreadPersonalNotifications.map((notification) =>
-				updateGrantorNotification(notification.id, {
-					read: true,
-					readAt: serverTimestamp(),
-				}),
+				notification.sourceTable === "systemLogs"
+					? setDoc(doc(db, "systemLogs", notification.id), {
+							read: true,
+							readAt: serverTimestamp(),
+						}, { merge: true })
+					: updateGrantorNotification(notification.id, {
+							read: true,
+							readAt: serverTimestamp(),
+						}),
 			))
 		} catch (error) {
 			console.error("Unable to mark all grantor notifications as read.", error)
@@ -2180,10 +2677,14 @@ export default function ProviderDashboard() {
 		}
 	}
 
-	const deleteGrantorNotification = async (notificationId) => {
-		if (!notificationId) return
+	const deleteGrantorNotification = async (notification) => {
+		if (!notification?.id) return
 		try {
-			await deleteGrantorNotificationRecord(notificationId)
+			if (notification.sourceTable === "systemLogs") {
+				await deleteDoc(doc(db, "systemLogs", notification.id))
+			} else {
+				await deleteGrantorNotificationRecord(notification.id)
+			}
 		} catch (error) {
 			console.error("Unable to delete grantor notification.", error)
 			toast.error("Unable to delete this inbox message.")
@@ -2280,11 +2781,11 @@ export default function ProviderDashboard() {
 											<i />
 										</button>
 									</div>
+									<button type="button" className="grantor-profile-password-btn" onClick={handleGrantorPasswordAction} disabled={passwordRequestSubmitting || passwordChangeRequestPending}>
+										<HiOutlineLockClosed />
+										{passwordRequestSubmitting ? "Sending Request..." : passwordChangeRequestPending ? "Request Pending" : canChangeGrantorPassword ? "Reset Password" : "Request to Change Password"}
+									</button>
 								</div>
-								<button type="button" className="grantor-profile-password-btn" onClick={handleGrantorPasswordAction} disabled={passwordRequestSubmitting || passwordChangeRequestPending}>
-									<HiOutlineLockClosed />
-					{passwordRequestSubmitting ? "Sending Request..." : passwordChangeRequestPending ? "Request Pending" : canChangeGrantorPassword ? "Change Password" : "Request to Change Password"}
-								</button>
 							</aside>
 							<form className="grantor-profile-form" onSubmit={handleGrantorProfileSave}>
 								<section>
@@ -2306,7 +2807,7 @@ export default function ProviderDashboard() {
 										<label><span>Postal Code</span><input type="text" value={grantorProfileForm.postalCode} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, postalCode: event.target.value }))} placeholder="e.g. 3000" /></label>
 									</div>
 								</section>
-								<div className="grantor-profile-form-actions"><button type="submit" className="grantor-action-btn grantor-action-btn--primary" disabled={profileSaving}><HiOutlineSave /> {profileSaving ? "Saving..." : "Save Profile"}</button></div>
+								<div className="grantor-profile-form-actions"><button type="submit" className="grantor-action-btn grantor-action-btn--primary" disabled={profileSaving}><HiOutlineSave /> {profileSaving ? "Saving..." : "Save Changes"}</button></div>
 							</form>
 						</div>
 					</section>
@@ -2562,9 +3063,13 @@ export default function ProviderDashboard() {
 							<div><HiOutlineDocumentText /><span>Total Applications</span><strong>{applicationInsights.total}</strong></div>
 							<div><HiOutlineRefresh /><span>Needs Review</span><strong>{applicationInsights.pending}</strong></div>
 							<div><HiCheck /><span>Approved</span><strong>{applicationInsights.approved}</strong></div>
-							<div><HiOutlineInbox /><span>Showing Results</span><strong>{visibleApplications.length}</strong></div>
+							<div><HiOutlineInbox /><span>Rejected / Archived</span><strong>{applicationInsights.rejected}</strong></div>
 						</div>
 						<div className="grantor-applications-filters">
+							<div className="grantor-application-tabs" aria-label="Application record tabs">
+								<button type="button" className={applicationArchiveTab === "active" ? "active" : ""} onClick={() => { setApplicationArchiveTab("active"); setApplicationStatusFilter("All") }}>Active <span>{activeApplications.length}</span></button>
+								<button type="button" className={applicationArchiveTab === "rejected" ? "active" : ""} onClick={() => { setApplicationArchiveTab("rejected"); setApplicationStatusFilter("All") }}>Rejected <span>{rejectedApplications.length}</span></button>
+							</div>
 							<label className="grantor-search-field"><HiOutlineSearch /><input type="text" aria-label="Search applications" placeholder="Search applicant, ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
 							<select aria-label="Filter applications by status" value={applicationStatusFilter} onChange={(event) => setApplicationStatusFilter(event.target.value)}><option value="All">All Statuses</option>{applicationStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select>
 						</div>
@@ -2598,7 +3103,7 @@ export default function ProviderDashboard() {
 						<TablePagination
 							currentPage={visibleApplicationsPage.currentPage}
 							totalItems={visibleApplications.length}
-							onPageChange={(page) => setTablePage("grantor_applications", page)}
+							onPageChange={(page) => setTablePage(`grantor_applications_${applicationArchiveTab}`, page)}
 						/>
 					</section>
 				) : null}
@@ -2656,6 +3161,9 @@ export default function ProviderDashboard() {
 														minimumGrade: prev.applicationEnabled
 															? ""
 															: prev.minimumGrade || grantorProfileForm.minimumGwa || profile?.minimumGwa || profile?.minGwa || "",
+														acceptIrregularStudents: prev.applicationEnabled
+															? false
+															: prev.acceptIrregularStudents,
 													}))
 													if (announcementForm.applicationEnabled) {
 														setAnnouncementWindowStart("")
@@ -2673,6 +3181,13 @@ export default function ProviderDashboard() {
 												<>
 													<label><span>Application Window</span><button type="button" className={`grantor-announcement-calendar-btn ${announcementWindowStart ? "has-value" : ""} ${announcementSubmitAttempted && announcementMissingFields.applicationWindow ? "is-missing" : ""}`.trim()} onClick={() => setShowApplicationWindowCalendar(true)}><HiOutlineCalendar /> <span>{formatAnnouncementWindow(announcementWindowStart, announcementWindowEnd)}</span></button></label>
 													<label><span>Minimum Grade / GWA</span><input type="number" min="1" max="5" step="0.01" className={announcementSubmitAttempted && announcementMissingFields.minimumGrade ? "is-missing" : ""} placeholder="Example: 2.25" value={announcementForm.minimumGrade} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, minimumGrade: event.target.value }))} /></label>
+													<label className="grantor-announcement-checkbox-field">
+														<span>Student Eligibility</span>
+														<span className="grantor-announcement-checkbox-control">
+															<input type="checkbox" checked={announcementForm.acceptIrregularStudents === true} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, acceptIrregularStudents: event.target.checked }))} />
+															<span>Accept irregular students</span>
+														</span>
+													</label>
 													<div className="grantor-announcement-requirements">
 														<span>Required Documents</span>
 														<div>
@@ -2682,7 +3197,7 @@ export default function ProviderDashboard() {
 														</div>
 													</div>
 													<div className="grantor-announcement-other-requirements">
-														<button type="button" className="grantor-announcement-other-add" onClick={addAnnouncementRequirement}>Other Requirement</button>
+														<button type="button" className="grantor-announcement-other-add" onClick={addAnnouncementRequirement} disabled={Array.isArray(announcementForm.otherRequirements) && announcementForm.otherRequirements.length > 0}>Other Requirement</button>
 														{Array.isArray(announcementForm.otherRequirements) && announcementForm.otherRequirements.length > 0 ? (
 															<div className="grantor-announcement-other-list">
 																{announcementForm.otherRequirements.map((requirement, index) => (
@@ -2768,7 +3283,7 @@ export default function ProviderDashboard() {
 												<span className="grantor-inbox-item-icon"><HiOutlineLockClosed /></span>
 												<span className="grantor-inbox-item-copy"><strong>{notification.title || "Account Update"}</strong><small>{notification.message || "You have a new account notification."}</small></span>
 											</button>
-											<div className="grantor-inbox-item-actions"><time>{formatRelativeDate(notification.createdAt)}</time><button type="button" onClick={() => deleteGrantorNotification(notification.id)} aria-label="Delete notification"><HiOutlineTrash /></button>{notification.read !== true ? <i aria-label="Unread" /> : <HiCheck className="grantor-inbox-read-check" aria-label="Read" />}</div>
+											<div className="grantor-inbox-item-actions"><time>{formatRelativeDate(notification.createdAt)}</time><button type="button" onClick={() => deleteGrantorNotification(notification)} aria-label="Delete notification"><HiOutlineTrash /></button>{notification.read !== true ? <i aria-label="Unread" /> : <HiCheck className="grantor-inbox-read-check" aria-label="Read" />}</div>
 										</article>
 									))}
 								</section>
@@ -2808,7 +3323,7 @@ export default function ProviderDashboard() {
 				</div>
 			) : null}
 			{showApplicationWindowCalendar ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={() => setShowApplicationWindowCalendar(false)}>
+				<div className="admin-detail-backdrop grantor-calendar-backdrop" role="presentation" onClick={() => setShowApplicationWindowCalendar(false)}>
 					<div className="grantor-calendar-modal" role="dialog" aria-modal="true" aria-label="Select application window" onClick={(event) => event.stopPropagation()}>
 						<header><div><h3>Application Window</h3><p>Select the opening date, then the closing date.</p></div><button type="button" onClick={() => setShowApplicationWindowCalendar(false)} aria-label="Close calendar"><HiX /></button></header>
 						<div className="grantor-calendar-selection"><span>Start<strong>{announcementWindowStart ? formatAnnouncementWindow(announcementWindowStart, "").split(" - ")[0] : "Not selected"}</strong></span><i /><span>End<strong>{announcementWindowEnd ? new Date(`${announcementWindowEnd}T00:00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "Not selected"}</strong></span></div>
@@ -2913,32 +3428,40 @@ export default function ProviderDashboard() {
 														{ id: "cog", label: "COG" },
 														{ id: "schoolId", label: "School ID" },
 														{ id: "applicationForm", label: "Application Form" },
-													].map((document) => (
-														<a
-															key={document.id}
-															href={applicationModalState.documentUrls?.[document.id] || "#"}
-															target="_blank"
-															rel="noreferrer"
-															className={`grantor-document-link ${applicationModalState.documentUrls?.[document.id] ? "" : "is-disabled"}`.trim()}
-															onClick={(event) => {
-																if (!applicationModalState.documentUrls?.[document.id]) {
-																	event.preventDefault()
-																}
-															}}
-														>
-															<span>{document.label}</span>
-															<strong>
-																{applicationModalState.documentUrls?.[document.id]
-																	? "View Document"
-																	: "Not Uploaded"}
-															</strong>
-														</a>
-													))}
+													].map((document) => {
+														const url = applicationModalState.documentUrls?.[document.id] || ""
+														return (
+															<button
+																key={document.id}
+																type="button"
+																className={`grantor-document-link ${url ? "" : "is-disabled"}`.trim()}
+																onClick={() => openDocumentPreview(document.label, url)}
+																disabled={!url}
+															>
+																<span>{document.label}</span>
+																<strong>
+																	{url ? "Preview Document" : "Not Uploaded"}
+																</strong>
+															</button>
+														)
+													})}
 												</div>
 											</section>
 										</div>
 
 										<div className="grantor-application-actions">
+											<button
+												type="button"
+												className="admin-export-btn grantor-reject-application-btn"
+												onClick={openRejectModal}
+												disabled={
+													busy === "grantor_tracking" ||
+													busy === "reject_application" ||
+													isRejectedApplication(applicationModalState.application || {})
+												}
+											>
+												<HiOutlineBan /> Reject Application
+											</button>
 											<button
 												type="button"
 												className="admin-export-btn"
@@ -2959,6 +3482,119 @@ export default function ProviderDashboard() {
 								)}
 							</div>
 						</div>
+					</div>
+				</div>
+			) : null}
+			{previewDocument ? (
+				<div
+					className="grantor-document-preview-backdrop"
+					role="dialog"
+					aria-modal="true"
+					aria-label={`${previewDocument.title} preview`}
+					onClick={closeDocumentPreview}
+				>
+					<div
+						className="grantor-document-preview-modal"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<header className="grantor-document-preview-head">
+							<div>
+								<span>Document Preview</span>
+								<h3>{previewDocument.title}</h3>
+							</div>
+							<div className="grantor-document-preview-actions">
+								<button
+									type="button"
+									className="grantor-document-preview-download"
+									onClick={downloadPreviewDocument}
+								>
+									<HiOutlineDownload /> Download
+								</button>
+								<button
+									type="button"
+									className="grantor-document-preview-close"
+									onClick={closeDocumentPreview}
+									aria-label="Close document preview"
+								>
+									<HiX />
+								</button>
+							</div>
+						</header>
+						<div className="grantor-document-preview-body">
+							{isPreviewLoading ? (
+								<div className="grantor-document-preview-state">
+									<HiOutlineDocumentText />
+									<span>Loading preview...</span>
+								</div>
+							) : !previewBlobUrl ? (
+								<div className="grantor-document-preview-state">
+									<HiOutlineDocumentText />
+									<span>Preview is unavailable.</span>
+								</div>
+							) : (
+								<img
+									src={previewBlobUrl}
+									alt={`${previewDocument.title} preview`}
+									className="grantor-document-preview-image"
+								/>
+							)}
+						</div>
+					</div>
+				</div>
+			) : null}
+			{rejectModalOpen ? (
+				<div
+					className="grantor-reject-modal-backdrop"
+					role="presentation"
+					onClick={closeRejectModal}
+				>
+					<div
+						className="grantor-reject-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Reject scholarship application"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<header className="grantor-reject-modal-head">
+							<div>
+								<span>Application Decision</span>
+								<h3>Reject Application</h3>
+								<p>
+									This will archive the application, notify the student, and remove this
+									scholarship from their active applications so they can apply elsewhere.
+								</p>
+							</div>
+							<button type="button" onClick={closeRejectModal} aria-label="Close reject application modal">
+								<HiX />
+							</button>
+						</header>
+						<div className="grantor-reject-modal-body">
+							<label>
+								Reason
+								<select value={rejectReason} onChange={(event) => setRejectReason(event.target.value)}>
+									{APPLICATION_REJECTION_REASONS.map((reason) => (
+										<option key={reason} value={reason}>{reason}</option>
+									))}
+								</select>
+							</label>
+							<label>
+								Notes
+								<textarea
+									value={rejectNotes}
+									onChange={(event) => setRejectNotes(event.target.value)}
+									placeholder="Add a short note for the student."
+									rows={4}
+								/>
+							</label>
+						</div>
+						<footer className="grantor-reject-modal-actions">
+							<button type="button" className="grantor-reject-cancel-btn" onClick={closeRejectModal} disabled={busy === "reject_application"}>
+								Cancel
+							</button>
+							<button type="button" className="grantor-reject-confirm-btn" onClick={handleConfirmRejectApplication} disabled={busy === "reject_application"}>
+								<HiOutlineBan /> {busy === "reject_application" ? "Rejecting..." : "Confirm Reject Application"}
+							</button>
+						</footer>
 					</div>
 				</div>
 			) : null}

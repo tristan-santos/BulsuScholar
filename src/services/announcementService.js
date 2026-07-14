@@ -35,6 +35,7 @@ export function normalizeStudentAnnouncement(raw = {}, id = "", source = "admin"
 		startDate: raw.startDate || null,
 		endDate: raw.endDate || raw.scheduleEnd || null,
 		applicationEnabled: raw.applicationEnabled === true,
+		acceptIrregularStudents: raw.acceptIrregularStudents === true,
 		requiredDocuments: {
 			cog: raw.requiredDocuments?.cog === true,
 			cor: raw.requiredDocuments?.cor === true,

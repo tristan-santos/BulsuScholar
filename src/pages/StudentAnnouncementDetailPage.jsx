@@ -107,6 +107,28 @@ function toNumericGrade(value) {
 	return Number.isFinite(grade) ? grade : null
 }
 
+function getGrantorDisplayName(profile = {}, announcement = {}) {
+	return (
+		profile.providerName ||
+		profile.grantorName ||
+		profile.name ||
+		profile.fullName ||
+		announcement.grantorName ||
+		announcement.providerLabel ||
+		announcement.sourceLabel ||
+		"This Grantor"
+	)
+}
+
+function getInitials(name = "", fallback = "G") {
+	return String(name || "")
+		.split(/\s+/)
+		.filter(Boolean)
+		.slice(0, 2)
+		.map((part) => part[0]?.toUpperCase())
+		.join("") || fallback
+}
+
 function getMissingAnnouncementDocuments(student = {}, announcement = {}) {
 	const required = announcement?.requiredDocuments || {}
 	const urls = getDocumentUrlsForStudent(student)
@@ -244,6 +266,7 @@ export default function StudentAnnouncementDetailPage() {
 		return sortStudentAnnouncements(
 			announcements.filter((item) => {
 				if (String(item.id) === String(announcement.id) && item.source === announcement.source) return false
+				if (isPreviousStudentAnnouncement(item)) return false
 				if (announcement.source !== "grantor") return item.source === announcement.source
 				return Boolean(announcement.grantorId) && item.source === "grantor" && item.grantorId === announcement.grantorId
 			}),
@@ -260,12 +283,30 @@ export default function StudentAnnouncementDetailPage() {
 		announcement?.source === "grantor" && announcement?.grantorId
 			? grantorProfiles[announcement.grantorId] || {}
 			: {}
+	const grantorDisplayName =
+		announcement?.source === "grantor"
+			? getGrantorDisplayName(grantorProfile, announcement)
+			: announcement?.sourceLabel || "Scholarship Office"
 	const announcementMinimumGrade = toNumericGrade(
 		announcement?.minimumGrade ??
 		announcement?.minGwa ??
 		grantorProfile.minimumGwa ??
 		grantorProfile.minGwa,
 	)
+	const requiredDocumentLabels = [
+		announcement?.requiredDocuments?.cog === true ? "COG" : "",
+		announcement?.requiredDocuments?.cor === true ? "COR" : "",
+		announcement?.requiredDocuments?.applicationForm === true ? "Application Form" : "",
+		...(Array.isArray(announcement?.otherRequirements)
+			? announcement.otherRequirements.map((item) => {
+					const name = String(item?.name || "").trim()
+					if (!name) return ""
+					const type = String(item?.fileType || "pdf").toUpperCase()
+					const count = Math.max(1, Number.parseInt(item?.uploadCount, 10) || 1)
+					return `${name} (${type}${count > 1 ? `, ${count} files` : ""})`
+				})
+			: []),
+	].filter(Boolean)
 	const activeImageUrl = imageUrls[activeImageIndex] || imageUrls[0] || ""
 	const authorImageUrl =
 		announcement?.source === "grantor"
@@ -275,12 +316,10 @@ export default function StudentAnnouncementDetailPage() {
 				announcement.authorImageUrl ||
 				""
 			: ""
-	const authorInitials = String(announcement?.sourceLabel || "Scholarship Office")
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((part) => part[0]?.toUpperCase())
-		.join("") || (announcement?.source === "grantor" ? "G" : "SO")
+	const authorInitials = getInitials(
+		grantorDisplayName,
+		announcement?.source === "grantor" ? "G" : "SO",
+	)
 	const announcementProviderType =
 		announcement?.providerType ||
 		toScholarshipProviderType(
@@ -639,6 +678,24 @@ export default function StudentAnnouncementDetailPage() {
 											</div>
 										</section>
 									) : null}
+									{isAnnouncementApplication && requiredDocumentLabels.length > 0 ? (
+										<section className="student-announcement-detail-summary-card student-announcement-detail-summary-card--wrapping">
+											<HiOutlineDocumentText aria-hidden />
+											<div>
+												<span>Required Documents</span>
+												<strong>{requiredDocumentLabels.join(", ")}</strong>
+											</div>
+										</section>
+									) : null}
+									{isAnnouncementApplication ? (
+										<section className="student-announcement-detail-summary-card">
+											<HiOutlineAcademicCap aria-hidden />
+											<div>
+												<span>Irregular Students</span>
+												<strong>{announcement.acceptIrregularStudents === true ? "Accepted" : "Not Accepted"}</strong>
+											</div>
+										</section>
+									) : null}
 									<section className="student-announcement-detail-summary-card">
 										<HiOutlineClock aria-hidden />
 										<div>
@@ -652,7 +709,7 @@ export default function StudentAnnouncementDetailPage() {
 										</span>
 										<div>
 											<span>Posted By</span>
-											<strong>{announcement.sourceLabel || "Scholarship Office"}</strong>
+											<strong>{grantorDisplayName}</strong>
 										</div>
 									</section>
 								</div>
@@ -676,13 +733,24 @@ export default function StudentAnnouncementDetailPage() {
 								<section className="student-announcement-detail-panel student-announcement-detail-panel--related">
 									<div className="student-announcement-detail-panel-head">
 										<div>
-											<h3>More From {announcement.sourceLabel || "This Grantor"}</h3>
+											<h3>More From {grantorDisplayName}</h3>
 										</div>
 									</div>
 									{relatedAnnouncements.length ? (
 										<div className="student-announcement-related-grid">
 											{relatedAnnouncements.map((item) => {
 												const relatedImage = buildAnnouncementImageList(item)[0]
+												const relatedProfile = item.grantorId ? grantorProfiles[item.grantorId] || {} : {}
+												const relatedAuthorName =
+													item.source === "grantor"
+														? getGrantorDisplayName(relatedProfile, item)
+														: item.sourceLabel || "Scholarship Office"
+												const relatedAuthorImage =
+													relatedProfile.profileImageUrl ||
+													relatedProfile.imageUrl ||
+													item.profileImageUrl ||
+													item.authorImageUrl ||
+													""
 												return (
 													<button
 														key={`${item.source}-${item.id}`}
@@ -696,8 +764,10 @@ export default function StudentAnnouncementDetailPage() {
 															{relatedImage ? <img src={relatedImage} alt={item.title || "Announcement"} /> : <HiOutlineInbox aria-hidden />}
 														</div>
 														<div className="student-announcement-card-head">
-															<span className="student-announcement-author-badge">{authorInitials}</span>
-															<div><strong>{item.sourceLabel || announcement.sourceLabel || "Grantor"}</strong></div>
+															<span className="student-announcement-author-badge">
+																{relatedAuthorImage ? <img src={relatedAuthorImage} alt="" /> : getInitials(relatedAuthorName)}
+															</span>
+															<div><strong>{relatedAuthorName}</strong></div>
 															<i>{formatRelativeDate(item.createdAt || item.date)}</i>
 														</div>
 														<div className="student-announcement-content">

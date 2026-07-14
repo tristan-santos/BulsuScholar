@@ -21,6 +21,18 @@ export function createStudentNotification(payload = {}) {
 	return postNotification("/notifications/student/create", payload)
 }
 
+export function createAdminNotification(payload = {}) {
+	return postNotification("/notifications/admin/create", payload)
+}
+
+export function updateAdminNotification(id = "", data = {}) {
+	return postNotification("/notifications/admin/update", { id, data })
+}
+
+export function deleteAdminNotification(id = "") {
+	return postNotification("/notifications/admin/delete", { id })
+}
+
 export function createGrantorNotification(payload = {}) {
 	return postNotification("/notifications/grantor/create", payload)
 }

@@ -261,11 +261,43 @@ export default function StudentDashboard() {
 	useEffect(() => {
 		if (!sessionState.storedUserId) return undefined
 		setReadAnnouncementIds(loadReadAnnouncementIds(sessionState.storedUserId))
-		return onSnapshot(
+		let notificationRows = []
+		let warningRows = []
+		const updateStudentNotificationRows = () => {
+			setStudentNotifications(
+				[...notificationRows, ...warningRows].sort(
+					(a, b) => new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0),
+				),
+			)
+		}
+		const unsubscribeNotifications = onSnapshot(
 			query(collection(db, "studentNotifications"), where("studentId", "==", sessionState.storedUserId)),
-			(snap) => setStudentNotifications(snap.docs.map((item) => ({ id: item.id, ...(item.data() || {}) }))),
-			() => setStudentNotifications([]),
+			(snap) => {
+				notificationRows = snap.docs.map((item) => ({ id: item.id, sourceTable: "studentNotifications", ...(item.data() || {}) }))
+				updateStudentNotificationRows()
+			},
+			() => {
+				notificationRows = []
+				updateStudentNotificationRows()
+			},
 		)
+		const unsubscribeWarnings = onSnapshot(
+			query(collection(db, "studentWarning"), where("studentId", "==", sessionState.storedUserId)),
+			(snap) => {
+				warningRows = snap.docs
+					.map((item) => ({ id: item.id, sourceTable: "studentWarning", ...(item.data() || {}) }))
+					.filter((item) => item.source === "personal" || item.notificationFallbackTable === "student_warnings")
+				updateStudentNotificationRows()
+			},
+			() => {
+				warningRows = []
+				updateStudentNotificationRows()
+			},
+		)
+		return () => {
+			unsubscribeNotifications()
+			unsubscribeWarnings()
+		}
 	}, [sessionState.storedUserId])
 
 	useEffect(() => {

@@ -83,17 +83,20 @@ def ocr_image(image: Image.Image) -> str:
 
 
 def extract_pdf_text(file_bytes: bytes) -> str:
-    chunks: list[str] = []
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
-            chunks.append(page.extract_text() or "")
+	chunks: list[str] = []
+	with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+		for page in pdf.pages:
+			chunks.append(page.extract_text() or "")
 
-    text = "\n".join(chunks).strip()
-    if text or convert_from_bytes is None:
-        return text
+	text = "\n".join(chunks).strip()
+	if text or convert_from_bytes is None:
+		return text
 
-    images = convert_from_bytes(file_bytes, dpi=220)
-    return "\n".join(ocr_image(image) for image in images)
+	try:
+		images = convert_from_bytes(file_bytes, dpi=220)
+	except Exception:
+		return ""
+	return "\n".join(ocr_image(image) for image in images)
 
 
 def extract_image_text(file_bytes: bytes) -> str:

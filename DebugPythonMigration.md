@@ -187,7 +187,7 @@ If duplicate checking fails:
 - Check existing roster rows in Network payload.
 - Check backend response `score`, `fields`, and `isDuplicate`.
 
-## 9. Early Grantor Roster Match During Signup -
+## 9. Early Grantor Roster Match During Signup - Checked
 
 Test:
 1. Add a test student to a grantor roster.
@@ -211,7 +211,7 @@ If no match appears:
 - Confirm scholar is not archived.
 - Confirm name and address fields are present.
 
-## 10. Student Apply From Announcement
+## 10. Student Apply From Announcement - Checked
 
 Test:
 1. Open a student announcement that allows application.
@@ -236,7 +236,7 @@ If apply fails:
 - Check GWA requirement response.
 - Check if `student`, `scholarship`, `application`, and `notifications` are present in payload.
 
-## 11. Student Apply From Scholarship Control Center
+## 11. Student Apply From Scholarship Control Center - checked
 
 Test:
 1. Open student scholarship control center.
@@ -258,7 +258,7 @@ If it fails:
 - Check if required documents are missing.
 - Check backend response details.
 
-## 12. Scholarship Eligibility Rules
+## 12. Scholarship Eligibility Rules - checked
 
 Test from UI where applicable, or with API client:
 
@@ -280,7 +280,7 @@ If eligibility looks wrong:
 - Check student `gwa`.
 - Check grantor/profile minimum GWA.
 
-## 13. Grantor Application Review Modal
+## 13. Grantor Application Review Modal - checked
 
 Test:
 1. Log in as grantor.
@@ -308,7 +308,7 @@ If it fails:
 - Check if grantor is allowed to complete that stage.
 - Check Python terminal for Supabase update errors.
 
-## 14. Grantor Scholar Roster Create
+## 14. Grantor Scholar Roster Create - checked
 
 Test:
 1. Add one scholar manually.
@@ -331,7 +331,7 @@ If rows do not appear:
 - Confirm `parent_id` is the grantor account/provider ID.
 - Check response `ok`.
 
-## 15. Grantor Scholar Roster Update
+## 15. Grantor Scholar Roster Update - checked
 
 Test:
 1. Edit a scholar.
@@ -355,7 +355,7 @@ If updates fail:
 - Check `parent_id`.
 - Check update payload.
 
-## 16. Grantor Profile Update
+## 16. Grantor Profile Update - checked
 
 Test:
 1. Open grantor profile.
@@ -381,7 +381,7 @@ If it fails:
 - Check whether file upload succeeded before profile metadata save.
 - Check backend response for Supabase config or update errors.
 
-## 17. Grantor Password Change Request
+## 17. Grantor Password Change Request - 
 
 Test:
 1. Open grantor profile.

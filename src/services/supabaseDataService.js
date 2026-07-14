@@ -12,6 +12,7 @@ export const TABLES = {
 	grantorPortals: "grantor_portals",
 	scholarshipApplications: "scholarship_applications",
 	studentWarning: "student_warnings",
+	systemLogs: "systemLogs",
 }
 
 const SUBCOLLECTION_TABLES = {

@@ -16,3 +16,16 @@ export async function matchAdminGrantorStudents(students = [], grantorScholars =
 	}
 	return data
 }
+
+export async function checkAdminStudentDuplicates(records = [], options = {}) {
+	const response = await fetch(`${BACKEND_API_URL}/admin/check-student-duplicates`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ records, options }),
+	})
+	const data = await response.json().catch(() => ({}))
+	if (!response.ok) {
+		throw new Error(data?.detail || data?.error || `Admin duplicate check failed: ${response.status}`)
+	}
+	return data
+}

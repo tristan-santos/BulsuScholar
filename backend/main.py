@@ -19,12 +19,19 @@ try:
     from .document_scanner import extract_image_text, extract_pdf_text, parse_document
     from .email_service import send_email_notification
     from .grantor_algorithms import (
+        check_student_table_duplicates,
         evaluate_scholar_duplicate,
         find_matching_grantor_scholars,
         find_scholar_duplicate,
         match_admin_grantor_students,
     )
-    from .report_service import build_csv_bytes, build_report_pdf_bytes
+    from .report_service import (
+        build_csv_bytes,
+        build_report_pdf_bytes,
+        build_student_report,
+        build_student_report_excel_bytes,
+        build_student_report_pdf_bytes,
+    )
     from .scholarship_rules import (
         check_scholarship_eligibility,
         is_gwa_eligible,
@@ -34,14 +41,18 @@ try:
     from .signup_service import finalize_student_signup, validate_student_signup
     from .supabase_ops import (
         build_grantor_notification_payload,
+        build_admin_notification_payload,
         build_log_payload,
         build_student_notification_payload,
         create_grantor_notification,
+        create_admin_notification,
         create_log,
         create_student_notification,
         delete_grantor_notification,
+        delete_admin_notification,
         delete_student_notification,
         update_grantor_notification,
+        update_admin_notification,
         update_student_notification,
     )
     from .workflow_service import (
@@ -60,12 +71,19 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from document_scanner import extract_image_text, extract_pdf_text, parse_document
     from email_service import send_email_notification
     from grantor_algorithms import (
+        check_student_table_duplicates,
         evaluate_scholar_duplicate,
         find_matching_grantor_scholars,
         find_scholar_duplicate,
         match_admin_grantor_students,
     )
-    from report_service import build_csv_bytes, build_report_pdf_bytes
+    from report_service import (
+        build_csv_bytes,
+        build_report_pdf_bytes,
+        build_student_report,
+        build_student_report_excel_bytes,
+        build_student_report_pdf_bytes,
+    )
     from scholarship_rules import (
         check_scholarship_eligibility,
         is_gwa_eligible,
@@ -75,14 +93,18 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from signup_service import finalize_student_signup, validate_student_signup
     from supabase_ops import (
         build_grantor_notification_payload,
+        build_admin_notification_payload,
         build_log_payload,
         build_student_notification_payload,
         create_grantor_notification,
+        create_admin_notification,
         create_log,
         create_student_notification,
         delete_grantor_notification,
+        delete_admin_notification,
         delete_student_notification,
         update_grantor_notification,
+        update_admin_notification,
         update_student_notification,
     )
     from workflow_service import (
@@ -117,8 +139,15 @@ app.add_middleware(
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    return {
+        "status": "ok",
+        "supabaseServerConfigured": bool(supabase_url and service_role_key),
+        "hasSupabaseUrl": bool(supabase_url),
+        "hasSupabaseServiceRoleKey": bool(service_role_key),
+    }
 
 
 @app.get("/email/health")
@@ -170,6 +199,14 @@ def admin_match_grantor_students_endpoint(payload: dict[str, Any] = Body(...)) -
     )
 
 
+@app.post("/admin/check-student-duplicates")
+def admin_check_student_duplicates_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return check_student_table_duplicates(
+        payload.get("records") or payload.get("students") or [],
+        payload.get("options") or {},
+    )
+
+
 @app.post("/email/send")
 def send_email_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     result = send_email_notification(payload)
@@ -203,6 +240,31 @@ def build_student_notification_endpoint(payload: dict[str, Any] = Body(...)) -> 
         payload.get("type") or "notification",
         payload.get("extra") or {},
     )
+
+
+@app.post("/notifications/admin/build")
+def build_admin_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return build_admin_notification_payload(
+        payload.get("title") or "",
+        payload.get("message") or "",
+        payload.get("type") or "notification",
+        payload.get("extra") or {},
+    )
+
+
+@app.post("/notifications/admin/create")
+def create_admin_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return create_admin_notification(payload)
+
+
+@app.post("/notifications/admin/update")
+def update_admin_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return update_admin_notification(payload.get("id") or "", payload.get("data") or {})
+
+
+@app.post("/notifications/admin/delete")
+def delete_admin_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return delete_admin_notification(payload.get("id") or "")
 
 
 @app.post("/notifications/student/create")
@@ -343,6 +405,36 @@ def generate_pdf_report_endpoint(payload: dict[str, Any] = Body(...)) -> Respons
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={payload.get('filename') or 'report.pdf'}"},
+    )
+
+
+@app.post("/reports/students/preview")
+def preview_student_report_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    try:
+        return build_student_report(payload)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/reports/students/pdf")
+def generate_student_report_pdf_endpoint(payload: dict[str, Any] = Body(...)) -> Response:
+    try:
+        content, filename = build_student_report_pdf_bytes(payload)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.post("/reports/students/excel")
+def generate_student_report_excel_endpoint(payload: dict[str, Any] = Body(...)) -> Response:
+    try:
+        content, filename = build_student_report_excel_bytes(payload)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

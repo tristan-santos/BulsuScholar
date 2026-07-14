@@ -126,6 +126,16 @@
 - AdminDashboard now requests the matching lookup from Python.
 - Browser fallback remains only for local development if the Python backend is unavailable.
 
+### Admin student roster duplicate audit
+- File: `backend/grantor_algorithms.py`
+- Endpoint: `POST /admin/check-student-duplicates`
+- Frontend wrapper: `src/services/adminMatchingService.js`
+- Algorithm: Weighted Record Linkage with Levenshtein Similarity.
+- Admin Student Management sends the combined student-account and grantor-roster rows to Python.
+- Python returns duplicate row IDs and duplicate groups.
+- The admin table, tab counts, and student-management stats hide duplicate rows, preferring real student accounts over roster-only rows.
+- This keeps all grantor rosters available to admin while preventing the same student from appearing multiple times in the Student Management table.
+
 ### Report generation endpoints
 - File: `backend/report_service.py`
 - Endpoints:

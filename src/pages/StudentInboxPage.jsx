@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom"
 import {
 	collection,
 	collectionGroup,
+	deleteDoc,
 	doc,
 	onSnapshot,
 	query,
 	serverTimestamp,
+	setDoc,
 	where,
 } from "../services/supabaseDataService"
 import {
@@ -65,17 +67,26 @@ function getStudentNotificationCategory(notification = {}) {
 	return "Notifications"
 }
 
-function normalizeStudentNotification(row = {}, id = "") {
+function normalizeStudentNotification(row = {}, id = "", sourceTable = "studentNotifications") {
+	const type = row.type || row.category || "notification"
+	const isAnnouncement = String(type).toLowerCase().includes("announcement")
+	const authorName = row.authorName || row.senderName || row.sourceLabel || row.createdByName || ""
 	return {
 		id,
+		sourceTable,
+		notificationFallbackTable: row.notificationFallbackTable || "",
 		source: row.source || "personal",
-		type: row.type || row.category || "notification",
-		title: row.title || "Student Update",
+		type,
+		title: isAnnouncement && authorName
+			? `New announcement from ${authorName}`
+			: row.title || "Student Update",
 		message: row.message || row.description || "You have a new student inbox notification.",
 		read: row.read === true,
 		createdAt: row.createdAt || row.created_at || row.updatedAt || row.updated_at || null,
-		authorName: row.authorName || row.senderName || row.sourceLabel || row.createdByName || "",
+		authorName,
 		authorImage: row.authorImage || row.authorImageUrl || row.profileImageUrl || row.senderImageUrl || "",
+		announcementId: String(row.announcementId || ""),
+		announcementSource: row.announcementSource || "grantor",
 	}
 }
 
@@ -104,9 +115,10 @@ function announcementToInboxItem(announcement = {}, readAnnouncementIds = []) {
 	return {
 		id: `announcement-${announcementId}`,
 		announcementId,
+		announcementSource: announcement.source || "admin",
 		source: "announcement",
 		type: "announcement",
-		title: announcement.title || "Announcement",
+		title: `New announcement from ${announcement.sourceLabel || (announcement.source === "grantor" ? "Grantor" : "Scholarship Office")}`,
 		message:
 			announcement.previewText ||
 			announcement.content ||
@@ -191,17 +203,45 @@ export default function StudentInboxPage() {
 	useEffect(() => {
 		if (!sessionState.storedUserId) return undefined
 		setReadAnnouncementIds(loadReadAnnouncementIds(sessionState.storedUserId))
-		return onSnapshot(
+		let notificationRows = []
+		let warningRows = []
+		const updateInboxNotifications = () => {
+			setNotifications(
+				[...notificationRows, ...warningRows].sort(
+					(a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+				),
+			)
+		}
+		const unsubscribeNotifications = onSnapshot(
 			query(collection(db, "studentNotifications"), where("studentId", "==", sessionState.storedUserId)),
 			(snap) => {
-				setNotifications(
-					snap.docs
-						.map((item) => normalizeStudentNotification(item.data() || {}, item.id))
-						.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)),
+				notificationRows = snap.docs.map((item) =>
+					normalizeStudentNotification(item.data() || {}, item.id, "studentNotifications"),
 				)
+				updateInboxNotifications()
 			},
-			() => setNotifications([]),
+			() => {
+				notificationRows = []
+				updateInboxNotifications()
+			},
 		)
+		const unsubscribeWarnings = onSnapshot(
+			query(collection(db, "studentWarning"), where("studentId", "==", sessionState.storedUserId)),
+			(snap) => {
+				warningRows = snap.docs
+					.map((item) => normalizeStudentNotification(item.data() || {}, item.id, "studentWarning"))
+					.filter((item) => item.source === "personal" || item.notificationFallbackTable === "student_warnings")
+				updateInboxNotifications()
+			},
+			() => {
+				warningRows = []
+				updateInboxNotifications()
+			},
+		)
+		return () => {
+			unsubscribeNotifications()
+			unsubscribeWarnings()
+		}
 	}, [sessionState.storedUserId])
 
 	useEffect(() => {
@@ -289,10 +329,15 @@ export default function StudentInboxPage() {
 	const markNotificationRead = async (notification) => {
 		if (notification.source !== "personal" || !notification?.id || notification.read === true) return
 		try {
-			await updateStudentNotification(notification.id, {
+			const updateData = {
 				read: true,
 				readAt: serverTimestamp(),
-			})
+			}
+			if (notification.sourceTable === "studentWarning") {
+				await setDoc(doc(db, "studentWarning", notification.id), updateData, { merge: true })
+			} else {
+				await updateStudentNotification(notification.id, updateData)
+			}
 		} catch (error) {
 			console.error("Unable to mark student notification as read.", error)
 			toast.error("Unable to update this inbox message.")
@@ -306,10 +351,15 @@ export default function StudentInboxPage() {
 		try {
 			if (personalUnread.length > 0) {
 				await Promise.all(personalUnread.map((item) =>
-					updateStudentNotification(item.id, {
-						read: true,
-						readAt: serverTimestamp(),
-					}),
+					item.sourceTable === "studentWarning"
+						? setDoc(doc(db, "studentWarning", item.id), {
+								read: true,
+								readAt: serverTimestamp(),
+							}, { merge: true })
+						: updateStudentNotification(item.id, {
+								read: true,
+								readAt: serverTimestamp(),
+							}),
 				))
 			}
 			if (announcementUnread.length > 0) {
@@ -326,24 +376,34 @@ export default function StudentInboxPage() {
 	const deleteNotification = async (notification) => {
 		if (notification.source !== "personal" || !notification?.id) return
 		try {
-			await deleteStudentNotification(notification.id)
+			if (notification.sourceTable === "studentWarning") {
+				await deleteDoc(doc(db, "studentWarning", notification.id))
+			} else {
+				await deleteStudentNotification(notification.id)
+			}
 		} catch (error) {
 			console.error("Unable to delete student notification.", error)
 			toast.error("Unable to delete this inbox message.")
 		}
 	}
 
-	const openInboxItem = (notification) => {
+	const openInboxItem = async (notification) => {
+		const isAnnouncement = String(notification.type || "").toLowerCase().includes("announcement")
 		if (notification.source === "personal") {
-			markNotificationRead(notification)
+			await markNotificationRead(notification)
+			if (isAnnouncement && notification.announcementId) {
+				const source = encodeURIComponent(notification.announcementSource || "grantor")
+				const announcementId = encodeURIComponent(notification.announcementId)
+				navigate(`/student-dashboard/announcements/${source}/${announcementId}`)
+			}
 			return
 		}
 		const nextIds = [...readAnnouncementIds, notification.announcementId]
 		saveReadAnnouncementIds(sessionState.storedUserId, nextIds)
 		setReadAnnouncementIds([...new Set(nextIds.map(String))])
-		navigate("/student-dashboard/announcements", {
-			state: { selectedAnnouncementId: notification.announcementId },
-		})
+		const source = encodeURIComponent(notification.announcementSource || "admin")
+		const announcementId = encodeURIComponent(notification.announcementId)
+		navigate(`/student-dashboard/announcements/${source}/${announcementId}`)
 	}
 
 	const renderInboxItemIcon = (notification) => {

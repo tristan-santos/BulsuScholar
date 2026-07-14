@@ -35,6 +35,7 @@ function buildKwspSteps(appliedViaAnnouncement = false) {
 		{ id: "kwsp_apply", label: "Application for KWSP", owner: "student" },
 		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
 		{ id: "application_form", label: "Application Form", owner: "student" },
+		{ id: "document_review", label: "Document Review", owner: "admin" },
 		{ id: "admin_review", label: "Admin Review", owner: "admin" },
 		{ id: "interview", label: "Interview", owner: "admin" },
 		{ id: "application_review", label: "Application Review", owner: "admin" },
@@ -51,6 +52,7 @@ function buildStandardSteps(scholarshipName = "Scholarship", appliedViaAnnouncem
 		{ id: "scholarship_apply", label: `Application for ${scholarshipName}`, owner: "student" },
 		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
 		{ id: "application_form", label: "Application Form", owner: "student" },
+		{ id: "document_review", label: "Document Review", owner: "admin" },
 		{ id: "request_materials", label: "Requesting of Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
@@ -114,6 +116,10 @@ function buildTrackingDetail(stepId, context) {
 			return state === "complete"
 				? "Application form has been uploaded and is ready for review."
 				: "Student must complete and upload the application form before review continues."
+		case "document_review":
+			return state === "complete"
+				? "Submitted COR, COG, Student ID, and application form were reviewed."
+				: "Admin and the assigned grantor must review the submitted documents before the application can move forward."
 		case "admin_review":
 			return state === "complete"
 				? "Admin review was completed for this application."
@@ -397,6 +403,7 @@ export function getScholarshipTrackingProgress({
 		[applyStepId]: true,
 		document_uploading: completedStepIds.has("document_uploading"),
 		application_form: completedStepIds.has("application_form") || hasApplicationForm,
+		document_review: completedStepIds.has("document_review"),
 		admin_review: completedStepIds.has("admin_review"),
 		interview: completedStepIds.has("interview"),
 		application_review: completedStepIds.has("application_review"),
@@ -502,6 +509,7 @@ export function getScholarshipTrackingStatusLabel(progress = null) {
 	if (progress.hasRequestedMaterials) return "Materials Requested"
 	if (progress.currentStep?.id === "document_uploading") return "Uploading of Document"
 	if (progress.currentStep?.id === "application_form") return "Application Form"
+	if (progress.currentStep?.id === "document_review") return "Document Review"
 	if (progress.currentStep?.id === "admin_review") return "Admin Review"
 	if (progress.currentStep?.id === "interview") return "Interview"
 	if (progress.currentStep?.id === "application_review") return "Application Review"

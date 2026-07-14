@@ -1,5 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
 
+const APPLICATION_FORM_TEMPLATE_URL = "/Templates/AplicationForm_Format.pdf"
+
 function safeText(value, fallback = "N/A") {
 	const text = String(value ?? "").trim()
 	return text || fallback
@@ -21,6 +23,37 @@ export async function exportApplicationFormPdfDocument({
 	scholarship = {},
 	autoDownload = true,
 } = {}) {
+	try {
+		const response = await fetch(APPLICATION_FORM_TEMPLATE_URL)
+		if (!response.ok) throw new Error(`template_load_failed_${response.status}`)
+
+		const pdfBytes = new Uint8Array(await response.arrayBuffer())
+
+		if (autoDownload) {
+			downloadApplicationFormPdfBytes(
+				pdfBytes,
+				`Application_Form_${safeText(studentId || student?.studentnumber, "student")}.pdf`,
+			)
+		}
+
+		return { pdfBytes, source: "template" }
+	} catch (error) {
+		console.warn("Application form template could not be loaded. Using generated fallback.", error)
+		return exportGeneratedApplicationFormPdfDocument({
+			student,
+			studentId,
+			scholarship,
+			autoDownload,
+		})
+	}
+}
+
+async function exportGeneratedApplicationFormPdfDocument({
+	student = {},
+	studentId = "",
+	scholarship = {},
+	autoDownload = true,
+} = {}) {
 	const pdfDoc = await PDFDocument.create()
 	const page = pdfDoc.addPage([612, 792])
 	const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
@@ -35,10 +68,10 @@ export async function exportApplicationFormPdfDocument({
 		"Pending",
 	)
 	const course = safeText(student?.course)
-	const yearLevel = safeText(student?.year)
+	const yearLevel = safeText(student?.year || student?.yearLevel)
 	const section = safeText(student?.section)
 	const email = safeText(student?.email)
-	const contact = safeText(student?.contact || student?.mobile)
+	const contact = safeText(student?.cpNumber || student?.contact || student?.mobile)
 
 	page.drawText("BulsuScholar Application Form", {
 		x: 50,
@@ -133,7 +166,7 @@ export async function exportApplicationFormPdfDocument({
 		)
 	}
 
-	return { pdfBytes }
+	return { pdfBytes, source: "generated" }
 }
 
 export function downloadApplicationFormPdfBytes(

@@ -356,6 +356,16 @@
 	background: #f3f4f6;
 }
 
+.student-verified-dropdown-item.active {
+	background: #edf7f2;
+	color: #00633c;
+	font-weight: 600;
+}
+
+.student-verified-dropdown-item.active .student-verified-dropdown-item-icon {
+	color: #00633c;
+}
+
 .student-verified-dropdown-item-icon {
 	width: 20px;
 	height: 20px;
@@ -803,6 +813,20 @@
 	font-weight: 700;
 	line-height: 1.35;
 	color: #166534;
+}
+
+.student-scholarship-card-note--warning {
+	display: inline-flex;
+	align-items: flex-start;
+	gap: 0.35rem;
+	color: #b45309;
+}
+
+.student-scholarship-card-note--warning svg {
+	flex: 0 0 auto;
+	width: 0.95rem;
+	height: 0.95rem;
+	margin-top: 0.08rem;
 }
 
 .student-scholarship-card-meta {
@@ -1380,6 +1404,15 @@
 	background: #1f2937;
 }
 
+.student-dashboard--dark .student-verified-dropdown-item.active {
+	background: rgba(0, 99, 60, 0.28);
+	color: #6ee7b7;
+}
+
+.student-dashboard--dark .student-verified-dropdown-item.active .student-verified-dropdown-item-icon {
+	color: #6ee7b7;
+}
+
 .student-dashboard--dark .student-verified-dropdown-item-icon {
 	color: #9ca3af;
 }
@@ -1493,6 +1526,10 @@
 
 .student-dashboard--dark .student-scholarship-card-note {
 	color: #86efac;
+}
+
+.student-dashboard--dark .student-scholarship-card-note--warning {
+	color: #fbbf24;
 }
 
 .student-dashboard--dark .student-profile-panel {
@@ -2319,6 +2356,48 @@
 	word-break: break-word;
 }
 
+.student-kwsp-soe-box {
+	display: grid;
+	gap: 0.85rem;
+	margin-top: 1rem;
+	padding-top: 1rem;
+	border-top: 1px solid #dce7e1;
+}
+
+.student-kwsp-soe-copy span {
+	display: block;
+	margin-bottom: 0.2rem;
+	color: #64748b;
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.student-kwsp-soe-copy strong {
+	display: block;
+	color: #14532d;
+	font-size: 0.95rem;
+	font-weight: 600;
+}
+
+.student-kwsp-soe-copy p {
+	margin: 0.35rem 0 0;
+	color: #475569;
+	font-size: 0.78rem;
+	line-height: 1.45;
+}
+
+.student-kwsp-soe-actions {
+	display: grid;
+	gap: 0.55rem;
+}
+
+.student-kwsp-soe-actions .student-mini-btn {
+	width: 100%;
+	justify-content: center;
+}
+
 .student-kwsp-step-list {
 	display: grid;
 	gap: 0.7rem;
@@ -2471,7 +2550,7 @@
 
 .student-scholarship-workspace {
 	display: grid;
-	grid-template-columns: 1.25fr 1fr;
+	grid-template-columns: 1fr;
 	gap: 1rem;
 	margin-bottom: 1.6rem;
 }
@@ -4238,6 +4317,7 @@
 .student-verified-dropdown-theme-btn.active { background: #00633c; border-color: #00633c; }
 .student-header-notification-btn,
 .student-header-verified-btn { width: 38px; height: 38px; border: 1px solid #dce7e1; border-radius: 50%; background: #fff; color: #00633c; }
+.student-header-notification-btn.active { border-color: #00633c; background: #edf7f2; box-shadow: 0 0 0 2px rgba(0, 99, 60, 0.08); }
 .student-header-user-btn { gap: 0.42rem; min-height: 42px; padding: 0.28rem 0.35rem 0.28rem 0.3rem; border-color: #dce7e1; background: #fff; box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08); }
 .student-header-avatar { width: 32px; height: 32px; background: #00633c; font-weight: 700; }
 .student-verified-dropdown { border-radius: 8px; border-color: #dce7e1; box-shadow: 0 22px 48px rgba(15, 23, 42, 0.16); }
@@ -4687,6 +4767,7 @@
 .student-dashboard--dark .student-header-notification-btn,
 .student-dashboard--dark .student-header-verified-btn,
 .student-dashboard--dark .student-header-user-btn { border-color: #334155; background: #111827; }
+.student-dashboard--dark .student-header-notification-btn.active { border-color: #34d399; background: rgba(0, 99, 60, 0.28); color: #6ee7b7; }
 .student-dashboard--dark .student-modern-welcome h2,
 .student-dashboard--dark .student-detail-head h2,
 .student-dashboard--dark .student-detail-name h3,
@@ -5027,6 +5108,7 @@
 .student-announcement-author-badge {
 	display: grid;
 	place-items: center;
+	overflow: hidden;
 	width: 34px;
 	height: 34px;
 	border-radius: 50%;
@@ -5034,6 +5116,12 @@
 	color: #00633c;
 	font-size: 0.68rem;
 	font-weight: 700;
+}
+
+.student-announcement-author-badge img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
 }
 
 .student-announcement-card-head strong,
@@ -5708,6 +5796,13 @@
 	color: #17342a;
 	font-size: 0.8rem;
 	font-weight: 600;
+}
+
+.student-announcement-detail-summary-card--wrapping strong {
+	overflow: visible;
+	text-overflow: clip;
+	white-space: normal;
+	line-height: 1.45;
 }
 
 .student-announcement-detail-panel {
@@ -6449,6 +6544,23 @@
 	gap: 0.45rem;
 }
 
+.student-vault-card--application {
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.student-vault-card--application .student-vault-actions {
+	width: 100%;
+	margin-top: auto;
+	flex-wrap: nowrap;
+	justify-content: flex-end;
+}
+
+.student-vault-card--application .student-vault-actions > * {
+	justify-content: center;
+	white-space: nowrap;
+}
+
 .student-vault-link,
 .student-vault-upload-btn {
 	min-height: 30px;
@@ -6457,9 +6569,162 @@
 	border-radius: 4px;
 	background: transparent;
 	color: #00633c;
+	font-family: inherit;
 	font-size: 0.7rem;
 	font-weight: 500;
 	text-decoration: none;
+	cursor: pointer;
+}
+
+.student-vault-link:disabled {
+	opacity: 0.6;
+	cursor: wait;
+}
+
+.student-document-preview-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 140;
+	display: grid;
+	place-items: center;
+	padding: 1.25rem;
+	background: rgba(15, 23, 42, 0.64);
+	backdrop-filter: blur(6px);
+}
+
+.student-document-preview-modal {
+	width: min(960px, 100%);
+	max-height: min(84vh, 820px);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid #dce7e1;
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 0 22px 70px rgba(15, 23, 42, 0.2);
+}
+
+.student-document-preview-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem 1.1rem;
+	border-bottom: 1px solid #dce7e1;
+}
+
+.student-document-preview-head span {
+	display: block;
+	margin-bottom: 0.2rem;
+	color: #00633c;
+	font-size: 0.68rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+}
+
+.student-document-preview-head h3 {
+	margin: 0;
+	color: #17342a;
+	font-size: 1rem;
+	font-weight: 600;
+}
+
+.student-document-preview-head p {
+	margin: 0.22rem 0 0;
+	max-width: 560px;
+	color: #64748b;
+	font-size: 0.76rem;
+	overflow-wrap: anywhere;
+}
+
+.student-document-preview-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+}
+
+.student-document-preview-open,
+.student-document-preview-close {
+	min-height: 34px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.35rem;
+	border: 1px solid #b9d8ca;
+	border-radius: 6px;
+	background: #fff;
+	color: #00633c;
+	font-family: inherit;
+	font-size: 0.75rem;
+	font-weight: 500;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.student-document-preview-open {
+	padding: 0 0.75rem;
+}
+
+.student-document-preview-close {
+	width: 34px;
+	padding: 0;
+}
+
+.student-document-preview-body {
+	min-height: 420px;
+	flex: 1;
+	display: grid;
+	place-items: center;
+	overflow: auto;
+	background: #f8fffb;
+}
+
+.student-document-preview-image {
+	width: 100%;
+	max-width: 920px;
+	max-height: min(68vh, 680px);
+	object-fit: contain;
+	padding: 1rem;
+}
+
+.student-document-preview-state {
+	min-height: 280px;
+	display: grid;
+	place-items: center;
+	align-content: center;
+	gap: 0.65rem;
+	color: #64748b;
+	font-size: 0.82rem;
+}
+
+.student-document-preview-state svg {
+	width: 2rem;
+	height: 2rem;
+	color: #00633c;
+}
+
+@media (max-width: 640px) {
+	.student-vault-card--application .student-vault-actions {
+		flex-wrap: wrap;
+	}
+
+	.student-document-preview-backdrop {
+		padding: 0.65rem;
+	}
+
+	.student-document-preview-head {
+		flex-direction: column;
+	}
+
+	.student-document-preview-actions {
+		width: 100%;
+		justify-content: space-between;
+	}
+
+	.student-document-preview-body {
+		min-height: 360px;
+	}
 }
 
 .student-profile-actions {
@@ -6519,6 +6784,30 @@
 	border-color: #334155;
 	background: #111827;
 	box-shadow: none;
+}
+
+.student-dashboard--dark .student-document-preview-modal,
+.student-dashboard--dark .student-document-preview-open,
+.student-dashboard--dark .student-document-preview-close {
+	border-color: #334155;
+	background: #111827;
+	color: #6ee7b7;
+}
+
+.student-dashboard--dark .student-document-preview-head {
+	border-bottom-color: #334155;
+}
+
+.student-dashboard--dark .student-document-preview-head h3 {
+	color: #f8fafc;
+}
+
+.student-dashboard--dark .student-document-preview-head p {
+	color: #94a3b8;
+}
+
+.student-dashboard--dark .student-document-preview-body {
+	background: #0f172a;
 }
 
 .student-dashboard--dark .student-profile-input {

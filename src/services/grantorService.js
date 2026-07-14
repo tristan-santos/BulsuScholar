@@ -202,6 +202,7 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 		previewText: raw.previewText || raw.description || "",
 		applicationWindow: raw.applicationWindow || "",
 		applicationEnabled: raw.applicationEnabled === true,
+		acceptIrregularStudents: raw.acceptIrregularStudents === true,
 		requiredDocuments: {
 			cog: raw.requiredDocuments?.cog === true,
 			cor: raw.requiredDocuments?.cor === true,
