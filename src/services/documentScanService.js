@@ -1,5 +1,5 @@
 const DOCUMENT_SCAN_API_URL = (
-	import.meta.env.VITE_DOCUMENT_SCAN_API_URL || "http://localhost:8000"
+	import.meta.env.VITE_DOCUMENT_SCAN_API_URL || "https://bulsuscholar.onrender.com"
 ).replace(/\/$/, "")
 
 export async function scanStudentDocument(file, documentType = "cor") {

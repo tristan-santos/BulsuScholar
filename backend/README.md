@@ -23,5 +23,6 @@ For scanned PDF OCR, install Poppler and add its `bin` folder to PATH. Digital P
 Add this to `.env`:
 
 ```env
-VITE_DOCUMENT_SCAN_API_URL=http://localhost:8000
+VITE_DOCUMENT_SCAN_API_URL=https://bulsuscholar.onrender.com
+VITE_BACKEND_API_URL=https://bulsuscholar.onrender.com
 ```

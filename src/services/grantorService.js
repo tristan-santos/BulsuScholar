@@ -4,7 +4,7 @@ import { getScholarshipPolicy } from "./scholarshipService"
 const PYTHON_BACKEND_API_URL = (
 	import.meta.env.VITE_BACKEND_API_URL ||
 	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
-	"http://localhost:8000"
+	"https://bulsuscholar.onrender.com"
 ).replace(/\/$/, "")
 
 export const GRANTOR_PORTAL_COLLECTION = "grantorPortals"

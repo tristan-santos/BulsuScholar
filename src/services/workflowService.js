@@ -1,7 +1,7 @@
 const BACKEND_API_URL = (
 	import.meta.env.VITE_BACKEND_API_URL ||
 	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
-	"http://localhost:8000"
+	"https://bulsuscholar.onrender.com"
 ).replace(/\/$/, "")
 
 async function postWorkflow(path, payload = {}) {
