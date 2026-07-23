@@ -3065,11 +3065,13 @@ export default function ProviderDashboard() {
 							<div><HiCheck /><span>Approved</span><strong>{applicationInsights.approved}</strong></div>
 							<div><HiOutlineInbox /><span>Rejected / Archived</span><strong>{applicationInsights.rejected}</strong></div>
 						</div>
-						<div className="grantor-applications-filters">
+						<div className="grantor-applications-toolbar">
 							<div className="grantor-application-tabs" aria-label="Application record tabs">
 								<button type="button" className={applicationArchiveTab === "active" ? "active" : ""} onClick={() => { setApplicationArchiveTab("active"); setApplicationStatusFilter("All") }}>Active <span>{activeApplications.length}</span></button>
 								<button type="button" className={applicationArchiveTab === "rejected" ? "active" : ""} onClick={() => { setApplicationArchiveTab("rejected"); setApplicationStatusFilter("All") }}>Rejected <span>{rejectedApplications.length}</span></button>
 							</div>
+						</div>
+						<div className="grantor-applications-filters">
 							<label className="grantor-search-field"><HiOutlineSearch /><input type="text" aria-label="Search applications" placeholder="Search applicant, ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
 							<select aria-label="Filter applications by status" value={applicationStatusFilter} onChange={(event) => setApplicationStatusFilter(event.target.value)}><option value="All">All Statuses</option>{applicationStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select>
 						</div>

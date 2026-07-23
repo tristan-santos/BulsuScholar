@@ -712,42 +712,43 @@
 }
 
 .grantor-applications-panel { display: grid; gap: 0; background: #fff; }
-.grantor-applications-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 0 1rem; border-bottom: 1px solid #dce7e1; }
+.grantor-applications-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.35rem 0 1.45rem; border-top: 1px solid #dce7e1; border-bottom: 1px solid #dce7e1; }
 .grantor-applications-title { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
-.grantor-applications-title > span { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #b9d8ca; border-radius: 6px; color: #00633c; }
-.grantor-applications-title > span svg { width: 1.15rem; height: 1.15rem; }
-.grantor-applications-title h2 { margin: 0; color: #17342a; font-size: 1.25rem; font-weight: 600; }
-.grantor-applications-title p { margin: 0.18rem 0 0; color: #64748b; font-size: 0.76rem; }
+.grantor-applications-title > span { display: grid; place-items: center; width: 52px; height: 52px; border: 1px solid #b9d8ca; border-radius: 8px; background: #f4fbf7; color: #00633c; }
+.grantor-applications-title > span svg { width: 1.35rem; height: 1.35rem; }
+.grantor-applications-title h2 { margin: 0; color: #003d28; font-size: 1.75rem; font-weight: 700; letter-spacing: 0; }
+.grantor-applications-title p { margin: 0.32rem 0 0; color: #5d6f88; font-size: 0.94rem; font-weight: 400; }
 .grantor-applications-availability { display: flex; align-items: center; gap: 0.75rem; padding-left: 1rem; border-left: 1px solid #dce7e1; }
 .grantor-applications-availability div { display: grid; gap: 0.08rem; text-align: right; }
-.grantor-applications-availability small { color: #64748b; font-size: 0.67rem; }
-.grantor-applications-availability strong { color: #00633c; font-size: 0.78rem; font-weight: 600; }
+.grantor-applications-availability small { color: #64748b; font-size: 0.72rem; font-weight: 500; }
+.grantor-applications-availability strong { color: #00633c; font-size: 0.86rem; font-weight: 650; }
 
 .grantor-applications-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid #dce7e1; }
-.grantor-applications-summary > div { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 0.55rem; min-width: 0; padding: 0.8rem 1rem; }
+.grantor-applications-summary > div { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 0.6rem; min-width: 0; padding: 1rem 1rem; }
 .grantor-applications-summary > div + div { border-left: 1px solid #e5ece8; }
-.grantor-applications-summary svg { width: 1rem; height: 1rem; color: #00633c; }
-.grantor-applications-summary span { overflow: hidden; color: #64748b; font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
-.grantor-applications-summary strong { color: #17342a; font-size: 1rem; font-weight: 600; }
+.grantor-applications-summary svg { width: 1.05rem; height: 1.05rem; color: #00633c; }
+.grantor-applications-summary span { overflow: hidden; color: #64748b; font-size: 0.74rem; font-weight: 650; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.grantor-applications-summary strong { color: #17342a; font-size: 1.05rem; font-weight: 650; }
 
-.grantor-applications-filters { display: grid; grid-template-columns: auto minmax(320px, 1fr) minmax(170px, 210px); align-items: center; gap: 0.75rem; padding: 0.85rem 0; border-bottom: 1px solid #dce7e1; }
+.grantor-applications-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.15rem 0 0.35rem; }
+.grantor-applications-filters { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(170px, 210px); align-items: center; gap: 1.25rem; padding: 0.55rem 0 1rem; border-bottom: 1px solid #dce7e1; }
 .grantor-applications-filters .grantor-search-field { min-height: 40px; min-width: 0; }
 .grantor-applications-filters input,
-.grantor-applications-filters select { width: 100%; height: 40px; border: 0; border-bottom: 1px solid #9fb2a8; border-radius: 0; background: #fff; color: #17342a; font: inherit; font-size: 0.78rem; }
+.grantor-applications-filters select { width: 100%; height: 42px; border: 0; border-bottom: 1px solid #b8c8c0; border-radius: 0; background: #fff; color: #17342a; font: inherit; font-size: 0.92rem; font-weight: 400; }
 .grantor-applications-filters input { padding: 0 0.4rem 0 2rem; }
 .grantor-applications-filters select { padding: 0 0.35rem; min-width: 0; }
 .grantor-applications-filters input:focus,
 .grantor-applications-filters select:focus { border-bottom-color: #00633c; outline: 0; }
 
 .grantor-applications-table-wrap { border: 0; border-radius: 0; }
-.grantor-applications-table { width: 100%; min-width: 940px; table-layout: auto; }
-.grantor-applications-table thead th { padding: 0.75rem 0.65rem; border-bottom: 1px solid #9fb2a8; background: #fff; color: #40554d; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
-.grantor-applications-table tbody td { padding: 0.8rem 0.65rem; border-bottom: 1px solid #e1e9e5; color: #263b33; font-size: 0.76rem; font-weight: 400; white-space: nowrap; }
+.grantor-applications-table { width: 100%; min-width: 1040px; table-layout: auto; }
+.grantor-applications-table thead th { padding: 0.9rem 0.65rem; border-bottom: 1px solid #9fb2a8; background: #fff; color: #142019; font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
+.grantor-applications-table tbody td { padding: 0.95rem 0.65rem; border-bottom: 1px solid #e1e9e5; color: #314157; font-size: 0.92rem; font-weight: 400; white-space: nowrap; }
 .grantor-applications-table tbody tr:hover { background: #f7fbf9; }
 .grantor-applications-table .admin-empty-row { display: table-row; margin: 0; padding: 0; border: 0; background: transparent; }
 .grantor-applications-table .admin-empty-row td { display: table-cell; width: auto; height: 150px; padding: 1.5rem; border: 0; border-bottom: 1px solid #e1e9e5; background: #fbfdfc; text-align: center; }
-.grantor-applications-table .admin-empty-row strong { color: #315549; font-size: 0.86rem; font-weight: 600; }
-.grantor-application-view-btn { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 30px; padding: 0 0.55rem; border: 1px solid #00633c; border-radius: 4px; background: transparent; color: #00633c; font: inherit; font-size: 0.7rem; font-weight: 500; cursor: pointer; }
+.grantor-applications-table .admin-empty-row strong { color: #315549; font-size: 0.94rem; font-weight: 650; }
+.grantor-application-view-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.38rem; min-height: 34px; padding: 0 0.75rem; border: 1px solid #00633c; border-radius: 6px; background: transparent; color: #00633c; font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 160ms ease, transform 160ms ease; }
 .grantor-application-view-btn:hover { background: #edf7f2; }
 .grantor-applications-table .admin-status-badge {
 	display: inline-flex;
@@ -758,7 +759,7 @@
 	border: 0;
 	border-radius: 0;
 	background: transparent;
-	font-size: 0.73rem;
+	font-size: 0.86rem;
 	font-weight: 600;
 	line-height: 1.2;
 }
@@ -2776,6 +2777,11 @@
 .grantor-portal--dark .grantor-applications-table .admin-empty-row strong { color: #cbd5e1; }
 .grantor-portal--dark .grantor-application-view-btn { border-color: #34d399; color: #6ee7b7; }
 .grantor-portal--dark .grantor-application-view-btn:hover { background: rgba(0, 99, 60, 0.2); }
+.grantor-portal--dark .grantor-applications-title > span,
+.grantor-portal--dark .grantor-application-tabs button span { background: rgba(0, 99, 60, 0.22); }
+.grantor-portal--dark .grantor-application-tabs button { color: #cbd5e1; }
+.grantor-portal--dark .grantor-application-tabs button.active { color: #6ee7b7; }
+.grantor-portal--dark .grantor-application-tabs button.active::after { background: #34d399; }
 
 .grantor-portal--dark .grantor-announcements-panel,
 .grantor-portal--dark .grantor-announcement-compose-form,
@@ -3665,33 +3671,47 @@
 .grantor-application-tabs {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.35rem;
-	padding: 0.2rem;
-	border: 1px solid #dce7e1;
-	border-radius: 8px;
-	background: #fff;
+	gap: 1.65rem;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
 	white-space: nowrap;
 }
 
 .grantor-application-tabs button {
-	min-height: 34px;
+	position: relative;
+	min-height: 42px;
 	display: inline-flex;
 	align-items: center;
 	gap: 0.4rem;
-	padding: 0 0.65rem;
+	padding: 0;
 	border: 0;
-	border-radius: 6px;
+	border-radius: 0;
 	background: transparent;
-	color: #52647a;
+	color: #3f4c5f;
 	font-family: inherit;
-	font-size: 0.75rem;
-	font-weight: 500;
+	font-size: 1rem;
+	font-weight: 650;
 	cursor: pointer;
 }
 
+.grantor-application-tabs button::after {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 3px;
+	background: transparent;
+	content: "";
+}
+
 .grantor-application-tabs button.active {
-	background: #eef8f3;
 	color: #00633c;
+}
+
+.grantor-application-tabs button.active::after {
+	background: #00633c;
 }
 
 .grantor-application-tabs button span {
@@ -3702,9 +3722,10 @@
 	height: 20px;
 	padding: 0 0.35rem;
 	border-radius: 999px;
-	background: #f1f5f9;
+	background: #eef8f3;
 	color: inherit;
-	font-size: 0.68rem;
+	font-size: 0.74rem;
+	font-weight: 650;
 }
 
 .grantor-reject-application-btn {
@@ -4207,4 +4228,104 @@
 	.grantor-application-card--documents .grantor-document-links {
 		grid-template-columns: 1fr;
 	}
+}
+
+/* Grantor-wide dropdown styling */
+.grantor-portal select {
+	min-height: 42px;
+	padding: 0 2.35rem 0 0.85rem !important;
+	border: 1px solid #cbded5 !important;
+	border-radius: 6px !important;
+	background-color: #fff !important;
+	background-image:
+		linear-gradient(45deg, transparent 50%, #00633c 50%),
+		linear-gradient(135deg, #00633c 50%, transparent 50%);
+	background-position:
+		calc(100% - 18px) 50%,
+		calc(100% - 12px) 50%;
+	background-size:
+		6px 6px,
+		6px 6px;
+	background-repeat: no-repeat;
+	color: #041f16 !important;
+	font-family: inherit;
+	font-size: 0.92rem !important;
+	font-weight: 500 !important;
+	line-height: 1.35;
+	appearance: none;
+	cursor: pointer;
+	transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.grantor-portal select:hover {
+	border-color: #8fb8a6 !important;
+	background-color: #fbfefd !important;
+}
+
+.grantor-portal select:focus {
+	border-color: #00633c !important;
+	box-shadow: 0 0 0 3px rgba(0, 99, 60, 0.1);
+	outline: 0 !important;
+}
+
+.grantor-portal select:disabled {
+	border-color: #dde8e3 !important;
+	background-color: #f4f7f5 !important;
+	color: #94a3b8 !important;
+	cursor: not-allowed;
+}
+
+.grantor-portal select option {
+	min-height: 42px;
+	padding: 0.85rem 0.9rem;
+	background: #fff;
+	color: #041f16;
+	font-size: 0.92rem;
+	font-weight: 500;
+	line-height: 1.55;
+}
+
+.grantor-portal select option:checked {
+	background: #eaf6f1;
+	color: #00633c;
+	font-weight: 650;
+}
+
+.grantor-portal select option:hover,
+.grantor-portal select option:focus {
+	background: #eaf6f1;
+	color: #00633c;
+}
+
+.grantor-portal--dark select {
+	border-color: #475569 !important;
+	background-color: #0f172a !important;
+	background-image:
+		linear-gradient(45deg, transparent 50%, #6ee7b7 50%),
+		linear-gradient(135deg, #6ee7b7 50%, transparent 50%);
+	color: #f8fafc !important;
+}
+
+.grantor-portal--dark select:hover,
+.grantor-portal--dark select:focus {
+	border-color: #34d399 !important;
+	background-color: #111827 !important;
+}
+
+.grantor-portal--dark select:disabled {
+	border-color: #334155 !important;
+	background-color: #1e293b !important;
+	color: #94a3b8 !important;
+}
+
+.grantor-portal--dark select option {
+	background: #0f172a;
+	color: #f8fafc;
+}
+
+.grantor-portal--dark select option:checked,
+.grantor-portal--dark select option:hover,
+.grantor-portal--dark select option:focus {
+	background: #12382a;
+	color: #6ee7b7;
 }

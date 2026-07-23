@@ -1,26 +1,51 @@
 import { useLocation, useNavigate } from "react-router-dom"
-import { HiOutlineArrowLeft, HiOutlineHome, HiOutlineSearch } from "react-icons/hi"
+import {
+	HiOutlineAcademicCap,
+	HiOutlineArrowLeft,
+	HiOutlineBell,
+	HiOutlineHome,
+	HiOutlineSearch,
+	HiOutlineShieldCheck,
+	HiOutlineUser,
+} from "react-icons/hi"
 import logo from "../assets/logo.png"
 import "../css/NotFoundPage.css"
 
 export default function NotFoundPage() {
 	const navigate = useNavigate()
 	const location = useLocation()
+	const suggestedRoutes = [
+		{ label: "Login", path: "/", icon: HiOutlineHome },
+		{ label: "Student Dashboard", path: "/student-dashboard", icon: HiOutlineAcademicCap },
+		{ label: "Profile", path: "/student-dashboard/profile", icon: HiOutlineUser },
+		{ label: "Announcements", path: "/student-dashboard/announcements", icon: HiOutlineBell },
+	]
 
 	return (
 		<main className="not-found-page">
 			<section className="not-found-shell" aria-labelledby="not-found-title">
-				<div className="not-found-brand">
-					<img src={logo} alt="BulSU Scholar logo" />
-					<div>
-						<strong>BulsuScholar</strong>
-						<span>Portal Navigation</span>
+				<header className="not-found-header">
+					<div className="not-found-brand">
+						<img src={logo} alt="BulSU Scholar logo" />
+						<div>
+							<strong>BulsuScholar</strong>
+							<span>Portal Navigation</span>
+						</div>
 					</div>
-				</div>
+					<div className="not-found-code">404</div>
+				</header>
 
 				<div className="not-found-content">
-					<div className="not-found-icon" aria-hidden>
-						<HiOutlineSearch />
+					<div className="not-found-visual" aria-hidden>
+						<div className="not-found-number">404</div>
+						<div className="not-found-rings">
+							<span />
+							<span />
+							<span />
+						</div>
+						<div className="not-found-icon">
+							<HiOutlineSearch />
+						</div>
 					</div>
 					<p className="not-found-kicker">Page Not Found</p>
 					<h1 id="not-found-title">We could not find this page.</h1>
@@ -31,6 +56,25 @@ export default function NotFoundPage() {
 						<span>Requested path</span>
 						<strong>{location.pathname}</strong>
 					</div>
+				</div>
+
+				<div className="not-found-suggestions" aria-label="Suggested pages">
+					{suggestedRoutes.map((item) => {
+						const Icon = item.icon
+						return (
+							<button type="button" key={item.path} className="not-found-route" onClick={() => navigate(item.path)}>
+								<span aria-hidden>
+									<Icon />
+								</span>
+								<strong>{item.label}</strong>
+							</button>
+						)
+					})}
+				</div>
+
+				<div className="not-found-note">
+					<HiOutlineShieldCheck aria-hidden />
+					<span>If this link came from an email, use the latest message sent by BulsuScholar.</span>
 				</div>
 
 				<div className="not-found-actions">
