@@ -16,7 +16,7 @@ if load_dotenv:
     load_dotenv(os.path.join(backend_dir, ".env"), override=True)
 
 try:
-    from .document_scanner import extract_image_text, extract_pdf_text, parse_document
+    from .document_scanner import extract_image_text, parse_document, parse_pdf_document
     from .email_service import send_email_notification
     from .grantor_algorithms import (
         check_student_table_duplicates,
@@ -68,7 +68,7 @@ try:
         update_material_request,
     )
 except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backend/
-    from document_scanner import extract_image_text, extract_pdf_text, parse_document
+    from document_scanner import extract_image_text, parse_document, parse_pdf_document
     from email_service import send_email_notification
     from grantor_algorithms import (
         check_student_table_duplicates,
@@ -448,13 +448,14 @@ async def scan_document(
     filename = (file.filename or "").lower()
 
     if content_type == "application/pdf" or filename.endswith(".pdf"):
-        text = extract_pdf_text(file_bytes)
+        extracted = parse_pdf_document(file_bytes, document_type)
     else:
         text = extract_image_text(file_bytes)
+        extracted = parse_document(text, document_type)
 
     return {
         "ok": True,
         "filename": file.filename,
         "contentType": file.content_type,
-        "extracted": parse_document(text, document_type),
+        "extracted": extracted,
     }

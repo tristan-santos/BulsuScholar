@@ -98,6 +98,13 @@ const COURSES = [
 	},
 ]
 
+const STUDENT_TYPE_OPTIONS = [
+	{ value: "regular", label: "Regular" },
+	{ value: "transferee", label: "Transferee" },
+	{ value: "shifted", label: "Shifted" },
+	{ value: "returning", label: "Returning Student" },
+]
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function isPasswordStrong(pwd) {
@@ -202,9 +209,10 @@ export default function SignupPage() {
 	const [documentScanResult, setDocumentScanResult] = useState({ cor: null, cog: null })
 	const [documentPreviewUrls, setDocumentPreviewUrls] = useState({ cor: "", cog: "" })
 	const [academicConcernTerms, setAcademicConcernTerms] = useState([])
-	const [isIrregularStudent, setIsIrregularStudent] = useState("")
-	const [academicConcernReason, setAcademicConcernReason] = useState("")
-	const [preferredScholarshipSupport, setPreferredScholarshipSupport] = useState("")
+	const [studentType, setStudentType] = useState("")
+	const [showTermsModal, setShowTermsModal] = useState(false)
+	const [termsChecked, setTermsChecked] = useState(false)
+	const [termsAccepted, setTermsAccepted] = useState(false)
 	const [showImagePreview, setShowImagePreview] = useState(false)
 	const [previewFile, setPreviewFile] = useState(null)
 	const [isPending, setIsPending] = useState(false)
@@ -218,6 +226,7 @@ export default function SignupPage() {
 		return year === "1" && isFirstCycle
 	}, [isFirstCycle, year])
 	const isCogRequired = !isCogOptional
+	const canUploadCog = Boolean(corFile)
 
 	useEffect(() => {
 		let isMounted = true
@@ -256,10 +265,8 @@ export default function SignupPage() {
 	}, [corFile, cogFile])
 
 	const hasAcademicConcern = useMemo(() => {
-		const numericGwa = Number.parseFloat(gwa)
-		return academicConcernTerms.length > 0 || (!Number.isNaN(numericGwa) && numericGwa >= 4)
-	}, [academicConcernTerms, gwa])
-	const shouldShowAcademicDetailQuestions = hasAcademicConcern || isIrregularStudent === "yes"
+		return academicConcernTerms.length > 0
+	}, [academicConcernTerms])
 
 	const [verificationStatus, setVerificationStatus] = useState(null)
 	const [showReview, setShowReview] = useState(false)
@@ -584,8 +591,25 @@ export default function SignupPage() {
 		)
 		console.log(
 			"GWA extraction method:",
-			gradeDebug.extractionMethod || "GWA-only extraction",
+			gradeDebug.extractionMethod || "header-anchored Final Grade column extraction",
 		)
+		if (documentType === "cog") {
+			console.log("[BulsuScholar] PYTHON COG CHECK RESULT:", {
+				hasAcademicConcern: extracted?.hasAcademicConcern,
+				academicConcernTerms: extracted?.academicConcernTerms || [],
+				extractionMethod: gradeDebug.extractionMethod || "",
+				finalGradesChecked: gradeDebug.grades || [],
+				concernMatches: gradeDebug.concernMatches || [],
+				rowDebug: gradeDebug.rowDebug || [],
+			})
+			console.log("Collected COG Final Grades:", gradeDebug.grades || [])
+			console.log("COG Final Grade row debug:", gradeDebug.rowDebug || [])
+			if (gradeDebug.concernMatches?.length) {
+				console.warn("COG Final Grade concerns detected:", gradeDebug.concernMatches)
+			} else {
+				console.info("No COG Final Grade concerns detected.")
+			}
+		}
 		console.log("Printed GWA detected:", extracted?.gwa || "Not detected")
 		console.log("GWA extraction debug:", {
 			value: gwaDebug.value || extracted?.gwa || "",
@@ -721,6 +745,18 @@ export default function SignupPage() {
 				return
 			}
 
+			if (documentType === "cog" && extracted?.hasAcademicConcern) {
+				const concerns = Array.isArray(extracted.academicConcernTerms)
+					? extracted.academicConcernTerms.join(", ")
+					: "5.0, 4.0, INC, UD, or OD"
+				setCogFile(null)
+				setGwa("")
+				setAcademicConcernTerms(Array.isArray(extracted.academicConcernTerms) ? extracted.academicConcernTerms : [])
+				toast.error(`COG final grades include ${concerns}. Students with these final grades cannot create an account through this signup.`)
+				setDocumentScanState((current) => ({ ...current, [documentType]: "error" }))
+				return
+			}
+
 			applyScannedStudentData(extracted)
 			toast.success(`${documentType.toUpperCase()} scanned. Review the autofilled data before submitting.`)
 			setDocumentScanState((current) => ({ ...current, [documentType]: "done" }))
@@ -744,11 +780,18 @@ export default function SignupPage() {
 			return
 		}
 
-		const validExtensions = ["png", "jpg", "jpeg", "pdf"]
+		if (documentType === "cog" && !corFile) {
+			toast.error("Upload your COR first before uploading your COG.")
+			if (resetInput) resetInput.value = ""
+			setCogFile(null)
+			return
+		}
+
+		const validExtensions = ["pdf"]
 		const fileExtension = file.name.split(".").pop()?.toLowerCase()
 
 		if (!validExtensions.includes(fileExtension)) {
-			toast.error("Only PNG, JPG, JPEG, and PDF files are allowed.")
+			toast.error("Only PDF files are allowed for COR and COG uploads.")
 			if (resetInput) resetInput.value = ""
 			if (documentType === "cor") setCorFile(null)
 			if (documentType === "cog") setCogFile(null)
@@ -859,13 +902,37 @@ export default function SignupPage() {
 			return
 		}
 
-		if (!isIrregularStudent || (shouldShowAcademicDetailQuestions && (!academicConcernReason.trim() || !preferredScholarshipSupport.trim()))) {
-			toast.error("Please answer the student status questions.")
+		if (!studentType) {
+			toast.error("Please select your student type.")
 			scrollToSection("section-academic-status")
 			return
 		}
 
+		if (documentScanResult.cog?.hasAcademicConcern) {
+			toast.error("Your COG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
+			scrollToSection("section-cor")
+			return
+		}
+
+		if (!termsAccepted) {
+			setTermsChecked(false)
+			setShowTermsModal(true)
+			return
+		}
+
 		// All validations passed, show review
+		setHasStartedReview(true)
+		setShowReview(true)
+	}
+
+	const handleAcceptTermsAndPreview = () => {
+		if (!termsChecked) {
+			toast.error("Please read and accept the terms and conditions before continuing.")
+			return
+		}
+
+		setTermsAccepted(true)
+		setShowTermsModal(false)
 		setHasStartedReview(true)
 		setShowReview(true)
 	}
@@ -1030,9 +1097,22 @@ export default function SignupPage() {
 			return
 		}
 
-		if (!isIrregularStudent || (shouldShowAcademicDetailQuestions && (!academicConcernReason.trim() || !preferredScholarshipSupport.trim()))) {
-			toast.error("Please answer the student status questions.")
+		if (!studentType) {
+			toast.error("Please select your student type.")
 			scrollToSection("section-academic-status")
+			return
+		}
+
+		if (documentScanResult.cog?.hasAcademicConcern) {
+			toast.error("Your COG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
+			scrollToSection("section-cor")
+			return
+		}
+
+		if (!termsAccepted) {
+			toast.error("Please accept the terms and conditions before creating your account.")
+			setTermsChecked(false)
+			setShowTermsModal(true)
 			return
 		}
 
@@ -1182,9 +1262,10 @@ export default function SignupPage() {
 				academicStatus: {
 					hasAcademicConcern,
 					concernTerms: academicConcernTerms,
-					isIrregularStudent,
-					reason: academicConcernReason.trim(),
-					preferredSupport: preferredScholarshipSupport.trim(),
+					studentType,
+					isIrregularStudent: false,
+					reason: "",
+					preferredSupport: "",
 				},
 			}
 			console.log(
@@ -1547,7 +1628,7 @@ export default function SignupPage() {
 							noValidate
 						>
 							<div className="signup-process-step signup-process-step--documents">
-								<span>Stage 1</span>
+								<span>Step 1</span>
 								<strong>Submit Required Documents</strong>
 								<p>Upload your COR and COG first before completing the student account form.</p>
 							</div>
@@ -1574,7 +1655,7 @@ export default function SignupPage() {
 										id="signup-cor-upload"
 										type="file"
 										className="signup-file-input"
-										accept=".png,.jpg,.pdf,image/png,image/jpeg,application/pdf"
+										accept=".pdf,application/pdf"
 										onChange={(e) => processSignupDocumentFile(e.target.files?.[0] ?? null, "cor", e.target)}
 									/>
 									{corFile ? (
@@ -1622,14 +1703,16 @@ export default function SignupPage() {
 									)}
 								</label>
 								<label
-									className="signup-upload-wrap"
-									htmlFor="signup-cog-upload"
+									className={`signup-upload-wrap ${!canUploadCog ? "signup-upload-wrap--disabled" : ""}`}
+									htmlFor={canUploadCog ? "signup-cog-upload" : undefined}
+									aria-disabled={!canUploadCog}
 								>
 									<input
 										id="signup-cog-upload"
 										type="file"
 										className="signup-file-input"
-										accept=".png,.jpg,.pdf,image/png,image/jpeg,application/pdf"
+										accept=".pdf,application/pdf"
+										disabled={!canUploadCog}
 										onChange={(e) => processSignupDocumentFile(e.target.files?.[0] ?? null, "cog", e.target)}
 									/>
 									{cogFile ? (
@@ -1658,7 +1741,9 @@ export default function SignupPage() {
 												aria-hidden
 											/>
 											<span className="signup-upload-hint">
-												{isCogOptional
+												{!canUploadCog
+													? "Upload COR first to enable COG upload"
+													: isCogOptional
 													? "Optional: Drop COG here or click to browse"
 													: "Drop COG here or click to browse"}
 											</span>
@@ -1702,8 +1787,8 @@ export default function SignupPage() {
 									style={{ marginTop: "1.5rem" }}
 								>
 									{isCogOptional
-										? "Stage 1 requires COR. COG is optional because first-year students in the first cycle may not have grades yet."
-										: "Stage 1 requires both COR and COG to verify your enrollment and academic status."}
+										? "Step 1 requires COR. COG is optional because first-year students in the first cycle may not have grades yet."
+										: "Step 1 requires both COR and COG to verify your enrollment and academic status."}
 								</div>
 							</div>
 
@@ -1711,7 +1796,7 @@ export default function SignupPage() {
 								<div className="signup-stage-locked">
 									<HiOutlineClock aria-hidden />
 									<div>
-										<strong>Complete Stage 1 to continue</strong>
+										<strong>Complete Step 1 to continue</strong>
 										<p>
 											Upload your COR
 											{isCogOptional ? "" : " and COG with GWA"} before the student form appears.
@@ -2178,70 +2263,33 @@ export default function SignupPage() {
 									</div>
 									{hasAcademicConcern ? (
 										<div className="signup-cor-note signup-cor-note--warning">
-											Detected academic concern: {academicConcernTerms.length > 0 ? academicConcernTerms.join(", ") : "GWA 4.0 or higher"}.
-											These answers will help the recommendation algorithm match you with suitable grantors.
+											Detected restricted Final Grade value: {academicConcernTerms.length > 0 ? academicConcernTerms.join(", ") : "5.0, 4.0, INC, UD, or OD"}.
+											Students with these COG final grades cannot continue account creation through this signup.
 										</div>
 									) : (
 										<div className="signup-cor-note">
-											Select your student status so recommendations can match regular and irregular students more accurately.
+											Select your student type so recommendations can match your academic background more accurately.
 										</div>
 									)}
 
 									<label className="login-label">
-										Are you an irregular student? <span className="required">*</span>
+										Student Type <span className="required">*</span>
 									</label>
 									<div className="signup-choice-row">
-										<button
-											type="button"
-											className={`signup-choice-pill ${isIrregularStudent === "yes" ? "is-active" : ""}`}
-											onClick={() => setIsIrregularStudent("yes")}
-										>
-											Yes
-										</button>
-										<button
-											type="button"
-											className={`signup-choice-pill ${isIrregularStudent === "no" ? "is-active" : ""}`}
-											onClick={() => setIsIrregularStudent("no")}
-										>
-											No
-										</button>
-									</div>
-
-									{shouldShowAcademicDetailQuestions ? (
-										<>
-											<label className="login-label" htmlFor="signup-academic-reason">
-												{hasAcademicConcern
-													? "What is the reason for the failed, incomplete, dropped, or low-grade subject?"
-													: "Why are you currently an irregular student?"}{" "}
-												<span className="required">*</span>
-											</label>
-											<div className="login-input-wrap login-input-wrap--textarea">
-												<textarea
-													id="signup-academic-reason"
-													className="login-input login-input--textarea"
-													placeholder="Example: subject retake, schedule conflict, medical reason, family emergency, or academic adjustment"
-													value={academicConcernReason}
-													onChange={(e) => setAcademicConcernReason(e.target.value)}
-												/>
-											</div>
-
-											<label className="login-label" htmlFor="signup-support-preference">
-												What scholarship support would help you most? <span className="required">*</span>
-											</label>
-											<select
-												id="signup-support-preference"
-												className="login-select"
-												value={preferredScholarshipSupport}
-												onChange={(e) => setPreferredScholarshipSupport(e.target.value)}
+										{STUDENT_TYPE_OPTIONS.map((option) => (
+											<label
+												key={option.value}
+												className={`signup-choice-pill ${studentType === option.value ? "is-active" : ""}`}
 											>
-												<option value="" disabled>Select support type</option>
-												<option value="tuition">Tuition or school fee support</option>
-												<option value="allowance">Monthly allowance</option>
-												<option value="materials">Books, uniform, or learning materials</option>
-												<option value="remedial">Academic recovery or remedial support</option>
-											</select>
-										</>
-									) : null}
+												<input
+													type="checkbox"
+													checked={studentType === option.value}
+													onChange={() => setStudentType(option.value)}
+												/>
+												{option.label}
+											</label>
+										))}
+									</div>
 								</div>
 							) : null}
 
@@ -2454,7 +2502,7 @@ export default function SignupPage() {
 								</div>
 							</div>
 
-							{isIrregularStudent || hasAcademicConcern ? (
+							{studentType || hasAcademicConcern ? (
 								<div className="signup-review-card signup-review-card--academic">
 									<div className="signup-review-card-header">
 										<h3 className="signup-review-card-title">
@@ -2481,28 +2529,16 @@ export default function SignupPage() {
 												{hasAcademicConcern
 													? academicConcernTerms.length > 0
 														? academicConcernTerms.join(", ")
-														: "GWA 4.0 or higher"
+														: "5.0, 4.0, INC, UD, or OD"
 													: "None detected"}
 											</span>
 										</div>
 										<div className="signup-review-row">
-											<span className="signup-review-label">Irregular Student:</span>
+											<span className="signup-review-label">Student Type:</span>
 											<span className="signup-review-value">
-												{isIrregularStudent === "yes" ? "Yes" : "No"}
+												{STUDENT_TYPE_OPTIONS.find((option) => option.value === studentType)?.label || "-"}
 											</span>
 										</div>
-										{shouldShowAcademicDetailQuestions ? (
-											<>
-												<div className="signup-review-row">
-													<span className="signup-review-label">Reason:</span>
-													<span className="signup-review-value">{academicConcernReason}</span>
-												</div>
-												<div className="signup-review-row">
-													<span className="signup-review-label">Preferred Support:</span>
-													<span className="signup-review-value">{preferredScholarshipSupport}</span>
-												</div>
-											</>
-										) : null}
 									</div>
 								</div>
 							) : null}
@@ -2664,6 +2700,95 @@ export default function SignupPage() {
 							alt="Document Preview"
 							className="signup-preview-image"
 						/>
+					</div>
+				</div>
+			)}
+
+			{showTermsModal && (
+				<div
+					className="signup-terms-modal-overlay"
+					onClick={() => setShowTermsModal(false)}
+				>
+					<div
+						className="signup-terms-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="signup-terms-title"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<button
+							type="button"
+							className="signup-terms-close"
+							aria-label="Close terms and conditions"
+							onClick={() => setShowTermsModal(false)}
+						>
+							X
+						</button>
+						<div className="signup-terms-header">
+							<span className="signup-terms-icon" aria-hidden>
+								<HiOutlineCheckCircle />
+							</span>
+							<div>
+								<p className="signup-terms-kicker">Account Consent</p>
+								<h2 id="signup-terms-title">Terms and Conditions</h2>
+							</div>
+						</div>
+						<div className="signup-terms-body">
+							<p>
+								Before creating your BulsuScholar account, please confirm that
+								the information and documents you submitted are accurate,
+								complete, and belong to you.
+							</p>
+							<ul>
+								<li>
+									I understand that my COR, COG, personal information, contact
+									details, and academic records will be used to verify my
+									scholarship eligibility.
+								</li>
+								<li>
+									I agree that BulsuScholar may compare my submitted documents
+									with existing student and grantor records to prevent duplicate
+									accounts or duplicate scholarship applications.
+								</li>
+								<li>
+									I confirm that I am not using another student's documents,
+									email address, CP number, or student number.
+								</li>
+								<li>
+									I understand that false or mismatched information may cause my
+									account request or scholarship application to be rejected,
+									archived, or reviewed manually.
+								</li>
+							</ul>
+						</div>
+						<label className="signup-terms-check">
+							<input
+								type="checkbox"
+								checked={termsChecked}
+								onChange={(e) => setTermsChecked(e.target.checked)}
+							/>
+							<span>
+								I have read and agree to the terms and conditions for creating
+								my BulsuScholar account.
+							</span>
+						</label>
+						<div className="signup-terms-actions">
+							<button
+								type="button"
+								className="signup-terms-cancel"
+								onClick={() => setShowTermsModal(false)}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								className="signup-terms-continue"
+								disabled={!termsChecked}
+								onClick={handleAcceptTermsAndPreview}
+							>
+								Continue to Preview
+							</button>
+						</div>
 					</div>
 				</div>
 			)}

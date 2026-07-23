@@ -1,4 +1,4 @@
-import io
+﻿import io
 import re
 from typing import Any
 
@@ -46,7 +46,7 @@ def clean_name_candidate(value: str = "") -> str:
         maxsplit=1,
         flags=re.IGNORECASE,
     )[0]
-    cleaned = re.sub(r"[^A-Za-zÑñ,.' -]", " ", cleaned)
+    cleaned = re.sub(r"[^A-Za-zÃ‘Ã±,.' -]", " ", cleaned)
     cleaned = normalize_space(cleaned)
     return cleaned.strip(" ,.-")
 
@@ -58,7 +58,7 @@ def is_likely_name_candidate(value: str = "") -> bool:
         return False
     if NAME_BLOCKED_WORDS.search(candidate):
         return False
-    return bool(re.fullmatch(r"[A-Za-zÃ‘Ã± ,.'-]+", candidate))
+    return bool(re.fullmatch(r"[A-Za-zÃƒâ€˜ÃƒÂ± ,.'-]+", candidate))
 
 
 def collect_labeled_name(lines: list[str], index: int, remainder: str = "") -> str:
@@ -69,7 +69,7 @@ def collect_labeled_name(lines: list[str], index: int, remainder: str = "") -> s
         cleaned_line = clean_name_candidate(next_line)
         if not cleaned_line:
             continue
-        if is_likely_name_candidate(" ".join(chunks + [cleaned_line])) or re.fullmatch(r"[A-Za-zÃ‘Ã±]\.?", cleaned_line):
+        if is_likely_name_candidate(" ".join(chunks + [cleaned_line])) or re.fullmatch(r"[A-Za-zÃƒâ€˜ÃƒÂ±]\.?", cleaned_line):
             chunks.append(cleaned_line)
             continue
         break
@@ -238,6 +238,325 @@ def extract_gwa(text: str) -> str:
     return extract_gwa_result(text)["value"]
 
 
+FINAL_GRADE_CONCERN_VALUES = {"4", "4.0", "4.00", "5", "5.0", "5.00", "INC", "UD", "OD"}
+
+
+def normalize_grade_token(value: str = "") -> str:
+    cleaned = normalize_space(value).upper().replace(",", ".")
+    if cleaned in {"INC", "UD", "OD"}:
+        return cleaned
+    numeric = re.fullmatch(r"([1-5])(?:\.([0-9]{1,2}))?", cleaned)
+    if not numeric:
+        return cleaned
+    whole = numeric.group(1)
+    decimals = numeric.group(2)
+    if decimals is None:
+        return whole
+    return f"{whole}.{decimals.ljust(1, '0')[:2]}".rstrip("0").rstrip(".") if whole in {"4", "5"} else f"{whole}.{decimals}"
+
+
+def is_grade_token(value: str = "") -> bool:
+    return bool(re.fullmatch(r"(?:[1-5](?:[\.,](?:00|0|25|50|5|75))?|INC|UD|OD)", normalize_space(value), re.IGNORECASE))
+
+
+def grade_debug_from_grades(
+    grades: list[str],
+    row_debug: list[dict[str, str]],
+    extraction_method: str,
+    explanation: str,
+    extra_concern_matches: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    normalized_grades = [normalize_grade_token(grade) for grade in grades if normalize_grade_token(grade)]
+    concern_matches = [
+        {"grade": grade, "reason": "Final Grade column contains 5.0, 4.0, INC, UD, or OD"}
+        for grade in normalized_grades
+        if normalize_grade_token(grade) in FINAL_GRADE_CONCERN_VALUES
+    ]
+    concern_matches.extend(extra_concern_matches or [])
+    return {
+        "grades": normalized_grades,
+        "concernMatches": concern_matches,
+        "rowDebug": row_debug[:120],
+        "extractionMethod": extraction_method,
+        "explanation": explanation,
+    }
+
+
+def extract_final_grades_from_pdf_tables(file_bytes: bytes) -> dict[str, Any]:
+    final_grades: list[str] = []
+    row_debug: list[dict[str, str]] = []
+    remarks_concerns: list[dict[str, str]] = []
+
+    try:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for page_index, page in enumerate(pdf.pages, start=1):
+                tables = page.extract_tables() or []
+                for table_index, table in enumerate(tables, start=1):
+                    if not table:
+                        continue
+                    header_index = -1
+                    final_col = -1
+                    remarks_col = -1
+                    for row_index, row in enumerate(table):
+                        cells = [normalize_space(cell or "") for cell in row]
+                        for cell_index, cell in enumerate(cells):
+                            if re.search(r"\bFinal\b", cell, re.IGNORECASE):
+                                header_index = row_index
+                                final_col = cell_index
+                            if re.search(r"\bRemarks?\b", cell, re.IGNORECASE):
+                                remarks_col = cell_index
+                        if final_col >= 0:
+                            break
+
+                    if final_col < 0:
+                        continue
+
+                    for row in table[header_index + 1 :]:
+                        cells = [normalize_space(cell or "") for cell in row]
+                        if final_col >= len(cells):
+                            continue
+                        row_text = " | ".join(cells)
+                        if re.search(r"\b(?:General\s+Weighted\s+Average|G\.?W\.?A\.?|Weighted\s+Average)\b", row_text, re.IGNORECASE):
+                            continue
+                        remarks_cell = cells[remarks_col] if 0 <= remarks_col < len(cells) else ""
+                        has_failed_remark = bool(re.search(r"\bFailed\b", remarks_cell, re.IGNORECASE))
+                        grade_cell = cells[final_col]
+                        if not is_grade_token(grade_cell) and not has_failed_remark:
+                            continue
+                        grade = normalize_grade_token(grade_cell) if is_grade_token(grade_cell) else ""
+                        if grade:
+                            final_grades.append(grade)
+                        if has_failed_remark:
+                            remarks_concerns.append({
+                                "grade": grade or "Failed",
+                                "reason": "Remarks column contains Failed",
+                            })
+                        row_debug.append({
+                            "page": str(page_index),
+                            "table": str(table_index),
+                            "finalColumnIndex": str(final_col),
+                            "remarksColumnIndex": str(remarks_col),
+                            "selectedFinalGrade": grade,
+                            "selectedRemarks": remarks_cell,
+                            "hasFailedRemark": str(has_failed_remark),
+                            "row": row_text[:260],
+                        })
+    except Exception as exc:
+        return grade_debug_from_grades(
+            [],
+            [{"error": str(exc)}],
+            "pdfplumber table Final column extraction failed",
+            "The scanner attempted table-cell extraction but pdfplumber could not read the table structure.",
+        )
+
+    return grade_debug_from_grades(
+        final_grades,
+        row_debug,
+        "pdfplumber table Final column extraction",
+        "COG scanning reads the PDF table cells and collects values under the exact Final column. It also checks the Remarks column for Failed.",
+        remarks_concerns,
+    )
+
+
+def extract_final_grades_from_pdf_words(file_bytes: bytes) -> dict[str, Any]:
+    final_grades: list[str] = []
+    row_debug: list[dict[str, str]] = []
+    remarks_concerns: list[dict[str, str]] = []
+
+    try:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for page_index, page in enumerate(pdf.pages, start=1):
+                words = page.extract_words(
+                    x_tolerance=2,
+                    y_tolerance=3,
+                    keep_blank_chars=False,
+                    use_text_flow=False,
+                ) or []
+                if not words:
+                    continue
+
+                header_words = [
+                    word for word in words
+                    if re.fullmatch(r"Final", normalize_space(word.get("text", "")), re.IGNORECASE)
+                ]
+                remarks_words = [
+                    word for word in words
+                    if re.fullmatch(r"Remarks?", normalize_space(word.get("text", "")), re.IGNORECASE)
+                ]
+                if not header_words:
+                    continue
+
+                final_header = min(header_words, key=lambda word: float(word.get("top", 0)))
+                final_x0 = float(final_header.get("x0", 0))
+                final_x1 = float(final_header.get("x1", final_x0 + 36))
+                header_top = float(final_header.get("top", 0))
+                header_bottom = float(final_header.get("bottom", header_top + 12))
+
+                right_header_words = [
+                    word for word in words
+                    if header_top - 16 <= float(word.get("top", 0)) <= header_bottom + 16
+                    and float(word.get("x0", 0)) > final_x1 + 4
+                    and re.search(r"^(?:Re-?Exam|Credit|Units?|Remarks?)$", normalize_space(word.get("text", "")), re.IGNORECASE)
+                ]
+                next_col_x = min(
+                    [float(word.get("x0", 0)) for word in right_header_words],
+                    default=final_x1 + 72,
+                )
+
+                remarks_header = min(
+                    remarks_words,
+                    key=lambda word: abs(float(word.get("top", 0)) - header_top),
+                    default=None,
+                )
+                remarks_x0 = float(remarks_header.get("x0", 0)) if remarks_header else None
+                remarks_x1 = float(remarks_header.get("x1", remarks_x0 + 80)) if remarks_header else None
+
+                data_words = [
+                    word for word in words
+                    if float(word.get("top", 0)) > header_bottom + 2
+                ]
+                rows: list[list[dict[str, Any]]] = []
+                for word in sorted(data_words, key=lambda item: (float(item.get("top", 0)), float(item.get("x0", 0)))):
+                    top = float(word.get("top", 0))
+                    if not rows or abs(top - float(rows[-1][0].get("top", 0))) > 4:
+                        rows.append([word])
+                    else:
+                        rows[-1].append(word)
+
+                for row in rows:
+                    sorted_row = sorted(row, key=lambda item: float(item.get("x0", 0)))
+                    row_text = normalize_space(" ".join(word.get("text", "") for word in sorted_row))
+                    if not row_text:
+                        continue
+                    if re.search(r"\b(?:General\s+Weighted\s+Average|G\.?W\.?A\.?|Weighted\s+Average)\b", row_text, re.IGNORECASE):
+                        break
+                    if re.search(r"\b(?:https?://|blob:|Report|Page\s+\d+|\d+/\d+/\d+)\b", row_text, re.IGNORECASE):
+                        continue
+
+                    final_tokens = [
+                        normalize_grade_token(word.get("text", ""))
+                        for word in sorted_row
+                        if final_x0 - 10 <= float(word.get("x0", 0)) <= next_col_x - 4
+                        and is_grade_token(word.get("text", ""))
+                    ]
+                    remarks_text = ""
+                    if remarks_x0 is not None and remarks_x1 is not None:
+                        remarks_text = normalize_space(" ".join(
+                            word.get("text", "")
+                            for word in sorted_row
+                            if remarks_x0 - 18 <= float(word.get("x0", 0)) <= remarks_x1 + 96
+                        ))
+                    has_failed_remark = bool(re.search(r"\bFailed\b", remarks_text or row_text, re.IGNORECASE))
+
+                    if not final_tokens and not has_failed_remark:
+                        continue
+
+                    grade = final_tokens[0] if final_tokens else ""
+                    if grade:
+                        final_grades.append(grade)
+                    if has_failed_remark:
+                        remarks_concerns.append({
+                            "grade": grade or "Failed",
+                            "reason": "Remarks column contains Failed",
+                        })
+                    row_debug.append({
+                        "page": str(page_index),
+                        "finalColumnX": f"{final_x0:.1f}-{next_col_x:.1f}",
+                        "remarksColumnX": f"{remarks_x0:.1f}" if remarks_x0 is not None else "",
+                        "selectedFinalGrade": grade,
+                        "selectedRemarks": remarks_text,
+                        "hasFailedRemark": str(has_failed_remark),
+                        "line": row_text[:260],
+                    })
+    except Exception as exc:
+        return grade_debug_from_grades(
+            [],
+            [{"error": str(exc)}],
+            "pdf word-position Final column extraction failed",
+            "The scanner attempted coordinate-based PDF word extraction but could not read the PDF text positions.",
+        )
+
+    return grade_debug_from_grades(
+        final_grades,
+        row_debug,
+        "pdf word-position Final and Remarks column extraction",
+        "COG scanning locates the Final and Remarks headers by PDF word coordinates, then reads only values below those columns. Footer/page URL numbers are ignored.",
+        remarks_concerns,
+    )
+
+
+def extract_final_grades_from_text(text: str) -> dict[str, Any]:
+    grade_token_pattern = re.compile(r"\b(?:[1-5](?:[\.,](?:00|0|25|50|5|75))?|INC|UD|OD)\b", re.IGNORECASE)
+    raw_lines = [line.rstrip() for line in text.splitlines() if normalize_space(line)]
+    header_index = -1
+
+    for index, line in enumerate(raw_lines):
+        normalized = normalize_space(line)
+        if re.search(r"\bFinal\b", normalized, re.IGNORECASE) and re.search(
+            r"\b(?:Re-?Exam|Credit\s+Units?|Units?|Remarks?)\b",
+            normalized,
+            re.IGNORECASE,
+        ):
+            header_index = index
+            break
+
+    candidate_lines = raw_lines[header_index + 1 :] if header_index >= 0 else raw_lines
+    final_grades: list[str] = []
+    row_debug: list[dict[str, str]] = []
+    remarks_concerns: list[dict[str, str]] = []
+    rows_after_first_grade = 0
+
+    for raw_line in candidate_lines:
+        line = normalize_space(raw_line)
+        if not line:
+            continue
+        if re.search(r"\b(?:General\s+Weighted\s+Average|G\.?W\.?A\.?|Weighted\s+Average)\b", line, re.IGNORECASE):
+            break
+        if re.search(r"\b(?:https?://|blob:|Report|Page\s+\d+|\d+/\d+/\d+)\b", line, re.IGNORECASE):
+            continue
+        if re.search(r"\b(?:Final|Re-?Exam|Credit\s+Units?|Remarks?|Subject|Course\s+No)\b", line, re.IGNORECASE):
+            continue
+
+        has_failed_remark = bool(re.search(r"\bFailed\b", line, re.IGNORECASE))
+        tokens = list(grade_token_pattern.finditer(line))
+        if not tokens and not has_failed_remark:
+            if final_grades:
+                rows_after_first_grade += 1
+                if rows_after_first_grade > 8:
+                    break
+            continue
+
+        before_re_exam = re.split(r"\s(?:--|-|—)\s", line, maxsplit=1)[0]
+        before_tokens = list(grade_token_pattern.finditer(before_re_exam))
+        selected = before_tokens[-1].group(0) if before_tokens else tokens[0].group(0) if tokens else ""
+        normalized_grade = normalize_grade_token(selected) if selected else ""
+        if normalized_grade:
+            final_grades.append(normalized_grade)
+        if has_failed_remark:
+            remarks_concerns.append({
+                "grade": normalized_grade or "Failed",
+                "reason": "Remarks column/text contains Failed",
+            })
+        row_debug.append({
+            "line": line[:220],
+            "selectedFinalGrade": normalized_grade,
+            "hasFailedRemark": str(has_failed_remark),
+        })
+        rows_after_first_grade = 0
+
+    explanation = (
+        "COG scanning checks identity fields, extracts printed GWA, and reads only values "
+        "from the subject Final Grade column. It also checks the Remarks column/text for Failed. "
+        "Credit Units are ignored by selecting the grade before the Re-Exam/Credit Units area when present."
+    )
+    return grade_debug_from_grades(
+        final_grades,
+        row_debug,
+        "header-anchored Final Grade column extraction",
+        explanation,
+        remarks_concerns,
+    )
+
 def extract_name(text: str) -> dict[str, str]:
     lines = [normalize_space(line) for line in text.splitlines() if normalize_space(line)]
     candidates = []
@@ -252,14 +571,14 @@ def extract_name(text: str) -> dict[str, str]:
         if re.search(r"\b(?:CERTIFICATE|REGISTRATION|GRADES|REMARKS|FINAL|PROGRAM|COURSE|ADVISING|SLIP)\b", line, re.IGNORECASE):
             continue
         labeled = re.search(
-            r"(?:Student\s*Name|Name\s+of\s+Student|Full\s*Name|Fullname|Name)\s*[:\-]?\s*([A-ZÑ][A-ZÑ ,.'-]{5,80})",
+            r"(?:Student\s*Name|Name\s+of\s+Student|Full\s*Name|Fullname|Name)\s*[:\-]?\s*([A-ZÃ‘][A-ZÃ‘ ,.'-]{5,80})",
             line,
             re.IGNORECASE,
         )
         if labeled:
             candidates.append(clean_name_candidate(labeled.group(1)))
             continue
-        comma_name = re.search(r"\b([A-ZÑ][A-ZÑ.' -]{1,35}),\s*([A-ZÑ][A-ZÑ.' -]{2,60})\b", line)
+        comma_name = re.search(r"\b([A-ZÃ‘][A-ZÃ‘.' -]{1,35}),\s*([A-ZÃ‘][A-ZÃ‘.' -]{2,60})\b", line)
         if comma_name:
             candidates.append(clean_name_candidate(f"{comma_name.group(1)}, {comma_name.group(2)}"))
 
@@ -297,7 +616,7 @@ def extract_name(text: str) -> dict[str, str]:
                 continue
             candidate = clean_name_candidate(line)
             parts = candidate.split()
-            if 2 <= len(parts) <= 6 and re.fullmatch(r"[A-Za-zÑñ .,'-]+", candidate):
+            if 2 <= len(parts) <= 6 and re.fullmatch(r"[A-Za-zÃ‘Ã± .,'-]+", candidate):
                 candidates.append(candidate)
                 break
 
@@ -342,26 +661,28 @@ def extract_semester(text: str) -> dict[str, str]:
     return {"academicYear": academic_year, "semester": semester}
 
 
-def extract_flags(text: str) -> dict[str, Any]:
+def extract_flags(text: str, final_grade_debug: dict[str, Any] | None = None) -> dict[str, Any]:
     gwa_debug = extract_gwa_result(text)
+    final_grade_debug = final_grade_debug or extract_final_grades_from_text(text)
     return {
-        "hasAcademicConcern": False,
-        "academicConcernTerms": [],
+        "hasAcademicConcern": len(final_grade_debug["concernMatches"]) > 0,
+        "academicConcernTerms": [
+            "Failed remark" if "Failed" in match.get("reason", "") else match["grade"]
+            for match in final_grade_debug["concernMatches"]
+        ],
         "gradeDebug": {
-            "grades": [],
+            "grades": final_grade_debug["grades"],
             "computedAverage": "",
-            "concernMatches": [],
-            "extractionMethod": "GWA-only extraction",
-            "explanation": (
-                "COG scanning does not read all subject grades. "
-                "It extracts only an explicitly printed GWA or average label."
-            ),
+            "concernMatches": final_grade_debug["concernMatches"],
+            "rowDebug": final_grade_debug["rowDebug"],
+            "extractionMethod": final_grade_debug["extractionMethod"],
+            "explanation": final_grade_debug["explanation"],
         },
         "gwaDebug": gwa_debug,
     }
 
 
-def parse_document(text: str, document_type: str) -> dict[str, Any]:
+def parse_document(text: str, document_type: str, final_grade_debug: dict[str, Any] | None = None) -> dict[str, Any]:
     student_id = find_first(
         [
             r"(?:Student\s*(?:No\.?|Number|ID)|ID\s*No\.?)\s*[:\-]?\s*([0-9\-]{6,20})",
@@ -371,6 +692,19 @@ def parse_document(text: str, document_type: str) -> dict[str, Any]:
     )
     name = extract_name(text)
     semester = extract_semester(text)
+    flags = extract_flags(text, final_grade_debug) if document_type.lower() == "cog" else {
+        "hasAcademicConcern": False,
+        "academicConcernTerms": [],
+        "gradeDebug": {
+            "grades": [],
+            "computedAverage": "",
+            "concernMatches": [],
+            "rowDebug": [],
+            "extractionMethod": "not applied",
+            "explanation": "Final Grade concern detection is applied only to COG documents.",
+        },
+        "gwaDebug": extract_gwa_result(text),
+    }
 
     return {
         "documentType": document_type,
@@ -384,6 +718,46 @@ def parse_document(text: str, document_type: str) -> dict[str, Any]:
         "section": "",
         "gwa": extract_gwa(text),
         **semester,
-        **extract_flags(text),
+        **flags,
         "rawTextPreview": normalize_space(text)[:1200],
     }
+
+
+def parse_pdf_document(file_bytes: bytes, document_type: str) -> dict[str, Any]:
+    text = extract_pdf_text(file_bytes)
+    final_grade_debug = None
+    if document_type.lower() == "cog":
+        table_grade_debug = extract_final_grades_from_pdf_tables(file_bytes)
+        if table_grade_debug.get("grades"):
+            final_grade_debug = table_grade_debug
+        else:
+            word_grade_debug = extract_final_grades_from_pdf_words(file_bytes)
+            if word_grade_debug.get("grades") or word_grade_debug.get("concernMatches"):
+                final_grade_debug = {
+                    **word_grade_debug,
+                    "rowDebug": [
+                        *table_grade_debug.get("rowDebug", []),
+                        *word_grade_debug.get("rowDebug", []),
+                    ][:120],
+                    "extractionMethod": "pdf table extraction fallback to word-position Final column extraction",
+                    "explanation": (
+                        "The scanner first tried exact PDF table cells. Because no cells were found, "
+                        "it located the Final and Remarks columns by PDF word coordinates and ignored footer/page URL numbers."
+                    ),
+                }
+            else:
+                fallback_debug = extract_final_grades_from_text(text)
+                final_grade_debug = {
+                    **fallback_debug,
+                    "rowDebug": [
+                        *table_grade_debug.get("rowDebug", []),
+                        *word_grade_debug.get("rowDebug", []),
+                        *fallback_debug.get("rowDebug", []),
+                    ][:120],
+                    "extractionMethod": "pdf table and word-position extraction fallback to text Final Grade extraction",
+                    "explanation": (
+                        "The scanner first tried exact PDF table cells and word coordinates. "
+                        "Because no Final column values were found, it used the text fallback with footer/page URL lines ignored."
+                    ),
+                }
+    return parse_document(text, document_type, final_grade_debug)

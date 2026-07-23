@@ -1955,6 +1955,21 @@
 	z-index: 90;
 }
 
+.admin-detail-backdrop--report {
+	inset: 0;
+	align-items: center;
+	justify-content: center;
+	padding: 1.5rem;
+	overflow-y: auto;
+	z-index: 180;
+}
+
+.admin-report-preview-modal-shell {
+	width: min(52vw, 760px);
+	height: min(86vh, 900px);
+	margin: 0 auto;
+}
+
 .admin-detail-modal {
 	width: min(700px, 100%);
 	max-height: 90vh;
@@ -5232,6 +5247,7 @@
 
 .admin-detail-modal--report {
 	width: 100%;
+	max-height: calc(100vh - var(--admin-topbar-height, 64px) - 2.5rem);
 }
 
 .admin-report-preview-head {
@@ -5239,6 +5255,14 @@
 	align-items: flex-start;
 	justify-content: space-between;
 	gap: 1rem;
+}
+
+.admin-report-preview-controls {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.65rem;
+	flex-wrap: wrap;
 }
 
 .admin-report-format-toggle {
@@ -5275,6 +5299,9 @@
 
 .admin-report-preview-body {
 	margin-top: 1rem;
+	min-height: 0;
+	overflow: hidden;
+	display: flex;
 }
 
 .admin-report-preview-shell {
@@ -5282,6 +5309,11 @@
 	border: 1px solid #dbe4ee;
 	background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 	overflow: hidden;
+	height: 100%;
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
 }
 
 .admin-report-preview-toolbar {
@@ -5310,7 +5342,10 @@
 	display: flex;
 	justify-content: flex-end;
 	gap: 0.75rem;
-	margin-top: 1rem;
+	margin-top: 0;
+	padding-top: 0.85rem;
+	border-top: 1px solid #e2e8f0;
+	background: #fff;
 }
 
 .admin-management-table--preview {
@@ -5447,6 +5482,16 @@
 	.admin-announcement-builder--revamp,
 	.admin-soe-review-list {
 		grid-template-columns: 1fr;
+	}
+
+	.admin-detail-backdrop--report {
+		inset: 0;
+		padding: 0.9rem;
+	}
+
+	.admin-report-preview-modal-shell {
+		width: min(94vw, 100%);
+		height: min(88vh, 860px);
 	}
 }
 
@@ -8314,6 +8359,10 @@
 	gap: 0.9rem;
 }
 
+.admin-overview-grid .admin-analytics-card--timeline {
+	grid-column: 1 / -1;
+}
+
 .admin-overview-grid .admin-analytics-card,
 .admin-overview-actions {
 	min-width: 0;
@@ -9704,13 +9753,24 @@
 }
 
 .admin-detail-shell--report {
-	width: min(1120px, calc(100vw - 2rem));
+	width: min(52vw, 760px);
+	height: min(86vh, 900px);
+}
+
+.admin-detail-backdrop--report .admin-detail-shell--report.admin-report-preview-modal-shell {
+	width: min(52vw, 760px) !important;
+	max-width: calc(100vw - 4rem);
 }
 
 .admin-detail-modal--report {
-	max-height: min(86vh, 820px);
+	width: 100%;
+	height: 100%;
+	max-height: none;
 	overflow: hidden;
 	border-radius: 8px;
+	display: grid;
+	grid-template-rows: auto auto minmax(0, 1fr);
+	gap: 0;
 }
 
 .admin-report-preview-shell {
@@ -9718,13 +9778,35 @@
 }
 
 .admin-report-table-scroll {
-	max-height: 430px;
-	overflow: auto;
+	max-height: none;
+	height: auto;
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-x: scroll;
+	overflow-y: auto;
 	border: 0;
+	scrollbar-color: #00633c #e2e8f0;
+	scrollbar-width: thin;
+	scrollbar-gutter: stable both-edges;
 }
 
 .admin-report-table-scroll .admin-management-table--preview {
 	min-width: 1080px;
+}
+
+.admin-report-table-scroll::-webkit-scrollbar {
+	height: 10px;
+	width: 10px;
+}
+
+.admin-report-table-scroll::-webkit-scrollbar-track {
+	background: #e2e8f0;
+	border-radius: 999px;
+}
+
+.admin-report-table-scroll::-webkit-scrollbar-thumb {
+	background: #00633c;
+	border-radius: 999px;
 }
 
 .admin-report-table-scroll .admin-management-table--preview th,
@@ -9736,6 +9818,31 @@
 	position: sticky;
 	top: 0;
 	z-index: 1;
+}
+
+.admin-report-preview-shell > .admin-table-pagination {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.55rem;
+	margin-top: 0;
+	padding: 0.9rem 1rem 1rem;
+	border-top: 1px solid #e2e8f0;
+}
+
+.admin-report-preview-shell > .admin-table-pagination .admin-table-pagination__meta {
+	align-self: center;
+}
+
+.admin-report-preview-footer {
+	display: flex;
+	justify-content: flex-end;
+	padding: 0.85rem 1rem 1rem;
+	margin-top: auto;
+	border-top: 1px solid #e2e8f0;
+	color: #475569;
+	font-size: 0.9rem;
+	font-weight: 600;
 }
 
 .admin-report-preview-actions .admin-export-btn {

@@ -68,7 +68,6 @@ import {
 	exportComplianceReportPdf,
 	exportScholarshipsReportPdf,
 	exportSoeRequestsReportPdf,
-	fetchStudentReportPreview,
 	filterStudentRows,
 	formatDate,
 	mapScholarshipRows,
@@ -352,6 +351,10 @@ function toStudentLifecycle(student) {
 	return "students"
 }
 
+function toDisplayStudentId(value = "") {
+	return String(value || "-").replace(/^roster_/, "") || "-"
+}
+
 function toGrantorStatus(grantor = {}) {
 	if (grantor?.archived === true) return "Archived"
 	if (grantor?.passwordChangeRequested === true || grantor?.passwordChangeRequestStatus === "pending") {
@@ -587,10 +590,12 @@ function buildSoeVolumeSeries(dates, range) {
 function toStudentReportRow(student) {
 	const restrictionState = student.restrictionState || getStudentRestrictionState(student)
 	return {
-		id: student.id || "-",
+		id: toDisplayStudentId(student.studentId || student.id),
 		fullName: student.fullName || studentFullName(student),
 		course: student.course || "-",
 		yearLevel: student.year || student.yearLevel || "-",
+		gwa: student.gwa || student.currentGwa || student.currentGWA || "-",
+		grantor: student.grantorName || student.providerName || (student.providerType ? toProviderLabel(student.providerType) : "N/A"),
 		recordStatus: student.recordStatus || (student.archived === true ? "Archived" : "Active"),
 		restrictionSummary:
 			[
@@ -1336,11 +1341,6 @@ export default function AdminDashboard() {
 		}
 	}, [grantorScholarStudentRecordLookup, grantorScholarsRaw, uniqueStudentProfiles])
 
-	const allStudentReportRows = useMemo(
-		() => studentProfiles.map((student) => toStudentReportRow(student)),
-		[studentProfiles],
-	)
-
 	const studentArchiveDates = useMemo(
 		() =>
 			studentProfiles
@@ -1464,6 +1464,17 @@ export default function AdminDashboard() {
 		[grantorRows, grantorTab, visibleGrantorRows],
 	)
 
+	const grantorLabelById = useMemo(
+		() =>
+			new Map(
+				grantorRows.flatMap((grantor) => [
+					[grantor.id, grantor.name || buildGrantorName(grantor) || grantor.id],
+					[grantor.providerType, grantor.name || buildGrantorName(grantor) || toProviderLabel(grantor.providerType)],
+				]),
+			),
+		[grantorRows],
+	)
+
 	const providerCounts = useMemo(() => {
 		const counts = { kuya_win: 0, tina_pancho: 0, morisson: 0, other: 0, none: 0 }
 		studentProfiles.forEach((student) => {
@@ -1551,6 +1562,38 @@ export default function AdminDashboard() {
 			active = false
 		}
 	}, [grantorScholarsRaw, studentProfiles])
+
+	const studentGrantorLabelById = useMemo(() => {
+		const labels = new Map()
+		studentProfiles.forEach((student) => {
+			const matchedLabels = []
+			grantorScholarsRaw.forEach((scholar) => {
+				const directMatchId =
+					grantorScholarStudentRecordLookup.get(
+						`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`,
+					) || ""
+				const studentIdMatch =
+					normalizeGrantorScholarLookupValue(scholar.studentId) &&
+					normalizeGrantorScholarLookupValue(scholar.studentId) ===
+						normalizeGrantorScholarLookupValue(student.studentId || student.id)
+				const isMatch =
+					directMatchId === student.id ||
+					studentIdMatch ||
+					matchesGrantorScholarToStudent(student, scholar)
+				if (!isMatch) return
+
+				const label =
+					scholar.grantorName ||
+					grantorLabelById.get(scholar.grantorId) ||
+					grantorLabelById.get(scholar.providerType) ||
+					scholar.providerName ||
+					(scholar.providerType && scholar.providerType !== "other" ? toProviderLabel(scholar.providerType) : "")
+				if (label && !matchedLabels.includes(label)) matchedLabels.push(label)
+			})
+			if (matchedLabels.length > 0) labels.set(student.id, matchedLabels.join(", "))
+		})
+		return labels
+	}, [grantorLabelById, grantorScholarStudentRecordLookup, grantorScholarsRaw, studentProfiles])
 
 	const selectedStudentGrantorScholarships = useMemo(() => {
 		if (!selectedStudent?.id) return []
@@ -1656,7 +1699,11 @@ export default function AdminDashboard() {
 							scholar.grantorId || scholar.providerType || scholar.grantorName || scholar.id,
 							{
 								id: scholar.grantorId || scholar.providerType || scholar.grantorName || scholar.id,
-								label: scholar.grantorName || toProviderLabel(scholar.providerType),
+								label:
+									scholar.grantorName ||
+									grantorLabelById.get(scholar.grantorId) ||
+									grantorLabelById.get(scholar.providerType) ||
+									toProviderLabel(scholar.providerType),
 								provider: scholar.providerType || toProviderType(scholar.grantorName || scholar.scholarshipTitle),
 							},
 						]),
@@ -1666,7 +1713,7 @@ export default function AdminDashboard() {
 				return { student, matches, distinctGrantors, scholarshipTitles }
 			})
 			.filter((entry) => entry.matches.length > 0)
-	}, [activeGrantorScholars, studentProfiles])
+	}, [activeGrantorScholars, grantorLabelById, studentProfiles])
 
 	const warningRows = useMemo(() => {
 		const keyword = scholarshipSearch.trim().toLowerCase()
@@ -1927,6 +1974,32 @@ export default function AdminDashboard() {
 		})
 		return trackingByStudent
 	}, [allScholarshipTrackingRows])
+
+	const buildStudentReportRows = (rows = []) =>
+		rows.map((student) => {
+			const grantorMatch = studentGrantorMatches.find((entry) => entry.student?.id === student.id)
+			const grantorLabel =
+				grantorMatch?.distinctGrantors?.map((grantor) => grantor.label).filter(Boolean).join(", ") ||
+				studentGrantorLabelById.get(student.id) ||
+				student.grantorName ||
+				student.providerName ||
+				grantorLabelById.get(student.grantorId) ||
+				grantorLabelById.get(student.providerType) ||
+				(student.providerType ? toProviderLabel(student.providerType) : "") ||
+				"N/A"
+			return {
+				...toStudentReportRow(student),
+				id: toDisplayStudentId(student.studentId || student.id),
+				gwa: student.gwa || student.currentGwa || student.currentGWA || "-",
+				grantor: grantorLabel,
+				recordStatus: student.recordStatus || (student.archived === true ? "Archived" : "Active"),
+			}
+		})
+
+	const allStudentReportRows = useMemo(
+		() => buildStudentReportRows(studentProfiles),
+		[grantorLabelById, studentGrantorLabelById, studentGrantorMatches, studentProfiles],
+	)
 
 	const selectedStudentTracking = selectedStudent?.id ? studentTrackingById.get(selectedStudent.id) || null : null
 
@@ -2660,7 +2733,7 @@ export default function AdminDashboard() {
 			labels: soeVolumeSeries.labels,
 			datasets: [
 				{
-					label: "Materials Requests",
+					label: "Requirements Requests",
 					data: soeVolumeSeries.values,
 					backgroundColor: theme === "dark" ? "#38bdf8" : "#1d4ed8",
 					borderRadius: 12,
@@ -3562,7 +3635,7 @@ export default function AdminDashboard() {
 						: "Pending"
 		const primaryMaterialLabel =
 			pendingMaterialKeys.length > 1
-				? "Material requests"
+				? "Requirement requests"
 				: `${toMaterialLabel(pendingMaterialKeys[0])} request`
 
 		await runAction(async () => {
@@ -3987,17 +4060,17 @@ export default function AdminDashboard() {
 
 	const createSoePreviewConfig = (rows, filterLabel) => ({
 		key: "soe",
-		title: "Materials Request Report",
-		description: "Preview material request lifecycle data before exporting PDF or CSV.",
+		title: "Requirements Request Report",
+		description: "Preview requirement request lifecycle data before exporting PDF or CSV.",
 		filterLabel,
-		filename: `materials-request-report-${Date.now()}`,
+		filename: `requirements-request-report-${Date.now()}`,
 		stats: [
 			{ label: "Rows", value: rows.length },
 			{ label: "Pending", value: rows.filter((row) => String(row.reviewStateLabel).toLowerCase().includes("pending")).length },
 			{ label: "Approved", value: rows.filter((row) => String(row.reviewStateLabel).toLowerCase().includes("approved")).length },
 			{ label: "SOE Downloaded", value: rows.filter((row) => row.downloadStatusLabel === "Downloaded").length },
 		],
-		columns: ["Student ID", "Student Name", "Scholarship", "Materials", "Status", "Request Date", "Next Eligible", "Review State"],
+		columns: ["Student ID", "Student Name", "Scholarship", "Requirements", "Status", "Request Date", "Next Eligible", "Review State"],
 		csvRows: rows.map((row) => [
 			row.studentId || "-",
 			row.fullName || "-",
@@ -4038,11 +4111,43 @@ export default function AdminDashboard() {
 		setReportExportFormat("pdf")
 	}
 
-	const openStudentReportPreview = async (filters) => {
+	const createStudentPreviewConfig = (filters, rows) => {
+		const reportRows = buildStudentReportRows(rows)
+		const columns = ["Student ID", "Full Name", "Course", "Year Level", "GWA", "Grantor", "Record Status"]
+		const csvRows = reportRows.map((row) => [
+			row.id || "-",
+			row.fullName || "-",
+			row.course || "-",
+			row.yearLevel || "-",
+			row.gwa || "-",
+			row.grantor || "N/A",
+			row.recordStatus || "-",
+		])
+		const filterLabel = `View: ${filters.view || "students"} | Search: ${filters.search || "-"} | Course: ${filters.course || "All"} | Year: ${filters.year || "All"}`
+		return {
+			key: "students",
+			title: "Student Management Report",
+			description: "Preview of student records using the current management filters.",
+			filterLabel,
+			filename: `student-management-${Date.now()}`,
+			stats: [
+				{ label: "Records", value: reportRows.length },
+				{ label: "Active", value: reportRows.filter((row) => row.recordStatus === "Active").length },
+				{ label: "Archived", value: reportRows.filter((row) => row.recordStatus === "Archived").length },
+			],
+			columns,
+			csvRows,
+			pdfRows: reportRows,
+			reportRows,
+			filters,
+		}
+	}
+
+	const openStudentReportPreview = async (filters, rows = filteredStudents) => {
 		if (isReportExporting) return
 		setIsReportExporting(true)
 		try {
-			openReportPreview(await fetchStudentReportPreview(filters))
+			openReportPreview(createStudentPreviewConfig(filters, rows))
 		} catch (error) {
 			console.error(error)
 			toast.error(error.message || "Unable to load the student report preview.")
@@ -4056,7 +4161,7 @@ export default function AdminDashboard() {
 		setIsReportExporting(true)
 		try {
 			if (reportPreview.key === "students") {
-				await downloadStudentReport(reportExportFormat, reportPreview.filters)
+				await downloadStudentReport(reportExportFormat, reportPreview.filters, reportPreview.reportRows || [])
 			} else if (reportExportFormat === "csv") {
 				downloadCsvReport(`${reportPreview.filename}.csv`, reportPreview.columns, reportPreview.csvRows)
 			} else if (reportPreview.key === "scholarships") {
@@ -4088,8 +4193,8 @@ export default function AdminDashboard() {
 		const csvPreview = buildCsvPreview(reportPreview.columns, reportPreview.csvRows)
 		const isStudentReport = reportPreview.key === "students"
 		return (
-			<div className="admin-detail-backdrop" role="presentation" onClick={closeReportPreview}>
-				<div className="admin-detail-shell admin-detail-shell--report" onClick={(event) => event.stopPropagation()}>
+			<div className="admin-detail-backdrop admin-detail-backdrop--report" role="presentation" onClick={closeReportPreview}>
+				<div className="admin-detail-shell admin-detail-shell--report admin-report-preview-modal-shell" onClick={(event) => event.stopPropagation()}>
 					<button type="button" className="admin-detail-close" onClick={closeReportPreview}>
 						<HiX />
 					</button>
@@ -4106,12 +4211,17 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta">{reportPreview.description}</p>
 								<p className="admin-detail-meta">{reportPreview.filterLabel}</p>
 							</div>
-							<div className="admin-report-format-toggle">
-								<button type="button" className={reportExportFormat === "pdf" ? "active" : ""} onClick={() => setReportExportFormat("pdf")}>
-									PDF
-								</button>
-								<button type="button" className={reportExportFormat === (isStudentReport ? "excel" : "csv") ? "active" : ""} onClick={() => setReportExportFormat(isStudentReport ? "excel" : "csv")}>
-									{isStudentReport ? "Excel" : "CSV"}
+							<div className="admin-report-preview-controls">
+								<div className="admin-report-format-toggle">
+									<button type="button" className={reportExportFormat === "pdf" ? "active" : ""} onClick={() => setReportExportFormat("pdf")}>
+										PDF
+									</button>
+									<button type="button" className={reportExportFormat === (isStudentReport ? "excel" : "csv") ? "active" : ""} onClick={() => setReportExportFormat(isStudentReport ? "excel" : "csv")}>
+										{isStudentReport ? "Excel" : "CSV"}
+									</button>
+								</div>
+								<button type="button" className="admin-export-btn" disabled={isReportExporting} onClick={exportPreviewReport}>
+									{isReportExporting ? "Exporting..." : `Export ${reportExportFormat.toUpperCase()}`}
 								</button>
 							</div>
 						</div>
@@ -4127,9 +4237,6 @@ export default function AdminDashboard() {
 							<div className="admin-report-preview-shell">
 								<div className="admin-report-preview-toolbar">
 									<span>Live Preview</span>
-									<span>
-										Showing {reportPreviewTablePage.startIndex}-{reportPreviewTablePage.endIndex} of {reportPreview.csvRows.length} rows
-									</span>
 								</div>
 								{reportExportFormat === "pdf" || isStudentReport ? (
 									<>
@@ -4157,21 +4264,24 @@ export default function AdminDashboard() {
 												</tbody>
 											</table>
 										</div>
-										<TablePagination
-											currentPage={reportPreviewTablePage.currentPage}
-											totalItems={reportPreview.csvRows.length}
-											onPageChange={(page) => setTablePage(`report_preview_${reportPreview.key || "default"}`, page)}
-										/>
+										{reportPreviewTablePage.totalPages > 1 ? (
+											<TablePagination
+												currentPage={reportPreviewTablePage.currentPage}
+												totalItems={reportPreview.csvRows.length}
+												onPageChange={(page) => setTablePage(`report_preview_${reportPreview.key || "default"}`, page)}
+											/>
+										) : (
+											<div className="admin-report-preview-footer">
+												<span>
+													Showing {reportPreviewTablePage.startIndex}-{reportPreviewTablePage.endIndex} of {reportPreview.csvRows.length} rows | 25 per page
+												</span>
+											</div>
+										)}
 									</>
 								) : (
 									<pre className="admin-report-preview-code">{csvPreview}</pre>
 								)}
 							</div>
-						</div>
-						<div className="admin-report-preview-actions">
-							<button type="button" className="admin-export-btn" disabled={isReportExporting} onClick={exportPreviewReport}>
-								{isReportExporting ? "Exporting..." : `Export ${reportExportFormat.toUpperCase()}`}
-							</button>
 						</div>
 					</div>
 				</div>
@@ -4298,7 +4408,7 @@ export default function AdminDashboard() {
 								id: "requests",
 								label: "Pending Requests",
 								value: soeRows.filter((row) => row.reviewState === "incoming").length,
-								description: "Materials awaiting review",
+								description: "Requirements awaiting review",
 								icon: HiOutlineClock,
 							},
 						].map((card) => {
@@ -4340,15 +4450,6 @@ export default function AdminDashboard() {
 								{isAnalyticsLoading ? <LoadingBars note="Loading applicant trend analytics..." /> : <Line data={applicantTrackingData} options={lineChartOptions} />}
 							</div>
 						</article>
-						<article className="admin-overview-actions">
-							<div className="admin-trend-head admin-trend-head--compact"><div><span className="admin-page-eyebrow">Quick Access</span><h3>Management Areas</h3><p>Open the sections used most often.</p></div></div>
-							<nav>
-								<Link to="/admin/students"><span><HiOutlineUsers /></span><div><strong>Student Management</strong><small>{metrics.totalStudents} active accounts</small></div></Link>
-								<Link to="/admin/grantors"><span><HiOutlineUserGroup /></span><div><strong>Grantor Management</strong><small>{grantorRows.length} registered providers</small></div></Link>
-								<Link to="/admin/requirements"><span><HiOutlineDocumentText /></span><div><strong>Requirements</strong><small>{soeRows.filter((row) => row.reviewState === "incoming").length} pending requests</small></div></Link>
-								<Link to="/admin/reports"><span><HiOutlineChartBar /></span><div><strong>Reports</strong><small>Generate system records</small></div></Link>
-							</nav>
-						</article>
 						<article className="admin-analytics-card">
 							<div className="admin-trend-head admin-trend-head--compact">
 								<div>
@@ -4378,10 +4479,19 @@ export default function AdminDashboard() {
 								</div>
 							)}
 						</article>
-						<article className="admin-analytics-card">
+						<article className="admin-overview-actions">
+							<div className="admin-trend-head admin-trend-head--compact"><div><span className="admin-page-eyebrow">Quick Access</span><h3>Management Areas</h3><p>Open the sections used most often.</p></div></div>
+							<nav>
+								<Link to="/admin/students"><span><HiOutlineUsers /></span><div><strong>Student Management</strong><small>{metrics.totalStudents} active accounts</small></div></Link>
+								<Link to="/admin/grantors"><span><HiOutlineUserGroup /></span><div><strong>Grantor Management</strong><small>{grantorRows.length} registered providers</small></div></Link>
+								<Link to="/admin/requirements"><span><HiOutlineDocumentText /></span><div><strong>Requirements</strong><small>{soeRows.filter((row) => row.reviewState === "incoming").length} pending requests</small></div></Link>
+								<Link to="/admin/reports"><span><HiOutlineChartBar /></span><div><strong>Reports</strong><small>Generate system records</small></div></Link>
+							</nav>
+						</article>
+						<article className="admin-analytics-card admin-analytics-card--timeline">
 							<div className="admin-trend-head admin-trend-head--compact">
 								<div>
-									<h3>Materials Request Timeline</h3>
+									<h3>Requirements Request Timeline</h3>
 								</div>
 								<div className="admin-trend-controls admin-trend-controls--compact">
 									{TREND_RANGES.map((range) => (
@@ -4392,7 +4502,7 @@ export default function AdminDashboard() {
 								</div>
 							</div>
 							<div className="admin-chart-wrap">
-								{isAnalyticsLoading ? <LoadingBars note={`Loading materials request timeline for ${soeTrendRange} view...`} /> : <Bar data={soeVolumeData} options={barChartOptions} />}
+								{isAnalyticsLoading ? <LoadingBars note={`Loading requirements request timeline for ${soeTrendRange} view...`} /> : <Bar data={soeVolumeData} options={barChartOptions} />}
 							</div>
 						</article>
 					</section>
@@ -4416,7 +4526,7 @@ export default function AdminDashboard() {
 								type="button"
 								className="admin-student-report-btn"
 								disabled={isReportExporting}
-								onClick={() => openStudentReportPreview({ view: studentViewTab, search: studentSearch, course: studentCourse, year: studentYear })}
+								onClick={() => openStudentReportPreview({ view: studentViewTab, search: studentSearch, course: studentCourse, year: studentYear }, filteredStudents)}
 							>
 								<HiOutlineDocumentText /> {isReportExporting ? "Preparing..." : "Generate Report"}
 							</button>
@@ -4592,7 +4702,7 @@ export default function AdminDashboard() {
 																}}
 															/>
 														</td>
-														<td>{student.studentId || student.id}</td>
+														<td>{toDisplayStudentId(student.studentId || student.id)}</td>
 														<td>{student.fullName}</td>
 														<td>{student.course || "-"}</td>
 														<td>{student.year || "-"}</td>
@@ -5279,7 +5389,7 @@ export default function AdminDashboard() {
 									))}
 								</select>
 								<select value={soeMaterialFilter} onChange={(event) => setSoeMaterialFilter(event.target.value)}>
-									<option value="All">All Materials</option>
+									<option value="All">All Requirements</option>
 									<option value="soe">SOE</option>
 									<option value="application_form">Application Form</option>
 								</select>
@@ -5296,7 +5406,7 @@ export default function AdminDashboard() {
 											<th>Student ID</th>
 											<th>Student Name</th>
 											<th>Scholarship</th>
-											<th>Requested Materials</th>
+											<th>Requested Requirements</th>
 											<th>Status</th>
 											<th>Date Requested</th>
 											<th>Action</th>
@@ -5349,7 +5459,7 @@ export default function AdminDashboard() {
 											<th>Student ID</th>
 											<th>Student Name</th>
 											<th>Scholarship</th>
-											<th>Requested Materials</th>
+											<th>Requested Requirements</th>
 											<th>Approval Status</th>
 											<th>Action</th>
 										</tr>
@@ -5595,7 +5705,7 @@ export default function AdminDashboard() {
 									<span>Access and lifecycle</span>
 								</div>
 								<div className="admin-report-card-actions">
-									<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => openStudentReportPreview({ view: "all", search: "", course: "All", year: "All" })}>
+									<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => openStudentReportPreview({ view: "all", search: "", course: "All", year: "All" }, studentProfiles)}>
 										<HiOutlineEye /> Generate Preview
 									</button>
 								</div>
@@ -5639,10 +5749,10 @@ export default function AdminDashboard() {
 									</div>
 									<div>
 										<span className="admin-report-card__eyebrow">Request Monitoring</span>
-										<h3>Materials</h3>
+										<h3>Requirements</h3>
 									</div>
 								</div>
-								<p>Requested and reviewed scholarship materials, including request state and SOE download handling.</p>
+								<p>Requested and reviewed scholarship requirements, including request state and SOE download handling.</p>
 								<div className="admin-report-card__meta">
 									<div className="admin-report-card__metric">
 										<strong>{soeRows.length}</strong>
@@ -5738,7 +5848,7 @@ export default function AdminDashboard() {
 									</div>
 									<div>
 										<strong>{soeRows.length}</strong>
-										<span>Material requests indexed</span>
+										<span>Requirement requests indexed</span>
 									</div>
 									<div>
 										<strong>{complianceRows.length}</strong>
@@ -6235,9 +6345,6 @@ export default function AdminDashboard() {
 									<HiOutlineRefresh /> Unarchive Student
 								</button>
 							)}
-							<button type="button" className="admin-table-btn" onClick={closeStudentModal}>
-								Close
-							</button>
 						</div>
 					</div>
 					</div>
@@ -6491,7 +6598,7 @@ export default function AdminDashboard() {
 							<div className="admin-detail-info">
 								<div className="admin-soe-review-head">
 									<div>
-										<h3>{isSelectedSoeDownloadReview ? "SOE Checking Review" : "Materials Request Review"}</h3>
+										<h3>{isSelectedSoeDownloadReview ? "SOE Checking Review" : "Requirements Request Review"}</h3>
 										<p className="admin-detail-meta">
 											{isSelectedSoeDownloadReview
 												? "Verify that the downloaded SOE request number and student record details are aligned before signing."
@@ -6565,7 +6672,7 @@ export default function AdminDashboard() {
 												</div>
 												<div className="admin-soe-review-list">
 													<div className="admin-soe-review-row">
-														<span>Requested Materials</span>
+														<span>Requested Requirements</span>
 														<strong>{selectedSoeReviewRow.visibleMaterialsSummary || "-"}</strong>
 														<small>
 															{selectedSoeReviewRow.pendingMaterialLabels?.length > 0

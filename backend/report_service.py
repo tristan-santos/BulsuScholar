@@ -1,7 +1,7 @@
 import csv
 import io
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 try:
@@ -16,7 +16,7 @@ STUDENT_REPORT_HEADERS = [
     "Course",
     "Year Level",
     "GWA",
-    "Current Stage",
+    "Grantor",
     "Record Status",
 ]
 
@@ -63,20 +63,37 @@ def _student_current_stage(data: dict[str, Any]) -> str:
     return "Account Created"
 
 
+def _student_grantor(data: dict[str, Any]) -> str:
+    direct = (
+        data.get("grantor")
+        or data.get("grantorName")
+        or data.get("providerName")
+        or data.get("providerType")
+    )
+    return _text(direct, "N/A")
+
+
+def _student_id(value: Any) -> str:
+    return _text(value).removeprefix("roster_")
+
+
 def _flatten_student_row(raw: dict[str, Any]) -> dict[str, Any]:
     nested = raw.get("data") if isinstance(raw.get("data"), dict) else {}
     data = {**raw, **nested}
-    student_id = data.get("studentnumber") or data.get("studentNumber") or data.get("id") or raw.get("id")
+    student_id = data.get("studentnumber") or data.get("studentNumber") or data.get("studentId") or data.get("id") or raw.get("id")
+    record_status = data.get("recordStatus") or data.get("status")
+    if not record_status:
+        record_status = "Archived" if data.get("archived") is True else "Active"
     return {
-        "id": _text(student_id),
+        "id": _student_id(student_id),
         "fullName": _student_name(data),
         "email": _text(data.get("email")),
         "cpNumber": _text(data.get("cpNumber") or data.get("contactNumber") or data.get("number")),
         "course": _text(data.get("course")),
         "yearLevel": _text(data.get("year") or data.get("yearLevel")),
         "gwa": _text(data.get("gwa") or data.get("currentGwa") or data.get("currentGWA")),
-        "currentStage": _student_current_stage(data),
-        "recordStatus": "Archived" if data.get("archived") is True else "Active",
+        "grantor": _student_grantor(data),
+        "recordStatus": _text(record_status),
     }
 
 
@@ -91,27 +108,31 @@ def _student_report_filters(payload: dict[str, Any]) -> dict[str, str]:
 
 
 def build_student_report(payload: dict[str, Any]) -> dict[str, Any]:
-    result = supabase_select("students", limit=10000)
-    if not result.get("ok"):
-        raise RuntimeError(result.get("reason") or result.get("detail") or "Unable to load students.")
-
     filters = _student_report_filters(payload)
-    students = [_flatten_student_row(row) for row in result.get("rows", [])]
+    payload_rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    if payload_rows:
+        students = [_flatten_student_row(row) for row in payload_rows if isinstance(row, dict)]
+        filtered = students
+    else:
+        result = supabase_select("students", limit=10000)
+        if not result.get("ok"):
+            raise RuntimeError(result.get("reason") or result.get("detail") or "Unable to load students.")
+        students = [_flatten_student_row(row) for row in result.get("rows", [])]
 
-    def include(student: dict[str, Any]) -> bool:
-        if filters["view"] == "archived" and student["recordStatus"] != "Archived":
-            return False
-        if filters["view"] == "students" and student["recordStatus"] == "Archived":
-            return False
-        if filters["course"] != "All" and student["course"] != filters["course"]:
-            return False
-        if filters["year"] != "All" and student["yearLevel"] != filters["year"]:
-            return False
-        haystack = f"{student['id']} {student['fullName']} {student['email']}".lower()
-        return not filters["search"] or filters["search"] in haystack
+        def include(student: dict[str, Any]) -> bool:
+            if filters["view"] == "archived" and student["recordStatus"] != "Archived":
+                return False
+            if filters["view"] == "students" and student["recordStatus"] == "Archived":
+                return False
+            if filters["course"] != "All" and student["course"] != filters["course"]:
+                return False
+            if filters["year"] != "All" and student["yearLevel"] != filters["year"]:
+                return False
+            haystack = f"{student['id']} {student['fullName']} {student['email']}".lower()
+            return not filters["search"] or filters["search"] in haystack
 
-    filtered = sorted((student for student in students if include(student)), key=lambda item: item["fullName"].lower())
-    rows = [[student[key] for key in ("id", "fullName", "course", "yearLevel", "gwa", "currentStage", "recordStatus")] for student in filtered]
+        filtered = sorted((student for student in students if include(student)), key=lambda item: item["fullName"].lower())
+    rows = [[student[key] for key in ("id", "fullName", "course", "yearLevel", "gwa", "grantor", "recordStatus")] for student in filtered]
     filter_label = f"View: {filters['view']} | Search: {filters['search'] or '-'} | Course: {filters['course']} | Year: {filters['year']}"
     return {
         "key": "students",
@@ -186,19 +207,74 @@ def build_csv_bytes(headers: list[str], rows: list[list[Any]]) -> bytes:
     return buffer.getvalue().encode("utf-8")
 
 
+def _report_column_widths(headers: list[str], available_width: float) -> list[float]:
+    if headers == STUDENT_REPORT_HEADERS:
+        weights = [0.12, 0.18, 0.24, 0.09, 0.08, 0.14, 0.15]
+        return [available_width * weight for weight in weights]
+    if not headers:
+        return []
+    return [available_width / len(headers)] * len(headers)
+
+
 def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
         from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
         from pypdf import PdfReader, PdfWriter
     except ImportError as error:  # pragma: no cover - dependency guard
         raise RuntimeError("reportlab and pypdf are required for Python PDF report generation.") from error
 
+    font_regular = "Times-Roman"
+    font_bold = "Times-Bold"
+    windows_fonts = Path("C:/Windows/Fonts")
+    times_regular = windows_fonts / "times.ttf"
+    times_bold = windows_fonts / "timesbd.ttf"
+    if times_regular.exists() and times_bold.exists():
+        pdfmetrics.registerFont(TTFont("TimesNewRoman", str(times_regular)))
+        pdfmetrics.registerFont(TTFont("TimesNewRoman-Bold", str(times_bold)))
+        font_regular = "TimesNewRoman"
+        font_bold = "TimesNewRoman-Bold"
+
     overlay_buffer = io.BytesIO()
-    doc = SimpleDocTemplate(overlay_buffer, pagesize=letter, rightMargin=64, leftMargin=64, topMargin=106, bottomMargin=80)
+    template_path = Path(__file__).resolve().parents[1] / "public" / "Templates" / "FORMATTED_REPORT.pdf"
+    template_reader = PdfReader(str(template_path)) if template_path.exists() else None
+    template_page = template_reader.pages[0] if template_reader else None
+    page_width = float(template_page.mediabox.width) if template_page else letter[0]
+    page_height = float(template_page.mediabox.height) if template_page else letter[1]
+    page_size = (page_width, page_height)
+    margin_left = 36
+    margin_right = 36
+    margin_top = 190 if template_page else 72
+    margin_bottom = 178 if template_page else 62
+    doc = SimpleDocTemplate(
+        overlay_buffer,
+        pagesize=page_size,
+        leftMargin=margin_left,
+        rightMargin=margin_right,
+        topMargin=margin_top,
+        bottomMargin=margin_bottom,
+    )
     styles = getSampleStyleSheet()
+    for style_name in ("Title", "Heading2", "BodyText"):
+        styles[style_name].fontName = font_regular
+        styles[style_name].fontSize = 10
+        styles[style_name].leading = 12
+    styles["Title"].fontName = font_bold
+    styles["Heading2"].fontName = font_bold
+    styles.add(styles["BodyText"].clone("ReportTableHeader"))
+    styles.add(styles["BodyText"].clone("ReportTableCell"))
+    styles["ReportTableHeader"].fontName = font_bold
+    styles["ReportTableHeader"].fontSize = 10
+    styles["ReportTableHeader"].leading = 12
+    styles["ReportTableHeader"].textColor = colors.white
+    styles["ReportTableCell"].fontName = font_regular
+    styles["ReportTableCell"].fontSize = 10
+    styles["ReportTableCell"].leading = 12
+    styles["ReportTableCell"].wordWrap = "CJK"
     story = [
         Paragraph("BulsuScholar", styles["Title"]),
         Paragraph(payload.get("title") or "Report", styles["Heading2"]),
@@ -218,32 +294,49 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
         for item in raw_headers
     ]
     rows = payload.get("rows") or []
-    table_data = [headers] + rows if headers else rows
+    table_data = []
+    if headers:
+        table_data.append([Paragraph(header, styles["ReportTableHeader"]) for header in headers])
+    for row in rows:
+        table_data.append([Paragraph(_text(value), styles["ReportTableCell"]) for value in row])
     if table_data:
-        table = Table(table_data, repeatRows=1)
+        column_widths = _report_column_widths(headers, page_width - margin_left - margin_right)
+        table = Table(table_data, colWidths=column_widths, repeatRows=1, hAlign="LEFT", splitByRow=1)
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#00633c")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#b7c8be")),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("FONTNAME", (0, 0), (-1, 0), font_bold),
+            ("FONTNAME", (0, 1), (-1, -1), font_regular),
+            ("FONTSIZE", (0, 0), (-1, -1), 10),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ]))
         story.append(table)
     else:
         story.append(Paragraph("No rows available for the selected report.", styles["BodyText"]))
 
-    doc.build(story)
-    overlay_buffer.seek(0)
+    def draw_template_marker_masks(canvas, _document):
+        if not template_page:
+            return
+        canvas.saveState()
+        canvas.setFillColor(colors.white)
+        canvas.setStrokeColor(colors.white)
+        canvas.rect(0, 175, page_width, page_height - 370, fill=1, stroke=0)
+        canvas.rect(66, 820, 320, 30, fill=1, stroke=0)
+        canvas.rect(66, 208, 420, 30, fill=1, stroke=0)
+        canvas.restoreState()
 
-    template_path = Path(__file__).resolve().parents[1] / "public" / "Templates" / "FORMATTED_REPORT.pdf"
-    if not template_path.exists():
+    doc.build(story, onFirstPage=draw_template_marker_masks, onLaterPages=draw_template_marker_masks)
+    overlay_buffer.seek(0)
+    if not template_page:
         return overlay_buffer.getvalue()
 
-    template_reader = PdfReader(str(template_path))
     overlay_reader = PdfReader(overlay_buffer)
     writer = PdfWriter()
-    template_page = template_reader.pages[0]
     for overlay_page in overlay_reader.pages:
         page = template_page.clone(writer)
         page.merge_page(overlay_page)

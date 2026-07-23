@@ -373,11 +373,11 @@ async function readBackendError(response) {
 	return payload?.detail || `Backend report request failed: ${response.status}`
 }
 
-export async function fetchStudentReportPreview(filters = {}) {
+export async function fetchStudentReportPreview(filters = {}, rows = []) {
 	const response = await fetch(`${BACKEND_API_URL}/reports/students/preview`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ filters }),
+		body: JSON.stringify({ filters, rows }),
 	})
 	if (!response.ok) throw new Error(await readBackendError(response))
 	const report = await response.json()
@@ -387,15 +387,16 @@ export async function fetchStudentReportPreview(filters = {}) {
 		csvRows: report.rows || [],
 		pdfRows: report.rows || [],
 		filters,
+		reportRows: rows,
 	}
 }
 
-export async function downloadStudentReport(format = "pdf", filters = {}) {
+export async function downloadStudentReport(format = "pdf", filters = {}, rows = []) {
 	const normalizedFormat = format === "excel" ? "excel" : "pdf"
 	const response = await fetch(`${BACKEND_API_URL}/reports/students/${normalizedFormat}`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ filters }),
+		body: JSON.stringify({ filters, rows }),
 	})
 	if (!response.ok) throw new Error(await readBackendError(response))
 	const disposition = response.headers.get("content-disposition") || ""
