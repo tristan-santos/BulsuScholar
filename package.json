@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"gitgit": "git add . && git commit -m '07-23-2026' && git push origin main",
+		"gitgit": "powershell -NoProfile -Command \"git add .; git commit -m ('update ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')); git push origin main\"",
 		"tapos": "npm run build && npm run gitgit",
 		"build": "vite build",
 		"pyRun":"pip install -r requirements.txt uvicorn main:app --reload --port 8000",
