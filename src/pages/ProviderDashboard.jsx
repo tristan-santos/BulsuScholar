@@ -182,7 +182,6 @@ const ANNOUNCEMENT_FORM = {
 	applicationWindow: "",
 	applicationEnabled: false,
 	minimumGrade: "",
-	acceptIrregularStudents: false,
 	requiredDocuments: {
 		cog: false,
 		cor: false,
@@ -2357,9 +2356,6 @@ export default function ProviderDashboard() {
 					applicationEnabled: announcementForm.applicationEnabled === true,
 					minimumGrade: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
 					minGwa: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
-					acceptIrregularStudents:
-						announcementForm.applicationEnabled &&
-						announcementForm.acceptIrregularStudents === true,
 					requiredDocuments: announcementForm.applicationEnabled
 						? {
 								cog: announcementForm.requiredDocuments?.cog === true,
@@ -3163,9 +3159,6 @@ export default function ProviderDashboard() {
 														minimumGrade: prev.applicationEnabled
 															? ""
 															: prev.minimumGrade || grantorProfileForm.minimumGwa || profile?.minimumGwa || profile?.minGwa || "",
-														acceptIrregularStudents: prev.applicationEnabled
-															? false
-															: prev.acceptIrregularStudents,
 													}))
 													if (announcementForm.applicationEnabled) {
 														setAnnouncementWindowStart("")
@@ -3183,13 +3176,6 @@ export default function ProviderDashboard() {
 												<>
 													<label><span>Application Window</span><button type="button" className={`grantor-announcement-calendar-btn ${announcementWindowStart ? "has-value" : ""} ${announcementSubmitAttempted && announcementMissingFields.applicationWindow ? "is-missing" : ""}`.trim()} onClick={() => setShowApplicationWindowCalendar(true)}><HiOutlineCalendar /> <span>{formatAnnouncementWindow(announcementWindowStart, announcementWindowEnd)}</span></button></label>
 													<label><span>Minimum Grade / GWA</span><input type="number" min="1" max="5" step="0.01" className={announcementSubmitAttempted && announcementMissingFields.minimumGrade ? "is-missing" : ""} placeholder="Example: 2.25" value={announcementForm.minimumGrade} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, minimumGrade: event.target.value }))} /></label>
-													<label className="grantor-announcement-checkbox-field">
-														<span>Student Eligibility</span>
-														<span className="grantor-announcement-checkbox-control">
-															<input type="checkbox" checked={announcementForm.acceptIrregularStudents === true} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, acceptIrregularStudents: event.target.checked }))} />
-															<span>Accept irregular students</span>
-														</span>
-													</label>
 													<div className="grantor-announcement-requirements">
 														<span>Required Documents</span>
 														<div>

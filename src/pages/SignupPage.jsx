@@ -100,13 +100,6 @@ const COURSES = [
 	},
 ]
 
-const STUDENT_TYPE_OPTIONS = [
-	{ value: "regular", label: "Regular" },
-	{ value: "transferee", label: "Transferee" },
-	{ value: "shifted", label: "Shifted" },
-	{ value: "returning", label: "Returning Student" },
-]
-
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function isPasswordStrong(pwd) {
@@ -211,7 +204,6 @@ export default function SignupPage() {
 	const [documentScanResult, setDocumentScanResult] = useState({ cor: null, cog: null })
 	const [documentPreviewUrls, setDocumentPreviewUrls] = useState({ cor: "", cog: "" })
 	const [academicConcernTerms, setAcademicConcernTerms] = useState([])
-	const [studentType, setStudentType] = useState("")
 	const [showTermsModal, setShowTermsModal] = useState(false)
 	const [termsChecked, setTermsChecked] = useState(false)
 	const [termsAccepted, setTermsAccepted] = useState(false)
@@ -904,12 +896,6 @@ export default function SignupPage() {
 			return
 		}
 
-		if (!studentType) {
-			toast.error("Please select your student type.")
-			scrollToSection("section-academic-status")
-			return
-		}
-
 		if (documentScanResult.cog?.hasAcademicConcern) {
 			toast.error("Your COG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
 			scrollToSection("section-cor")
@@ -1099,12 +1085,6 @@ export default function SignupPage() {
 			return
 		}
 
-		if (!studentType) {
-			toast.error("Please select your student type.")
-			scrollToSection("section-academic-status")
-			return
-		}
-
 		if (documentScanResult.cog?.hasAcademicConcern) {
 			toast.error("Your COG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
 			scrollToSection("section-cor")
@@ -1264,8 +1244,6 @@ export default function SignupPage() {
 				academicStatus: {
 					hasAcademicConcern,
 					concernTerms: academicConcernTerms,
-					studentType,
-					isIrregularStudent: false,
 					reason: "",
 					preferredSupport: "",
 				},
@@ -2256,46 +2234,6 @@ export default function SignupPage() {
 								</div>
 							</div>
 
-							{showStudentFormStage ? (
-								<div id="section-academic-status" className="signup-form-section signup-form-section--academic-alert">
-									<div className="signup-section-header">
-										<div className="signup-section-icon signup-section-icon--warning">
-											<HiOutlineClock />
-										</div>
-										<h3 className="signup-section-title">Student Status</h3>
-									</div>
-									{hasAcademicConcern ? (
-										<div className="signup-cor-note signup-cor-note--warning">
-											Detected restricted Final Grade value: {academicConcernTerms.length > 0 ? academicConcernTerms.join(", ") : "5.0, 4.0, INC, UD, or OD"}.
-											Students with these COG final grades cannot continue account creation through this signup.
-										</div>
-									) : (
-										<div className="signup-cor-note">
-											Select your student type so recommendations can match your academic background more accurately.
-										</div>
-									)}
-
-									<label className="login-label">
-										Student Type <span className="required">*</span>
-									</label>
-									<div className="signup-choice-row">
-										{STUDENT_TYPE_OPTIONS.map((option) => (
-											<label
-												key={option.value}
-												className={`signup-choice-pill ${studentType === option.value ? "is-active" : ""}`}
-											>
-												<input
-													type="checkbox"
-													checked={studentType === option.value}
-													onChange={() => setStudentType(option.value)}
-												/>
-												{option.label}
-											</label>
-										))}
-									</div>
-								</div>
-							) : null}
-
 							{/* Submit Button */}
 							<div className="signup-form-submit">
 								<button
@@ -2504,47 +2442,6 @@ export default function SignupPage() {
 									</div>
 								</div>
 							</div>
-
-							{studentType || hasAcademicConcern ? (
-								<div className="signup-review-card signup-review-card--academic">
-									<div className="signup-review-card-header">
-										<h3 className="signup-review-card-title">
-											<span className="signup-review-card-title-icon" aria-hidden>
-												<HiOutlineClock />
-											</span>
-											Student Status
-										</h3>
-										<button
-											type="button"
-											className="signup-review-edit-btn"
-											onClick={() => {
-												setShowReview(false)
-												scrollToSection("section-academic-status")
-											}}
-										>
-											<HiOutlinePencil /> Edit
-										</button>
-									</div>
-									<div className="signup-review-content">
-										<div className="signup-review-row">
-											<span className="signup-review-label">Detected Concern:</span>
-											<span className="signup-review-value">
-												{hasAcademicConcern
-													? academicConcernTerms.length > 0
-														? academicConcernTerms.join(", ")
-														: "5.0, 4.0, INC, UD, or OD"
-													: "None detected"}
-											</span>
-										</div>
-										<div className="signup-review-row">
-											<span className="signup-review-label">Student Type:</span>
-											<span className="signup-review-value">
-												{STUDENT_TYPE_OPTIONS.find((option) => option.value === studentType)?.label || "-"}
-											</span>
-										</div>
-									</div>
-								</div>
-							) : null}
 
 							{/* Document Upload Review */}
 							{(corFile || cogFile) && (

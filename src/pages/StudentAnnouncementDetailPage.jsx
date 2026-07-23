@@ -687,15 +687,6 @@ export default function StudentAnnouncementDetailPage() {
 											</div>
 										</section>
 									) : null}
-									{isAnnouncementApplication ? (
-										<section className="student-announcement-detail-summary-card">
-											<HiOutlineAcademicCap aria-hidden />
-											<div>
-												<span>Irregular Students</span>
-												<strong>{announcement.acceptIrregularStudents === true ? "Accepted" : "Not Accepted"}</strong>
-											</div>
-										</section>
-									) : null}
 									<section className="student-announcement-detail-summary-card">
 										<HiOutlineClock aria-hidden />
 										<div>

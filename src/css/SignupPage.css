@@ -320,59 +320,8 @@
 	font-style: normal;
 }
 
-.signup-form-section--academic-alert {
-	border-color: #fed7aa;
-	background: #fffaf4;
-}
-
 .signup-section-icon--warning {
 	background: linear-gradient(135deg, #f97316 0%, #b45309 100%);
-}
-
-.signup-choice-row {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.65rem;
-}
-
-.signup-choice-pill {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.5rem;
-	min-height: 40px;
-	padding: 0.55rem 0.9rem;
-	border: 1px solid #d8e5dd;
-	border-radius: 8px;
-	background: #fff;
-	color: #17342a;
-	font-size: 0.84rem;
-	font-weight: 600;
-	cursor: pointer;
-	user-select: none;
-	transition:
-		background 0.2s ease,
-		border-color 0.2s ease,
-		color 0.2s ease,
-		transform 0.2s ease;
-}
-
-.signup-choice-pill input {
-	width: 16px;
-	height: 16px;
-	margin: 0;
-	accent-color: #00633c;
-	cursor: pointer;
-}
-
-.signup-choice-pill:hover {
-	transform: translateY(-1px);
-	border-color: #0b572b;
-}
-
-.signup-choice-pill.is-active {
-	border-color: #0b572b;
-	background: #edf8f2;
-	color: #005332;
 }
 
 .signup-question {

@@ -6268,7 +6268,6 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta"><span>Year Level</span><strong>{selectedStudent.year || selectedStudent.yearLevel || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Section</span><strong>{selectedStudent.section || selectedStudent.yearSection || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Current GWA</span><strong>{selectedStudent.gwa || selectedStudent.currentGwa || selectedStudent.currentGWA || "-"}</strong></p>
-								<p className="admin-detail-meta"><span>Irregular Student</span><strong>{selectedStudent.isIrregular === true || selectedStudent.irregularStudent === true ? "Yes" : "No"}</strong></p>
 							</div>
 							<h4 className="admin-student-detail-divider"><span>Address</span></h4>
 							<div className="admin-detail-grid admin-student-detail-grid">
