@@ -62,6 +62,10 @@ const tables = [
 	"grantor_portal_scholars",
 	"grantor_portal_applications",
 	"grantor_portal_announcements",
+	"studentNotifications",
+	"grantorNotifications",
+	"student_document_usage",
+	"systemLogs",
 ]
 
 const failures = []

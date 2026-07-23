@@ -262,6 +262,33 @@ def supabase_select(table: str, filters: dict[str, Any] | None = None, limit: in
         return {"ok": False, "status": error.code, "detail": error.read().decode("utf-8")}
 
 
+def supabase_table_status(table: str) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not service_key:
+        return {"ok": False, "reason": "missing_supabase_server_config", "table": table}
+
+    request = urllib.request.Request(
+        f"{supabase_url}/rest/v1/{table}?select=id&limit=1",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            rows = json.loads(response.read().decode("utf-8") or "[]")
+            return {"ok": True, "table": table, "sampleRows": len(rows)}
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8")
+        reason = "supabase_http_error"
+        if error.code == 404 and "PGRST205" in detail:
+            reason = "missing_or_unloaded_supabase_table"
+        return {"ok": False, "table": table, "status": error.code, "reason": reason, "detail": detail}
+
+
 def supabase_document_update(table: str, record_id: str, payload: dict[str, Any], parent_id: str | None = None) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")

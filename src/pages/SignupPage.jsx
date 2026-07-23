@@ -39,6 +39,8 @@ import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import logo2 from "../assets/logo2.png"
 
+const APP_URL = (import.meta.env.VITE_APP_URL || window.location.origin).replace(/\/$/, "")
+
 const COURSES = [
 	{
 		course: "Bachelor of Elementary Education",
@@ -1175,7 +1177,7 @@ export default function SignupPage() {
 				email: normalizedSignupEmail,
 				password,
 				options: {
-					emailRedirectTo: `${window.location.origin}/confirm-email`,
+					emailRedirectTo: `${APP_URL}/confirm-email`,
 					data: {
 						user_id: studentId,
 						user_type: "student",
@@ -1429,7 +1431,8 @@ export default function SignupPage() {
 			setIsPending(true)
 		} catch (err) {
 			console.error("Error saving student:", err)
-			toast.error("Failed to create account. Please try again.")
+			const message = err?.message || "Failed to create account. Please try again."
+			toast.error(message.length > 220 ? `${message.slice(0, 217)}...` : message)
 		}
 	}
 

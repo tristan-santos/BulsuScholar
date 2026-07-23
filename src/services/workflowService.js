@@ -5,11 +5,18 @@ const BACKEND_API_URL = (
 ).replace(/\/$/, "")
 
 async function postWorkflow(path, payload = {}) {
-	const response = await fetch(`${BACKEND_API_URL}${path}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(payload),
-	})
+	let response
+	try {
+		response = await fetch(`${BACKEND_API_URL}${path}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		})
+	} catch (error) {
+		throw new Error(
+			`Backend is unavailable at ${BACKEND_API_URL}. Check Render deployment, CORS, and VITE_BACKEND_API_URL. ${error?.message || ""}`.trim(),
+		)
+	}
 	const data = await response.json().catch(() => ({}))
 	if (!response.ok || data?.ok === false) {
 		const detail = data?.detail || data?.reason || data?.error || data?.result || data?.results || data

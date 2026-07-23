@@ -51,6 +51,7 @@ try:
         delete_grantor_notification,
         delete_admin_notification,
         delete_student_notification,
+        supabase_table_status,
         update_grantor_notification,
         update_admin_notification,
         update_student_notification,
@@ -103,6 +104,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         delete_grantor_notification,
         delete_admin_notification,
         delete_student_notification,
+        supabase_table_status,
         update_grantor_notification,
         update_admin_notification,
         update_student_notification,
@@ -128,14 +130,48 @@ allowed_origins = [
 	for item in os.getenv("DOCUMENT_SCAN_ALLOWED_ORIGINS", "https://bulsu-scholar.vercel.app").split(",")
 	if item.strip()
 ]
+allowed_origin_regex = os.getenv("DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX", r"https://.*\.vercel\.app")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+REQUIRED_SUPABASE_TABLES = [
+    "admins",
+    "students",
+    "pending_students",
+    "providers",
+    "grantor_portals",
+    "grantor_portal_scholars",
+    "grantor_portal_applications",
+    "grantor_portal_announcements",
+    "scholarship_applications",
+    "soe_requests",
+    "soe_downloads",
+    "student_warnings",
+    "studentNotifications",
+    "grantorNotifications",
+    "student_document_usage",
+    "systemLogs",
+]
+
+
+@app.get("/")
+def root() -> dict[str, Any]:
+    return {
+        "name": "BulsuScholar Backend Services",
+        "status": "running",
+        "frontend": os.getenv("FRONTEND_URL", "https://bulsu-scholar.vercel.app"),
+        "health": "/health",
+        "deploymentHealth": "/deployment/health",
+        "scanner": "/scan-document",
+        "message": "Use the frontend site for the app. This backend only exposes API endpoints.",
+    }
 
 
 @app.get("/health")
@@ -147,6 +183,40 @@ def health() -> dict[str, Any]:
         "supabaseServerConfigured": bool(supabase_url and service_role_key),
         "hasSupabaseUrl": bool(supabase_url),
         "hasSupabaseServiceRoleKey": bool(service_role_key),
+    }
+
+
+@app.get("/deployment/health")
+def deployment_health() -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    resend_api_key = os.getenv("RESEND_API_KEY", "")
+    resend_from_email = os.getenv("RESEND_FROM_EMAIL", "")
+    table_results = [supabase_table_status(table) for table in REQUIRED_SUPABASE_TABLES]
+    missing_tables = [
+        item["table"]
+        for item in table_results
+        if not item.get("ok") and item.get("reason") == "missing_or_unloaded_supabase_table"
+    ]
+    failed_tables = [item for item in table_results if not item.get("ok")]
+
+    return {
+        "status": "ok" if not failed_tables and supabase_url and service_role_key else "needs_attention",
+        "frontendUrl": os.getenv("FRONTEND_URL", "https://bulsu-scholar.vercel.app"),
+        "cors": {
+            "allowedOrigins": allowed_origins,
+            "allowedOriginRegex": allowed_origin_regex,
+        },
+        "environment": {
+            "hasSupabaseUrl": bool(supabase_url),
+            "hasSupabaseServiceRoleKey": bool(service_role_key),
+            "hasResendApiKey": bool(resend_api_key),
+            "hasResendFromEmail": bool(resend_from_email),
+        },
+        "tables": table_results,
+        "missingTables": missing_tables,
+        "failedTables": failed_tables,
+        "nextStep": "Run supabase/security-hardening.sql and redeploy Render if tables are missing.",
     }
 
 
@@ -459,3 +529,17 @@ async def scan_document(
         "contentType": file.content_type,
         "extracted": extracted,
     }
+
+
+@app.get("/{full_path:path}")
+def api_not_found(full_path: str) -> dict[str, Any]:
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "error": "api_route_not_found",
+            "path": f"/{full_path}",
+            "message": "This backend route does not exist. Open the frontend site for pages, or call a listed API endpoint.",
+            "frontend": os.getenv("FRONTEND_URL", "https://bulsu-scholar.vercel.app"),
+            "availableHealthRoutes": ["/", "/health", "/deployment/health", "/email/health"],
+        },
+    )

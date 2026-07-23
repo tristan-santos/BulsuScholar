@@ -8,13 +8,20 @@ export async function scanStudentDocument(file, documentType = "cor") {
 	const formData = new FormData()
 	formData.append("file", file)
 
-	const response = await fetch(
-		`${DOCUMENT_SCAN_API_URL}/scan-document?document_type=${encodeURIComponent(documentType)}`,
-		{
-			method: "POST",
-			body: formData,
-		},
-	)
+	let response
+	try {
+		response = await fetch(
+			`${DOCUMENT_SCAN_API_URL}/scan-document?document_type=${encodeURIComponent(documentType)}`,
+			{
+				method: "POST",
+				body: formData,
+			},
+		)
+	} catch (error) {
+		throw new Error(
+			`Document scanner is unavailable at ${DOCUMENT_SCAN_API_URL}. Check Render deployment and CORS. ${error?.message || ""}`.trim(),
+		)
+	}
 
 	if (!response.ok) {
 		const message = await response.text().catch(() => "")

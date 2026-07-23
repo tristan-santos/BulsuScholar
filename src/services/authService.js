@@ -2,9 +2,14 @@
  * Authentication service for encrypting and decrypting passwords
  */
 
-const SECRET =
+const PRIMARY_SECRET =
 	import.meta.env.VITE_PASSWORD_SECRET ||
 	"bulsuscholar-default-secret-key-32!!!"
+const LEGACY_SECRETS = String(import.meta.env.VITE_PASSWORD_LEGACY_SECRETS || "")
+	.split(",")
+	.map((secret) => secret.trim())
+	.filter(Boolean)
+const PASSWORD_SECRETS = Array.from(new Set([PRIMARY_SECRET, ...LEGACY_SECRETS]))
 
 function bytesToBase64(bytes) {
 	let binary = ""
@@ -32,7 +37,7 @@ export async function encryptPasswordAES256(plainPassword) {
 	if (!plainPassword) return ""
 
 	const enc = new TextEncoder()
-	const keyBytes = enc.encode(SECRET.padEnd(32).slice(0, 32))
+	const keyBytes = enc.encode(PRIMARY_SECRET.padEnd(32).slice(0, 32))
 
 	const cryptoKey = await window.crypto.subtle.importKey(
 		"raw",
@@ -64,30 +69,57 @@ export async function encryptPasswordAES256(plainPassword) {
 export async function decryptPasswordAES256(encryptedPassword) {
 	if (!encryptedPassword) return ""
 
+	let combined
 	try {
-		const combined = base64ToBytes(encryptedPassword)
-		const iv = combined.slice(0, 12)
-		const cipherBuffer = combined.slice(12)
+		combined = base64ToBytes(encryptedPassword)
+	} catch {
+		console.warn("Password decryption failed. Stored password is not valid encrypted data.")
+		return ""
+	}
 
-		const enc = new TextEncoder()
-		const keyBytes = enc.encode(SECRET.padEnd(32).slice(0, 32))
+	const iv = combined.slice(0, 12)
+	const cipherBuffer = combined.slice(12)
+	const enc = new TextEncoder()
 
-		const cryptoKey = await window.crypto.subtle.importKey(
-			"raw",
-			keyBytes,
-			{ name: "AES-GCM" },
-			false,
-			["decrypt"],
-		)
+	for (const secret of PASSWORD_SECRETS) {
+		try {
+			const keyBytes = enc.encode(secret.padEnd(32).slice(0, 32))
 
-		const decrypted = await window.crypto.subtle.decrypt(
-			{ name: "AES-GCM", iv },
-			cryptoKey,
-			cipherBuffer,
-		)
+			const cryptoKey = await window.crypto.subtle.importKey(
+				"raw",
+				keyBytes,
+				{ name: "AES-GCM" },
+				false,
+				["decrypt"],
+			)
 
-		const dec = new TextDecoder()
-		return dec.decode(decrypted)
+			const decrypted = await window.crypto.subtle.decrypt(
+				{ name: "AES-GCM", iv },
+				cryptoKey,
+				cipherBuffer,
+			)
+
+			const dec = new TextDecoder()
+			return dec.decode(decrypted)
+		} catch {
+			// Try the next configured secret. AES-GCM throws when the key does not match.
+		}
+	}
+
+	console.warn(
+		"Password decryption failed. Check that VITE_PASSWORD_SECRET in Vercel matches the secret used when this account password was saved.",
+	)
+	return ""
+}
+
+/**
+ * Legacy alias retained for older imports.
+ * @param {string} encryptedPassword
+ * @returns {Promise<string>}
+ */
+export async function decryptPasswordAES256Legacy(encryptedPassword) {
+	try {
+		return await decryptPasswordAES256(encryptedPassword)
 	} catch (error) {
 		console.error("Password decryption failed:", error)
 		return ""

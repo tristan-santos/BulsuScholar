@@ -123,7 +123,7 @@ if (resetUserId && env.AUTH_TEST_SEND_RESET === "true") {
 		process.exit(1)
 	}
 	const { error } = await supabase.auth.resetPasswordForEmail(account.row.data.email, {
-		redirectTo: `${env.VITE_APP_URL || "http://localhost:5173"}/reset-password?userId=${encodeURIComponent(resetUserId)}`,
+		redirectTo: `${env.VITE_APP_URL || "https://bulsu-scholar.vercel.app"}/reset-password?userId=${encodeURIComponent(resetUserId)}`,
 	})
 	if (error) {
 		console.error(`Password reset email failed: ${error.message}`)

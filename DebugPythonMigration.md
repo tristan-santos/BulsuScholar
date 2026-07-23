@@ -2,33 +2,30 @@
 
 Use this checklist to test the parts of BulsuScholar that now depend on the FastAPI backend. Test in order. If one section fails, fix that first before moving to the next section.
 
-## 1. Start The Backend - Checked
+## 1. Check The Hosted Backend - Checked
 
-From the project root:
+Open this in the browser:
 
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-uvicorn main:app --reload --port 8000
+```txt
+https://bulsuscholar.onrender.com/health
 ```
 
 Expected:
-- Terminal shows Uvicorn running on `http://127.0.0.1:8000`.
-- No Python import errors.
-- No missing package errors.
+- Render returns backend health JSON.
+- `supabaseServerConfigured` is `true`.
+- No CORS errors when called from the Vercel frontend.
 
-If a package is missing:
-
-```powershell
-pip install -r requirements.txt
-```
+If this fails:
+- Check Render deploy logs.
+- Confirm Render environment variables are set.
+- Redeploy the backend after changing environment variables.
 
 ## 2. Check Backend Health - Checked
 
 Open this in the browser:
 
 ```txt
-http://localhost:8000/health
+https://bulsuscholar.onrender.com/health
 ```
 
 Expected:
@@ -38,8 +35,8 @@ Expected:
 ```
 
 If this fails:
-- The backend is not running.
-- The port is wrong.
+- The Render service is sleeping, still deploying, or crashed.
+- Required backend environment variables are missing.
 - Python crashed during startup.
 
 ## 3. Check Environment Variables - Checked
@@ -47,9 +44,12 @@ If this fails:
 Frontend `.env` should have:
 
 ```env
-VITE_BACKEND_API_URL=http://localhost:8000
-VITE_DOCUMENT_SCAN_API_URL=http://localhost:8000
-VITE_RESEND_API_ENDPOINT=http://localhost:8000/email/send
+VITE_BACKEND_API_URL=https://bulsuscholar.onrender.com
+VITE_DOCUMENT_SCAN_API_URL=https://bulsuscholar.onrender.com
+VITE_RESEND_API_ENDPOINT=https://bulsuscholar.onrender.com/email/send
+VITE_APP_URL=https://bulsu-scholar.vercel.app
+VITE_PUBLIC_SITE_URL=https://bulsu-scholar.vercel.app
+VITE_PASSWORD_SECRET=
 ```
 
 Backend environment should have:
@@ -57,39 +57,41 @@ Backend environment should have:
 ```env
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-DOCUMENT_SCAN_ALLOWED_ORIGINS=http://localhost:5173
+DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
+FRONTEND_URL=https://bulsu-scholar.vercel.app
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=
 ```
 
 Expected:
-- Frontend requests go to `localhost:8000`.
+- Frontend requests go to `https://bulsuscholar.onrender.com`.
 - Backend write endpoints do not return `missing_supabase_server_config`.
 - Browser does not show CORS errors.
+- Existing grantor/admin encrypted passwords can still be verified. If login shows `Password decryption failed`, Vercel's `VITE_PASSWORD_SECRET` does not match the secret used when the password was saved.
 
 If CORS fails:
-- Confirm frontend runs on `http://localhost:5173`.
-- Confirm `DOCUMENT_SCAN_ALLOWED_ORIGINS=http://localhost:5173`.
-- Restart the backend after changing env values.
+- Confirm frontend runs on `https://bulsu-scholar.vercel.app`.
+- Confirm `DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app`.
+- Redeploy or restart the Render backend after changing env values.
 
 ## 4. Start The Frontend - Checked
 
-From the project root in a second terminal:
+Use the hosted Vercel frontend:
 
-```powershell
-npm.cmd run dev -- --host 0.0.0.0 --port 5173
+```txt
+https://bulsu-scholar.vercel.app
 ```
 
 Expected:
-- Vite opens on `http://localhost:5173`.
+- Vercel opens the production frontend.
 - Browser console has no startup errors.
 
 ## 5. Use The Network Tab - Checked
 
 Open DevTools:
 - Go to `Network`.
-- Filter by `localhost:8000`.
-- Keep the Python terminal visible.
+- Filter by `bulsuscholar.onrender.com`.
+- Keep the Render logs visible if a backend request fails.
 
 For every migrated feature, check:
 - Request endpoint.

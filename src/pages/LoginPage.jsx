@@ -18,6 +18,8 @@ import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import logo2 from "../assets/logo2.png"
 
+const APP_URL = (import.meta.env.VITE_APP_URL || window.location.origin).replace(/\/$/, "")
+
 export default function LoginPage() {
 	const [userId, setUserId] = useState("")
 	const [password, setPassword] = useState("")
@@ -96,7 +98,7 @@ export default function LoginPage() {
 			}
 
 			const { error } = await supabase.auth.resetPasswordForEmail(student.email, {
-				redirectTo: `${window.location.origin}/reset-password?userId=${encodeURIComponent(id)}`,
+				redirectTo: `${APP_URL}/reset-password?userId=${encodeURIComponent(id)}`,
 			})
 			if (error) throw error
 

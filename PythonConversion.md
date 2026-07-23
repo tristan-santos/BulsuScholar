@@ -159,9 +159,11 @@
 
 Frontend:
 ```env
-VITE_BACKEND_API_URL=http://localhost:8000
-VITE_DOCUMENT_SCAN_API_URL=http://localhost:8000
-VITE_RESEND_API_ENDPOINT=http://localhost:8000/email/send
+VITE_BACKEND_API_URL=https://bulsuscholar.onrender.com
+VITE_DOCUMENT_SCAN_API_URL=https://bulsuscholar.onrender.com
+VITE_RESEND_API_ENDPOINT=https://bulsuscholar.onrender.com/email/send
+VITE_APP_URL=https://bulsu-scholar.vercel.app
+VITE_PUBLIC_SITE_URL=https://bulsu-scholar.vercel.app
 ```
 
 Python backend:
@@ -170,14 +172,14 @@ RESEND_API_KEY=
 RESEND_FROM_EMAIL=BulsuScholar <noreply@your-domain.com>
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-DOCUMENT_SCAN_ALLOWED_ORIGINS=http://localhost:5173
+DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
+FRONTEND_URL=https://bulsu-scholar.vercel.app
 ```
 
 ## Required Tests
 
 ### Backend startup
-- Run `uvicorn main:app --reload --port 8000` from `backend/`.
-- Open `http://localhost:8000/health`.
+- Open `https://bulsuscholar.onrender.com/health`.
 - Expected: `{"status":"ok"}`.
 
 ### Document scanning
