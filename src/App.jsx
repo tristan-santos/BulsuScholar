@@ -15,6 +15,7 @@ import StudentScholarshipsPage from "./pages/StudentScholarshipsPage"
 import StudentProfilePage from "./pages/StudentProfilePage"
 import ProviderDashboard from "./pages/ProviderDashboard"
 import GrantorChangePasswordPage from "./pages/GrantorChangePasswordPage"
+import NotFoundPage from "./pages/NotFoundPage"
 
 export default function App() {
 	return (
@@ -34,7 +35,7 @@ export default function App() {
 				<Route path="/student-dashboard/scholarships" element={<StudentScholarshipsPage />} />
 				<Route path="/student-dashboard/profile" element={<StudentProfilePage />} />
 				<Route path="/provider-dashboard/*" element={<ProviderDashboard />} />
-				<Route path="*" element={<Navigate to="/" replace />} />
+				<Route path="*" element={<NotFoundPage />} />
 			</Routes>
 			<ToastContainer position="top-right" autoClose={3000} />
 		</BrowserRouter>
