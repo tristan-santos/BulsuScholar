@@ -565,6 +565,8 @@ export default function SignupPage() {
 
 		console.groupCollapsed(`[BulsuScholar] ${label}`)
 		console.log("Autofill fields gathered:", {
+			documentTitle: extracted?.documentTitle || "",
+			isValidCorDocument: extracted?.isValidCorDocument,
 			studentId: extracted?.studentId || "",
 			firstName: extracted?.firstName || "",
 			middleName: extracted?.middleName || "",
@@ -577,6 +579,15 @@ export default function SignupPage() {
 			academicYear: extracted?.academicYear || "",
 			semester: extracted?.semester || "",
 		})
+		if (documentType === "cor") {
+			console.log("COR title validation:", {
+				isValidCorDocument: extracted?.isValidCorDocument,
+				documentTitle: extracted?.documentTitle || "",
+				acceptedCorTitles: extracted?.acceptedCorTitles || ["Advising Slip", "Certificate of Registration"],
+				documentTitleCandidates: extracted?.documentTitleCandidates || [],
+				rule: extracted?.documentTitleRule || "COR must contain Advising Slip or Certificate of Registration.",
+			})
+		}
 		console.log("Raw OCR preview:", extracted?.rawTextPreview || "")
 		console.log(
 			"COG reading rule:",
@@ -730,6 +741,16 @@ export default function SignupPage() {
 			const identityCheck = documentType === "cog" ? validateCogIdentity(extracted) : null
 			setDocumentScanResult((current) => ({ ...current, [documentType]: extracted }))
 			logDocumentScanResult(documentType, extracted, identityCheck)
+
+			if (documentType === "cor" && extracted?.isValidCorDocument === false) {
+				setCorFile(null)
+				setCogFile(null)
+				setGwa("")
+				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
+				toast.error("Please upload a valid COR: Advising Slip or Certificate of Registration.")
+				setDocumentScanState((current) => ({ ...current, cor: "error", cog: "idle" }))
+				return
+			}
 
 			if (identityCheck && !identityCheck.passed) {
 				setCogFile(null)

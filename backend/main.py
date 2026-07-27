@@ -125,11 +125,25 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
 
 app = FastAPI(title="BulsuScholar Backend Services")
 
-allowed_origins = [
-	item.strip()
-	for item in os.getenv("DOCUMENT_SCAN_ALLOWED_ORIGINS", "https://bulsu-scholar.vercel.app").split(",")
-	if item.strip()
-]
+
+def build_allowed_origins() -> list[str]:
+    configured_origins = [
+        item.strip()
+        for item in os.getenv("DOCUMENT_SCAN_ALLOWED_ORIGINS", "").split(",")
+        if item.strip()
+    ]
+    default_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://bulsu-scholar.vercel.app",
+        os.getenv("FRONTEND_URL", "").strip(),
+        os.getenv("VITE_APP_URL", "").strip(),
+        os.getenv("VITE_PUBLIC_SITE_URL", "").strip(),
+    ]
+    return sorted({origin.rstrip("/") for origin in [*default_origins, *configured_origins] if origin})
+
+
+allowed_origins = build_allowed_origins()
 allowed_origin_regex = os.getenv("DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX", r"https://.*\.vercel\.app")
 
 app.add_middleware(

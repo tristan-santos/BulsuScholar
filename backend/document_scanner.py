@@ -31,6 +31,8 @@ COURSE_PATTERNS = [
     "Bachelor in Industrial Technology",
 ]
 
+ACCEPTED_COR_TITLES = ["Advising Slip", "Certificate of Registration"]
+
 NAME_LABEL_PATTERN = r"(?:Student\s*Name|Name\s+of\s+Student|Full\s*Name|Fullname|Name)"
 NAME_BLOCKED_WORDS = re.compile(
     r"\b(?:REPUBLIC|PHILIPPINES|BULACAN|UNIVERSITY|CITY|COLLEGE|CERTIFICATE|REGISTRATION|ADVISING|SLIP|GRADE|REMARK|FINAL|AVERAGE|PROGRAM|COURSE|CURRICULUM|STUDENT|NUMBER|SECTION|SEMESTER|SUBJECT|UNITS|CREDIT|MAJOR|AGE)\b",
@@ -110,6 +112,36 @@ def find_first(patterns: list[str], text: str, flags: int = re.IGNORECASE) -> st
         if match:
             return normalize_space(match.group(1))
     return ""
+
+
+def detect_cor_document_title(text: str) -> dict[str, Any]:
+    normalized = normalize_space(text)
+    title_patterns = [
+        ("Advising Slip", r"\bAdvising\s*Slip\b"),
+        ("Certificate of Registration", r"\bCertificate\s*of\s*Registration\b"),
+    ]
+    for title, pattern in title_patterns:
+        if re.search(pattern, normalized, re.IGNORECASE):
+            return {
+                "isValidCorDocument": True,
+                "documentTitle": title,
+                "acceptedCorTitles": ACCEPTED_COR_TITLES,
+                "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+            }
+
+    title_candidates = []
+    for line in text.splitlines()[:20]:
+        cleaned = normalize_space(line)
+        if cleaned:
+            title_candidates.append(cleaned)
+
+    return {
+        "isValidCorDocument": False,
+        "documentTitle": "",
+        "acceptedCorTitles": ACCEPTED_COR_TITLES,
+        "documentTitleCandidates": title_candidates[:8],
+        "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+    }
 
 
 def extract_course(text: str) -> str:
@@ -705,6 +737,7 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
         },
         "gwaDebug": extract_gwa_result(text),
     }
+    cor_title_check = detect_cor_document_title(text) if document_type.lower() == "cor" else {}
 
     return {
         "documentType": document_type,
@@ -719,6 +752,7 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
         "gwa": extract_gwa(text),
         **semester,
         **flags,
+        **cor_title_check,
         "rawTextPreview": normalize_space(text)[:1200],
     }
 
