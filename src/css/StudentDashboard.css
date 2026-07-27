@@ -2,7 +2,14 @@
 
 .student-portal {
 	min-height: 100vh;
-	font-family: Arial, Helvetica, sans-serif;
+	font-family:
+		system-ui,
+		-apple-system,
+		"Segoe UI",
+		Roboto,
+		"Helvetica Neue",
+		Arial,
+		sans-serif;
 	background:
 		radial-gradient(circle at top left, rgba(34, 197, 94, 0.08), transparent 30%),
 		linear-gradient(180deg, #f7faf7 0%, #eef7f0 100%);
@@ -7125,6 +7132,117 @@
 	.student-profile-header-actions {
 		width: 100%;
 		justify-content: flex-start;
+	}
+}
+
+/* Student account form consistency */
+.student-profile-input,
+.student-portal button,
+.student-portal select,
+.student-portal textarea {
+	font-family: inherit;
+}
+
+.student-profile-input:is(select) {
+	min-height: 42px;
+	padding: 0 2.35rem 0 0.85rem;
+	border: 1px solid #cbded5;
+	border-radius: 6px;
+	background-color: #fff;
+	background-image:
+		linear-gradient(45deg, transparent 50%, #00633c 50%),
+		linear-gradient(135deg, #00633c 50%, transparent 50%);
+	background-position:
+		calc(100% - 18px) 50%,
+		calc(100% - 12px) 50%;
+	background-size:
+		6px 6px,
+		6px 6px;
+	background-repeat: no-repeat;
+	color: #041f16;
+	font-size: 0.92rem;
+	font-weight: 500;
+	appearance: none;
+	cursor: pointer;
+}
+
+.student-profile-input:is(select):hover {
+	border-color: #8fb8a6;
+	background-color: #fbfefd;
+}
+
+.student-profile-input:is(select):focus {
+	border-color: #00633c;
+	box-shadow: 0 0 0 3px rgba(0, 99, 60, 0.1);
+	outline: 0;
+}
+
+.student-profile-input:is(select):disabled {
+	border-color: #dde8e3;
+	background-color: #f4f7f5;
+	color: #94a3b8;
+	cursor: not-allowed;
+}
+
+.student-profile-input:is(select) option {
+	min-height: 42px;
+	padding: 0.85rem 0.9rem;
+	background: #fff;
+	color: #041f16;
+	font-size: 0.92rem;
+	font-weight: 500;
+}
+
+.student-profile-input:is(select) option:checked,
+.student-profile-input:is(select) option:hover,
+.student-profile-input:is(select) option:focus {
+	background: rgba(0, 99, 60, 0.1);
+	color: #00633c;
+	font-weight: 650;
+}
+
+.student-profile-label--street {
+	grid-column: span 1;
+}
+
+.student-profile-label--postal {
+	max-width: 11rem;
+}
+
+.student-profile-help-text {
+	margin-top: -0.15rem;
+	color: #b91c1c;
+	font-size: 0.72rem;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.student-dashboard--dark .student-profile-input:is(select) {
+	border-color: #475569;
+	background-color: #0f172a;
+	color: #f8fafc;
+}
+
+.student-dashboard--dark .student-profile-input:is(select):disabled {
+	background-color: #1e293b;
+	color: #94a3b8;
+}
+
+.student-dashboard--dark .student-profile-input:is(select) option {
+	background: #0f172a;
+	color: #f8fafc;
+}
+
+.student-dashboard--dark .student-profile-input:is(select) option:checked,
+.student-dashboard--dark .student-profile-input:is(select) option:hover,
+.student-dashboard--dark .student-profile-input:is(select) option:focus {
+	background: rgba(0, 99, 60, 0.24);
+	color: #d1fae5;
+}
+
+@media (max-width: 900px) {
+	.student-profile-label--postal {
+		max-width: none;
 	}
 }
 

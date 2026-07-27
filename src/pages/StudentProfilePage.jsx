@@ -967,7 +967,7 @@ export default function StudentProfilePage() {
 													barangay: e.target.value,
 												}))
 											}
-											disabled={!formData.city || barangayLoading || barangayOptions.length === 0}
+											disabled={!formData.city || barangayLoading || (barangayOptions.length === 0 && !formData.barangay)}
 										>
 											<option value="" disabled>
 												{!formData.city
@@ -985,9 +985,18 @@ export default function StudentProfilePage() {
 												</option>
 											))}
 										</select>
-										{barangayError ? <span className="student-profile-help-text">{barangayError}</span> : null}
+										{barangayError && !formData.barangay ? <span className="student-profile-help-text">{barangayError}</span> : null}
 									</label>
-									<label className="student-profile-label">
+									<label className="student-profile-label student-profile-label--street">
+										Street / Subdivision
+										<input
+											type="text"
+											className="student-profile-input"
+											value={formData.street}
+											onChange={(e) => setFormData((prev) => ({ ...prev, street: e.target.value }))}
+										/>
+									</label>
+									<label className="student-profile-label student-profile-label--postal">
 										Postal Code
 										<input
 											type="text"
@@ -995,15 +1004,6 @@ export default function StudentProfilePage() {
 											value={formData.postalCode}
 											onChange={(e) => setFormData((prev) => ({ ...prev, postalCode: e.target.value.replace(/\D/g, "") }))}
 											maxLength={4}
-										/>
-									</label>
-									<label className="student-profile-label student-profile-label--full">
-										Street / Subdivision
-										<input
-											type="text"
-											className="student-profile-input"
-											value={formData.street}
-											onChange={(e) => setFormData((prev) => ({ ...prev, street: e.target.value }))}
 										/>
 									</label>
 								</div>

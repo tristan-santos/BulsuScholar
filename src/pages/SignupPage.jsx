@@ -2504,8 +2504,23 @@ export default function SignupPage() {
 									</div>
 								</div>
 
-								<div className="signup-row">
-									<div className="signup-field signup-field--small">
+								<div className="signup-row signup-row--address-detail">
+									<div className="signup-field signup-field--street">
+										<label className="login-label" htmlFor="signup-street">
+											Street / Subdivision <span className="required">*</span>
+										</label>
+										<div className="login-input-wrap">
+											<input
+												id="signup-street"
+												type="text"
+												className="login-input"
+												placeholder="Street name / Subdivision"
+												value={street}
+												onChange={(e) => setStreet(e.target.value)}
+											/>
+										</div>
+									</div>
+									<div className="signup-field signup-field--postal">
 										<label className="login-label" htmlFor="signup-postal">
 											Postal Code <span className="required">*</span>
 										</label>
@@ -2520,24 +2535,6 @@ export default function SignupPage() {
 												onChange={(e) =>
 													setPostalCode(e.target.value.replace(/\D/g, ""))
 												}
-											/>
-										</div>
-									</div>
-								</div>
-
-								<div className="signup-row">
-									<div className="signup-field">
-										<label className="login-label" htmlFor="signup-street">
-											Street / Subdivision <span className="required">*</span>
-										</label>
-										<div className="login-input-wrap">
-											<input
-												id="signup-street"
-												type="text"
-												className="login-input"
-												placeholder="Street name / Subdivision"
-												value={street}
-												onChange={(e) => setStreet(e.target.value)}
 											/>
 										</div>
 									</div>

@@ -3,6 +3,14 @@
 	flex-direction: column;
 	min-height: 100vh;
 	min-height: 100dvh;
+	font-family:
+		system-ui,
+		-apple-system,
+		"Segoe UI",
+		Roboto,
+		"Helvetica Neue",
+		Arial,
+		sans-serif;
 }
 
 /* Two-column layout on larger screens */
@@ -262,6 +270,34 @@
 	color: #9ca3af;
 	cursor: not-allowed;
 	opacity: 0.6;
+}
+
+.login-input,
+.login-select,
+.login-page button,
+.login-page textarea {
+	font-family: inherit;
+}
+
+.login-select option {
+	min-height: 42px;
+	padding: 0.85rem 0.9rem;
+	background: #fff;
+	color: #041f16;
+	font-size: 0.95rem;
+	font-weight: 500;
+}
+
+.login-select option:checked {
+	background: rgba(0, 99, 60, 0.1);
+	color: #00633c;
+	font-weight: 650;
+}
+
+.login-select option:hover,
+.login-select option:focus {
+	background: rgba(0, 99, 60, 0.1);
+	color: #00633c;
 }
 
 .login-forgot-btn {

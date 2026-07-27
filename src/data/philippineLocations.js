@@ -1819,14 +1819,20 @@ const psgcLocalitiesCache = {
 const barangayCache = new Map()
 
 function normalizeLocationName(value = "") {
-	return String(value || "")
+	const normalized = String(value || "")
 		.toLowerCase()
 		.normalize("NFD")
 		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/\bcity\s+of\b/g, "")
+		.replace(/\bmunicipality\s+of\b/g, "")
 		.replace(/\bcity\b/g, "")
 		.replace(/[^a-z0-9]+/g, " ")
 		.replace(/\s+/g, " ")
 		.trim()
+	const aliases = {
+		baliuag: "baliwag",
+	}
+	return aliases[normalized] || normalized
 }
 
 function unwrapPsgcList(payload) {
@@ -1893,10 +1899,20 @@ export async function getBarangaysByLocation(province = "", city = "") {
 	const payload = await fetchPsgcJson(
 		`${PSGC_API_BASE_URL}/cities-municipalities/${encodeURIComponent(locality.code)}/barangays?per_page=1000`,
 	)
-	const barangays = unwrapPsgcList(payload)
+	let barangays = unwrapPsgcList(payload)
 		.map((item) => String(item?.name || "").trim())
 		.filter(Boolean)
 		.sort((left, right) => left.localeCompare(right))
+
+	if (barangays.length === 0 && locality.name) {
+		const namedPayload = await fetchPsgcJson(
+			`${PSGC_API_BASE_URL}/cities-municipalities/${encodeURIComponent(locality.name)}/barangays?per_page=1000`,
+		)
+		barangays = unwrapPsgcList(namedPayload)
+			.map((item) => String(item?.name || "").trim())
+			.filter(Boolean)
+			.sort((left, right) => left.localeCompare(right))
+	}
 
 	barangayCache.set(cacheKey, barangays)
 	return barangays
