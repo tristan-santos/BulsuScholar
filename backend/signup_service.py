@@ -102,6 +102,24 @@ def first_existing_record(checks: list[tuple[str, dict[str, Any]]]) -> dict[str,
     return None
 
 
+def is_missing_or_unloaded_table(owner: dict[str, Any] | None, table: str = "") -> bool:
+    if not owner or not owner.get("error"):
+        return False
+    error = owner.get("error") or {}
+    return error.get("reason") == "missing_or_unloaded_supabase_table" and (not table or owner.get("table") == table)
+
+
+def signup_security_schema_error(owner: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "reason": "signup_security_schema_not_ready",
+        "message": "Signup security tables are missing or not loaded in Supabase. Run supabase/security-hardening.sql in the Supabase SQL Editor, then restart/redeploy the backend.",
+        "requiredTable": "student_document_usage",
+        "sqlFile": "supabase/security-hardening.sql",
+        "result": owner,
+    }
+
+
 def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     student_id = normalize_student_id(payload.get("studentId"))
     student = payload.get("student") or {}
@@ -191,6 +209,8 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     if cor_hash:
         cor_hash_owner = first_existing_record([("student_document_usage", {"cor_hash": cor_hash})])
         if cor_hash_owner:
+            if is_missing_or_unloaded_table(cor_hash_owner, "student_document_usage"):
+                return signup_security_schema_error(cor_hash_owner)
             if cor_hash_owner.get("error"):
                 return {"ok": False, "reason": "cor_hash_check_failed", "result": cor_hash_owner}
             return {"ok": False, "reason": "cor_file_already_used"}
@@ -204,6 +224,8 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
             })
         ])
         if cycle_owner:
+            if is_missing_or_unloaded_table(cycle_owner, "student_document_usage"):
+                return signup_security_schema_error(cycle_owner)
             if cycle_owner.get("error"):
                 return {"ok": False, "reason": "cor_cycle_check_failed", "result": cycle_owner}
             return {"ok": False, "reason": "cor_identity_cycle_already_used"}
@@ -265,6 +287,8 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     if cor.get("hash") or (cor.get("academicYear") and cor.get("semester")):
         usage_result = supabase_document_insert("student_document_usage", usage_payload)
         if not usage_result.get("ok"):
+            if usage_result.get("reason") == "missing_or_unloaded_supabase_table":
+                return signup_security_schema_error({"table": "student_document_usage", "error": usage_result})
             return {"ok": False, "reason": "cor_usage_save_failed", "student": student_result, "result": usage_result}
 
     notification_result = create_student_notification(

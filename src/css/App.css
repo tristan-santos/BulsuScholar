@@ -1,1 +1,36 @@
 /* App-level styles */
+
+:root {
+	--bulsu-primary: #00633c;
+	--bulsu-primary-soft: rgba(0, 99, 60, 0.1);
+	--bulsu-font-family:
+		system-ui,
+		-apple-system,
+		"Segoe UI",
+		Roboto,
+		"Helvetica Neue",
+		Arial,
+		sans-serif;
+}
+
+select {
+	font-family: var(--bulsu-font-family);
+	accent-color: var(--bulsu-primary);
+}
+
+select option {
+	background: #ffffff;
+	color: #041f16;
+	font-family: var(--bulsu-font-family);
+	font-weight: 500;
+}
+
+select option:checked,
+select option:hover,
+select option:focus {
+	background:
+		linear-gradient(0deg, var(--bulsu-primary-soft), var(--bulsu-primary-soft)),
+		#ffffff !important;
+	color: var(--bulsu-primary) !important;
+	font-weight: 650;
+}

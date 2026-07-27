@@ -7196,8 +7196,10 @@
 .student-profile-input:is(select) option:checked,
 .student-profile-input:is(select) option:hover,
 .student-profile-input:is(select) option:focus {
-	background: rgba(0, 99, 60, 0.1);
-	color: #00633c;
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.1), rgba(0, 99, 60, 0.1)),
+		#fff !important;
+	color: #00633c !important;
 	font-weight: 650;
 }
 
@@ -7236,8 +7238,10 @@
 .student-dashboard--dark .student-profile-input:is(select) option:checked,
 .student-dashboard--dark .student-profile-input:is(select) option:hover,
 .student-dashboard--dark .student-profile-input:is(select) option:focus {
-	background: rgba(0, 99, 60, 0.24);
-	color: #d1fae5;
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.28), rgba(0, 99, 60, 0.28)),
+		#0f172a !important;
+	color: #d1fae5 !important;
 }
 
 @media (max-width: 900px) {

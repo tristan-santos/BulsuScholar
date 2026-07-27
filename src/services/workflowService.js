@@ -19,7 +19,7 @@ async function postWorkflow(path, payload = {}) {
 	}
 	const data = await response.json().catch(() => ({}))
 	if (!response.ok || data?.ok === false) {
-		const detail = data?.detail || data?.reason || data?.error || data?.result || data?.results || data
+		const detail = data?.message || data?.detail || data?.reason || data?.error || data?.result || data?.results || data
 		const message = typeof detail === "string" ? detail : JSON.stringify(detail)
 		throw new Error(message || `Workflow request failed: ${response.status}`)
 	}

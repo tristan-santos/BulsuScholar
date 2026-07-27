@@ -10090,7 +10090,7 @@
 
 .admin-filter-select__menu button:hover,
 .admin-filter-select__menu button.active {
-	background: #eaf6ef;
+	background: rgba(0, 99, 60, 0.1);
 	color: #00633c;
 }
 
@@ -10119,6 +10119,25 @@
 .admin-student-management .admin-management-table th:nth-child(5),
 .admin-student-management .admin-management-table td:nth-child(5) {
 	text-align: left;
+}
+
+.admin-portal select option:checked,
+.admin-portal select option:hover,
+.admin-portal select option:focus {
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.1), rgba(0, 99, 60, 0.1)),
+		#fff !important;
+	color: #00633c !important;
+	font-weight: 650;
+}
+
+.admin-portal--dark select option:checked,
+.admin-portal--dark select option:hover,
+.admin-portal--dark select option:focus {
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.28), rgba(0, 99, 60, 0.28)),
+		#0f172a !important;
+	color: #d1fae5 !important;
 }
 
 .admin-portal--dark .admin-filter-select__button {

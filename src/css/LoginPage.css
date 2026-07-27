@@ -289,15 +289,19 @@
 }
 
 .login-select option:checked {
-	background: rgba(0, 99, 60, 0.1);
-	color: #00633c;
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.1), rgba(0, 99, 60, 0.1)),
+		#fff !important;
+	color: #00633c !important;
 	font-weight: 650;
 }
 
 .login-select option:hover,
 .login-select option:focus {
-	background: rgba(0, 99, 60, 0.1);
-	color: #00633c;
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.1), rgba(0, 99, 60, 0.1)),
+		#fff !important;
+	color: #00633c !important;
 }
 
 .login-forgot-btn {

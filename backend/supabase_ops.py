@@ -259,7 +259,11 @@ def supabase_select(table: str, filters: dict[str, Any] | None = None, limit: in
             rows = json.loads(response.read().decode("utf-8") or "[]")
             return {"ok": True, "rows": rows}
     except urllib.error.HTTPError as error:
-        return {"ok": False, "status": error.code, "detail": error.read().decode("utf-8")}
+        detail = error.read().decode("utf-8")
+        reason = "supabase_http_error"
+        if error.code == 404 and "PGRST205" in detail:
+            reason = "missing_or_unloaded_supabase_table"
+        return {"ok": False, "status": error.code, "reason": reason, "table": table, "detail": detail}
 
 
 def supabase_table_status(table: str) -> dict[str, Any]:

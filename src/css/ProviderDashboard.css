@@ -4286,15 +4286,19 @@
 }
 
 .grantor-portal select option:checked {
-	background: #eaf6f1;
-	color: #00633c;
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.1), rgba(0, 99, 60, 0.1)),
+		#fff !important;
+	color: #00633c !important;
 	font-weight: 650;
 }
 
 .grantor-portal select option:hover,
 .grantor-portal select option:focus {
-	background: #eaf6f1;
-	color: #00633c;
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.1), rgba(0, 99, 60, 0.1)),
+		#fff !important;
+	color: #00633c !important;
 }
 
 .grantor-portal--dark select {
@@ -4326,6 +4330,8 @@
 .grantor-portal--dark select option:checked,
 .grantor-portal--dark select option:hover,
 .grantor-portal--dark select option:focus {
-	background: #12382a;
-	color: #6ee7b7;
+	background:
+		linear-gradient(0deg, rgba(0, 99, 60, 0.28), rgba(0, 99, 60, 0.28)),
+		#0f172a !important;
+	color: #d1fae5 !important;
 }
