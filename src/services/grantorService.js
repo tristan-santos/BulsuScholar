@@ -137,6 +137,7 @@ export function normalizeGrantorScholar(raw = {}, id = "") {
 		street: raw.street || raw.address || "",
 		city: raw.city || "",
 		province: raw.province || "",
+		barangay: raw.barangay || "",
 		postalCode: raw.postalCode || "",
 		course: raw.course || "",
 		yearLevel: normalizeYearLevel(raw.yearLevel || raw.year || raw.yearLevelLabel),
@@ -455,6 +456,7 @@ function matchNameParts(student = {}, scholar = {}) {
 function matchAddress(student = {}, scholar = {}) {
 	const comparableFieldPairs = [
 		["street", "street"],
+		["barangay", "barangay"],
 		["city", "city"],
 		["province", "province"],
 		["postalCode", "postalCode"],
@@ -479,6 +481,7 @@ function matchAddress(student = {}, scholar = {}) {
 	const studentAddress = normalizeMatchValue(
 		[
 			student?.street,
+			student?.barangay,
 			student?.city,
 			student?.province,
 			student?.postalCode,
@@ -489,6 +492,7 @@ function matchAddress(student = {}, scholar = {}) {
 	const scholarAddress = normalizeMatchValue(
 		[
 			scholar?.street,
+			scholar?.barangay,
 			scholar?.city,
 			scholar?.province,
 			scholar?.postalCode,

@@ -31,7 +31,7 @@ import {
 } from "../services/scholarshipService"
 import { scanStudentDocument } from "../services/documentScanService"
 import { finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
-import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
+import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
 import { isPdf, convertPdfToImage } from "../utils/pdfConverter"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
@@ -156,8 +156,8 @@ function buildGrantorMatchScholarships(
 			matchedGrantorName: match.grantorName || "",
 			matchedScholarId: match.id || "",
 			documentRequirementLabel: match.requiresFullDocs
-				? "Requires COR and COG"
-				: "Requires COR and COG",
+				? "Requires COR and ROG"
+				: "Requires COR and ROG",
 		}
 	})
 }
@@ -171,9 +171,64 @@ function toGrantorMatchMetadata(matches = []) {
 		scholarshipName:
 			match.scholarshipName || match.grantorName || "Scholarship",
 		documentRequirementLabel: match.requiresFullDocs
-			? "Requires COR and COG"
-			: "Requires COR and COG",
+			? "Requires COR and ROG"
+			: "Requires COR and ROG",
 	}))
+}
+
+function normalizeScannedSemester(value = "") {
+	const normalized = String(value || "").trim().toLowerCase()
+	if (["1", "1st", "first"].includes(normalized)) return "1ST"
+	if (["2", "2nd", "second"].includes(normalized)) return "2ND"
+	return ""
+}
+
+function buildSemesterTagFromScan(scan = {}) {
+	const academicYear = String(scan?.academicYear || "").replace(/\s+/g, "").replace("/", "-")
+	const semester = normalizeScannedSemester(scan?.semester)
+	if (!academicYear || !semester) return ""
+	return `${academicYear}-${semester}`
+}
+
+function parseSemesterTag(tag = "") {
+	const match = String(tag || "").match(/^(20\d{2})-(20\d{2})-(1ST|2ND)$/i)
+	if (!match) return null
+	return {
+		startYear: Number(match[1]),
+		endYear: Number(match[2]),
+		semester: match[3].toUpperCase(),
+	}
+}
+
+function getPreviousSemesterTag(currentTag = getCurrentSemesterTag()) {
+	const parsed = parseSemesterTag(currentTag)
+	if (!parsed) return ""
+	if (parsed.semester === "2ND") return `${parsed.startYear}-${parsed.endYear}-1ST`
+	return `${parsed.startYear - 1}-${parsed.endYear - 1}-2ND`
+}
+
+function getExpectedPreviousRogYearLevel(corYear = "", currentTag = getCurrentSemesterTag()) {
+	const parsed = parseSemesterTag(currentTag)
+	const normalizedCorYear = String(corYear || "").replace(/\D/g, "").slice(0, 1)
+	if (!parsed || !normalizedCorYear) return ""
+	if (parsed.semester === "2ND") return normalizedCorYear
+	return String(Math.max(1, Number(normalizedCorYear) - 1))
+}
+
+function getSignupWorkflowErrorMessage(error = {}) {
+	const rawMessage = String(error?.message || "")
+	const reasonMatchers = [
+		["invalid_cor_document_title", "Please upload a valid COR: Advising Slip or Certificate of Registration."],
+		["missing_cor_cycle", "The COR/Advising Slip semester was not detected. Please upload a clear current-semester document."],
+		["cor_cycle_mismatch", `COR/Advising Slip must be for the current cycle: ${getCurrentSemesterTag()}.`],
+		["missing_rog_scan", `Please upload your ROG for the previous cycle: ${getPreviousSemesterTag()}.`],
+		["invalid_rog_document_title", "Please upload a valid ROG: Report of Grades."],
+		["missing_rog_cycle", "The ROG semester was not detected. Please upload a clear Report of Grades for the previous cycle."],
+		["rog_cycle_mismatch", `ROG must be from the previous cycle only: ${getPreviousSemesterTag()}.`],
+		["rog_year_level_mismatch", "ROG year level must match the previous cycle year level."],
+	]
+	const match = reasonMatchers.find(([reason]) => rawMessage.includes(reason))
+	return match?.[1] || rawMessage || "Failed to create account. Please try again."
 }
 
 export default function SignupPage() {
@@ -192,6 +247,10 @@ export default function SignupPage() {
 	const [street, setStreet] = useState("")
 	const [city, setCity] = useState("")
 	const [province, setProvince] = useState("")
+	const [barangay, setBarangay] = useState("")
+	const [barangayOptions, setBarangayOptions] = useState([])
+	const [barangayLoading, setBarangayLoading] = useState(false)
+	const [barangayError, setBarangayError] = useState("")
 	const [postalCode, setPostalCode] = useState("")
 	const [course, setCourse] = useState("")
 	const [major, setMajor] = useState("")
@@ -202,6 +261,7 @@ export default function SignupPage() {
 	const [cogFile, setCogFile] = useState(null)
 	const [documentScanState, setDocumentScanState] = useState({ cor: "idle", cog: "idle" })
 	const [documentScanResult, setDocumentScanResult] = useState({ cor: null, cog: null })
+	const [documentUploadErrors, setDocumentUploadErrors] = useState({ cor: "", cog: "" })
 	const [documentPreviewUrls, setDocumentPreviewUrls] = useState({ cor: "", cog: "" })
 	const [academicConcernTerms, setAcademicConcernTerms] = useState([])
 	const [showTermsModal, setShowTermsModal] = useState(false)
@@ -221,6 +281,40 @@ export default function SignupPage() {
 	}, [isFirstCycle, year])
 	const isCogRequired = !isCogOptional
 	const canUploadCog = Boolean(corFile)
+
+	useEffect(() => {
+		let isCancelled = false
+		setBarangay("")
+		setBarangayOptions([])
+		setBarangayError("")
+
+		if (!province || !city) {
+			setBarangayLoading(false)
+			return undefined
+		}
+
+		setBarangayLoading(true)
+		getBarangaysByLocation(province, city)
+			.then((options) => {
+				if (isCancelled) return
+				setBarangayOptions(options)
+				if (options.length === 0) {
+					setBarangayError("Barangays could not be found for the selected city or municipality.")
+				}
+			})
+			.catch((error) => {
+				if (isCancelled) return
+				console.error("Barangay lookup failed:", error)
+				setBarangayError("Unable to load barangays. Please check your connection and try again.")
+			})
+			.finally(() => {
+				if (!isCancelled) setBarangayLoading(false)
+			})
+
+		return () => {
+			isCancelled = true
+		}
+	}, [province, city])
 
 	useEffect(() => {
 		let isMounted = true
@@ -447,9 +541,9 @@ export default function SignupPage() {
 		const skippedRules = []
 
 		if (!expectedStudentNumber) failedRules.push("Missing expected student number from COR/form.")
-		if (!scannedStudentNumber) failedRules.push("Missing scanned student number from COG.")
+		if (!scannedStudentNumber) failedRules.push("Missing scanned student number from ROG.")
 		if (!expectedName) skippedRules.push("Expected student name was not extracted from COR/form, so name matching was skipped.")
-		if (!scannedName) skippedRules.push("Scanned student name was not extracted from COG, so name matching was skipped.")
+		if (!scannedName) skippedRules.push("Scanned student name was not extracted from ROG, so name matching was skipped.")
 		if (expectedStudentNumber && scannedStudentNumber && expectedStudentNumber !== scannedStudentNumber) {
 			failedRules.push(`Student number mismatch: expected ${expectedStudentNumber}, scanned ${scannedStudentNumber}.`)
 		}
@@ -529,9 +623,9 @@ export default function SignupPage() {
 			},
 			explanation: passed
 				? canUseNameRule
-					? "The COG identity matches the COR/form identity."
-					: "The COG student number matches exactly. Name matching was skipped because one document did not expose a readable name."
-				: "The COG identity does not match the COR/form identity closely enough, so GWA autofill is blocked.",
+					? "The ROG identity matches the COR/form identity."
+					: "The ROG student number matches exactly. Name matching was skipped because one document did not expose a readable name."
+				: "The ROG identity does not match the COR/form identity closely enough, so GWA autofill is blocked.",
 		}
 	}
 
@@ -590,26 +684,26 @@ export default function SignupPage() {
 			})
 		}
 		if (documentType === "cog") {
-			console.log("COG title validation:", {
+			console.log("ROG title validation:", {
 				isValidCogDocument: extracted?.isValidCogDocument,
 				documentTitle: extracted?.documentTitle || "",
-				acceptedCogTitles: extracted?.acceptedCogTitles || ["Certificate of Grades"],
+				acceptedCogTitles: extracted?.acceptedCogTitles || ["Report of Grades"],
 				documentTitleCandidates: extracted?.documentTitleCandidates || [],
-				rule: extracted?.documentTitleRule || "COG must contain Certificate of Grades.",
+				rule: extracted?.documentTitleRule || "ROG must contain Report of Grades.",
 			})
 		}
 		console.log("Raw OCR preview:", extracted?.rawTextPreview || "")
 		console.log(
-			"COG reading rule:",
+			"ROG reading rule:",
 			gradeDebug.explanation ||
-				"COG scanning extracts only identity fields and the printed GWA.",
+				"ROG scanning extracts only identity fields and the printed GWA.",
 		)
 		console.log(
 			"GWA extraction method:",
 			gradeDebug.extractionMethod || "header-anchored Final Grade column extraction",
 		)
 		if (documentType === "cog") {
-			console.log("[BulsuScholar] PYTHON COG CHECK RESULT:", {
+			console.log("[BulsuScholar] PYTHON ROG CHECK RESULT:", {
 				hasAcademicConcern: extracted?.hasAcademicConcern,
 				academicConcernTerms: extracted?.academicConcernTerms || [],
 				extractionMethod: gradeDebug.extractionMethod || "",
@@ -617,12 +711,12 @@ export default function SignupPage() {
 				concernMatches: gradeDebug.concernMatches || [],
 				rowDebug: gradeDebug.rowDebug || [],
 			})
-			console.log("Collected COG Final Grades:", gradeDebug.grades || [])
-			console.log("COG Final Grade row debug:", gradeDebug.rowDebug || [])
+			console.log("Collected ROG Final Grades:", gradeDebug.grades || [])
+			console.log("ROG Final Grade row debug:", gradeDebug.rowDebug || [])
 			if (gradeDebug.concernMatches?.length) {
-				console.warn("COG Final Grade concerns detected:", gradeDebug.concernMatches)
+				console.warn("ROG Final Grade concerns detected:", gradeDebug.concernMatches)
 			} else {
-				console.info("No COG Final Grade concerns detected.")
+				console.info("No ROG Final Grade concerns detected.")
 			}
 		}
 		console.log("Printed GWA detected:", extracted?.gwa || "Not detected")
@@ -655,23 +749,23 @@ export default function SignupPage() {
 				explanation: identityCheck.explanation,
 			})
 			if (identityCheck.failedRules?.length) {
-				console.warn("COG identity mismatch reason:")
+				console.warn("ROG identity mismatch reason:")
 				console.table(identityCheck.failedRules.map((reason, index) => ({
 					check: index + 1,
 					reason,
 				})))
 			}
 			if (identityCheck.skippedRules?.length) {
-				console.info("COG identity skipped checks:")
+				console.info("ROG identity skipped checks:")
 				console.table(identityCheck.skippedRules.map((reason, index) => ({
 					check: index + 1,
 					reason,
 				})))
 			}
 			if (!identityCheck.failedRules?.length) {
-				console.info("COG identity matched required rules.")
+				console.info("ROG identity matched required rules.")
 			} else {
-				console.info("COG identity did not match required rules.")
+				console.info("ROG identity did not match required rules.")
 			}
 		}
 		console.groupEnd()
@@ -704,6 +798,103 @@ export default function SignupPage() {
 			scrollToSection("section-account")
 			return false
 		}
+		return true
+	}
+
+	const validateCorCycle = (extracted = {}) => {
+		const currentSemesterTag = getCurrentSemesterTag()
+		const scannedSemesterTag = buildSemesterTagFromScan(extracted)
+		if (!scannedSemesterTag) {
+			const message = "Invalid COR. The semester was not detected; upload a clear current-semester COR/Advising Slip."
+			setDocumentUploadError("cor", message)
+			toast.error(message)
+			console.warn("Signup blocked: COR cycle missing.", {
+				expectedCurrentCycle: currentSemesterTag,
+				scanned: {
+					academicYear: extracted?.academicYear || "",
+					semester: extracted?.semester || "",
+					semesterTag: scannedSemesterTag,
+				},
+				corScan: extracted,
+			})
+			return false
+		}
+		if (scannedSemesterTag !== currentSemesterTag) {
+			const message = `Invalid COR. It must be for the current cycle: ${currentSemesterTag}.`
+			setDocumentUploadError("cor", message)
+			toast.error(message)
+			console.warn("Signup blocked: COR cycle mismatch.", {
+				expectedCurrentCycle: currentSemesterTag,
+				scannedSemesterTag,
+				corScan: extracted,
+			})
+			return false
+		}
+		return true
+	}
+
+	const validateRogCycle = (extracted = {}) => {
+		const currentSemesterTag = getCurrentSemesterTag()
+		const expectedPreviousSemesterTag = getPreviousSemesterTag(currentSemesterTag)
+		const scannedSemesterTag = buildSemesterTagFromScan(extracted)
+		const corYear = documentScanResult.cor?.year || year
+		const expectedRogYear = getExpectedPreviousRogYearLevel(corYear, currentSemesterTag)
+		const scannedRogYear = String(extracted?.year || "").replace(/\D/g, "").slice(0, 1)
+
+		if (!scannedSemesterTag) {
+			const message = "Invalid ROG. The semester was not detected; upload a clear Report of Grades for the previous cycle."
+			setDocumentUploadError("cog", message)
+			toast.error(message)
+			console.warn("Signup blocked: ROG cycle missing.", {
+				currentSemesterTag,
+				expectedPreviousSemesterTag,
+				scanned: {
+					academicYear: extracted?.academicYear || "",
+					semester: extracted?.semester || "",
+					semesterTag: scannedSemesterTag,
+				},
+				rogScan: extracted,
+			})
+			return false
+		}
+
+		if (scannedSemesterTag !== expectedPreviousSemesterTag) {
+			const message = `Invalid ROG. It must be from the previous cycle only: ${expectedPreviousSemesterTag}.`
+			setDocumentUploadError("cog", message)
+			toast.error(message)
+			console.warn("Signup blocked: ROG cycle mismatch.", {
+				currentSemesterTag,
+				expectedPreviousSemesterTag,
+				scannedSemesterTag,
+				rogScan: extracted,
+			})
+			return false
+		}
+
+		if (expectedRogYear && scannedRogYear && expectedRogYear !== scannedRogYear) {
+			const message = `Invalid ROG. Year level must match the previous cycle year level: Year ${expectedRogYear}.`
+			setDocumentUploadError("cog", message)
+			toast.error(message)
+			console.warn("Signup blocked: ROG year level mismatch.", {
+				currentSemesterTag,
+				expectedPreviousSemesterTag,
+				corYear,
+				expectedRogYear,
+				scannedRogYear,
+				rogScan: extracted,
+			})
+			return false
+		}
+
+		if (expectedRogYear && !scannedRogYear) {
+			console.warn("ROG year level was not detected. Cycle was validated by academic year and semester only.", {
+				currentSemesterTag,
+				expectedPreviousSemesterTag,
+				expectedRogYear,
+				rogScan: extracted,
+			})
+		}
+
 		return true
 	}
 
@@ -741,10 +932,19 @@ export default function SignupPage() {
 		return true
 	}
 
+	const setDocumentUploadError = (documentType, message = "") => {
+		setDocumentUploadErrors((current) => ({ ...current, [documentType]: message }))
+	}
+
+	const clearDocumentUploadError = (documentType) => {
+		setDocumentUploadError(documentType, "")
+	}
+
 	const scanUploadedDocument = async (file, documentType) => {
 		if (!file) return
 
 		setDocumentScanState((current) => ({ ...current, [documentType]: "scanning" }))
+		clearDocumentUploadError(documentType)
 		try {
 			const result = await scanStudentDocument(file, documentType)
 			const extracted = result?.extracted || null
@@ -753,28 +953,52 @@ export default function SignupPage() {
 			logDocumentScanResult(documentType, extracted, identityCheck)
 
 			if (documentType === "cor" && extracted?.isValidCorDocument === false) {
+				const message = "Invalid COR. Upload an Advising Slip or Certificate of Registration."
 				setCorFile(null)
 				setCogFile(null)
 				setGwa("")
 				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
-				toast.error("Please upload a valid COR: Advising Slip or Certificate of Registration.")
+				setDocumentUploadError("cor", message)
+				toast.error(message)
+				setDocumentScanState((current) => ({ ...current, cor: "error", cog: "idle" }))
+				return
+			}
+
+			if (documentType === "cor" && !validateCorCycle(extracted)) {
+				setCorFile(null)
+				setCogFile(null)
+				setGwa("")
+				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
 				setDocumentScanState((current) => ({ ...current, cor: "error", cog: "idle" }))
 				return
 			}
 
 			if (documentType === "cog" && extracted?.isValidCogDocument === false) {
+				const message = "Invalid ROG. Upload a Report of Grades."
 				setCogFile(null)
 				setGwa("")
 				setDocumentScanResult((current) => ({ ...current, cog: null }))
-				toast.error("Please upload a valid COG: Certificate of Grades.")
+				setDocumentUploadError("cog", message)
+				toast.error(message)
+				setDocumentScanState((current) => ({ ...current, cog: "error" }))
+				return
+			}
+
+			if (documentType === "cog" && !validateRogCycle(extracted)) {
+				setCogFile(null)
+				setGwa("")
+				setDocumentScanResult((current) => ({ ...current, cog: null }))
 				setDocumentScanState((current) => ({ ...current, cog: "error" }))
 				return
 			}
 
 			if (identityCheck && !identityCheck.passed) {
+				const message = "ROG identity does not match your COR/student information. Upload the correct ROG."
 				setCogFile(null)
 				setGwa("")
-				toast.error("COG identity does not match the COR/student information. Please upload the correct COG.")
+				setDocumentScanResult((current) => ({ ...current, cog: null }))
+				setDocumentUploadError("cog", message)
+				toast.error(message)
 				setDocumentScanState((current) => ({ ...current, [documentType]: "error" }))
 				return
 			}
@@ -783,21 +1007,38 @@ export default function SignupPage() {
 				const concerns = Array.isArray(extracted.academicConcernTerms)
 					? extracted.academicConcernTerms.join(", ")
 					: "5.0, 4.0, INC, UD, or OD"
+				const message = `Invalid ROG. Final grades include ${concerns}.`
 				setCogFile(null)
 				setGwa("")
+				setDocumentScanResult((current) => ({ ...current, cog: null }))
 				setAcademicConcernTerms(Array.isArray(extracted.academicConcernTerms) ? extracted.academicConcernTerms : [])
-				toast.error(`COG final grades include ${concerns}. Students with these final grades cannot create an account through this signup.`)
+				setDocumentUploadError("cog", message)
+				toast.error(`${message} Students with these final grades cannot create an account through this signup.`)
 				setDocumentScanState((current) => ({ ...current, [documentType]: "error" }))
 				return
 			}
 
 			applyScannedStudentData(extracted)
-			toast.success(`${documentType.toUpperCase()} scanned. Review the autofilled data before submitting.`)
+			toast.success(`${documentType === "cog" ? "ROG" : documentType.toUpperCase()} scanned. Review the autofilled data before submitting.`)
 			setDocumentScanState((current) => ({ ...current, [documentType]: "done" }))
 		} catch (error) {
 			console.error(`${documentType.toUpperCase()} scan failed:`, error)
-			toast.info(`${documentType.toUpperCase()} uploaded, but automatic scanning is not available right now.`)
-			setDocumentScanState((current) => ({ ...current, [documentType]: "error" }))
+			const message = `${documentType === "cog" ? "ROG" : "COR"} scanner is unavailable. Upload cannot continue until the document is scanned.`
+			if (documentType === "cor") {
+				setCorFile(null)
+				setCogFile(null)
+				setGwa("")
+				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
+				setDocumentUploadError("cor", message)
+				setDocumentScanState((current) => ({ ...current, cor: "error", cog: "idle" }))
+			} else {
+				setCogFile(null)
+				setGwa("")
+				setDocumentScanResult((current) => ({ ...current, cog: null }))
+				setDocumentUploadError("cog", message)
+				setDocumentScanState((current) => ({ ...current, cog: "error" }))
+			}
+			toast.error(message)
 		}
 	}
 
@@ -806,16 +1047,20 @@ export default function SignupPage() {
 			if (documentType === "cor") {
 				setCorFile(null)
 				setDocumentScanResult((current) => ({ ...current, cor: null }))
+				clearDocumentUploadError("cor")
 			}
 			if (documentType === "cog") {
 				setCogFile(null)
 				setDocumentScanResult((current) => ({ ...current, cog: null }))
+				clearDocumentUploadError("cog")
 			}
 			return
 		}
 
 		if (documentType === "cog" && !corFile) {
-			toast.error("Upload your COR first before uploading your COG.")
+			const message = "Upload your COR/Advising Slip first before uploading your ROG."
+			setDocumentUploadError("cog", message)
+			toast.error(message)
 			if (resetInput) resetInput.value = ""
 			setCogFile(null)
 			return
@@ -825,13 +1070,16 @@ export default function SignupPage() {
 		const fileExtension = file.name.split(".").pop()?.toLowerCase()
 
 		if (!validExtensions.includes(fileExtension)) {
-			toast.error("Only PDF files are allowed for COR and COG uploads.")
+			const message = `Invalid ${documentType === "cog" ? "ROG" : "COR"}. Only PDF files are allowed.`
+			setDocumentUploadError(documentType, message)
+			toast.error(message)
 			if (resetInput) resetInput.value = ""
 			if (documentType === "cor") setCorFile(null)
 			if (documentType === "cog") setCogFile(null)
 			return
 		}
 
+		clearDocumentUploadError(documentType)
 		const setDocumentFile = documentType === "cor" ? setCorFile : setCogFile
 		setDocumentFile(file)
 		scanUploadedDocument(file, documentType)
@@ -887,6 +1135,7 @@ export default function SignupPage() {
 			!street.trim() ||
 			!city.trim() ||
 			!province.trim() ||
+			!barangay.trim() ||
 			!postalCode.trim()
 		) {
 			toast.error("Please complete your home address details")
@@ -914,18 +1163,30 @@ export default function SignupPage() {
 
 		// Validate Stage 1 documents.
 		if (!corFile) {
-			toast.error("Please upload your Certificate of Registration or Advising Slip")
+			const message = "Please upload your Certificate of Registration or Advising Slip."
+			setDocumentUploadError("cor", message)
+			toast.error(message)
 			scrollToSection("section-cor")
 			return
 		}
 
 		if (isCogRequired && !cogFile) {
-			toast.error("Please upload your Certificate of Grades (COG)")
+			const message = "Please upload your Report of Grades (ROG)."
+			setDocumentUploadError("cog", message)
+			toast.error(message)
 			scrollToSection("section-cor")
 			return
 		}
 
 		if (!validateCorStudentNumberLock()) return
+		if (!validateCorCycle(documentScanResult.cor)) {
+			scrollToSection("section-cor")
+			return
+		}
+		if (isCogRequired && !validateRogCycle(documentScanResult.cog)) {
+			scrollToSection("section-cor")
+			return
+		}
 
 		try {
 			const uniqueFieldsAreValid = await validateUniqueSignupFields()
@@ -937,7 +1198,7 @@ export default function SignupPage() {
 		}
 
 		if (documentScanResult.cog?.hasAcademicConcern) {
-			toast.error("Your COG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
+			toast.error("Your ROG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
 			scrollToSection("section-cor")
 			return
 		}
@@ -983,9 +1244,10 @@ export default function SignupPage() {
 			!!street.trim() &&
 			!!city.trim() &&
 			!!province.trim() &&
+			!!barangay.trim() &&
 			!!postalCode.trim()
 		)
-	}, [fname, lname, cpNumber, street, city, province, postalCode])
+	}, [fname, lname, cpNumber, street, city, province, barangay, postalCode])
 
 	const isDocumentStageComplete = useMemo(() => {
 		return Boolean(corFile && (isCogOptional || (cogFile && gwa.trim())))
@@ -1087,6 +1349,7 @@ export default function SignupPage() {
 			!street.trim() ||
 			!city.trim() ||
 			!province.trim() ||
+			!barangay.trim() ||
 			!postalCode.trim()
 		) {
 			toast.error("Please complete your home address details")
@@ -1114,19 +1377,32 @@ export default function SignupPage() {
 
 		// Validate Stage 1 documents.
 		if (!corFile) {
-			toast.error("Please upload your Certificate of Registration or Advising Slip")
+			const message = "Please upload your Certificate of Registration or Advising Slip."
+			setDocumentUploadError("cor", message)
+			toast.error(message)
 			scrollToSection("section-cor")
 			return
 		}
 
 		if (isCogRequired && !cogFile) {
-			toast.error("Please upload your Certificate of Grades (COG)")
+			const message = "Please upload your Report of Grades (ROG)."
+			setDocumentUploadError("cog", message)
+			toast.error(message)
+			scrollToSection("section-cor")
+			return
+		}
+
+		if (!validateCorCycle(documentScanResult.cor)) {
+			scrollToSection("section-cor")
+			return
+		}
+		if (isCogRequired && !validateRogCycle(documentScanResult.cog)) {
 			scrollToSection("section-cor")
 			return
 		}
 
 		if (documentScanResult.cog?.hasAcademicConcern) {
-			toast.error("Your COG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
+			toast.error("Your ROG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
 			scrollToSection("section-cor")
 			return
 		}
@@ -1185,6 +1461,7 @@ export default function SignupPage() {
 				student: {
 					email: normalizedSignupEmail,
 					cpNumber: normalizedSignupCpNumber,
+					year,
 					documentScan: documentScanResult,
 				},
 			})
@@ -1241,8 +1518,8 @@ export default function SignupPage() {
 			let cogFilePayload = null
 			if (cogFile) {
 				try {
-					console.log("SignupPage: Uploading COG file...")
-					const imageData = await uploadToStorage(cogFile, { folder: "COG" })
+					console.log("SignupPage: Uploading ROG file...")
+					const imageData = await uploadToStorage(cogFile, { folder: "ROG" })
 					const cogFileId = `${cogFile.name.replace(/\.[^/.]+$/, "")}_${studentId}`
 					cogFilePayload = {
 						id: cogFileId,
@@ -1252,10 +1529,10 @@ export default function SignupPage() {
 						url: imageData.url,
 						semesterTag,
 					}
-					console.log("SignupPage: COG upload SUCCESS:", cogFilePayload.url, "ID:", cogFileId)
+					console.log("SignupPage: ROG upload SUCCESS:", cogFilePayload.url, "ID:", cogFileId)
 				} catch (uploadErr) {
-					console.error("SignupPage: COG upload ERROR:", uploadErr)
-					toast.error("Failed to upload COG file: " + uploadErr.message)
+					console.error("SignupPage: ROG upload ERROR:", uploadErr)
+					toast.error("Failed to upload ROG file: " + uploadErr.message)
 					return
 				}
 			}
@@ -1271,6 +1548,7 @@ export default function SignupPage() {
 				street: street.trim(),
 				city: city.trim(),
 				province: province.trim(),
+				barangay: barangay.trim(),
 				postalCode: postalCode.trim(),
 				studentnumber: studentId,
 				userType: "student",
@@ -1374,7 +1652,10 @@ export default function SignupPage() {
 				email.trim(),
 				`${fname.trim()} ${lname.trim()}`,
 				"Welcome to BulsuScholar!",
-				getWelcomeEmailBody(`${fname.trim()} ${lname.trim()}`),
+				getWelcomeEmailBody(`${fname.trim()} ${lname.trim()}`, {
+					isAutoVerified,
+					dashboardUrl: `${APP_URL}/student/dashboard`,
+				}),
 			).catch((err) => console.error("Welcome email failed:", err))
 
 			toast.success(
@@ -1415,7 +1696,10 @@ export default function SignupPage() {
 					email.trim(),
 					`${fname.trim()} ${lname.trim()}`,
 					"Welcome to BulsuScholar!",
-					getWelcomeEmailBody(`${fname.trim()} ${lname.trim()}`),
+					getWelcomeEmailBody(`${fname.trim()} ${lname.trim()}`, {
+						isAutoVerified,
+						dashboardUrl: `${APP_URL}/student/dashboard`,
+					}),
 				).catch((err) => console.error("Welcome email failed:", err))
 
 				toast.success(
@@ -1449,7 +1733,7 @@ export default function SignupPage() {
 			setIsPending(true)
 		} catch (err) {
 			console.error("Error saving student:", err)
-			const message = err?.message || "Failed to create account. Please try again."
+			const message = getSignupWorkflowErrorMessage(err)
 			toast.error(message.length > 220 ? `${message.slice(0, 217)}...` : message)
 		}
 	}
@@ -1651,7 +1935,7 @@ export default function SignupPage() {
 							<div className="signup-process-step signup-process-step--documents">
 								<span>Step 1</span>
 								<strong>Submit Required Documents</strong>
-								<p>Upload your COR and COG first before completing the student account form.</p>
+								<p>Upload your COR and ROG first before completing the student account form.</p>
 							</div>
 
 							{/* Document Upload Section */}
@@ -1669,7 +1953,7 @@ export default function SignupPage() {
 									<span className="required">*</span>
 								</label>
 								<label
-									className="signup-upload-wrap"
+									className={`signup-upload-wrap ${documentUploadErrors.cor ? "signup-upload-wrap--error" : ""}`}
 									htmlFor="signup-cor-upload"
 								>
 									<input
@@ -1710,13 +1994,16 @@ export default function SignupPage() {
 										</>
 									)}
 								</label>
+								{documentUploadErrors.cor && (
+									<p className="signup-upload-error-message">{documentUploadErrors.cor}</p>
+								)}
 
 								<label
 									className="login-label"
 									htmlFor="signup-cog-upload"
 									style={{ marginTop: "1rem", display: "block" }}
 								>
-									2. Certificate of Grades (COG){" "}
+									2. Report of Grades (ROG){" "}
 									{isCogOptional ? (
 										<span className="signup-optional-label">(Optional for 1st year, 1st cycle)</span>
 									) : (
@@ -1724,7 +2011,7 @@ export default function SignupPage() {
 									)}
 								</label>
 								<label
-									className={`signup-upload-wrap ${!canUploadCog ? "signup-upload-wrap--disabled" : ""}`}
+									className={`signup-upload-wrap ${!canUploadCog ? "signup-upload-wrap--disabled" : ""} ${documentUploadErrors.cog ? "signup-upload-wrap--error" : ""}`}
 									htmlFor={canUploadCog ? "signup-cog-upload" : undefined}
 									aria-disabled={!canUploadCog}
 								>
@@ -1747,11 +2034,11 @@ export default function SignupPage() {
 											</span>
 											<span className={`signup-upload-scan signup-upload-scan--${documentScanState.cog}`}>
 												{documentScanState.cog === "scanning"
-													? "Scanning COG..."
+													? "Scanning ROG..."
 													: documentScanState.cog === "done"
-														? "COG data scanned"
+														? "ROG data scanned"
 														: documentScanState.cog === "error"
-															? "COG scan unavailable"
+															? "ROG scan unavailable"
 															: ""}
 											</span>
 										</>
@@ -1763,14 +2050,17 @@ export default function SignupPage() {
 											/>
 											<span className="signup-upload-hint">
 												{!canUploadCog
-													? "Upload COR first to enable COG upload"
+													? "Upload COR first to enable ROG upload"
 													: isCogOptional
-													? "Optional: Drop COG here or click to browse"
-													: "Drop COG here or click to browse"}
+													? "Optional: Drop ROG here or click to browse"
+													: "Drop ROG here or click to browse"}
 											</span>
 										</>
 									)}
 								</label>
+								{documentUploadErrors.cog && (
+									<p className="signup-upload-error-message">{documentUploadErrors.cog}</p>
+								)}
 
 								<label
 									className="login-label"
@@ -1795,7 +2085,7 @@ export default function SignupPage() {
 												? "e.g., 1.25"
 												: isCogOptional
 													? "Optional for first year, first cycle"
-													: "Upload COG first to enter GWA"
+													: "Upload ROG first to enter GWA"
 										}
 										value={gwa}
 										onChange={(e) => setGwa(e.target.value)}
@@ -1808,8 +2098,8 @@ export default function SignupPage() {
 									style={{ marginTop: "1.5rem" }}
 								>
 									{isCogOptional
-										? "Step 1 requires COR. COG is optional because first-year students in the first cycle may not have grades yet."
-										: "Step 1 requires both COR and COG to verify your enrollment and academic status."}
+										? "Step 1 requires COR. ROG is optional because first-year students in the first cycle may not have grades yet."
+										: "Step 1 requires both COR and ROG to verify your enrollment and academic status."}
 								</div>
 							</div>
 
@@ -1820,7 +2110,7 @@ export default function SignupPage() {
 										<strong>Complete Step 1 to continue</strong>
 										<p>
 											Upload your COR
-											{isCogOptional ? "" : " and COG with GWA"} before the student form appears.
+											{isCogOptional ? "" : " and ROG with GWA"} before the student form appears.
 										</p>
 									</div>
 								</div>
@@ -2105,6 +2395,7 @@ export default function SignupPage() {
 									onChange={(e) => {
 										setProvince(e.target.value)
 										setCity("")
+										setBarangay("")
 									}}
 								>
 									<option value="" disabled>
@@ -2126,7 +2417,10 @@ export default function SignupPage() {
 											id="signup-city"
 											className="login-select"
 											value={city}
-											onChange={(e) => setCity(e.target.value)}
+											onChange={(e) => {
+												setCity(e.target.value)
+												setBarangay("")
+											}}
 											disabled={!province}
 										>
 											<option value="" disabled>
@@ -2140,6 +2434,37 @@ export default function SignupPage() {
 												))}
 										</select>
 									</div>
+									<div className="signup-field">
+										<label className="login-label" htmlFor="signup-barangay">
+											Barangay <span className="required">*</span>
+										</label>
+										<select
+											id="signup-barangay"
+											className="login-select"
+											value={barangay}
+											onChange={(e) => setBarangay(e.target.value)}
+											disabled={!city || barangayLoading || barangayOptions.length === 0}
+										>
+											<option value="" disabled>
+												{!city
+													? "Select city first"
+													: barangayLoading
+														? "Loading barangays..."
+														: "Select barangay"}
+											</option>
+											{barangayOptions.map((item) => (
+												<option key={item} value={item}>
+													{item}
+												</option>
+											))}
+										</select>
+										{barangayError ? (
+											<p className="signup-upload-error-message">{barangayError}</p>
+										) : null}
+									</div>
+								</div>
+
+								<div className="signup-row">
 									<div className="signup-field signup-field--small">
 										<label className="login-label" htmlFor="signup-postal">
 											Postal Code <span className="required">*</span>
@@ -2185,7 +2510,7 @@ export default function SignupPage() {
 									<div className="signup-section-icon">
 										<HiOutlineAcademicCap />
 									</div>
-									<h3 className="signup-section-title">School Information</h3>
+									<h3 className="signup-section-title">Course, Year, and Section</h3>
 								</div>
 
 								<label className="login-label" htmlFor="signup-course">
@@ -2413,7 +2738,7 @@ export default function SignupPage() {
 											<span>Home Address:</span>
 										</span>
 										<span className="signup-review-value">
-											{street}, {city}, {province} {postalCode}
+											{street}, {barangay}, {city}, {province} {postalCode}
 										</span>
 									</div>
 								</div>
@@ -2562,7 +2887,7 @@ export default function SignupPage() {
 														>
 															<HiOutlineCloudUpload />
 														</span>
-														<span>Certificate of Grades (COG):</span>
+														<span>Report of Grades (ROG):</span>
 													</span>
 													<span className="signup-review-document-name signup-review-label-group">
 														<span
@@ -2578,7 +2903,7 @@ export default function SignupPage() {
 													{documentPreviewUrls.cog ? (
 														<img
 															src={documentPreviewUrls.cog}
-															alt="COG Preview"
+															alt="ROG Preview"
 															className="signup-review-document-image"
 															onClick={() => {
 																setPreviewFile(cogFile)
@@ -2681,7 +3006,7 @@ export default function SignupPage() {
 							</p>
 							<ul>
 								<li>
-									I understand that my COR, COG, personal information, contact
+									I understand that my COR, ROG, personal information, contact
 									details, and academic records will be used to verify my
 									scholarship eligibility.
 								</li>

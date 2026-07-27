@@ -4,6 +4,7 @@ const BACKEND_API_URL = (
 	"https://bulsuscholar.onrender.com"
 ).replace(/\/$/, "")
 const RESEND_ENDPOINT = import.meta.env.VITE_RESEND_API_ENDPOINT || `${BACKEND_API_URL}/email/send`
+const APP_URL = (import.meta.env.VITE_APP_URL || import.meta.env.VITE_PUBLIC_SITE_URL || "https://bulsu-scholar.vercel.app").replace(/\/$/, "")
 
 /**
  * Sends an email through the Python Resend endpoint.
@@ -52,57 +53,156 @@ export const sendEmailNotification = async (toEmail, toName, subject, messageBod
   }
 };
 
+const escapeHtml = (value = "") =>
+  String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const buildModernEmailLayout = ({
+  eyebrow = "BulsuScholar",
+  title = "",
+  intro = "",
+  buttonLabel = "",
+  buttonUrl = "",
+  children = "",
+  footerNote = "This message was sent by BulsuScholar. Please do not share secure account links with anyone.",
+}) => `
+  <div data-bulsuscholar-email="true" style="margin:0;padding:0;background:#eef7f3;font-family:Arial,Helvetica,sans-serif;color:#0b1f17;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#eef7f3;">
+      <tr>
+        <td align="center" style="padding:30px 14px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:660px;border-collapse:collapse;background:#ffffff;border:1px solid #cfe1d8;border-radius:14px;overflow:hidden;box-shadow:0 18px 42px rgba(2,48,31,0.12);">
+            <tr>
+              <td style="height:8px;background:#00633c;font-size:0;line-height:0;">&nbsp;</td>
+            </tr>
+            <tr>
+              <td style="padding:30px 30px 22px;background:linear-gradient(135deg,#ffffff 0%,#eef8f3 100%);border-bottom:1px solid #dbe9e2;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+                  <tr>
+                    <td style="vertical-align:middle;width:62px;">
+                      <div style="width:52px;height:52px;border-radius:50%;background:#00633c;color:#ffffff;text-align:center;line-height:52px;font-size:20px;font-weight:700;">BS</div>
+                    </td>
+                    <td style="vertical-align:middle;">
+                      <div style="color:#00633c;font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;">${eyebrow}</div>
+                      <div style="color:#17342a;font-size:16px;font-weight:700;margin-top:3px;">BulSU Scholarship Portal</div>
+                    </td>
+                  </tr>
+                </table>
+                <h1 style="margin:28px 0 0;color:#052f20;font-size:30px;line-height:1.18;font-weight:800;">${title}</h1>
+                ${intro ? `<p style="margin:12px 0 0;color:#43566b;font-size:15px;line-height:1.65;">${intro}</p>` : ""}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 30px 30px;">
+                ${children}
+                ${buttonLabel && buttonUrl ? `
+                  <table role="presentation" cellspacing="0" cellpadding="0" style="margin:28px auto 22px;border-collapse:collapse;">
+                    <tr>
+                      <td align="center" style="border-radius:8px;background:#00633c;">
+                        <a href="${buttonUrl}" style="display:inline-block;padding:14px 26px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;border-radius:8px;">${buttonLabel}</a>
+                      </td>
+                    </tr>
+                  </table>
+                  <p style="margin:0;color:#6a7b8e;font-size:12px;line-height:1.55;text-align:center;">If the button does not work, copy and paste this link into your browser:</p>
+                  <p style="margin:8px 0 0;color:#00633c;font-size:12px;line-height:1.5;word-break:break-all;text-align:center;">${buttonUrl}</p>
+                ` : ""}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 30px;background:#f7fbf9;border-top:1px solid #dbe9e2;text-align:center;">
+                <p style="margin:0;color:#607083;font-size:12px;line-height:1.55;">${footerNote}</p>
+                <p style="margin:8px 0 0;color:#17342a;font-size:12px;font-weight:700;">BulsuScholar</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </div>
+`;
+
 /**
  * Generates the HTML for the Welcome Email
  */
-export const getWelcomeEmailBody = (studentName) => {
-  return `
-    <div style="font-family: sans-serif; line-height: 1.6; color: #333;">
-      <h2 style="color: #00633C;">Welcome to BulsuScholar, ${studentName}!</h2>
-      <p>We are excited to have you on board. Our goal is to make your scholarship journey as simple and accessible as possible.</p>
-      <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; border-left: 5px solid #00633C; margin: 20px 0;">
-        <p style="margin-top: 0; font-weight: bold;">What you can do now:</p>
-        <ul style="padding-left: 20px;">
-          <li>View available scholarship programs.</li>
-          <li>Request your Statement of Enrollment (SOE).</li>
-          <li>Track your application status in real-time.</li>
-        </ul>
+export const getWelcomeEmailBody = (studentName = "Student", options = {}) => {
+  const safeName = escapeHtml(studentName || "Student");
+  const dashboardUrl = options.dashboardUrl || `${APP_URL}/student/dashboard`;
+  const verificationLabel = options.isAutoVerified === false ? "Account submitted for review" : "Account ready";
+  const verificationCopy = options.isAutoVerified === false
+    ? "Your account was created and is waiting for manual verification. You can still keep your information ready while the office reviews your documents."
+    : "Your account has been created successfully. You can now access the student portal after confirming your email address.";
+
+  return buildModernEmailLayout({
+    eyebrow: "Welcome",
+    title: `Welcome to BulsuScholar, ${safeName}`,
+    intro: "Your scholarship portal account has been created. BulsuScholar helps you monitor announcements, applications, documents, and scholarship progress in one place.",
+    buttonLabel: "Open Student Portal",
+    buttonUrl: dashboardUrl,
+    children: `
+      <div style="border:1px solid #dbe9e2;border-radius:12px;padding:18px 18px;background:#fbfefc;">
+        <div style="color:#00633c;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;">${verificationLabel}</div>
+        <p style="margin:8px 0 0;color:#314357;font-size:14px;line-height:1.65;">${verificationCopy}</p>
       </div>
-      <p>To get started, please log in to your dashboard to manage your scholarships.</p>
-      <p>If you have any questions, our support team is here to help!</p>
-      <p>Best Regards,<br><strong>The BulsuScholar Team</strong></p>
-    </div>
-  `;
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:18px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:14px;border:1px solid #dbe9e2;border-radius:10px;background:#ffffff;">
+            <strong style="display:block;color:#052f20;font-size:15px;">Track scholarship progress</strong>
+            <span style="display:block;margin-top:5px;color:#53667b;font-size:13px;line-height:1.5;">See your current application step, document status, and scholarship updates.</span>
+          </td>
+        </tr>
+        <tr><td style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr>
+          <td style="padding:14px;border:1px solid #dbe9e2;border-radius:10px;background:#ffffff;">
+            <strong style="display:block;color:#052f20;font-size:15px;">Read announcements</strong>
+            <span style="display:block;margin-top:5px;color:#53667b;font-size:13px;line-height:1.5;">View scholarship openings, application windows, and grantor notices.</span>
+          </td>
+        </tr>
+        <tr><td style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr>
+          <td style="padding:14px;border:1px solid #dbe9e2;border-radius:10px;background:#ffffff;">
+            <strong style="display:block;color:#052f20;font-size:15px;">Manage documents</strong>
+            <span style="display:block;margin-top:5px;color:#53667b;font-size:13px;line-height:1.5;">Upload and review your COR, ROG, Student ID, and application form records.</span>
+          </td>
+        </tr>
+      </table>
+    `,
+  });
 };
 
 /**
  * Generates the HTML for Password Reset Email
  */
 export const getForgotPasswordEmailBody = (resetLink) => {
-  return `
-    <div style="margin:0;padding:0;background:#f4f8f6;font-family:Arial,Helvetica,sans-serif;color:#0b1f17;">
-      <div style="max-width:640px;margin:0 auto;padding:32px 18px;">
-        <div style="background:linear-gradient(135deg,#ffffff 0%,#eaf6f1 100%);border:1px solid #cfe1d8;border-radius:16px;overflow:hidden;box-shadow:0 18px 44px rgba(7,45,31,0.10);">
-          <div style="height:8px;background:#00633C;"></div>
-          <div style="padding:30px 30px 18px;text-align:center;">
-            <div style="display:inline-block;width:64px;height:64px;border-radius:50%;background:#e8f5ef;color:#00633C;line-height:64px;font-size:28px;font-weight:700;margin-bottom:16px;">BS</div>
-            <h1 style="margin:0;color:#063d29;font-size:26px;line-height:1.2;font-weight:700;">Reset your password</h1>
-            <p style="margin:12px auto 0;max-width:460px;color:#50657a;font-size:15px;line-height:1.6;">We received a request to change the password for your BulsuScholar account.</p>
-          </div>
-          <div style="padding:10px 30px 30px;">
-            <div style="background:#ffffff;border:1px solid #d7e5dd;border-radius:12px;padding:22px;text-align:center;">
-              <p style="margin:0 0 22px;color:#23364a;font-size:15px;line-height:1.6;">Use the secure button below to create a new password. This link should only be used by you.</p>
-              <a href="${resetLink}" style="display:inline-block;background:#00633C;color:#ffffff;text-decoration:none;padding:13px 24px;border-radius:8px;font-size:15px;font-weight:700;">Reset Password</a>
-              <p style="margin:22px 0 0;color:#6b7c90;font-size:13px;line-height:1.5;">If the button does not work, copy and paste this link into your browser:</p>
-              <p style="margin:8px 0 0;word-break:break-all;color:#00633C;font-size:12px;line-height:1.5;">${resetLink}</p>
-            </div>
-            <p style="margin:18px 0 0;color:#6b7c90;font-size:13px;line-height:1.6;text-align:center;">If you did not request this password reset, you can safely ignore this email.</p>
-            <p style="margin:18px 0 0;color:#0b1f17;font-size:14px;text-align:center;">BulsuScholar</p>
-          </div>
-        </div>
+  return buildModernEmailLayout({
+    eyebrow: "Account Security",
+    title: "Reset your BulsuScholar password",
+    intro: "We received a request to change your account password. Use the secure button below to create a new one.",
+    buttonLabel: "Reset Password",
+    buttonUrl: resetLink,
+    children: `
+      <div style="border:1px solid #f1d7d7;background:#fff8f8;border-radius:12px;padding:16px;color:#7f1d1d;font-size:13px;line-height:1.6;">
+        If you did not request this password reset, ignore this email. Your password will not change unless this link is opened and a new password is saved.
       </div>
-    </div>
-  `;
+    `,
+  });
+};
+
+export const getAccountVerificationEmailBody = (confirmationLink) => {
+  return buildModernEmailLayout({
+    eyebrow: "Verify Account",
+    title: "Confirm your BulsuScholar email",
+    intro: "Complete your account setup by confirming that this email address belongs to you.",
+    buttonLabel: "Verify Email Address",
+    buttonUrl: confirmationLink,
+    children: `
+      <div style="border:1px solid #dbe9e2;background:#fbfefc;border-radius:12px;padding:16px;color:#314357;font-size:14px;line-height:1.65;">
+        After verification, you can sign in to the student portal and continue tracking your scholarship records, announcements, and required documents.
+      </div>
+    `,
+  });
 };
 
 /**

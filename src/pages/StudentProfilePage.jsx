@@ -30,7 +30,7 @@ import {
 } from "../services/scholarshipService"
 import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
 import { isPdf, convertPdfToImage, convertPdfToImageFile } from "../utils/pdfConverter"
-import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
+import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
 import StudentTopbar from "../components/StudentTopbar"
 import { exportApplicationFormPdfDocument } from "../services/applicationFormService"
 import { scanStudentDocument } from "../services/documentScanService"
@@ -197,6 +197,9 @@ export default function StudentProfilePage() {
 	const [userId, setUserId] = useState("")
 	const [userMenuOpen, setUserMenuOpen] = useState(false)
 	const [isSaving, setIsSaving] = useState(false)
+	const [barangayOptions, setBarangayOptions] = useState([])
+	const [barangayLoading, setBarangayLoading] = useState(false)
+	const [barangayError, setBarangayError] = useState("")
 	const [isPhotoUploading, setIsPhotoUploading] = useState(false)
 	const [isDownloadingApplicationForm, setIsDownloadingApplicationForm] = useState(false)
 	const [isDocumentUploading, setIsDocumentUploading] = useState({
@@ -234,6 +237,7 @@ export default function StudentProfilePage() {
 		street: "",
 		city: "",
 		province: "",
+		barangay: "",
 		postalCode: "",
 		course: "",
 		major: "",
@@ -669,6 +673,7 @@ export default function StudentProfilePage() {
 			street: user.street || "",
 			city: user.city || "",
 			province: user.province || "",
+			barangay: user.barangay || "",
 			postalCode: user.postalCode || "",
 			course: user.course || "",
 			major: user.major || "",
@@ -676,6 +681,39 @@ export default function StudentProfilePage() {
 			section: user.section || "",
 		})
 	}, [user])
+
+	useEffect(() => {
+		let isCancelled = false
+		setBarangayOptions([])
+		setBarangayError("")
+
+		if (!formData.province || !formData.city) {
+			setBarangayLoading(false)
+			return undefined
+		}
+
+		setBarangayLoading(true)
+		getBarangaysByLocation(formData.province, formData.city)
+			.then((options) => {
+				if (isCancelled) return
+				setBarangayOptions(options)
+				if (options.length === 0) {
+					setBarangayError("Barangays could not be found for the selected city or municipality.")
+				}
+			})
+			.catch((error) => {
+				if (isCancelled) return
+				console.error("Barangay lookup failed:", error)
+				setBarangayError("Unable to load barangays. Please check your connection and try again.")
+			})
+			.finally(() => {
+				if (!isCancelled) setBarangayLoading(false)
+			})
+
+		return () => {
+			isCancelled = true
+		}
+	}, [formData.province, formData.city])
 
 	const handleSaveProfile = async () => {
 		if (!userId) {
@@ -691,6 +729,7 @@ export default function StudentProfilePage() {
 			!formData.street.trim() ||
 			!formData.city.trim() ||
 			!formData.province.trim() ||
+			!formData.barangay.trim() ||
 			!formData.postalCode.trim()
 		) {
 			toast.error("All name, contact, and address details are required.")
@@ -708,6 +747,7 @@ export default function StudentProfilePage() {
 				street: formData.street.trim(),
 				city: formData.city.trim(),
 				province: formData.province.trim(),
+				barangay: formData.barangay.trim(),
 				postalCode: formData.postalCode.trim(),
 				course: formData.course,
 				major: courseHasMajors ? formData.major : "",
@@ -877,6 +917,7 @@ export default function StudentProfilePage() {
 													...prev,
 													province: e.target.value,
 													city: "",
+													barangay: "",
 												}))
 											}
 										>
@@ -899,6 +940,7 @@ export default function StudentProfilePage() {
 												setFormData((prev) => ({
 													...prev,
 													city: e.target.value,
+													barangay: "",
 												}))
 											}
 											disabled={!formData.province}
@@ -913,6 +955,37 @@ export default function StudentProfilePage() {
 													</option>
 												))}
 										</select>
+									</label>
+									<label className="student-profile-label">
+										Barangay
+										<select
+											className="student-profile-input"
+											value={formData.barangay}
+											onChange={(e) =>
+												setFormData((prev) => ({
+													...prev,
+													barangay: e.target.value,
+												}))
+											}
+											disabled={!formData.city || barangayLoading || barangayOptions.length === 0}
+										>
+											<option value="" disabled>
+												{!formData.city
+													? "Select city first"
+													: barangayLoading
+														? "Loading barangays..."
+														: "Select barangay"}
+											</option>
+											{formData.barangay && !barangayOptions.includes(formData.barangay) ? (
+												<option value={formData.barangay}>{formData.barangay}</option>
+											) : null}
+											{barangayOptions.map((item) => (
+												<option key={item} value={item}>
+													{item}
+												</option>
+											))}
+										</select>
+										{barangayError ? <span className="student-profile-help-text">{barangayError}</span> : null}
 									</label>
 									<label className="student-profile-label">
 										Postal Code

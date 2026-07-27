@@ -211,7 +211,7 @@ function getGrantorScholarProgramName(scholar = {}) {
 }
 
 function buildGrantorScholarAddress(scholar = {}) {
-	return [scholar.street, scholar.city, scholar.province, scholar.postalCode]
+	return [scholar.street, scholar.barangay, scholar.city, scholar.province, scholar.postalCode]
 		.filter(Boolean)
 		.join(" ")
 		.trim()
@@ -1194,6 +1194,7 @@ export default function AdminDashboard() {
 				street: scholar.street || "",
 				city: scholar.city || "",
 				province: scholar.province || "",
+				barangay: scholar.barangay || "",
 				postalCode: scholar.postalCode || "",
 				course: scholar.course || "-",
 				year: scholar.yearLevel || "-",
@@ -6272,6 +6273,7 @@ export default function AdminDashboard() {
 							<h4 className="admin-student-detail-divider"><span>Address</span></h4>
 							<div className="admin-detail-grid admin-student-detail-grid">
 								<p className="admin-detail-meta"><span>Street / Subdivision</span><strong>{selectedStudent.street || selectedStudent.subdivision || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Barangay</span><strong>{selectedStudent.barangay || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>City / Municipality</span><strong>{selectedStudent.city || selectedStudent.municipality || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Province</span><strong>{selectedStudent.province || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Postal Code</span><strong>{selectedStudent.postalCode || selectedStudent.zipCode || "-"}</strong></p>

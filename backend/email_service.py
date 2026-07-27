@@ -17,11 +17,12 @@ def send_email_notification(payload: dict[str, Any]) -> dict[str, Any]:
     if not recipient or not subject or not html:
         return {"sent": False, "reason": "missing_to_subject_or_html"}
 
+    should_prepend_greeting = to_name and "data-bulsuscholar-email" not in str(html)
     body = {
         "from": os.getenv("RESEND_FROM_EMAIL", "BulsuScholar <noreply@bulsuscholar.com>"),
         "to": [recipient] if isinstance(recipient, str) else recipient,
         "subject": subject,
-        "html": f"<p>Hello {to_name},</p>{html}" if to_name else html,
+        "html": f"<p>Hello {to_name},</p>{html}" if should_prepend_greeting else html,
     }
     request = urllib.request.Request(
         "https://api.resend.com/emails",

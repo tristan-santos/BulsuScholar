@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -40,6 +41,56 @@ def normalize_student_id(value: Any = "") -> str:
     return re.sub(r"\D+", "", str(value or ""))
 
 
+def normalize_semester(value: Any = "") -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in ["1", "1st", "first"]:
+        return "1ST"
+    if normalized in ["2", "2nd", "second"]:
+        return "2ND"
+    return ""
+
+
+def get_current_academic_year(now: datetime | None = None) -> str:
+    now = now or datetime.now()
+    return f"{now.year}-{now.year + 1}" if now.month >= 7 else f"{now.year - 1}-{now.year}"
+
+
+def get_current_semester_tag(now: datetime | None = None) -> str:
+    now = now or datetime.now()
+    semester = "1ST" if now.month >= 7 else "2ND"
+    return f"{get_current_academic_year(now)}-{semester}"
+
+
+def previous_semester_tag(current_tag: str) -> str:
+    match = re.match(r"^(20\d{2})-(20\d{2})-(1ST|2ND)$", str(current_tag or ""), re.I)
+    if not match:
+        return ""
+    start_year = int(match.group(1))
+    end_year = int(match.group(2))
+    semester = match.group(3).upper()
+    if semester == "2ND":
+        return f"{start_year}-{end_year}-1ST"
+    return f"{start_year - 1}-{end_year - 1}-2ND"
+
+
+def build_semester_tag(document_scan: dict[str, Any]) -> str:
+    academic_year = str(document_scan.get("academicYear") or "").replace(" ", "").replace("/", "-")
+    semester = normalize_semester(document_scan.get("semester"))
+    if not academic_year or not semester:
+        return ""
+    return f"{academic_year}-{semester}"
+
+
+def expected_previous_rog_year_level(cor_year: Any = "", current_tag: str = "") -> str:
+    match = re.match(r"^(20\d{2})-(20\d{2})-(1ST|2ND)$", str(current_tag or ""), re.I)
+    normalized_cor_year = re.sub(r"\D+", "", str(cor_year or ""))[:1]
+    if not match or not normalized_cor_year:
+        return ""
+    if match.group(3).upper() == "2ND":
+        return normalized_cor_year
+    return str(max(1, int(normalized_cor_year) - 1))
+
+
 def first_existing_record(checks: list[tuple[str, dict[str, Any]]]) -> dict[str, Any] | None:
     for table, filters in checks:
         result = supabase_select(table, filters, limit=1)
@@ -56,11 +107,20 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     student = payload.get("student") or {}
     auth = payload.get("auth") or {}
     cor = payload.get("cor") or {}
+    document_scan = student.get("documentScan") or {}
+    cor_scan = document_scan.get("cor") or {}
+    rog_scan = document_scan.get("cog") or {}
 
     email = normalize_email(student.get("email"))
     cp_number = normalize_cp(student.get("cpNumber"))
     auth_email = normalize_email(auth.get("email"))
-    cor_student_id = normalize_student_id(cor.get("studentId") or student.get("documentScan", {}).get("cor", {}).get("studentId"))
+    cor_student_id = normalize_student_id(cor.get("studentId") or cor_scan.get("studentId"))
+    current_cycle = get_current_semester_tag()
+    previous_cycle = previous_semester_tag(current_cycle)
+    cor_cycle = build_semester_tag(cor_scan or cor)
+    rog_cycle = build_semester_tag(rog_scan)
+    student_year = str(student.get("year") or cor_scan.get("year") or "").strip()
+    is_first_year_first_cycle = student_year == "1" and current_cycle.endswith("-1ST")
 
     if not student_id:
         return {"ok": False, "reason": "missing_student_id"}
@@ -74,6 +134,30 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "reason": "cor_student_id_mismatch", "corStudentId": cor_student_id, "studentId": student_id}
     if not cor_student_id:
         return {"ok": False, "reason": "missing_cor_student_id"}
+    if cor_scan.get("isValidCorDocument") is False:
+        return {"ok": False, "reason": "invalid_cor_document_title", "acceptedTitles": cor_scan.get("acceptedCorTitles") or []}
+    if not cor_cycle:
+        return {"ok": False, "reason": "missing_cor_cycle", "expectedCurrentCycle": current_cycle}
+    if cor_cycle != current_cycle:
+        return {"ok": False, "reason": "cor_cycle_mismatch", "expectedCurrentCycle": current_cycle, "scannedCycle": cor_cycle}
+    if not is_first_year_first_cycle:
+        if not rog_scan:
+            return {"ok": False, "reason": "missing_rog_scan", "expectedPreviousCycle": previous_cycle}
+        if rog_scan.get("isValidCogDocument") is False:
+            return {"ok": False, "reason": "invalid_rog_document_title", "acceptedTitles": rog_scan.get("acceptedCogTitles") or []}
+        if not rog_cycle:
+            return {"ok": False, "reason": "missing_rog_cycle", "expectedPreviousCycle": previous_cycle}
+        if rog_cycle != previous_cycle:
+            return {"ok": False, "reason": "rog_cycle_mismatch", "expectedPreviousCycle": previous_cycle, "scannedCycle": rog_cycle}
+        expected_rog_year = expected_previous_rog_year_level(student_year, current_cycle)
+        scanned_rog_year = re.sub(r"\D+", "", str(rog_scan.get("year") or ""))[:1]
+        if expected_rog_year and scanned_rog_year and expected_rog_year != scanned_rog_year:
+            return {
+                "ok": False,
+                "reason": "rog_year_level_mismatch",
+                "expectedYearLevel": expected_rog_year,
+                "scannedYearLevel": scanned_rog_year,
+            }
 
     for table in ["students", "pending_students", "providers", "admins"]:
         existing = supabase_document_get(table, student_id)

@@ -32,7 +32,7 @@ COURSE_PATTERNS = [
 ]
 
 ACCEPTED_COR_TITLES = ["Advising Slip", "Certificate of Registration"]
-ACCEPTED_COG_TITLES = ["Certificate of Grades"]
+ACCEPTED_COG_TITLES = ["Report of Grades"]
 
 NAME_LABEL_PATTERN = r"(?:Student\s*Name|Name\s+of\s+Student|Full\s*Name|Fullname|Name)"
 NAME_BLOCKED_WORDS = re.compile(
@@ -147,12 +147,12 @@ def detect_cor_document_title(text: str) -> dict[str, Any]:
 
 def detect_cog_document_title(text: str) -> dict[str, Any]:
     normalized = normalize_space(text)
-    if re.search(r"\bCertificate\s*of\s*Grades\b", normalized, re.IGNORECASE):
+    if re.search(r"\bReport\s*of\s*Grades\b", normalized, re.IGNORECASE):
         return {
             "isValidCogDocument": True,
-            "documentTitle": "Certificate of Grades",
+            "documentTitle": "Report of Grades",
             "acceptedCogTitles": ACCEPTED_COG_TITLES,
-            "documentTitleRule": "COG must contain Certificate of Grades in the document title.",
+            "documentTitleRule": "ROG must contain Report of Grades in the document title.",
         }
 
     title_candidates = []
@@ -166,7 +166,7 @@ def detect_cog_document_title(text: str) -> dict[str, Any]:
         "documentTitle": "",
         "acceptedCogTitles": ACCEPTED_COG_TITLES,
         "documentTitleCandidates": title_candidates[:8],
-        "documentTitleRule": "COG must contain Certificate of Grades in the document title.",
+        "documentTitleRule": "ROG must contain Report of Grades in the document title.",
     }
 
 
@@ -411,7 +411,7 @@ def extract_final_grades_from_pdf_tables(file_bytes: bytes) -> dict[str, Any]:
         final_grades,
         row_debug,
         "pdfplumber table Final column extraction",
-        "COG scanning reads the PDF table cells and collects values under the exact Final column. It also checks the Remarks column for Failed.",
+        "ROG scanning reads the PDF table cells and collects values under the exact Final column. It also checks the Remarks column for Failed.",
         remarks_concerns,
     )
 
@@ -538,7 +538,7 @@ def extract_final_grades_from_pdf_words(file_bytes: bytes) -> dict[str, Any]:
         final_grades,
         row_debug,
         "pdf word-position Final and Remarks column extraction",
-        "COG scanning locates the Final and Remarks headers by PDF word coordinates, then reads only values below those columns. Footer/page URL numbers are ignored.",
+        "ROG scanning locates the Final and Remarks headers by PDF word coordinates, then reads only values below those columns. Footer/page URL numbers are ignored.",
         remarks_concerns,
     )
 
@@ -603,7 +603,7 @@ def extract_final_grades_from_text(text: str) -> dict[str, Any]:
         rows_after_first_grade = 0
 
     explanation = (
-        "COG scanning checks identity fields, extracts printed GWA, and reads only values "
+        "ROG scanning checks identity fields, extracts printed GWA, and reads only values "
         "from the subject Final Grade column. It also checks the Remarks column/text for Failed. "
         "Credit Units are ignored by selecting the grade before the Re-Exam/Credit Units area when present."
     )
@@ -759,7 +759,7 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
             "concernMatches": [],
             "rowDebug": [],
             "extractionMethod": "not applied",
-            "explanation": "Final Grade concern detection is applied only to COG documents.",
+            "explanation": "Final Grade concern detection is applied only to ROG documents.",
         },
         "gwaDebug": extract_gwa_result(text),
     }

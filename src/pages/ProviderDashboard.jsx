@@ -167,6 +167,7 @@ const SCHOLAR_FORM = {
 	street: "",
 	city: "",
 	province: "",
+	barangay: "",
 	postalCode: "",
 	course: "",
 	yearLevel: "1",
@@ -206,6 +207,7 @@ const MAPPABLE_FIELDS = [
 	{ id: "street", label: "Street" },
 	{ id: "city", label: "City" },
 	{ id: "province", label: "Province" },
+	{ id: "barangay", label: "Barangay" },
 	{ id: "postalCode", label: "Postal Code" },
 	{ id: "notes", label: "Notes" },
 ]
@@ -404,6 +406,7 @@ function scholarPayload(form, grantorId, grantorName, providerType, file = null)
 		street: form.street.trim(),
 		city: form.city.trim(),
 		province: form.province.trim(),
+		barangay: form.barangay.trim(),
 		postalCode: form.postalCode.trim(),
 		course: form.course.trim(),
 		yearLevel: String(form.yearLevel || "1"),
@@ -447,6 +450,7 @@ function scholarToForm(scholar = {}, student = {}) {
 		street: scholar.street || student.street || student.address || "",
 		city: scholar.city || student.city || "",
 		province: scholar.province || student.province || "",
+		barangay: scholar.barangay || student.barangay || "",
 		postalCode: scholar.postalCode || student.postalCode || student.zipCode || "",
 		course: scholar.course || student.course || student.program || "",
 		yearLevel: String(scholar.yearLevel || student.yearLevel || student.year || "1"),
@@ -484,6 +488,7 @@ function buildScholarRecordFromScreening(student = {}, scholarship = {}, applica
 		street: String(student.street || student.address || "").trim(),
 		city: String(student.city || "").trim(),
 		province: String(student.province || "").trim(),
+		barangay: String(student.barangay || "").trim(),
 		postalCode: String(student.postalCode || "").trim(),
 		course: String(student.course || "").trim(),
 		yearLevel: String(student.yearLevel || student.year || "1"),
@@ -3170,7 +3175,7 @@ export default function ProviderDashboard() {
 											</button>
 										</div>
 										<div className="grantor-announcement-compose-grid">
-											<label><span>Title</span><input type="text" className={announcementSubmitAttempted && announcementMissingFields.title ? "is-missing" : ""} placeholder="Enter announcement title" value={announcementForm.title} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, title: event.target.value }))} /></label>
+											<label><span>Announcement Title</span><input type="text" className={announcementSubmitAttempted && announcementMissingFields.title ? "is-missing" : ""} placeholder="Enter announcement title" value={announcementForm.title} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, title: event.target.value }))} /></label>
 											<label><span>Subtitle</span><input type="text" placeholder="Add a short supporting line" value={announcementForm.subtitle} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, subtitle: event.target.value }))} /></label>
 											{announcementForm.applicationEnabled ? (
 												<>
@@ -3366,7 +3371,8 @@ export default function ProviderDashboard() {
 													<p><span>Course</span><strong>{applicationModalState.student?.course || "-"}</strong></p>
 													<p><span>Year Level</span><strong>{applicationModalState.student?.year || applicationModalState.student?.yearLevel || "-"}</strong></p>
 													<p><span>Address</span><strong>{[
-																		applicationModalState.student?.street,
+														applicationModalState.student?.street,
+														applicationModalState.student?.barangay,
 														applicationModalState.student?.city,
 														applicationModalState.student?.province,
 														applicationModalState.student?.postalCode,
@@ -3726,6 +3732,7 @@ export default function ProviderDashboard() {
 											<input type="text" placeholder="Middle Name" value={createForm.mname} onChange={(event) => setCreateForm((prev) => ({ ...prev, mname: event.target.value }))} />
 											<input type="text" placeholder="Last Name" value={createForm.lname} onChange={(event) => setCreateForm((prev) => ({ ...prev, lname: event.target.value }))} />
 											<input type="text" placeholder="Street" value={createForm.street} onChange={(event) => setCreateForm((prev) => ({ ...prev, street: event.target.value }))} />
+											<input type="text" placeholder="Barangay" value={createForm.barangay} onChange={(event) => setCreateForm((prev) => ({ ...prev, barangay: event.target.value }))} />
 											<input type="text" placeholder="City" value={createForm.city} onChange={(event) => setCreateForm((prev) => ({ ...prev, city: event.target.value }))} />
 											<input type="text" placeholder="Province" value={createForm.province} onChange={(event) => setCreateForm((prev) => ({ ...prev, province: event.target.value }))} />
 											<input type="text" placeholder="Postal Code" value={createForm.postalCode} onChange={(event) => setCreateForm((prev) => ({ ...prev, postalCode: event.target.value }))} />
@@ -3782,6 +3789,7 @@ export default function ProviderDashboard() {
 									<div className="grantor-form-grid grantor-form-grid--edit">
 										<label><span>Province</span><select value={editForm.province} onChange={(event) => setEditForm((prev) => ({ ...prev, province: event.target.value, city: "" }))}><option value="">Select province</option>{editForm.province && !PROVINCES.includes(editForm.province) ? <option value={editForm.province}>{editForm.province}</option> : null}{PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}</select></label>
 										<label><span>City / Municipality</span><select value={editForm.city} disabled={!editForm.province} onChange={(event) => setEditForm((prev) => ({ ...prev, city: event.target.value }))}><option value="">Select city or municipality</option>{editForm.city && !editCityOptions.includes(editForm.city) ? <option value={editForm.city}>{editForm.city}</option> : null}{editCityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</select></label>
+										<label><span>Barangay</span><input type="text" placeholder="Barangay" value={editForm.barangay} onChange={(event) => setEditForm((prev) => ({ ...prev, barangay: event.target.value }))} /></label>
 										<label><span>Street / Subdivision</span><input type="text" placeholder="House number, street, or subdivision" value={editForm.street} onChange={(event) => setEditForm((prev) => ({ ...prev, street: event.target.value }))} /></label>
 										<label><span>Postal Code</span><input type="text" placeholder="e.g. 3000" value={editForm.postalCode} onChange={(event) => setEditForm((prev) => ({ ...prev, postalCode: event.target.value }))} /></label>
 									</div>

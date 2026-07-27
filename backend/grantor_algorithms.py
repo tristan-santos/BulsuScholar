@@ -183,6 +183,7 @@ def record_completeness_score(record: dict[str, Any] | None = None) -> int:
         "year",
         "yearLevel",
         "street",
+        "barangay",
         "city",
         "province",
         "postalCode",
@@ -298,6 +299,7 @@ def match_address(student: dict[str, Any] | None = None, scholar: dict[str, Any]
     scholar = scholar or {}
     comparable_field_pairs = [
         ("street", "street"),
+        ("barangay", "barangay"),
         ("city", "city"),
         ("province", "province"),
         ("postalCode", "postalCode"),
@@ -316,8 +318,8 @@ def match_address(student: dict[str, Any] | None = None, scholar: dict[str, Any]
     if shared_field_count > 0:
         return True
 
-    student_address = normalize_match_value(" ".join(str(student.get(key) or "") for key in ["street", "city", "province", "postalCode"]))
-    scholar_address = normalize_match_value(" ".join(str(scholar.get(key) or "") for key in ["street", "city", "province", "postalCode"]))
+    student_address = normalize_match_value(" ".join(str(student.get(key) or "") for key in ["street", "barangay", "city", "province", "postalCode"]))
+    scholar_address = normalize_match_value(" ".join(str(scholar.get(key) or "") for key in ["street", "barangay", "city", "province", "postalCode"]))
     return bool(student_address and scholar_address and student_address == scholar_address)
 
 

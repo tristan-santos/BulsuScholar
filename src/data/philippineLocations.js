@@ -1811,4 +1811,95 @@ export function getCitiesByProvince(province = "") {
 	return PHILIPPINE_LOCATIONS[province] || []
 }
 
+const PSGC_API_BASE_URL = "https://psgc.cloud/api/v2"
+const psgcLocalitiesCache = {
+	promise: null,
+	data: null,
+}
+const barangayCache = new Map()
+
+function normalizeLocationName(value = "") {
+	return String(value || "")
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/\bcity\b/g, "")
+		.replace(/[^a-z0-9]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+}
+
+function unwrapPsgcList(payload) {
+	if (Array.isArray(payload)) return payload
+	if (Array.isArray(payload?.data)) return payload.data
+	if (Array.isArray(payload?.items)) return payload.items
+	return []
+}
+
+async function fetchPsgcJson(url) {
+	const response = await fetch(url, {
+		headers: {
+			Accept: "application/json",
+		},
+	})
+	if (!response.ok) {
+		throw new Error(`psgc_request_failed_${response.status}`)
+	}
+	return response.json()
+}
+
+async function getPsgcLocalities() {
+	if (psgcLocalitiesCache.data) return psgcLocalitiesCache.data
+	if (!psgcLocalitiesCache.promise) {
+		psgcLocalitiesCache.promise = fetchPsgcJson(`${PSGC_API_BASE_URL}/cities-municipalities?per_page=2000`)
+			.then((payload) => {
+				const data = unwrapPsgcList(payload)
+				psgcLocalitiesCache.data = data
+				return data
+			})
+			.catch((error) => {
+				psgcLocalitiesCache.promise = null
+				throw error
+			})
+	}
+	return psgcLocalitiesCache.promise
+}
+
+function getPsgcProvinceName(locality = {}) {
+	return locality.province?.name || locality.province_name || locality.provinceName || ""
+}
+
+export async function getBarangaysByLocation(province = "", city = "") {
+	const normalizedProvince = normalizeLocationName(province)
+	const normalizedCity = normalizeLocationName(city)
+	if (!normalizedProvince || !normalizedCity) return []
+
+	const cacheKey = `${normalizedProvince}|${normalizedCity}`
+	if (barangayCache.has(cacheKey)) return barangayCache.get(cacheKey)
+
+	const localities = await getPsgcLocalities()
+	const locality =
+		localities.find((item) => (
+			normalizeLocationName(item.name) === normalizedCity &&
+			normalizeLocationName(getPsgcProvinceName(item)) === normalizedProvince
+		)) ||
+		localities.find((item) => normalizeLocationName(item.name) === normalizedCity)
+
+	if (!locality?.code) {
+		barangayCache.set(cacheKey, [])
+		return []
+	}
+
+	const payload = await fetchPsgcJson(
+		`${PSGC_API_BASE_URL}/cities-municipalities/${encodeURIComponent(locality.code)}/barangays?per_page=1000`,
+	)
+	const barangays = unwrapPsgcList(payload)
+		.map((item) => String(item?.name || "").trim())
+		.filter(Boolean)
+		.sort((left, right) => left.localeCompare(right))
+
+	barangayCache.set(cacheKey, barangays)
+	return barangays
+}
+
 export default PHILIPPINE_LOCATIONS

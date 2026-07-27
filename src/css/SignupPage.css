@@ -224,6 +224,26 @@
 	color: #7a8a84;
 }
 
+.signup-upload-wrap--error,
+.signup-upload-wrap--error:hover {
+	border-color: #dc2626;
+	background: #fff7f7;
+	box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+.signup-upload-wrap--error .signup-upload-icon,
+.signup-upload-wrap--error:hover .signup-upload-icon {
+	color: #dc2626;
+}
+
+.signup-upload-error-message {
+	margin: -0.75rem 0 1.1rem;
+	color: #b91c1c;
+	font-size: 0.82rem;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
 .signup-file-input {
 	position: absolute;
 	width: 0.1px;
