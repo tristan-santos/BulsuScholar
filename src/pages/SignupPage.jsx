@@ -567,6 +567,7 @@ export default function SignupPage() {
 		console.log("Autofill fields gathered:", {
 			documentTitle: extracted?.documentTitle || "",
 			isValidCorDocument: extracted?.isValidCorDocument,
+			isValidCogDocument: extracted?.isValidCogDocument,
 			studentId: extracted?.studentId || "",
 			firstName: extracted?.firstName || "",
 			middleName: extracted?.middleName || "",
@@ -586,6 +587,15 @@ export default function SignupPage() {
 				acceptedCorTitles: extracted?.acceptedCorTitles || ["Advising Slip", "Certificate of Registration"],
 				documentTitleCandidates: extracted?.documentTitleCandidates || [],
 				rule: extracted?.documentTitleRule || "COR must contain Advising Slip or Certificate of Registration.",
+			})
+		}
+		if (documentType === "cog") {
+			console.log("COG title validation:", {
+				isValidCogDocument: extracted?.isValidCogDocument,
+				documentTitle: extracted?.documentTitle || "",
+				acceptedCogTitles: extracted?.acceptedCogTitles || ["Certificate of Grades"],
+				documentTitleCandidates: extracted?.documentTitleCandidates || [],
+				rule: extracted?.documentTitleRule || "COG must contain Certificate of Grades.",
 			})
 		}
 		console.log("Raw OCR preview:", extracted?.rawTextPreview || "")
@@ -752,6 +762,15 @@ export default function SignupPage() {
 				return
 			}
 
+			if (documentType === "cog" && extracted?.isValidCogDocument === false) {
+				setCogFile(null)
+				setGwa("")
+				setDocumentScanResult((current) => ({ ...current, cog: null }))
+				toast.error("Please upload a valid COG: Certificate of Grades.")
+				setDocumentScanState((current) => ({ ...current, cog: "error" }))
+				return
+			}
+
 			if (identityCheck && !identityCheck.passed) {
 				setCogFile(null)
 				setGwa("")
@@ -895,7 +914,7 @@ export default function SignupPage() {
 
 		// Validate Stage 1 documents.
 		if (!corFile) {
-			toast.error("Please upload your Certificate of Registration (COR)")
+			toast.error("Please upload your Certificate of Registration or Advising Slip")
 			scrollToSection("section-cor")
 			return
 		}
@@ -1095,7 +1114,7 @@ export default function SignupPage() {
 
 		// Validate Stage 1 documents.
 		if (!corFile) {
-			toast.error("Please upload your Certificate of Registration (COR)")
+			toast.error("Please upload your Certificate of Registration or Advising Slip")
 			scrollToSection("section-cor")
 			return
 		}
@@ -1644,9 +1663,9 @@ export default function SignupPage() {
 									<h3 className="signup-section-title">Required Documents</h3>
 								</div>
 
-								{/* Certificate of Registration (COR) Upload */}
+								{/* Certificate of Registration / Advising Slip Upload */}
 								<label className="login-label" htmlFor="signup-cor-upload">
-									1. Certificate of Registration (COR){" "}
+									1. Certificate of Registration or Advising Slip{" "}
 									<span className="required">*</span>
 								</label>
 								<label
@@ -1686,7 +1705,7 @@ export default function SignupPage() {
 												aria-hidden
 											/>
 											<span className="signup-upload-hint">
-												Drop COR here or click to browse
+												Drop Certificate of Registration or Advising Slip here
 											</span>
 										</>
 									)}
@@ -2499,7 +2518,7 @@ export default function SignupPage() {
 														>
 															<HiOutlineCloudUpload />
 														</span>
-														<span>Certificate of Registration (COR):</span>
+														<span>Certificate of Registration / Advising Slip:</span>
 													</span>
 													<span className="signup-review-document-name signup-review-label-group">
 														<span

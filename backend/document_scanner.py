@@ -32,6 +32,7 @@ COURSE_PATTERNS = [
 ]
 
 ACCEPTED_COR_TITLES = ["Advising Slip", "Certificate of Registration"]
+ACCEPTED_COG_TITLES = ["Certificate of Grades"]
 
 NAME_LABEL_PATTERN = r"(?:Student\s*Name|Name\s+of\s+Student|Full\s*Name|Fullname|Name)"
 NAME_BLOCKED_WORDS = re.compile(
@@ -141,6 +142,31 @@ def detect_cor_document_title(text: str) -> dict[str, Any]:
         "acceptedCorTitles": ACCEPTED_COR_TITLES,
         "documentTitleCandidates": title_candidates[:8],
         "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+    }
+
+
+def detect_cog_document_title(text: str) -> dict[str, Any]:
+    normalized = normalize_space(text)
+    if re.search(r"\bCertificate\s*of\s*Grades\b", normalized, re.IGNORECASE):
+        return {
+            "isValidCogDocument": True,
+            "documentTitle": "Certificate of Grades",
+            "acceptedCogTitles": ACCEPTED_COG_TITLES,
+            "documentTitleRule": "COG must contain Certificate of Grades in the document title.",
+        }
+
+    title_candidates = []
+    for line in text.splitlines()[:20]:
+        cleaned = normalize_space(line)
+        if cleaned:
+            title_candidates.append(cleaned)
+
+    return {
+        "isValidCogDocument": False,
+        "documentTitle": "",
+        "acceptedCogTitles": ACCEPTED_COG_TITLES,
+        "documentTitleCandidates": title_candidates[:8],
+        "documentTitleRule": "COG must contain Certificate of Grades in the document title.",
     }
 
 
@@ -737,7 +763,12 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
         },
         "gwaDebug": extract_gwa_result(text),
     }
-    cor_title_check = detect_cor_document_title(text) if document_type.lower() == "cor" else {}
+    normalized_document_type = document_type.lower()
+    title_check = {}
+    if normalized_document_type == "cor":
+        title_check = detect_cor_document_title(text)
+    elif normalized_document_type == "cog":
+        title_check = detect_cog_document_title(text)
 
     return {
         "documentType": document_type,
@@ -752,7 +783,7 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
         "gwa": extract_gwa(text),
         **semester,
         **flags,
-        **cor_title_check,
+        **title_check,
         "rawTextPreview": normalize_space(text)[:1200],
     }
 
