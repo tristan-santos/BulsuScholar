@@ -702,8 +702,11 @@ def extract_name(text: str) -> dict[str, str]:
 
 
 def extract_semester(text: str) -> dict[str, str]:
+    normalized_text = normalize_space(text)
     academic_year = find_first(
         [
+            r"(?:Academic\s*Year\s*(?:&|and)\s*Term|Academic\s*Year\s*/\s*Term)\s*[:\-]?\s*(20\d{2}\s*[-/]\s*20\d{2})",
+            r"(?:Academic\s*Year\s*(?:&|and)\s*Term|Academic\s*Year\s*/\s*Term)\s*[:\-]?\s*(?:\S+\s+){0,8}?(20\d{2}\s*[-/]\s*20\d{2})",
             r"(20\d{2}\s*[-/]\s*20\d{2})",
             r"(?:Academic\s*Year|A\.Y\.)\s*[:\-]?\s*(20\d{2}\s*[-/]\s*20\d{2})",
         ],
@@ -711,11 +714,22 @@ def extract_semester(text: str) -> dict[str, str]:
     ).replace(" ", "").replace("/", "-")
     semester = find_first(
         [
+            r"(?:Academic\s*Year\s*(?:&|and)\s*Term|Academic\s*Year\s*/\s*Term)\s*[:\-]?\s*(?:20\d{2}\s*[-/]\s*20\d{2})?\s*(1st|2nd|First|Second)\s*Semester",
+            r"(?:Academic\s*Year\s*(?:&|and)\s*Term|Academic\s*Year\s*/\s*Term)\s*[:\-]?\s*(?:\S+\s+){0,8}?(1st|2nd|First|Second)\s*Semester",
             r"(?:Semester|Sem)\s*[:\-]?\s*(1st|2nd|First|Second)",
             r"\b(1st|2nd|First|Second)\s+Semester\b",
         ],
         text,
     )
+    if (not academic_year or not semester) and re.search(r"Academic\s*Year\s*(?:&|and)\s*Term|Academic\s*Year\s*/\s*Term", normalized_text, re.IGNORECASE):
+        combined_match = re.search(
+            r"Academic\s*Year\s*(?:&|and)\s*Term\s*(?:[:\-])?\s*(?:\S+\s+){0,10}?(20\d{2}\s*[-/]\s*20\d{2})\s*(1st|2nd|First|Second)\s*Semester",
+            normalized_text,
+            re.IGNORECASE,
+        )
+        if combined_match:
+            academic_year = academic_year or normalize_space(combined_match.group(1)).replace(" ", "").replace("/", "-")
+            semester = semester or normalize_space(combined_match.group(2))
     return {"academicYear": academic_year, "semester": semester}
 
 

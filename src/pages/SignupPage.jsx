@@ -184,8 +184,10 @@ function normalizeScannedSemester(value = "") {
 }
 
 function buildSemesterTagFromScan(scan = {}) {
-	const academicYear = String(scan?.academicYear || "").replace(/\s+/g, "").replace("/", "-")
-	const semester = normalizeScannedSemester(scan?.semester)
+	const rawText = String(scan?.rawTextPreview || "")
+	const combinedTermMatch = rawText.match(/(20\d{2}\s*[-/]\s*20\d{2})\s*(1st|2nd|first|second)\s+semester/i)
+	const academicYear = String(scan?.academicYear || combinedTermMatch?.[1] || "").replace(/\s+/g, "").replace("/", "-")
+	const semester = normalizeScannedSemester(scan?.semester || combinedTermMatch?.[2] || "")
 	if (!academicYear || !semester) return ""
 	return `${academicYear}-${semester}`
 }
@@ -653,7 +655,7 @@ export default function SignupPage() {
 	}
 
 	const logDocumentScanResult = (documentType, extracted = {}, identityCheck = null) => {
-		const label = `${documentType.toUpperCase()} document scan`
+		const label = `${documentType === "cog" ? "ROG" : documentType.toUpperCase()} document scan`
 		const gradeDebug = extracted?.gradeDebug || {}
 		const gwaDebug = extracted?.gwaDebug || {}
 
