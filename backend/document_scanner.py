@@ -703,6 +703,7 @@ def extract_name(text: str) -> dict[str, str]:
 
 def extract_semester(text: str) -> dict[str, str]:
     normalized_text = normalize_space(text)
+    lines = [normalize_space(line) for line in text.splitlines() if normalize_space(line)]
     academic_year = find_first(
         [
             r"(?:Academic\s*Year\s*(?:&|and)\s*Term|Academic\s*Year\s*/\s*Term)\s*[:\-]?\s*(20\d{2}\s*[-/]\s*20\d{2})",
@@ -730,6 +731,30 @@ def extract_semester(text: str) -> dict[str, str]:
         if combined_match:
             academic_year = academic_year or normalize_space(combined_match.group(1)).replace(" ", "").replace("/", "-")
             semester = semester or normalize_space(combined_match.group(2))
+    if not semester:
+        for index, line in enumerate(lines):
+            if not re.search(r"Academic\s*Year\s*(?:&|and)?\s*$|^Term\b|Academic\s*Year\s*(?:&|and)\s*Term|Academic\s*Year\s*/\s*Term", line, re.IGNORECASE):
+                continue
+            window = normalize_space(" ".join(lines[index : index + 5]))
+            window_match = re.search(
+                r"(20\d{2}\s*[-/]\s*20\d{2})\s*(1st|2nd|First|Second)\s*(?:Semester)?",
+                window,
+                re.IGNORECASE,
+            )
+            if window_match:
+                academic_year = academic_year or normalize_space(window_match.group(1)).replace(" ", "").replace("/", "-")
+                semester = normalize_space(window_match.group(2))
+                break
+    if not semester and academic_year:
+        year_parts = academic_year.split("-", 1)
+        compact_year = rf"{re.escape(year_parts[0])}\s*[-/]\s*{re.escape(year_parts[1])}" if len(year_parts) == 2 else re.escape(academic_year)
+        nearby_match = re.search(
+            rf"{compact_year}\s*(1st|2nd|First|Second)\s*(?:Semester)?",
+            normalized_text,
+            re.IGNORECASE,
+        )
+        if nearby_match:
+            semester = normalize_space(nearby_match.group(1))
     return {"academicYear": academic_year, "semester": semester}
 
 

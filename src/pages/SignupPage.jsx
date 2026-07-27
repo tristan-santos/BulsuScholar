@@ -185,9 +185,15 @@ function normalizeScannedSemester(value = "") {
 
 function buildSemesterTagFromScan(scan = {}) {
 	const rawText = String(scan?.rawTextPreview || "")
-	const combinedTermMatch = rawText.match(/(20\d{2}\s*[-/]\s*20\d{2})\s*(1st|2nd|first|second)\s+semester/i)
+	const normalizedRawText = rawText.replace(/\s+/g, " ").trim()
+	const combinedTermMatch = normalizedRawText.match(/(20\d{2}\s*[-/]\s*20\d{2})\s*(1st|2nd|first|second)\s*(?:semester)?/i)
 	const academicYear = String(scan?.academicYear || combinedTermMatch?.[1] || "").replace(/\s+/g, "").replace("/", "-")
-	const semester = normalizeScannedSemester(scan?.semester || combinedTermMatch?.[2] || "")
+	const yearPattern = academicYear
+		? new RegExp(`${academicYear.replace("-", "\\s*[-/]\\s*")}\\s*(1st|2nd|first|second)\\s*(?:semester)?`, "i")
+		: null
+	const nearbyYearMatch = yearPattern ? normalizedRawText.match(yearPattern) : null
+	const explicitSemesterMatch = normalizedRawText.match(/\b(1st|2nd|first|second)\s+semester\b/i)
+	const semester = normalizeScannedSemester(scan?.semester || combinedTermMatch?.[2] || nearbyYearMatch?.[1] || explicitSemesterMatch?.[1] || "")
 	if (!academicYear || !semester) return ""
 	return `${academicYear}-${semester}`
 }
@@ -816,6 +822,7 @@ export default function SignupPage() {
 					academicYear: extracted?.academicYear || "",
 					semester: extracted?.semester || "",
 					semesterTag: scannedSemesterTag,
+					rawTextPreview: extracted?.rawTextPreview || "",
 				},
 				corScan: extracted,
 			})
