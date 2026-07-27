@@ -645,12 +645,15 @@ export default function SignupPage() {
 		const fallbackName = splitNameParts(extracted.fullName)
 		const scannedFirstName = extracted.firstName || fallbackName.firstName
 		const scannedLastName = extracted.lastName || fallbackName.lastName
+		const scannedYearIsReliable = /\b(?:Year\s*(?:Level)?\s*(?:\/|&|and)?\s*Section|Yr\s*\/\s*Sec|[1-6](?:st|nd|rd|th)\s+Year)\b/i.test(
+			String(extracted.rawTextPreview || ""),
+		)
 
 		if (extracted.studentId && (!userId.trim() || isCorScan)) setUserId(extracted.studentId)
 		if (scannedFirstName && (!fname.trim() || isCorScan)) setFname(scannedFirstName)
 		if (scannedLastName && (!lname.trim() || isCorScan)) setLname(scannedLastName)
 		if (extracted.course && (!course || isCorScan)) setCourse(extracted.course)
-		if (extracted.year && (!year || isCorScan)) setYear(String(extracted.year))
+		if (isCorScan && extracted.year && scannedYearIsReliable) setYear(String(extracted.year))
 		if (extracted.gwa && (!gwa.trim() || isCogScan)) setGwa(extracted.gwa)
 
 		if (isCorScan && Array.isArray(extracted.academicConcernTerms) && extracted.academicConcernTerms.length > 0) {
@@ -847,8 +850,20 @@ export default function SignupPage() {
 		const expectedPreviousSemesterTag = getPreviousSemesterTag(currentSemesterTag)
 		const scannedSemesterTag = buildSemesterTagFromScan(extracted)
 		const corYear = documentScanResult.cor?.year || year
+		const corYearSource = documentScanResult.cor?.year ? "COR scan" : year ? "form field" : ""
 		const expectedRogYear = getExpectedPreviousRogYearLevel(corYear, currentSemesterTag)
 		const scannedRogYear = String(extracted?.year || "").replace(/\D/g, "").slice(0, 1)
+		const parsedCurrentSemester = parseSemesterTag(currentSemesterTag)
+		const corYearNumber = Number(String(corYear || "").replace(/\D/g, "").slice(0, 1))
+		const scannedRogYearNumber = Number(scannedRogYear)
+		const hasImpossibleYearProgression = Boolean(
+			corYearNumber &&
+			scannedRogYearNumber &&
+			(
+				(parsedCurrentSemester?.semester === "1ST" && scannedRogYearNumber >= corYearNumber) ||
+				(parsedCurrentSemester?.semester === "2ND" && scannedRogYearNumber > corYearNumber)
+			),
+		)
 
 		if (!scannedSemesterTag) {
 			const message = "Invalid ROG. The semester was not detected; upload a clear Report of Grades for the previous cycle."
@@ -880,6 +895,21 @@ export default function SignupPage() {
 			return false
 		}
 
+		if (expectedRogYear && scannedRogYear && expectedRogYear !== scannedRogYear && hasImpossibleYearProgression) {
+			console.warn("ROG year level mismatch skipped because the COR/form year appears unreliable.", {
+				currentSemesterTag,
+				expectedPreviousSemesterTag,
+				corYear,
+				corYearSource,
+				expectedRogYear,
+				scannedRogYear,
+				reason: "A previous-cycle ROG year cannot be ahead of, or equal to, the current COR year in this cycle.",
+				corScan: documentScanResult.cor,
+				rogScan: extracted,
+			})
+			return true
+		}
+
 		if (expectedRogYear && scannedRogYear && expectedRogYear !== scannedRogYear) {
 			const message = `Invalid ROG. Year level must match the previous cycle year level: Year ${expectedRogYear}.`
 			setDocumentUploadError("cog", message)
@@ -888,6 +918,7 @@ export default function SignupPage() {
 				currentSemesterTag,
 				expectedPreviousSemesterTag,
 				corYear,
+				corYearSource,
 				expectedRogYear,
 				scannedRogYear,
 				rogScan: extracted,
