@@ -188,7 +188,7 @@ export default function StudentRecommendedScholarshipsPage() {
 							</div>
 							<div className="student-recommendation-algorithm">
 								<HiOutlineCheckCircle />
-								<span>{algorithm || "Weighted Recommendation Scoring"}</span>
+								<span>Current GWA: {user?.gwa || user?.currentGwa || user?.generalWeightedAverage || "Not set"}</span>
 							</div>
 						</div>
 					</section>

@@ -204,6 +204,7 @@ export default function StudentProfilePage() {
 	const [isPhotoUploading, setIsPhotoUploading] = useState(false)
 	const [isDownloadingApplicationForm, setIsDownloadingApplicationForm] = useState(false)
 	const [isDocumentUploading, setIsDocumentUploading] = useState({
+		cor: false,
 		cog: false,
 		schoolId: false,
 		applicationForm: false,
@@ -215,12 +216,14 @@ export default function StudentProfilePage() {
 	const userMenuRef = useRef(null)
 	const forcedLogoutRef = useRef(false)
 	const fileInputRef = useRef(null)
+	const corFileInputRef = useRef(null)
 	const cogFileInputRef = useRef(null)
 	const schoolIdFileInputRef = useRef(null)
 	const applicationFormFileInputRef = useRef(null)
 	const { theme, setTheme } = useThemeMode()
 	const currentSemesterTag = getCurrentSemesterTag()
 	const profileImageUrl = user?.profileImageUrl || ""
+	const canUploadCor = canUploadDocument(user?.corFile, currentSemesterTag)
 	const canUploadCog = canUploadDocument(user?.cogFile, currentSemesterTag)
 	const canUploadSchoolId = canUploadDocument(user?.schoolIdFile, currentSemesterTag)
 	const canUploadApplicationForm = canUploadDocument(user?.scholarshipApplicationFile, currentSemesterTag)
@@ -297,6 +300,10 @@ export default function StudentProfilePage() {
 	}
 
 	const triggerDocumentUpload = (type) => {
+		if (type === "cor") {
+			corFileInputRef.current?.click()
+			return
+		}
 		if (type === "cog") {
 			cogFileInputRef.current?.click()
 			return
@@ -470,8 +477,8 @@ export default function StudentProfilePage() {
 			let fileToUpload = file
 			let applicationFormScan = null
 
-			// Convert PDF to image if needed (for COR and School ID)
-			if (isPdf(file) && (type === "cog" || type === "schoolId")) {
+			// Convert PDF to image if needed for document preview compatibility.
+			if (isPdf(file) && (type === "cor" || type === "cog" || type === "schoolId")) {
 				toast.info("Converting PDF to image...")
 				fileToUpload = await convertPdfToImageFile(file)
 				toast.success("PDF converted successfully!")
@@ -516,7 +523,9 @@ export default function StudentProfilePage() {
 
 			const uploadResult = await uploadToStorage(fileToUpload)
 			const fieldName =
-				type === "cog"
+				type === "cor"
+					? "corFile"
+					: type === "cog"
 					? "cogFile"
 					: type === "applicationForm"
 						? "scholarshipApplicationFile"
@@ -549,7 +558,9 @@ export default function StudentProfilePage() {
 
 			setUser((prev) => ({ ...(prev || {}), [fieldName]: nextFileValue }))
 			toast.success(
-				type === "cog"
+				type === "cor"
+					? "COR uploaded successfully."
+					: type === "cog"
 					? "COG uploaded successfully."
 					: type === "applicationForm"
 						? "Scholarship application uploaded successfully."
@@ -1035,15 +1046,42 @@ export default function StudentProfilePage() {
 											<h4>COR</h4>
 											<p>{documentStatus(user?.corFile, currentSemesterTag)}</p>
 										</div>
-										{user?.corFile?.url ? (
-											<button
-												type="button"
-												className="student-vault-link"
-												onClick={() => openDocumentPreview("Certificate of Registration (COR)", user.corFile)}
-											>
-												<HiOutlineDocumentText aria-hidden /> View COR
-											</button>
-										) : null}
+										<div className="student-vault-actions">
+											{user?.corFile?.url ? (
+												<button
+													type="button"
+													className="student-vault-link"
+													onClick={() => openDocumentPreview("Certificate of Registration (COR)", user.corFile)}
+												>
+													<HiOutlineDocumentText aria-hidden /> View COR
+												</button>
+											) : null}
+											{user?.corFile?.url || canUploadCor ? (
+												<button
+													type="button"
+													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
+													onClick={() => triggerDocumentUpload("cor")}
+													disabled={isDocumentUploading.cor}
+												>
+													{isDocumentUploading.cor
+														? "Uploading..."
+														: user?.corFile?.url
+															? "Update COR"
+															: "Upload COR"}
+												</button>
+											) : null}
+											<input
+												ref={corFileInputRef}
+												type="file"
+												accept=".png,.jpg,.jpeg,.pdf,image/*,application/pdf"
+												className="student-profile-file-input"
+												onChange={(e) => {
+													const file = e.target.files?.[0]
+													handleDocumentUpload("cor", file)
+													e.target.value = ""
+												}}
+											/>
+										</div>
 									</article>
 									<article className="student-vault-card">
 										<div>
@@ -1060,14 +1098,18 @@ export default function StudentProfilePage() {
 													<HiOutlineDocumentText aria-hidden /> View COG
 												</button>
 											) : null}
-											{canUploadCog ? (
+											{user?.cogFile?.url || canUploadCog ? (
 												<button
 													type="button"
 													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
 													onClick={() => triggerDocumentUpload("cog")}
 													disabled={isDocumentUploading.cog}
 												>
-													{isDocumentUploading.cog ? "Uploading..." : "Upload COG"}
+													{isDocumentUploading.cog
+														? "Uploading..."
+														: user?.cogFile?.url
+															? "Update COG"
+															: "Upload COG"}
 												</button>
 											) : null}
 											<input
@@ -1098,7 +1140,7 @@ export default function StudentProfilePage() {
 													<HiOutlineDocumentText aria-hidden /> View Student ID
 												</button>
 											) : null}
-											{canUploadSchoolId ? (
+											{user?.schoolIdFile?.url || canUploadSchoolId ? (
 												<button
 													type="button"
 													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
@@ -1107,7 +1149,9 @@ export default function StudentProfilePage() {
 												>
 													{isDocumentUploading.schoolId
 														? "Uploading..."
-														: "Upload Student ID"}
+														: user?.schoolIdFile?.url
+															? "Update Student ID"
+															: "Upload Student ID"}
 												</button>
 											) : null}
 											<input
@@ -1152,7 +1196,7 @@ export default function StudentProfilePage() {
 												<HiOutlineDownload aria-hidden />
 												{isDownloadingApplicationForm ? "Preparing..." : "Download Form"}
 											</button>
-											{canUploadApplicationForm ? (
+											{user?.scholarshipApplicationFile?.url || canUploadApplicationForm ? (
 												<button
 													type="button"
 													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
@@ -1161,7 +1205,9 @@ export default function StudentProfilePage() {
 												>
 													{isDocumentUploading.applicationForm
 														? "Uploading..."
-														: "Upload Application Form"}
+														: user?.scholarshipApplicationFile?.url
+															? "Update Application Form"
+															: "Upload Application Form"}
 												</button>
 											) : null}
 											<input
