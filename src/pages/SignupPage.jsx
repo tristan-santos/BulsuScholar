@@ -40,7 +40,11 @@ import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import logo2 from "../assets/logo2.png"
 
-const APP_URL = (import.meta.env.VITE_APP_URL || window.location.origin).replace(/\/$/, "")
+const APP_URL = (
+	import.meta.env.VITE_APP_URL ||
+	import.meta.env.VITE_PUBLIC_SITE_URL ||
+	"https://bulsu-scholar.vercel.app"
+).replace(/\/$/, "")
 
 const COURSES = [
 	{

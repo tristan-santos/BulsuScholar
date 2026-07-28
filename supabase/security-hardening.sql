@@ -38,35 +38,6 @@ create table if not exists "systemLogs" (
 	updated_at timestamptz not null default now()
 );
 
-create unique index if not exists students_email_normalized_unique
-	on students (lower(nullif(email, '')))
-	where nullif(email, '') is not null;
-
-create unique index if not exists pending_students_email_normalized_unique
-	on pending_students (lower(nullif(email, '')))
-	where nullif(email, '') is not null;
-
-create unique index if not exists students_cp_normalized_unique
-	on students (regexp_replace(coalesce(contact_number, ''), '\D', '', 'g'))
-	where regexp_replace(coalesce(contact_number, ''), '\D', '', 'g') <> '';
-
-create unique index if not exists pending_students_cp_normalized_unique
-	on pending_students (regexp_replace(coalesce(contact_number, ''), '\D', '', 'g'))
-	where regexp_replace(coalesce(contact_number, ''), '\D', '', 'g') <> '';
-
-create unique index if not exists student_document_usage_cor_hash_unique
-	on student_document_usage (cor_hash)
-	where cor_hash is not null and cor_hash <> '';
-
-create unique index if not exists student_document_usage_identity_cycle_unique
-	on student_document_usage (student_id, academic_year, semester)
-	where student_id is not null
-		and student_id <> ''
-		and academic_year is not null
-		and academic_year <> ''
-		and semester is not null
-		and semester <> '';
-
 create index if not exists student_notifications_student_id_idx on "studentNotifications" (student_id);
 create index if not exists grantor_notifications_grantor_id_idx on "grantorNotifications" (grantor_id);
 create index if not exists student_document_usage_student_id_idx on student_document_usage (student_id);
@@ -74,6 +45,115 @@ create index if not exists student_notifications_data_gin on "studentNotificatio
 create index if not exists grantor_notifications_data_gin on "grantorNotifications" using gin (data);
 create index if not exists student_document_usage_data_gin on student_document_usage using gin (data);
 create index if not exists system_logs_data_gin on "systemLogs" using gin (data);
+
+do $$
+begin
+	if not exists (
+		select 1
+		from (
+			select lower(nullif(email, '')) as normalized_email
+			from students
+			where nullif(email, '') is not null
+		) duplicates
+		group by normalized_email
+		having count(*) > 1
+	) then
+		create unique index if not exists students_email_normalized_unique
+			on students (lower(nullif(email, '')))
+			where nullif(email, '') is not null;
+	else
+		raise notice 'Skipped students_email_normalized_unique because duplicate student emails exist.';
+	end if;
+
+	if not exists (
+		select 1
+		from (
+			select lower(nullif(email, '')) as normalized_email
+			from pending_students
+			where nullif(email, '') is not null
+		) duplicates
+		group by normalized_email
+		having count(*) > 1
+	) then
+		create unique index if not exists pending_students_email_normalized_unique
+			on pending_students (lower(nullif(email, '')))
+			where nullif(email, '') is not null;
+	else
+		raise notice 'Skipped pending_students_email_normalized_unique because duplicate pending student emails exist.';
+	end if;
+
+	if not exists (
+		select 1
+		from (
+			select regexp_replace(coalesce(contact_number, ''), '\D', '', 'g') as normalized_cp
+			from students
+			where regexp_replace(coalesce(contact_number, ''), '\D', '', 'g') <> ''
+		) duplicates
+		group by normalized_cp
+		having count(*) > 1
+	) then
+		create unique index if not exists students_cp_normalized_unique
+			on students (regexp_replace(coalesce(contact_number, ''), '\D', '', 'g'))
+			where regexp_replace(coalesce(contact_number, ''), '\D', '', 'g') <> '';
+	else
+		raise notice 'Skipped students_cp_normalized_unique because duplicate student CP numbers exist.';
+	end if;
+
+	if not exists (
+		select 1
+		from (
+			select regexp_replace(coalesce(contact_number, ''), '\D', '', 'g') as normalized_cp
+			from pending_students
+			where regexp_replace(coalesce(contact_number, ''), '\D', '', 'g') <> ''
+		) duplicates
+		group by normalized_cp
+		having count(*) > 1
+	) then
+		create unique index if not exists pending_students_cp_normalized_unique
+			on pending_students (regexp_replace(coalesce(contact_number, ''), '\D', '', 'g'))
+			where regexp_replace(coalesce(contact_number, ''), '\D', '', 'g') <> '';
+	else
+		raise notice 'Skipped pending_students_cp_normalized_unique because duplicate pending student CP numbers exist.';
+	end if;
+
+	if not exists (
+		select 1
+		from student_document_usage
+		where cor_hash is not null and cor_hash <> ''
+		group by cor_hash
+		having count(*) > 1
+	) then
+		create unique index if not exists student_document_usage_cor_hash_unique
+			on student_document_usage (cor_hash)
+			where cor_hash is not null and cor_hash <> '';
+	else
+		raise notice 'Skipped student_document_usage_cor_hash_unique because duplicate COR hashes exist.';
+	end if;
+
+	if not exists (
+		select 1
+		from student_document_usage
+		where student_id is not null
+			and student_id <> ''
+			and academic_year is not null
+			and academic_year <> ''
+			and semester is not null
+			and semester <> ''
+		group by student_id, academic_year, semester
+		having count(*) > 1
+	) then
+		create unique index if not exists student_document_usage_identity_cycle_unique
+			on student_document_usage (student_id, academic_year, semester)
+			where student_id is not null
+				and student_id <> ''
+				and academic_year is not null
+				and academic_year <> ''
+				and semester is not null
+				and semester <> '';
+	else
+		raise notice 'Skipped student_document_usage_identity_cycle_unique because duplicate COR identity/cycle records exist.';
+	end if;
+end $$;
 
 do $$
 declare

@@ -1,6 +1,7 @@
 import { Resend } from "resend"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
+const DEFAULT_RESEND_FROM_EMAIL = "BulsuScholar <onboarding@resend.dev>"
 
 export default async function handler(request, response) {
 	if (request.method !== "POST") {
@@ -20,7 +21,7 @@ export default async function handler(request, response) {
 
 	try {
 		const result = await resend.emails.send({
-			from: process.env.RESEND_FROM_EMAIL || "BulsuScholar <noreply@bulsuscholar.com>",
+			from: process.env.RESEND_FROM_EMAIL || DEFAULT_RESEND_FROM_EMAIL,
 			to: recipient,
 			subject,
 			html: toName ? `<p>Hello ${toName},</p>${html}` : html,

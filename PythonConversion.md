@@ -169,12 +169,14 @@ VITE_PUBLIC_SITE_URL=https://bulsu-scholar.vercel.app
 Python backend:
 ```env
 RESEND_API_KEY=
-RESEND_FROM_EMAIL=BulsuScholar <noreply@your-domain.com>
+RESEND_FROM_EMAIL=BulsuScholar <onboarding@resend.dev>
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
 FRONTEND_URL=https://bulsu-scholar.vercel.app
 ```
+
+For production email branding, verify your domain in Resend before using a custom sender like `BulsuScholar <noreply@your-domain.com>`.
 
 ## Required Tests
 

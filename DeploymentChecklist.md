@@ -32,11 +32,13 @@ Required backend variables:
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 RESEND_API_KEY=
-RESEND_FROM_EMAIL=
+RESEND_FROM_EMAIL=BulsuScholar <onboarding@resend.dev>
 DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
 DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
 FRONTEND_URL=https://bulsu-scholar.vercel.app
 ```
+
+Use `BulsuScholar <onboarding@resend.dev>` only for testing. For production, verify your domain in Resend first, then change this to something like `BulsuScholar <noreply@your-verified-domain.com>`.
 
 Expected:
 - Backend can write to Supabase using the service role key.

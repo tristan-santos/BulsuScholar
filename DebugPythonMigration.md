@@ -60,7 +60,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
 FRONTEND_URL=https://bulsu-scholar.vercel.app
 RESEND_API_KEY=
-RESEND_FROM_EMAIL=
+RESEND_FROM_EMAIL=BulsuScholar <onboarding@resend.dev>
 ```
 
 Expected:
