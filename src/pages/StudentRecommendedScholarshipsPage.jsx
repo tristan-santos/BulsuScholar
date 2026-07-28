@@ -165,24 +165,31 @@ export default function StudentRecommendedScholarshipsPage() {
 			<main className="student-shell">
 				<div className="student-shell-content student-dashboard-surface">
 					<section className="student-recommendation-page-hero">
-						<button
-							type="button"
-							className="student-mini-btn student-mini-btn--secondary"
-							onClick={() => navigate("/student-dashboard")}
-						>
-							<HiOutlineArrowLeft />
-							Back to Dashboard
-						</button>
-						<div className="student-page-title">
-							<p className="student-bento-eyebrow">Recommendation Center</p>
-							<h2 className="student-page-heading">Recommended Scholarships</h2>
-							<p className="student-page-sub">
-								Open grantors ranked by your GWA, roster strength, and location profile.
-							</p>
+						<div className="student-recommendation-nav-row">
+							<button
+								type="button"
+								className="student-recommendation-back-btn"
+								onClick={() => navigate("/student-dashboard")}
+							>
+								<HiOutlineArrowLeft aria-hidden />
+								Back to Dashboard
+							</button>
 						</div>
-						<div className="student-recommendation-algorithm">
-							<HiOutlineCheckCircle />
-							<span>{algorithm || "Weighted Recommendation Scoring"}</span>
+						<div className="student-recommendation-hero-card">
+							<div className="student-recommendation-hero-icon">
+								<HiOutlineAcademicCap aria-hidden />
+							</div>
+							<div className="student-page-title">
+								<p className="student-bento-eyebrow">Recommendation Center</p>
+								<h2 className="student-page-heading">Recommended Scholarships</h2>
+								<p className="student-page-sub">
+									Open grantors ranked by your GWA, roster strength, and location profile.
+								</p>
+							</div>
+							<div className="student-recommendation-algorithm">
+								<HiOutlineCheckCircle />
+								<span>{algorithm || "Weighted Recommendation Scoring"}</span>
+							</div>
 						</div>
 					</section>
 
