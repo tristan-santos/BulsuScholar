@@ -2836,6 +2836,21 @@
 	white-space: nowrap;
 }
 
+.student-scholarship-board-actions {
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.6rem;
+	flex: 0 0 auto;
+}
+
+.student-scholarship-board-actions .student-mini-btn {
+	min-height: 34px;
+	padding: 0 0.7rem;
+	font-size: 0.72rem;
+	white-space: nowrap;
+}
+
 .student-lock-banner {
 	display: flex;
 	align-items: flex-start;

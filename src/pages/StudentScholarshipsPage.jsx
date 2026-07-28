@@ -21,6 +21,7 @@ import {
 	HiOutlineCheckCircle,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
+	HiOutlineExternalLink,
 	HiX,
 } from "react-icons/hi"
 import { db } from "../services/supabaseDataService"
@@ -66,6 +67,10 @@ import {
 } from "../services/grantorService"
 import { applyScholarshipWorkflow, materialRequestWorkflow } from "../services/workflowService"
 import { syncStudentGrantorRosterMatches } from "../services/studentGrantorMatchService"
+import {
+	buildRecommendationApplyPayload,
+	loadRecommendedScholarships,
+} from "../services/recommendedScholarshipService"
 
 const SOE_EXPORT_LOCK_MONTHS = 6
 
@@ -190,6 +195,16 @@ function buildDocumentRequirementPrompt(documentCheck, scholarshipName = "this s
 	)
 }
 
+function formatDisplayText(value, fallback = "") {
+	const text = String(value ?? "").trim()
+	if (!text) return fallback
+	if (text.includes("@")) return text.toLowerCase()
+	if (/^[\d\s+()./-]+$/.test(text)) return text
+	return text
+		.toLowerCase()
+		.replace(/\b([a-z])([a-z]*)/g, (_, first, rest) => `${first.toUpperCase()}${rest}`)
+}
+
 export default function StudentScholarshipsPage() {
 	const location = useLocation()
 	const navigate = useNavigate()
@@ -204,6 +219,10 @@ export default function StudentScholarshipsPage() {
 	const [expenseModalTarget, setExpenseModalTarget] = useState(null)
 	const [studentSoeRequests, setStudentSoeRequests] = useState([])
 	const [studentSoeDownloads, setStudentSoeDownloads] = useState([])
+	const [recommendedScholarships, setRecommendedScholarships] = useState([])
+	const [recommendationsLoading, setRecommendationsLoading] = useState(false)
+	const [recommendationAlgorithm, setRecommendationAlgorithm] = useState("")
+	const [applyingRecommendationId, setApplyingRecommendationId] = useState("")
 	const [soeExpenses, setSoeExpenses] = useState([{ label: "", amount: "" }])
 	const [isExportingSoe, setIsExportingSoe] = useState(false)
 	const [isDownloadingSoe, setIsDownloadingSoe] = useState(false)
@@ -224,6 +243,10 @@ export default function StudentScholarshipsPage() {
 	const scholarships = useMemo(
 		() => normalizeScholarshipList(user?.scholarships || []),
 		[user?.scholarships],
+	)
+	const recommendationPreview = useMemo(
+		() => recommendedScholarships.slice(0, 3),
+		[recommendedScholarships],
 	)
 	const hasMultipleScholarshipChoices = scholarships.length >= 2
 	const hasLockedScholarship = scholarships.some((item) => item.isLocked)
@@ -432,6 +455,42 @@ export default function StudentScholarshipsPage() {
 			() => setGrantorPortals([]),
 		)
 	}, [])
+
+	useEffect(() => {
+		if (!userLoaded || !user || !userId) return
+		if (hasActiveOrPendingScholarship) {
+			setRecommendedScholarships([])
+			setRecommendationAlgorithm("")
+			setRecommendationsLoading(false)
+			return
+		}
+
+		let cancelled = false
+		setRecommendationsLoading(true)
+		loadRecommendedScholarships({
+			...user,
+			id: userId,
+			studentId: user.studentId || user.studentnumber || userId,
+		})
+			.then((result) => {
+				if (cancelled) return
+				setRecommendedScholarships(result.recommendations || [])
+				setRecommendationAlgorithm(result.algorithm || "")
+			})
+			.catch((error) => {
+				if (cancelled) return
+				console.error("StudentScholarshipsPage: recommendation loading failed:", error)
+				setRecommendedScholarships([])
+				setRecommendationAlgorithm("")
+			})
+			.finally(() => {
+				if (!cancelled) setRecommendationsLoading(false)
+			})
+
+		return () => {
+			cancelled = true
+		}
+	}, [hasActiveOrPendingScholarship, user, userId, userLoaded])
 
 	useEffect(() => {
 		if (location.state?.fromAnnouncement !== true) return
@@ -983,6 +1042,36 @@ export default function StudentScholarshipsPage() {
 		await syncWarnings(nextScholarships)
 		if (message) {
 			toast.success(message)
+		}
+	}
+
+	const applyRecommendedScholarship = async (recommendation) => {
+		if (!user || !userId || isMutating || applyingRecommendationId) return
+		if (isScholarshipActionBlocked()) return
+		if (hasLockedScholarship || hasActiveOrPendingScholarship) {
+			toast.info(applicationLockTooltip)
+			return
+		}
+
+		const recommendationId = recommendation.grantorId || recommendation.id
+		setIsMutating(true)
+		setApplyingRecommendationId(recommendationId)
+		try {
+			const { workflowPayload } = buildRecommendationApplyPayload(user, userId, recommendation)
+			await applyScholarshipWorkflow(workflowPayload)
+			setUser((prev) => ({
+				...(prev || {}),
+				scholarships: workflowPayload.studentUpdate.scholarships,
+				updatedAt: serverTimestamp(),
+			}))
+			await syncWarnings(workflowPayload.studentUpdate.scholarships)
+			toast.success(`Application sent to ${recommendation.grantorName || "the grantor"}. Upload the required documents next to continue.`)
+		} catch (error) {
+			console.error("Failed to apply recommended scholarship:", error)
+			toast.error("Failed to apply recommended scholarship. Please try again.")
+		} finally {
+			setApplyingRecommendationId("")
+			setIsMutating(false)
 		}
 	}
 
@@ -2327,66 +2416,69 @@ export default function StudentScholarshipsPage() {
 							<div className="student-scholarship-board" ref={availableProgramsRef}>
 								<div className="student-scholarship-board-head">
 									<div>
-										<span>Program Catalog</span>
-										<h3>Available Programs</h3>
+										<span>Recommendation Center</span>
+										<h3>Recommended Scholarships</h3>
 									</div>
-									<strong>{scholarshipCatalog.length} listed</strong>
+									<div className="student-scholarship-board-actions">
+										<strong>{recommendedScholarships.length} matched</strong>
+										<button
+											type="button"
+											className="student-mini-btn student-mini-btn--secondary"
+											onClick={() => navigate("/student-dashboard/recommended-scholarships")}
+										>
+											See all
+											<HiOutlineExternalLink aria-hidden />
+										</button>
+									</div>
 								</div>
-								<div className="student-program-grid">
-									{scholarshipCatalog.map((catalogItem) => {
-										const blockedByGrantor = blockedProviderTypes.has(
-											catalogItem.providerType,
-										)
-										const applyDisabled =
-											blockedByGrantor ||
-											hasLockedScholarship ||
-											hasScholarshipActionBlock ||
-											isMutating
-										const tooltip = hasScholarshipActionBlock
-											? scholarshipActionBlockMessage
-											: blockedByGrantor
-												? `Applications for ${
-														blockedProviderLabels[catalogItem.providerType] || catalogItem.name
-												  } are currently closed.`
-												: ""
-										const isAnnouncementFocused =
-											announcementFocusProviderType === catalogItem.providerType
-
-										return (
-											<article
-												key={catalogItem.providerType}
-												className={`student-program-card ${
-													isAnnouncementFocused ? "student-program-card--highlight" : ""
-												}`.trim()}
-											>
-												<h4>{catalogItem.name}</h4>
-												<p>
-													{catalogItem.requiresFullDocs
-														? "Requires COR and COG"
-														: "Requires COR and COG"}
-												</p>
-												<div className="student-program-actions">
+								{recommendationsLoading ? (
+									<div className="student-modern-recommended-empty">
+										<HiOutlineAcademicCap />
+										<strong>Finding recommended scholarships...</strong>
+										<p>Checking open grantors, minimum GWA, roster strength, and location fit.</p>
+									</div>
+								) : recommendationPreview.length === 0 ? (
+									<div className="student-modern-recommended-empty">
+										<HiOutlineAcademicCap />
+										<strong>No recommended scholarship yet.</strong>
+										<p>No open grantor currently matches your GWA and profile.</p>
+									</div>
+								) : (
+									<div className="student-modern-recommendation-grid">
+										{recommendationPreview.map((recommendation) => {
+											const recommendationId = recommendation.grantorId || recommendation.id
+											const grantorInitials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
+											return (
+												<article key={recommendationId} className="student-modern-recommendation-card">
+													<div className="student-modern-recommendation-top">
+														<span className="student-modern-recommendation-avatar">
+															{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
+																<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt="" />
+															) : grantorInitials}
+														</span>
+														<div>
+															<strong>{formatDisplayText(recommendation.grantorName, "Grantor")}</strong>
+															<small>Minimum GWA {recommendation.minimumGwa || recommendation.minGwa || "Not set"}</small>
+														</div>
+													</div>
+													<div className="student-modern-recommendation-body">
+														<span>{recommendation.label || "This scholarship is best for you"}</span>
+														<h4>{formatDisplayText(recommendation.announcementTitle || recommendation.providerLabel || recommendation.grantorName, "Scholarship")}</h4>
+														<p>{(recommendation.reasons || []).slice(0, 2).join(" | ") || recommendationAlgorithm || "Open application that matches your student profile."}</p>
+													</div>
 													<button
 														type="button"
-														className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
-														disabled={applyDisabled}
-														title={tooltip}
-														onClick={() => applyScholarship(catalogItem)}
+														onClick={() => applyRecommendedScholarship(recommendation)}
+														disabled={Boolean(applyingRecommendationId) || isMutating || hasScholarshipActionBlock}
 													>
-														{hasScholarshipActionBlock
-															? "Blocked"
-															: blockedByGrantor
-																? "Apply Closed"
-															: hasLockedScholarship
-																? "Finalized"
-																: "Apply"}
+														<HiOutlineAcademicCap />
+														{applyingRecommendationId === recommendationId ? "Applying..." : "Apply"}
 													</button>
-												</div>
-												{tooltip && <span className="student-program-tooltip">{tooltip}</span>}
-											</article>
-										)
-									})}
-								</div>
+												</article>
+											)
+										})}
+									</div>
+								)}
 							</div>
 						) : null}
 						</section>
