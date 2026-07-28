@@ -9,6 +9,7 @@ import {
 	doc,
 	onSnapshot,
 	query,
+	serverTimestamp,
 	where,
 } from "../services/supabaseDataService"
 import {
@@ -42,6 +43,11 @@ import {
 	getStudentAccessState,
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
+import {
+	buildRecommendationApplyPayload,
+	loadRecommendedScholarships,
+} from "../services/recommendedScholarshipService"
+import { applyScholarshipWorkflow } from "../services/workflowService"
 import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
 
@@ -147,6 +153,10 @@ export default function StudentDashboard() {
 	const [userLoaded, setUserLoaded] = useState(() => !sessionState.isStudent)
 	const [announcements, setAnnouncements] = useState([])
 	const [studentNotifications, setStudentNotifications] = useState([])
+	const [recommendedScholarships, setRecommendedScholarships] = useState([])
+	const [recommendationAlgorithm, setRecommendationAlgorithm] = useState("")
+	const [recommendationsLoading, setRecommendationsLoading] = useState(false)
+	const [applyingRecommendationId, setApplyingRecommendationId] = useState("")
 	const [readAnnouncementIds, setReadAnnouncementIds] = useState(() =>
 		loadReadAnnouncementIds(sessionStorage.getItem("bulsuscholar_userId")),
 	)
@@ -328,6 +338,10 @@ export default function StudentDashboard() {
 	)
 	const scholarshipPreview = scholarships.slice(0, 6)
 	const latestAnnouncements = useMemo(() => announcements.slice(0, 3), [announcements])
+	const recommendationPreview = useMemo(
+		() => recommendedScholarships.slice(0, 3),
+		[recommendedScholarships],
+	)
 	const unreadStudentNotifications = useMemo(
 		() => studentNotifications.filter((item) => item.read !== true),
 		[studentNotifications],
@@ -364,6 +378,41 @@ export default function StudentDashboard() {
 		scholarships[0]?.provider ||
 		""
 
+	useEffect(() => {
+		if (!userLoaded || !user) return
+		if (scholarships.length > 0) {
+			setRecommendedScholarships([])
+			setRecommendationAlgorithm("")
+			return
+		}
+
+		let cancelled = false
+		setRecommendationsLoading(true)
+		loadRecommendedScholarships({
+			...user,
+			id: sessionState.storedUserId,
+			studentId: user.studentId || user.studentnumber || sessionState.storedUserId,
+		})
+			.then((result) => {
+				if (cancelled) return
+				setRecommendedScholarships(result.recommendations || [])
+				setRecommendationAlgorithm(result.algorithm || "")
+			})
+			.catch((error) => {
+				if (cancelled) return
+				console.error("StudentDashboard: recommendation loading failed:", error)
+				setRecommendedScholarships([])
+				setRecommendationAlgorithm("")
+			})
+			.finally(() => {
+				if (!cancelled) setRecommendationsLoading(false)
+			})
+
+		return () => {
+			cancelled = true
+		}
+	}, [scholarships.length, sessionState.storedUserId, user, userLoaded])
+
 	const userInitials = `${user?.fname?.[0]?.toUpperCase() || ""}${user?.lname?.[0]?.toUpperCase() || ""}` || "ST"
 
 	const handleContactSupport = useCallback(() => {
@@ -386,6 +435,50 @@ export default function StudentDashboard() {
 			navigate(`/student-dashboard/announcements/${source}/${announcementId}`)
 		},
 		[navigate],
+	)
+
+	const applyRecommendedScholarship = useCallback(
+		async (recommendation) => {
+			if (!user || !sessionState.storedUserId || applyingRecommendationId) return
+			if (studentAccessState.isScholarshipActionBlocked) {
+				toast.error(getStudentBlockedBannerMessage(user || {}))
+				return
+			}
+			if (scholarships.length > 0) {
+				toast.info("You already have an existing scholarship application.")
+				return
+			}
+
+			setApplyingRecommendationId(recommendation.grantorId || recommendation.id)
+			try {
+				const { workflowPayload } = buildRecommendationApplyPayload(
+					user,
+					sessionState.storedUserId,
+					recommendation,
+				)
+				await applyScholarshipWorkflow(workflowPayload)
+				setUser((prev) => ({
+					...(prev || {}),
+					scholarships: workflowPayload.studentUpdate.scholarships,
+					updatedAt: serverTimestamp(),
+				}))
+				toast.success(`Application sent to ${recommendation.grantorName || "the grantor"}.`)
+				navigate("/student-dashboard/scholarships")
+			} catch (error) {
+				console.error("StudentDashboard: recommended scholarship apply failed:", error)
+				toast.error("Failed to apply for this recommendation. Please try again.")
+			} finally {
+				setApplyingRecommendationId("")
+			}
+		},
+		[
+			applyingRecommendationId,
+			navigate,
+			scholarships.length,
+			sessionState.storedUserId,
+			studentAccessState.isScholarshipActionBlocked,
+			user,
+		],
 	)
 
 	const fullName = formatDisplayText(
@@ -711,7 +804,7 @@ export default function StudentDashboard() {
 								<div className="student-detail-field"><span>Email</span><strong>{studentEmail}</strong></div>
 							</div>
 							<div className="student-detail-metrics">
-								<article><span><HiOutlineAcademicCap /></span><div><strong className={scholarships.length > 0 ? "student-detail-scholarship-value" : ""}>{scholarships.length > 0 ? activeScholarshipName : scholarships.length}</strong><p>{scholarships.length > 0 ? "Active Scholar" : "Recommended Scholarships"}</p></div></article>
+								<article><span><HiOutlineAcademicCap /></span><div><strong className={scholarships.length > 0 ? "student-detail-scholarship-value" : ""}>{scholarships.length > 0 ? activeScholarshipName : recommendedScholarships.length}</strong><p>{scholarships.length > 0 ? "Active Scholar" : "Recommended Scholarships"}</p></div></article>
 								<article><span><HiOutlineCheckCircle /></span><div><strong>{currentGwa}</strong><p>Current GWA</p></div></article>
 								<article><span><HiOutlineDocumentText /></span><div><strong>{needsDocumentRenewal ? "Not Complied Yet" : "Complied"}</strong><p>Document Status</p></div></article>
 							</div>
@@ -752,13 +845,70 @@ export default function StudentDashboard() {
 
 						<section className="student-modern-section">
 							<header className="student-modern-section-head">
-								<div><h3>Recommended Scholarships</h3><p>Personalized scholarship suggestions will appear here later.</p></div>
+								<div>
+									<h3>Recommended Scholarships</h3>
+									<p>{recommendationAlgorithm || "Ranked by GWA, roster strength, and location fit."}</p>
+								</div>
+								{recommendedScholarships.length > 3 ? (
+									<button type="button" onClick={() => navigate("/student-dashboard/recommended-scholarships")}>
+										Show all recommended scholarships <HiOutlineExternalLink />
+									</button>
+								) : null}
 							</header>
-							<div className="student-modern-recommended-empty">
-								<HiOutlineAcademicCap />
-								<strong>No recommendations yet.</strong>
-								<p>Recommended scholarships will be shown here after matching is enabled.</p>
-							</div>
+							{scholarships.length > 0 ? (
+								<div className="student-modern-recommended-empty">
+									<HiOutlineAcademicCap />
+									<strong>You already have a scholarship application.</strong>
+									<p>New recommendations are hidden until your current application is resolved.</p>
+								</div>
+							) : recommendationsLoading ? (
+								<div className="student-modern-recommended-empty">
+									<HiOutlineAcademicCap />
+									<strong>Finding your best scholarship matches...</strong>
+									<p>Checking open grantors, GWA requirements, roster strength, and location.</p>
+								</div>
+							) : recommendationPreview.length === 0 ? (
+								<div className="student-modern-recommended-empty">
+									<HiOutlineAcademicCap />
+									<strong>No recommended scholarship yet.</strong>
+									<p>No open grantor currently matches your GWA and profile.</p>
+								</div>
+							) : (
+								<div className="student-modern-recommendation-grid">
+									{recommendationPreview.map((recommendation) => {
+										const grantorInitials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
+										const applyingId = recommendation.grantorId || recommendation.id
+										return (
+											<article key={applyingId} className="student-modern-recommendation-card">
+												<div className="student-modern-recommendation-top">
+													<span className="student-modern-recommendation-avatar">
+														{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
+															<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt="" />
+														) : grantorInitials}
+													</span>
+													<div>
+														<strong>{formatDisplayText(recommendation.grantorName, "Grantor")}</strong>
+														<small>Minimum GWA {recommendation.minimumGwa || recommendation.minGwa || "Not set"}</small>
+													</div>
+												</div>
+												<div className="student-modern-recommendation-body">
+													<span>{recommendation.label || "This scholarship is best for you"}</span>
+													<h4>{formatDisplayText(recommendation.announcementTitle || recommendation.providerLabel || recommendation.grantorName, "Scholarship")}</h4>
+													<p>{(recommendation.reasons || []).slice(0, 2).join(" | ") || "Open application that matches your student profile."}</p>
+												</div>
+												<button
+													type="button"
+													onClick={() => applyRecommendedScholarship(recommendation)}
+													disabled={Boolean(applyingRecommendationId)}
+												>
+													<HiOutlineAcademicCap />
+													{applyingRecommendationId === applyingId ? "Applying..." : "Apply"}
+												</button>
+											</article>
+										)
+									})}
+								</div>
+							)}
 						</section>
 
 						<section className="student-modern-section">

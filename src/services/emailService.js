@@ -142,29 +142,64 @@ export const getWelcomeEmailBody = (studentName = "Student", options = {}) => {
     buttonLabel: "Open Student Portal",
     buttonUrl: dashboardUrl,
     children: `
-      <div style="border:1px solid #dbe9e2;border-radius:12px;padding:18px 18px;background:#fbfefc;">
-        <div style="color:#00633c;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;">${verificationLabel}</div>
-        <p style="margin:8px 0 0;color:#314357;font-size:14px;line-height:1.65;">${verificationCopy}</p>
+      <div style="border-radius:16px;overflow:hidden;background:#00633c;box-shadow:0 16px 34px rgba(0,99,60,0.18);">
+        <div style="padding:22px 22px;background:linear-gradient(135deg,#00633c 0%,#16875c 58%,#eef8f3 180%);">
+          <div style="display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.16);color:#ffffff;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;">${verificationLabel}</div>
+          <p style="margin:12px 0 0;color:#ffffff;font-size:20px;line-height:1.35;font-weight:800;">Your student scholarship workspace is ready.</p>
+          <p style="margin:8px 0 0;color:#dff8ec;font-size:14px;line-height:1.65;">${verificationCopy}</p>
+        </div>
       </div>
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:18px;border-collapse:collapse;">
+
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:18px;border-collapse:separate;border-spacing:0 10px;">
         <tr>
-          <td style="padding:14px;border:1px solid #dbe9e2;border-radius:10px;background:#ffffff;">
-            <strong style="display:block;color:#052f20;font-size:15px;">Track scholarship progress</strong>
-            <span style="display:block;margin-top:5px;color:#53667b;font-size:13px;line-height:1.5;">See your current application step, document status, and scholarship updates.</span>
+          <td style="width:42px;vertical-align:top;">
+            <div style="width:32px;height:32px;border-radius:50%;background:#e8f5ef;color:#00633c;text-align:center;line-height:32px;font-size:13px;font-weight:800;">1</div>
+          </td>
+          <td style="padding:0 0 0 4px;vertical-align:top;">
+            <strong style="display:block;color:#052f20;font-size:14px;">Confirm your email</strong>
+            <span style="display:block;margin-top:3px;color:#53667b;font-size:13px;line-height:1.5;">Use the verification email from Supabase if your account still asks for confirmation.</span>
           </td>
         </tr>
-        <tr><td style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr>
-          <td style="padding:14px;border:1px solid #dbe9e2;border-radius:10px;background:#ffffff;">
-            <strong style="display:block;color:#052f20;font-size:15px;">Read announcements</strong>
-            <span style="display:block;margin-top:5px;color:#53667b;font-size:13px;line-height:1.5;">View scholarship openings, application windows, and grantor notices.</span>
+          <td style="width:42px;vertical-align:top;">
+            <div style="width:32px;height:32px;border-radius:50%;background:#e8f5ef;color:#00633c;text-align:center;line-height:32px;font-size:13px;font-weight:800;">2</div>
+          </td>
+          <td style="padding:0 0 0 4px;vertical-align:top;">
+            <strong style="display:block;color:#052f20;font-size:14px;">Review your document vault</strong>
+            <span style="display:block;margin-top:3px;color:#53667b;font-size:13px;line-height:1.5;">Check your COR, ROG, Student ID, and application form records after signing in.</span>
           </td>
         </tr>
-        <tr><td style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr>
-          <td style="padding:14px;border:1px solid #dbe9e2;border-radius:10px;background:#ffffff;">
-            <strong style="display:block;color:#052f20;font-size:15px;">Manage documents</strong>
-            <span style="display:block;margin-top:5px;color:#53667b;font-size:13px;line-height:1.5;">Upload and review your COR, ROG, Student ID, and application form records.</span>
+          <td style="width:42px;vertical-align:top;">
+            <div style="width:32px;height:32px;border-radius:50%;background:#e8f5ef;color:#00633c;text-align:center;line-height:32px;font-size:13px;font-weight:800;">3</div>
+          </td>
+          <td style="padding:0 0 0 4px;vertical-align:top;">
+            <strong style="display:block;color:#052f20;font-size:14px;">Watch announcements and inbox</strong>
+            <span style="display:block;margin-top:3px;color:#53667b;font-size:13px;line-height:1.5;">Grantor updates, application actions, and system notices will appear in your student portal.</span>
+          </td>
+        </tr>
+      </table>
+
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:14px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:14px;border:1px solid #dbe9e2;border-radius:12px;background:#fbfefc;">
+            <div style="color:#00633c;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;">What you can do next</div>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:12px;border-collapse:collapse;">
+              <tr>
+                <td style="padding:10px 8px;border-right:1px solid #dbe9e2;text-align:center;">
+                  <strong style="display:block;color:#052f20;font-size:13px;">Progress</strong>
+                  <span style="display:block;margin-top:4px;color:#53667b;font-size:12px;line-height:1.45;">Track stages</span>
+                </td>
+                <td style="padding:10px 8px;border-right:1px solid #dbe9e2;text-align:center;">
+                  <strong style="display:block;color:#052f20;font-size:13px;">Inbox</strong>
+                  <span style="display:block;margin-top:4px;color:#53667b;font-size:12px;line-height:1.45;">Read notices</span>
+                </td>
+                <td style="padding:10px 8px;text-align:center;">
+                  <strong style="display:block;color:#052f20;font-size:13px;">Documents</strong>
+                  <span style="display:block;margin-top:4px;color:#53667b;font-size:12px;line-height:1.45;">Manage files</span>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
       </table>

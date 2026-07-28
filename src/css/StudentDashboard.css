@@ -4392,6 +4392,22 @@
 .student-modern-scholarship-item h4 { margin: 0; overflow: hidden; color: #17342a; font-size: 0.86rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .student-modern-announcement-body p { display: -webkit-box; min-height: 2.4rem; margin: 0; overflow: hidden; color: #64748b; font-size: 0.72rem; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .student-modern-announcement-body > button { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; margin-top: 0.2rem; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+.student-modern-recommendation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; }
+.student-modern-recommendation-card { display: grid; grid-template-rows: auto 1fr auto; gap: 0.7rem; min-width: 0; padding: 0.85rem; border: 1px solid #dce7e1; border-radius: 7px; background: #fff; }
+.student-modern-recommendation-top { display: flex; align-items: center; gap: 0.65rem; min-width: 0; }
+.student-modern-recommendation-avatar { display: grid; flex: 0 0 auto; place-items: center; width: 44px; height: 44px; overflow: hidden; border-radius: 50%; background: #eef8f3; color: #00633c; font-size: 0.78rem; font-weight: 700; }
+.student-modern-recommendation-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.student-modern-recommendation-top div { min-width: 0; }
+.student-modern-recommendation-top strong,
+.student-modern-recommendation-top small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student-modern-recommendation-top strong { color: #17342a; font-size: 0.82rem; font-weight: 700; }
+.student-modern-recommendation-top small { margin-top: 0.12rem; color: #64748b; font-size: 0.7rem; }
+.student-modern-recommendation-body { display: grid; gap: 0.35rem; align-content: start; min-width: 0; }
+.student-modern-recommendation-body > span { width: fit-content; max-width: 100%; padding: 0.24rem 0.5rem; border: 1px solid #b9d8ca; border-radius: 999px; color: #00633c; font-size: 0.66rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student-modern-recommendation-body h4 { margin: 0; color: #17342a; font-size: 0.9rem; font-weight: 700; line-height: 1.25; }
+.student-modern-recommendation-body p { display: -webkit-box; min-height: 2.1rem; margin: 0; overflow: hidden; color: #64748b; font-size: 0.72rem; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.student-modern-recommendation-card > button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+.student-modern-recommendation-card > button:disabled { border-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
 .student-modern-recommended-empty,
 .student-modern-empty { display: grid; place-items: center; min-height: 126px; border: 1px dashed #b9d8ca; border-radius: 7px; background: #fbfdfc; text-align: center; }
 .student-modern-recommended-empty svg,
@@ -4443,6 +4459,19 @@
 .student-modern-action-grid svg { width: 1.25rem; height: 1.25rem; }
 .student-modern-action-grid span { color: #17342a; font-size: 0.82rem; font-weight: 700; }
 .student-modern-action-grid small { color: #64748b; font-size: 0.7rem; line-height: 1.35; }
+
+.student-recommendation-page-hero { display: grid; gap: 1rem; padding: 1rem 0 1.25rem; border-bottom: 1px solid #dce7e1; }
+.student-recommendation-algorithm { display: inline-flex; align-items: center; gap: 0.45rem; width: fit-content; padding: 0.45rem 0.65rem; border: 1px solid #dce7e1; border-radius: 999px; color: #00633c; font-size: 0.72rem; font-weight: 700; }
+.student-recommendation-page-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9rem; padding: 1rem 0 2rem; }
+.student-recommendation-page-card { position: relative; display: grid; gap: 0.8rem; min-width: 0; padding: 1rem; border: 1px solid #dce7e1; border-radius: 8px; background: #fff; }
+.student-recommendation-rank { position: absolute; top: 0.85rem; right: 0.85rem; display: grid; place-items: center; min-width: 40px; height: 28px; padding: 0 0.55rem; border: 1px solid #b9d8ca; border-radius: 999px; color: #00633c; font-size: 0.72rem; font-weight: 800; }
+.student-recommendation-page-card h3 { margin: 0; padding-right: 2.5rem; color: #17342a; font-size: 1rem; font-weight: 700; line-height: 1.25; }
+.student-recommendation-page-card p { margin: 0; color: #64748b; font-size: 0.76rem; line-height: 1.45; }
+.student-recommendation-meta-grid { display: grid; gap: 0.45rem; }
+.student-recommendation-meta-grid span { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; color: #334155; font-size: 0.72rem; }
+.student-recommendation-meta-grid svg { flex: 0 0 auto; color: #00633c; }
+.student-recommendation-reasons { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.student-recommendation-reasons span { padding: 0.22rem 0.48rem; border-radius: 999px; background: #eef8f3; color: #00633c; font-size: 0.66rem; font-weight: 700; }
 
 .student-inbox-panel {
 	display: grid;
@@ -4740,6 +4769,7 @@
 
 .student-modern-section-head button:hover,
 .student-modern-announcement-body > button:hover,
+.student-modern-recommendation-card > button:hover,
 .student-modern-action-grid button:hover {
 	border-color: #004f30;
 	background: #f4fbf8;
@@ -4756,6 +4786,7 @@
 .student-mini-btn:active,
 .student-modern-section-head button:active,
 .student-modern-announcement-body > button:active,
+.student-modern-recommendation-card > button:active,
 .student-modern-action-grid button:active {
 	transform: translateY(0) scale(0.98);
 }
@@ -4769,6 +4800,8 @@
 }
 .student-dashboard--dark .student-modern-profile-chip,
 .student-dashboard--dark .student-modern-announcement-card,
+.student-dashboard--dark .student-modern-recommendation-card,
+.student-dashboard--dark .student-recommendation-page-card,
 .student-dashboard--dark .student-modern-scholarship-item,
 .student-dashboard--dark .student-modern-action-grid button,
 .student-dashboard--dark .student-header-notification-btn,
@@ -4784,6 +4817,9 @@
 .student-dashboard--dark .student-modern-profile-chip strong,
 .student-dashboard--dark .student-modern-announcement-body h4,
 .student-dashboard--dark .student-modern-announcement-author strong,
+.student-dashboard--dark .student-modern-recommendation-top strong,
+.student-dashboard--dark .student-modern-recommendation-body h4,
+.student-dashboard--dark .student-recommendation-page-card h3,
 .student-dashboard--dark .student-modern-scholarship-item h4,
 .student-dashboard--dark .student-modern-action-grid span { color: #f8fafc; }
 .student-dashboard--dark .student-modern-welcome small,
@@ -4795,15 +4831,26 @@
 .student-dashboard--dark .student-modern-profile-chip small,
 .student-dashboard--dark .student-modern-announcement-body p,
 .student-dashboard--dark .student-modern-announcement-author small,
+.student-dashboard--dark .student-modern-recommendation-top small,
+.student-dashboard--dark .student-modern-recommendation-body p,
+.student-dashboard--dark .student-recommendation-page-card p,
+.student-dashboard--dark .student-recommendation-meta-grid span,
 .student-dashboard--dark .student-modern-scholarship-item p,
 .student-dashboard--dark .student-modern-action-grid small { color: #94a3b8; }
 .student-dashboard--dark .student-modern-recommended-empty,
 .student-dashboard--dark .student-modern-empty,
 .student-dashboard--dark .student-detail-avatar,
 .student-dashboard--dark .student-modern-announcement-media,
+.student-dashboard--dark .student-modern-recommendation-avatar,
 .student-dashboard--dark .student-modern-scholarship-item > span { border-color: #334155; background: #0f172a; }
 .student-dashboard--dark .student-modern-announcement-author > span { background: rgba(0, 99, 60, 0.24); color: #6ee7b7; }
-.student-dashboard--dark .student-modern-announcement-body > button { border-color: #34d399; background: #111827; color: #6ee7b7; }
+.student-dashboard--dark .student-modern-announcement-body > button,
+.student-dashboard--dark .student-modern-recommendation-card > button { border-color: #34d399; background: #111827; color: #6ee7b7; }
+.student-dashboard--dark .student-modern-recommendation-body > span,
+.student-dashboard--dark .student-recommendation-algorithm,
+.student-dashboard--dark .student-recommendation-rank { border-color: #334155; color: #6ee7b7; }
+.student-dashboard--dark .student-recommendation-reasons span { background: rgba(0, 99, 60, 0.26); color: #6ee7b7; }
+.student-dashboard--dark .student-recommendation-page-hero { border-color: #334155; }
 .student-dashboard--dark .student-inbox-panel { border-color: #334155; background: #111827; box-shadow: none; }
 .student-dashboard--dark .student-inbox-head,
 .student-dashboard--dark .student-inbox-group > header,
@@ -7319,12 +7366,22 @@
 		grid-template-columns: 1fr;
 	}
 
+	.student-modern-recommendation-grid,
+	.student-recommendation-page-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
 	.student-scholarship-control-stats {
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 }
 
 @media (max-width: 680px) {
+	.student-modern-recommendation-grid,
+	.student-recommendation-page-grid {
+		grid-template-columns: 1fr;
+	}
+
 	.student-scholarship-control-stats,
 	.student-kwsp-next-meta {
 		grid-template-columns: 1fr;

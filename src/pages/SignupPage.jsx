@@ -239,6 +239,10 @@ function getSignupWorkflowErrorMessage(error = {}) {
 		["missing_rog_cycle", "The ROG semester was not detected. Please upload a clear Report of Grades for the previous cycle."],
 		["rog_cycle_mismatch", `ROG must be from the previous cycle only: ${getPreviousSemesterTag()}.`],
 		["rog_year_level_mismatch", "ROG year level must match the previous cycle year level."],
+		["cor_file_already_used", "This COR/Advising Slip was already used to create an account. Upload the correct unused COR, or sign in if this is already your account."],
+		["cor_identity_cycle_already_used", "This student already has a COR/Advising Slip recorded for the current cycle."],
+		["cor_hash_check_failed", "The system could not verify whether this COR was already used. Please try again later."],
+		["cor_cycle_check_failed", "The system could not verify this COR cycle. Please try again later."],
 	]
 	const match = reasonMatchers.find(([reason]) => rawMessage.includes(reason))
 	return match?.[1] || rawMessage || "Failed to create account. Please try again."

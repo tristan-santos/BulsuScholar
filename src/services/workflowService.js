@@ -42,6 +42,10 @@ export function validateStudentSignupWorkflow(payload = {}) {
 	return postWorkflow("/workflows/student/signup/validate", payload)
 }
 
+export function recommendScholarshipsWorkflow(payload = {}) {
+	return postWorkflow("/scholarships/recommend", payload)
+}
+
 export function finalizeStudentSignupWorkflow(payload = {}) {
 	return postWorkflow("/workflows/student/signup/finalize", payload)
 }

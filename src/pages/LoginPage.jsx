@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
 	HiOutlineMail,
@@ -23,6 +23,8 @@ const APP_URL = (
 	import.meta.env.VITE_PUBLIC_SITE_URL ||
 	"https://bulsu-scholar.vercel.app"
 ).replace(/\/$/, "")
+const RESET_EMAIL_COOLDOWN_MS = 60 * 1000
+const RESET_EMAIL_COOLDOWN_KEY = "bulsuscholar_reset_email_next_allowed_at"
 
 export default function LoginPage() {
 	const [userId, setUserId] = useState("")
@@ -35,8 +37,20 @@ export default function LoginPage() {
 	const [grantorPasswordAccount, setGrantorPasswordAccount] = useState(null)
 	const [isCheckingForgotAccount, setIsCheckingForgotAccount] = useState(false)
 	const [isSendingReset, setIsSendingReset] = useState(false)
+	const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0)
 	const [isRequestingGrantorPassword, setIsRequestingGrantorPassword] = useState(false)
 	const navigate = useNavigate()
+
+	useEffect(() => {
+		const updateCooldown = () => {
+			const nextAllowedAt = Number(localStorage.getItem(RESET_EMAIL_COOLDOWN_KEY) || 0)
+			const remainingMs = Math.max(0, nextAllowedAt - Date.now())
+			setResetCooldownSeconds(Math.ceil(remainingMs / 1000))
+		}
+		updateCooldown()
+		const interval = window.setInterval(updateCooldown, 1000)
+		return () => window.clearInterval(interval)
+	}, [])
 
 	const closeForgotModal = () => {
 		setShowForgotModal(false)
@@ -88,6 +102,14 @@ export default function LoginPage() {
 			return
 		}
 
+		const nextAllowedAt = Number(localStorage.getItem(RESET_EMAIL_COOLDOWN_KEY) || 0)
+		const remainingSeconds = Math.ceil(Math.max(0, nextAllowedAt - Date.now()) / 1000)
+		if (remainingSeconds > 0) {
+			setResetCooldownSeconds(remainingSeconds)
+			toast.info(`Please wait ${remainingSeconds} second${remainingSeconds === 1 ? "" : "s"} before requesting another reset email.`)
+			return
+		}
+
 		setIsSendingReset(true)
 		try {
 			const student = await getRecord("students", id)
@@ -106,14 +128,21 @@ export default function LoginPage() {
 			})
 			if (error) throw error
 
+			const nextResetAllowedAt = Date.now() + RESET_EMAIL_COOLDOWN_MS
+			localStorage.setItem(RESET_EMAIL_COOLDOWN_KEY, String(nextResetAllowedAt))
+			setResetCooldownSeconds(Math.ceil(RESET_EMAIL_COOLDOWN_MS / 1000))
 			toast.success("Password reset instructions sent to the registered student email.")
 			setShowForgotModal(false)
 			setForgotUserId("")
 		} catch (error) {
-			console.error(error)
 			if (error?.message?.includes("rate") || error?.status === 429) {
-				toast.error("Too many reset requests. Please wait a few minutes before trying again.")
+				const nextResetAllowedAt = Date.now() + RESET_EMAIL_COOLDOWN_MS
+				localStorage.setItem(RESET_EMAIL_COOLDOWN_KEY, String(nextResetAllowedAt))
+				setResetCooldownSeconds(Math.ceil(RESET_EMAIL_COOLDOWN_MS / 1000))
+				console.warn("Password reset rate limited by Supabase Auth.", error)
+				toast.error("Too many reset requests. Please wait at least 1 minute before trying again.")
 			} else {
+				console.error(error)
 				toast.error("Failed to send reset email. Please try again later.")
 			}
 		} finally {
@@ -396,8 +425,12 @@ export default function LoginPage() {
 									required
 								/>
 							</div>
-							<button type="submit" className="login-submit" disabled={isSendingReset} style={{ width: "100%" }}>
-								{isSendingReset ? "Sending..." : "Send Reset Email"}
+							<button type="submit" className="login-submit" disabled={isSendingReset || resetCooldownSeconds > 0} style={{ width: "100%" }}>
+								{isSendingReset
+									? "Sending..."
+									: resetCooldownSeconds > 0
+										? `Try again in ${resetCooldownSeconds}s`
+										: "Send Reset Email"}
 							</button>
 						</form>
 					</div>

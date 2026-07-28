@@ -12,6 +12,7 @@ import StudentAnnouncementsPage from "./pages/StudentAnnouncementsPage"
 import StudentAnnouncementDetailPage from "./pages/StudentAnnouncementDetailPage"
 import StudentInboxPage from "./pages/StudentInboxPage"
 import StudentScholarshipsPage from "./pages/StudentScholarshipsPage"
+import StudentRecommendedScholarshipsPage from "./pages/StudentRecommendedScholarshipsPage"
 import StudentProfilePage from "./pages/StudentProfilePage"
 import ProviderDashboard from "./pages/ProviderDashboard"
 import GrantorChangePasswordPage from "./pages/GrantorChangePasswordPage"
@@ -33,6 +34,7 @@ export default function App() {
 				<Route path="/student-dashboard/announcements/:source/:announcementId" element={<StudentAnnouncementDetailPage />} />
 				<Route path="/student-dashboard/inbox" element={<StudentInboxPage />} />
 				<Route path="/student-dashboard/scholarships" element={<StudentScholarshipsPage />} />
+				<Route path="/student-dashboard/recommended-scholarships" element={<StudentRecommendedScholarshipsPage />} />
 				<Route path="/student-dashboard/profile" element={<StudentProfilePage />} />
 				<Route path="/provider-dashboard/*" element={<ProviderDashboard />} />
 				<Route path="*" element={<NotFoundPage />} />
