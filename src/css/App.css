@@ -34,3 +34,127 @@ select option:focus {
 	color: var(--bulsu-primary) !important;
 	font-weight: 650;
 }
+
+.custom-select {
+	position: relative;
+	width: 100%;
+	min-width: 0;
+	font-family: var(--bulsu-font-family);
+}
+
+.custom-select__button {
+	position: relative;
+	width: 100%;
+	text-align: left;
+}
+
+.custom-select__button::after {
+	content: "";
+	position: absolute;
+	right: 1rem;
+	top: 50%;
+	width: 0.48rem;
+	height: 0.48rem;
+	border-right: 2px solid var(--bulsu-primary);
+	border-bottom: 2px solid var(--bulsu-primary);
+	pointer-events: none;
+	transform: translateY(-65%) rotate(45deg);
+	transition: transform 0.16s ease;
+}
+
+.custom-select--open .custom-select__button::after {
+	transform: translateY(-35%) rotate(225deg);
+}
+
+.custom-select__value {
+	display: block;
+	overflow: hidden;
+	padding-right: 1.45rem;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.custom-select__value--placeholder {
+	color: #94a3b8;
+}
+
+.custom-select__menu {
+	position: absolute;
+	top: calc(100% + 0.35rem);
+	left: 0;
+	z-index: 500;
+	display: grid;
+	width: 100%;
+	max-height: min(18rem, 48vh);
+	overflow-y: auto;
+	padding: 0.35rem;
+	border: 1px solid #bed3c8;
+	border-radius: 7px;
+	background: #ffffff;
+	box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+}
+
+.custom-select__option {
+	display: block;
+	width: 100%;
+	min-height: 40px;
+	padding: 0.62rem 0.72rem;
+	border: 0;
+	border-radius: 5px;
+	background: transparent;
+	color: #041f16;
+	font: inherit;
+	font-size: 0.92rem;
+	font-weight: 500;
+	line-height: 1.25;
+	text-align: left;
+	cursor: pointer;
+}
+
+.custom-select__option:hover,
+.custom-select__option:focus,
+.custom-select__option.is-selected {
+	background: var(--bulsu-primary-soft);
+	color: var(--bulsu-primary);
+	outline: 0;
+}
+
+.custom-select__option.is-selected {
+	font-weight: 650;
+}
+
+.custom-select__option:disabled {
+	color: #94a3b8;
+	cursor: not-allowed;
+}
+
+.custom-select__button:disabled {
+	cursor: not-allowed;
+}
+
+.student-dashboard--dark .custom-select__menu,
+.grantor-portal--dark .custom-select__menu,
+.admin-portal--dark .custom-select__menu {
+	border-color: #334155;
+	background: #0f172a;
+	box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+}
+
+.student-dashboard--dark .custom-select__option,
+.grantor-portal--dark .custom-select__option,
+.admin-portal--dark .custom-select__option {
+	color: #f8fafc;
+}
+
+.student-dashboard--dark .custom-select__option:hover,
+.student-dashboard--dark .custom-select__option:focus,
+.student-dashboard--dark .custom-select__option.is-selected,
+.grantor-portal--dark .custom-select__option:hover,
+.grantor-portal--dark .custom-select__option:focus,
+.grantor-portal--dark .custom-select__option.is-selected,
+.admin-portal--dark .custom-select__option:hover,
+.admin-portal--dark .custom-select__option:focus,
+.admin-portal--dark .custom-select__option.is-selected {
+	background: rgba(0, 99, 60, 0.28);
+	color: #d1fae5;
+}

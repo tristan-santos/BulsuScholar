@@ -33,6 +33,7 @@ import { scanStudentDocument } from "../services/documentScanService"
 import { finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
 import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
 import { isPdf, convertPdfToImage } from "../utils/pdfConverter"
+import CustomSelect from "../components/CustomSelect"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -2428,76 +2429,56 @@ export default function SignupPage() {
 								<label className="login-label" htmlFor="signup-province">
 									Province <span className="required">*</span>
 								</label>
-								<select
+								<CustomSelect
 									id="signup-province"
-									className="login-select"
+									buttonClassName="login-select"
 									value={province}
-									onChange={(e) => {
-										setProvince(e.target.value)
+									onChange={(nextProvince) => {
+										setProvince(nextProvince)
 										setCity("")
 										setBarangay("")
 									}}
-								>
-									<option value="" disabled>
-										Select province
-									</option>
-									{PROVINCES.map((p) => (
-										<option key={p} value={p}>
-											{p}
-										</option>
-									))}
-								</select>
+									options={PROVINCES}
+									placeholder="Select province"
+								/>
 
 								<div className="signup-row">
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-city">
 											City / Municipality <span className="required">*</span>
 										</label>
-										<select
+										<CustomSelect
 											id="signup-city"
-											className="login-select"
+											buttonClassName="login-select"
 											value={city}
-											onChange={(e) => {
-												setCity(e.target.value)
+											onChange={(nextCity) => {
+												setCity(nextCity)
 												setBarangay("")
 											}}
 											disabled={!province}
-										>
-											<option value="" disabled>
-												{province ? "Select city" : "Select province first"}
-											</option>
-											{province &&
-												getCitiesByProvince(province).map((c) => (
-													<option key={c} value={c}>
-														{c}
-													</option>
-												))}
-										</select>
+											options={province ? getCitiesByProvince(province) : []}
+											placeholder={province ? "Select city" : "Select province first"}
+										/>
 									</div>
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-barangay">
 											Barangay <span className="required">*</span>
 										</label>
-										<select
+										<CustomSelect
 											id="signup-barangay"
-											className="login-select"
+											buttonClassName="login-select"
 											value={barangay}
-											onChange={(e) => setBarangay(e.target.value)}
+											onChange={setBarangay}
 											disabled={!city || barangayLoading || barangayOptions.length === 0}
-										>
-											<option value="" disabled>
-												{!city
+											options={barangayOptions}
+											placeholder={
+												!city
 													? "Select city first"
 													: barangayLoading
 														? "Loading barangays..."
-														: "Select barangay"}
-											</option>
-											{barangayOptions.map((item) => (
-												<option key={item} value={item}>
-													{item}
-												</option>
-											))}
-										</select>
+														: "Select barangay"
+											}
+										/>
 										{barangayError ? (
 											<p className="signup-upload-error-message">{barangayError}</p>
 										) : null}
@@ -2553,42 +2534,28 @@ export default function SignupPage() {
 								<label className="login-label" htmlFor="signup-course">
 									Course <span className="required">*</span>
 								</label>
-								<select
+								<CustomSelect
 									id="signup-course"
-									className="login-select"
+									buttonClassName="login-select"
 									value={course}
-									onChange={handleCourseChange}
-								>
-									<option value="" disabled>
-										Select course
-									</option>
-									{COURSES.map((c) => (
-										<option key={c.course} value={c.course}>
-											{c.course}
-										</option>
-									))}
-								</select>
+									onChange={(nextCourse) => handleCourseChange({ target: { value: nextCourse } })}
+									options={COURSES.map((item) => item.course)}
+									placeholder="Select course"
+								/>
 
 								{courseHasMajors && (
 									<>
 										<label className="login-label" htmlFor="signup-major">
 											Major <span className="required">*</span>
 										</label>
-										<select
+										<CustomSelect
 											id="signup-major"
-											className="login-select"
+											buttonClassName="login-select"
 											value={major}
-											onChange={(e) => setMajor(e.target.value)}
-										>
-											<option value="" disabled>
-												Select major
-											</option>
-											{selectedCourse.majors.map((m) => (
-												<option key={m} value={m}>
-													{m}
-												</option>
-											))}
-										</select>
+											onChange={setMajor}
+											options={selectedCourse.majors}
+											placeholder="Select major"
+										/>
 									</>
 								)}
 
@@ -2597,41 +2564,27 @@ export default function SignupPage() {
 										<label className="login-label" htmlFor="signup-year">
 											Year <span className="required">*</span>
 										</label>
-										<select
+										<CustomSelect
 											id="signup-year"
-											className="login-select"
+											buttonClassName="login-select"
 											value={year}
-											onChange={(e) => setYear(e.target.value)}
-										>
-											<option value="" disabled>
-												Select year
-											</option>
-											{[1, 2, 3, 4].map((y) => (
-												<option key={y} value={y}>
-													{y}
-												</option>
-											))}
-										</select>
+											onChange={setYear}
+											options={["1", "2", "3", "4"]}
+											placeholder="Select year"
+										/>
 									</div>
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-section">
 											Section <span className="required">*</span>
 										</label>
-										<select
+										<CustomSelect
 											id="signup-section"
-											className="login-select"
+											buttonClassName="login-select"
 											value={section}
-											onChange={(e) => setSection(e.target.value)}
-										>
-											<option value="" disabled>
-												Select section
-											</option>
-											{["A", "B", "C", "D", "E", "F", "G", "H"].map((sec) => (
-												<option key={sec} value={sec}>
-													{sec}
-												</option>
-											))}
-										</select>
+											onChange={setSection}
+											options={["A", "B", "C", "D", "E", "F", "G", "H"]}
+											placeholder="Select section"
+										/>
 									</div>
 								</div>
 							</div>

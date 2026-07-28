@@ -32,6 +32,7 @@ import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/
 import { isPdf, convertPdfToImage, convertPdfToImageFile } from "../utils/pdfConverter"
 import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
 import StudentTopbar from "../components/StudentTopbar"
+import CustomSelect from "../components/CustomSelect"
 import { exportApplicationFormPdfDocument } from "../services/applicationFormService"
 import { scanStudentDocument } from "../services/documentScanService"
 import "../css/StudentDashboard.css"
@@ -909,82 +910,64 @@ export default function StudentProfilePage() {
 								<div className="student-profile-form-grid">
 									<label className="student-profile-label student-profile-label--full">
 										Province
-										<select
-											className="student-profile-input"
+										<CustomSelect
+											buttonClassName="student-profile-input"
 											value={formData.province}
-											onChange={(e) =>
+											onChange={(nextProvince) =>
 												setFormData((prev) => ({
 													...prev,
-													province: e.target.value,
+													province: nextProvince,
 													city: "",
 													barangay: "",
 												}))
 											}
-										>
-											<option value="" disabled>
-												Select province
-											</option>
-											{PROVINCES.map((p) => (
-												<option key={p} value={p}>
-													{p}
-												</option>
-											))}
-										</select>
+											options={PROVINCES}
+											placeholder="Select province"
+										/>
 									</label>
 									<label className="student-profile-label">
 										City / Municipality
-										<select
-											className="student-profile-input"
+										<CustomSelect
+											buttonClassName="student-profile-input"
 											value={formData.city}
-											onChange={(e) =>
+											onChange={(nextCity) =>
 												setFormData((prev) => ({
 													...prev,
-													city: e.target.value,
+													city: nextCity,
 													barangay: "",
 												}))
 											}
 											disabled={!formData.province}
-										>
-											<option value="" disabled>
-												{formData.province ? "Select city" : "Select province first"}
-											</option>
-											{formData.province &&
-												getCitiesByProvince(formData.province).map((c) => (
-													<option key={c} value={c}>
-														{c}
-													</option>
-												))}
-										</select>
+											options={formData.province ? getCitiesByProvince(formData.province) : []}
+											placeholder={formData.province ? "Select city" : "Select province first"}
+										/>
 									</label>
 									<label className="student-profile-label">
 										Barangay
-										<select
-											className="student-profile-input"
+										<CustomSelect
+											buttonClassName="student-profile-input"
 											value={formData.barangay}
-											onChange={(e) =>
+											onChange={(nextBarangay) =>
 												setFormData((prev) => ({
 													...prev,
-													barangay: e.target.value,
+													barangay: nextBarangay,
 												}))
 											}
 											disabled={!formData.city || barangayLoading || (barangayOptions.length === 0 && !formData.barangay)}
-										>
-											<option value="" disabled>
-												{!formData.city
+											options={[
+												...(formData.barangay && !barangayOptions.includes(formData.barangay)
+													? [formData.barangay]
+													: []),
+												...barangayOptions,
+											]}
+											placeholder={
+												!formData.city
 													? "Select city first"
 													: barangayLoading
 														? "Loading barangays..."
-														: "Select barangay"}
-											</option>
-											{formData.barangay && !barangayOptions.includes(formData.barangay) ? (
-												<option value={formData.barangay}>{formData.barangay}</option>
-											) : null}
-											{barangayOptions.map((item) => (
-												<option key={item} value={item}>
-													{item}
-												</option>
-											))}
-										</select>
+														: "Select barangay"
+											}
+										/>
 										{barangayError && !formData.barangay ? <span className="student-profile-help-text">{barangayError}</span> : null}
 									</label>
 									<label className="student-profile-label student-profile-label--street">

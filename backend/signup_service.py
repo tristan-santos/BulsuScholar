@@ -169,12 +169,25 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "reason": "rog_cycle_mismatch", "expectedPreviousCycle": previous_cycle, "scannedCycle": rog_cycle}
         expected_rog_year = expected_previous_rog_year_level(student_year, current_cycle)
         scanned_rog_year = re.sub(r"\D+", "", str(rog_scan.get("year") or ""))[:1]
-        if expected_rog_year and scanned_rog_year and expected_rog_year != scanned_rog_year:
+        student_year_number = int(re.sub(r"\D+", "", student_year)[:1] or "0")
+        scanned_rog_year_number = int(scanned_rog_year or "0")
+        current_semester = current_cycle.rsplit("-", 1)[-1].upper()
+        has_impossible_year_progression = bool(
+            student_year_number
+            and scanned_rog_year_number
+            and (
+                (current_semester == "1ST" and scanned_rog_year_number >= student_year_number)
+                or (current_semester == "2ND" and scanned_rog_year_number > student_year_number)
+            )
+        )
+        if expected_rog_year and scanned_rog_year and expected_rog_year != scanned_rog_year and not has_impossible_year_progression:
             return {
                 "ok": False,
                 "reason": "rog_year_level_mismatch",
                 "expectedYearLevel": expected_rog_year,
                 "scannedYearLevel": scanned_rog_year,
+                "currentCycle": current_cycle,
+                "previousCycle": previous_cycle,
             }
 
     for table in ["students", "pending_students", "providers", "admins"]:
