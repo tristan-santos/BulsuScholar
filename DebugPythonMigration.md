@@ -383,7 +383,7 @@ If it fails:
 - Check whether file upload succeeded before profile metadata save.
 - Check backend response for Supabase config or update errors.
 
-## 17. Grantor Password Change Request - 
+## 17. Grantor Password Change Request - checked
 
 Test:
 1. Open grantor profile.

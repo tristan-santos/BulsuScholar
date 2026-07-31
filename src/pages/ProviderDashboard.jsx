@@ -52,6 +52,7 @@ import {
 	HiOutlineRefresh,
 	HiOutlineSearch,
 	HiOutlineSave,
+	HiOutlineShieldCheck,
 	HiOutlineSun,
 	HiOutlineTrash,
 	HiOutlineUserGroup,
