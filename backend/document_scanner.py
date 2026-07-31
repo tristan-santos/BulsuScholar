@@ -82,7 +82,13 @@ def collect_labeled_name(lines: list[str], index: int, remainder: str = "") -> s
 def ocr_image(image: Image.Image) -> str:
     prepared = ImageOps.grayscale(image)
     prepared = ImageOps.autocontrast(prepared)
-    return pytesseract.image_to_string(prepared)
+    try:
+        return pytesseract.image_to_string(prepared)
+    except pytesseract.pytesseract.TesseractNotFoundError as error:
+        raise RuntimeError(
+            "tesseract_not_installed: Tesseract OCR is required for image uploads. "
+            "Deploy the Render backend with the Dockerfile or install the tesseract-ocr system package."
+        ) from error
 
 
 def extract_pdf_text(file_bytes: bytes) -> str:

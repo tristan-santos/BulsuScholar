@@ -2621,6 +2621,14 @@ export default function ProviderDashboard() {
 				updatedAt: serverTimestamp(),
 			}
 			const changedFields = buildGrantorProfileChanges(profile, payload)
+			if (changedFields.length === 0) {
+				console.log("[BulsuScholar] Grantor profile save skipped because no visible fields changed.", {
+					grantorId,
+					payload,
+				})
+				toast.info("No profile changes to save.")
+				return
+			}
 			const changeSummary = changedFields.length > 0
 				? `Updated: ${changedFields.map((item) => item.label).join(", ")}.`
 				: "No visible profile fields were changed."

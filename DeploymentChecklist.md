@@ -45,6 +45,16 @@ Expected:
 - Vercel production and preview deployments pass CORS.
 - Email endpoint can use Resend.
 
+Render runtime:
+- Use the Docker runtime for the backend service.
+- If Render root directory is the repository root, use `Dockerfile`.
+- If Render root directory is `backend`, use `backend/Dockerfile`.
+- The Dockerfile installs `tesseract-ocr` for PNG/JPG OCR and `poppler-utils` for scanned PDF fallback.
+
+Expected:
+- Image uploads for application forms do not fail with `tesseract is not installed or it's not in your PATH`.
+- PDF scans still work through `pdfplumber`.
+
 ## 3. Supabase SQL
 
 Run these in Supabase SQL Editor, in order:

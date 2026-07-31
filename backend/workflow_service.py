@@ -428,7 +428,7 @@ def update_grantor_profile(payload: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "step": "portal_update", "result": portal_result}
 
     notification = None
-    if not suppress_notification:
+    if not suppress_notification and changed_fields:
         notification = create_grantor_notification({
             "grantorId": grantor_id,
             "type": "profile_updated",
