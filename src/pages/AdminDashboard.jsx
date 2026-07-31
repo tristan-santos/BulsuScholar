@@ -112,6 +112,18 @@ const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6
 const COMPLIANCE_BLOCK_THRESHOLD = 2
 const EMPTY_STATE_TEXT = "No results found matching your criteria."
 
+function toNumericValue(value, fallback = null) {
+	const parsed = Number.parseFloat(value)
+	return Number.isNaN(parsed) ? fallback : parsed
+}
+
+function isGrantorApplicationOpen(raw = {}) {
+	if (raw.applicationsBlocked === true) return false
+	if (raw.applyOpen === true || raw.applicationOpen === true || raw.applicationsOpen === true) return true
+	if (raw.applyOpen === false || raw.applicationOpen === false || raw.applicationsOpen === false) return false
+	return true
+}
+
 const GRANTOR_COLORS = {
 	kuya_win: "#0f766e",
 	tina_pancho: "#1d4ed8",
@@ -788,6 +800,7 @@ export default function AdminDashboard() {
 	const [soeRequests, setSoeRequests] = useState([])
 	const [soeDownloads, setSoeDownloads] = useState([])
 	const [announcements, setAnnouncements] = useState([])
+	const [grantorAnnouncementsRaw, setGrantorAnnouncementsRaw] = useState([])
 	const [grantorScholarsRaw, setGrantorScholarsRaw] = useState([])
 	const [grantorScholarStudentRecordLookup, setGrantorScholarStudentRecordLookup] = useState(new Map())
 	const [dataLoadState, setDataLoadState] = useState({
@@ -819,6 +832,7 @@ export default function AdminDashboard() {
 	const [grantorTab, setGrantorTab] = useState("overview")
 	const [grantorSearch, setGrantorSearch] = useState("")
 	const [selectedGrantorIds, setSelectedGrantorIds] = useState([])
+	const [selectedGrantorId, setSelectedGrantorId] = useState("")
 	const [showGrantorModal, setShowGrantorModal] = useState(false)
 	const [grantorForm, setGrantorForm] = useState({
 		id: "",
@@ -1093,6 +1107,24 @@ export default function AdminDashboard() {
 				() => markLoaded("announcements"),
 			),
 			onSnapshot(
+				collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements),
+				(snap) => {
+					setGrantorAnnouncementsRaw(
+						snap.docs
+							.map((row) => {
+								const raw = row.data() || {}
+								return {
+									id: row.id,
+									...raw,
+									grantorId: raw.grantorId || row.ref.parent?.parent?.id || "",
+								}
+							})
+							.sort((a, b) => (toJsDate(b.createdAt || b.updatedAt)?.getTime() || 0) - (toJsDate(a.createdAt || a.updatedAt)?.getTime() || 0)),
+					)
+				},
+				() => setGrantorAnnouncementsRaw([]),
+			),
+			onSnapshot(
 				collectionGroup(db, GRANTOR_SUBCOLLECTIONS.scholars),
 				(snap) => {
 					setGrantorScholarsRaw(
@@ -1286,6 +1318,31 @@ export default function AdminDashboard() {
 		[selectedStudentId, studentProfiles],
 	)
 
+	const selectedGrantor = useMemo(
+		() => grantorRows.find((grantor) => grantor.id === selectedGrantorId) || null,
+		[grantorRows, selectedGrantorId],
+	)
+
+	const selectedGrantorAnnouncements = useMemo(() => {
+		if (!selectedGrantor?.id) return []
+		const grantorKeys = new Set([selectedGrantor.id, selectedGrantor.providerType, selectedGrantor.name].filter(Boolean).map((item) => String(item).toLowerCase()))
+		return grantorAnnouncementsRaw.filter((announcement) => {
+			const values = [
+				announcement.grantorId,
+				announcement.providerType,
+				announcement.providerLabel,
+				announcement.grantorName,
+				announcement.sourceLabel,
+			].map((item) => String(item || "").toLowerCase())
+			return values.some((value) => value && grantorKeys.has(value))
+		})
+	}, [grantorAnnouncementsRaw, selectedGrantor])
+
+	const selectedGrantorCurrentAnnouncement = useMemo(
+		() => selectedGrantorAnnouncements.find((announcement) => !isAnnouncementArchived(announcement)) || selectedGrantorAnnouncements[0] || null,
+		[selectedGrantorAnnouncements],
+	)
+
 	const selectedStudentLastSoe = useMemo(() => {
 		if (!selectedStudent?.id) return "No SOE request yet"
 		const latest = soeRequests
@@ -1415,6 +1472,8 @@ export default function AdminDashboard() {
 					name: buildGrantorName(provider) || provider.id,
 					providerType: provider.providerType || toProviderType(buildGrantorName(provider)),
 					totalScholars: grantorScholarCountsById.get(provider.id) || 0,
+					minimumGwa: toNumericValue(provider.minimumGwa ?? provider.minGwa ?? provider.minimumGrade, null),
+					applicationOpen: isGrantorApplicationOpen(provider),
 					statusLabel: toGrantorStatus(provider),
 				}))
 				.sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""))),
@@ -1651,6 +1710,52 @@ export default function AdminDashboard() {
 			getStudentScholarshipNames(selectedStudent).length > 0
 		)
 	}, [selectedStudent, selectedStudentGrantorScholarships])
+
+	const selectedGrantorRecommendedStudents = useMemo(() => {
+		if (!selectedGrantor?.id) return []
+		const minimumGwa = toNumericValue(selectedGrantor.minimumGwa ?? selectedGrantor.minGwa, 2.25)
+		const grantorProvince = String(selectedGrantor.province || "").trim().toLowerCase()
+		const grantorCity = String(selectedGrantor.city || "").trim().toLowerCase()
+
+		return studentProfiles
+			.filter((student) => {
+				if (student.archived === true || student.sourceCollection !== "students") return false
+				if (normalizeScholarshipList(student.scholarships || []).length > 0) return false
+				if (getStudentScholarshipNames(student).length > 0) return false
+				const hasGrantorScholarship = grantorScholarsRaw.some((scholar) => {
+					if (scholar.archived === true) return false
+					const directMatchId =
+						grantorScholarStudentRecordLookup.get(
+							`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`,
+						) || ""
+					return directMatchId === student.id || matchesGrantorScholarToStudent(student, scholar)
+				})
+				return !hasGrantorScholarship
+			})
+			.map((student) => {
+				const gwa = toNumericValue(student.gwa ?? student.currentGwa ?? student.currentGWA, null)
+				const gwaEligible = gwa !== null && minimumGwa !== null ? gwa <= minimumGwa : false
+				const sameProvince = grantorProvince && String(student.province || "").trim().toLowerCase() === grantorProvince
+				const sameCity = grantorCity && String(student.city || student.municipality || "").trim().toLowerCase() === grantorCity
+				const score =
+					(gwaEligible ? 70 : 0) +
+					(gwa !== null && minimumGwa !== null ? Math.max(0, (minimumGwa - gwa) * 10) : 0) +
+					(sameCity ? 18 : sameProvince ? 10 : 0) +
+					(student.corFile?.url || student.cogFile?.url ? 4 : 0)
+				return {
+					...student,
+					recommendationScore: Math.round(score),
+					recommendationGwa: gwa,
+					recommendationReason: gwaEligible
+						? sameCity || sameProvince
+							? "GWA and location match"
+							: "GWA matches grantor requirement"
+						: "Potential match, review student details",
+				}
+			})
+			.sort((left, right) => right.recommendationScore - left.recommendationScore)
+			.slice(0, 3)
+	}, [grantorScholarStudentRecordLookup, grantorScholarsRaw, selectedGrantor, studentProfiles])
 
 	useEffect(() => {
 		let active = true
@@ -4088,6 +4193,43 @@ export default function AdminDashboard() {
 		}
 	}
 
+	const requestGrantorPasswordChangeFromAdmin = async (grantorId) => {
+		if (!grantorId) return
+		try {
+			await setDoc(doc(db, "providers", grantorId), {
+				passwordChangeRequested: true,
+				passwordChangeRequestStatus: "pending",
+				passwordChangeRequestedBy: "admin",
+				passwordChangeRequestedAt: serverTimestamp(),
+				updatedAt: serverTimestamp(),
+			}, { merge: true })
+			await createGrantorNotification({
+				grantorId,
+				type: "password_change_requested",
+				title: "Password Change Requested",
+				message: "BulsuScholar Admin requested a password change for your grantor account. Wait for approval status before changing your password.",
+				read: false,
+				createdAt: serverTimestamp(),
+			})
+			toast.success("Password change request sent to grantor.")
+		} catch (error) {
+			console.error("Unable to request grantor password change.", error)
+			toast.error("Unable to request a password change right now.")
+		}
+	}
+
+	const openSingleGrantorArchiveConfirmation = (grantorId) => {
+		if (!grantorId) return
+		setSelectedGrantorIds([grantorId])
+		setAdminConfirmDialog({
+			type: "batch_archive_grantors",
+			title: "Archive Grantor",
+			message: "Are you sure you want to archive this grantor? This will move the account to archived grantor records.",
+			confirmLabel: "Archive Grantor",
+			tone: "danger",
+		})
+	}
+
 	const handleLogout = () => {
 		sessionStorage.removeItem("bulsuscholar_userId")
 		sessionStorage.removeItem("bulsuscholar_userType")
@@ -4922,11 +5064,12 @@ export default function AdminDashboard() {
 											<th>Email</th>
 											<th>Total Scholars</th>
 											<th>Status</th>
+											<th>Action</th>
 										</tr>
 									</thead>
 									<tbody>
 										{grantorRows.length === 0 ? (
-											<EmptyStateRow colSpan={5} />
+											<EmptyStateRow colSpan={6} />
 										) : (
 											grantorRows.map((grantor) => (
 												<tr key={grantor.id}>
@@ -4935,6 +5078,11 @@ export default function AdminDashboard() {
 													<td>{grantor.email || "-"}</td>
 													<td>{grantor.totalScholars || 0}</td>
 													<td><span className={toStatusClass(grantor.statusLabel)}>{grantor.statusLabel}</span></td>
+													<td>
+														<button type="button" className="admin-student-action-btn" onClick={() => setSelectedGrantorId(grantor.id)}>
+															<HiOutlineEye /> View
+														</button>
+													</td>
 												</tr>
 											))
 										)}
@@ -5008,12 +5156,12 @@ export default function AdminDashboard() {
 											<th>Organization</th>
 											<th>Total Scholars</th>
 											<th>Status</th>
-											{grantorTab === "grantors" ? <th>Action</th> : null}
+											<th>Action</th>
 										</tr>
 									</thead>
 									<tbody>
 										{visibleGrantorRows.length === 0 ? (
-											<EmptyStateRow colSpan={grantorTab === "grantors" ? 8 : 6} />
+											<EmptyStateRow colSpan={grantorTab === "grantors" ? 8 : 7} />
 										) : (
 											grantorTablePage.rows.map((grantor) => (
 												<tr key={grantor.id}>
@@ -5038,8 +5186,13 @@ export default function AdminDashboard() {
 													<td>{grantor.organization || "-"}</td>
 													<td>{grantor.totalScholars || 0}</td>
 													<td><span className={`admin-student-status admin-student-status--${String(grantor.statusLabel || "active").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{grantor.statusLabel}</span></td>
-													{grantorTab === "grantors" ? (
-														<td>
+													<td>
+														<div className="admin-grantor-row-actions">
+															<button type="button" className="admin-student-action-btn" onClick={() => setSelectedGrantorId(grantor.id)}>
+																<HiOutlineEye /> View
+															</button>
+															{grantorTab === "grantors" ? (
+																<>
 															{grantor.passwordChangeRequestStatus === "pending" || grantor.passwordChangeRequested === true ? (
 																<button type="button" className="admin-student-action-btn admin-grantor-approve-btn" onClick={() => approveGrantorPasswordChange(grantor.id)}>
 																	<HiOutlineShieldCheck /> Approve
@@ -5047,8 +5200,10 @@ export default function AdminDashboard() {
 															) : (
 																<span className="admin-grantor-action-empty">No action</span>
 															)}
-														</td>
-													) : null}
+																</>
+															) : null}
+														</div>
+													</td>
 												</tr>
 											))
 										)}
@@ -6359,6 +6514,94 @@ export default function AdminDashboard() {
 								</button>
 							</div>
 						</form>
+					</div>
+				</div>
+			) : null}
+
+			{selectedGrantor ? (
+				<div className="admin-detail-backdrop" role="presentation" onClick={() => setSelectedGrantorId("")}>
+					<div className="admin-detail-shell admin-detail-shell--grantor" onClick={(event) => event.stopPropagation()}>
+						<button type="button" className="admin-detail-close" onClick={() => setSelectedGrantorId("")}>
+							<HiX />
+						</button>
+						<div className="admin-detail-modal admin-detail-modal--grantor" role="dialog" aria-modal="true" aria-label="Grantor details">
+							<div className="admin-detail-header admin-grantor-modal-header">
+								<div className="admin-detail-avatar admin-detail-avatar--grantor">
+									{selectedGrantor.profileImageUrl || selectedGrantor.imageUrl || selectedGrantor.authorImageUrl ? (
+										<img src={selectedGrantor.profileImageUrl || selectedGrantor.imageUrl || selectedGrantor.authorImageUrl} alt={selectedGrantor.name} />
+									) : (
+										<span>{getInitials(selectedGrantor.name)}</span>
+									)}
+								</div>
+								<div>
+									<h3>{selectedGrantor.name}</h3>
+									<p className="admin-student-header-id">Grantor ID: {selectedGrantor.id}</p>
+									<div className="admin-chip-stack">
+										<span className={`admin-student-status admin-student-status--${String(selectedGrantor.statusLabel || "active").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{selectedGrantor.statusLabel}</span>
+										<span className="admin-inline-chip">{selectedGrantor.applicationOpen ? "Applications Open" : "Applications Closed"}</span>
+									</div>
+								</div>
+							</div>
+							<h4 className="admin-student-detail-divider"><span>Grantor Information</span></h4>
+							<div className="admin-detail-grid admin-grantor-detail-grid">
+								<p className="admin-detail-meta"><span>Email</span><strong>{selectedGrantor.email || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Organization</span><strong>{selectedGrantor.organization || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Contact Number</span><strong>{selectedGrantor.cpNumber || selectedGrantor.contactNumber || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Total Scholars</span><strong>{selectedGrantor.totalScholars || 0}</strong></p>
+								<p className="admin-detail-meta"><span>Minimum GWA Required</span><strong>{selectedGrantor.minimumGwa ?? selectedGrantor.minGwa ?? "-"}</strong></p>
+								<p className="admin-detail-meta"><span>Application Status</span><strong>{selectedGrantor.applicationOpen ? "Open" : "Closed"}</strong></p>
+								<p className="admin-detail-meta"><span>Province</span><strong>{selectedGrantor.province || "-"}</strong></p>
+								<p className="admin-detail-meta"><span>City / Municipality</span><strong>{selectedGrantor.city || "-"}</strong></p>
+							</div>
+							<div className="admin-grantor-detail-stats">
+								<article><HiOutlineBell /><span>Current Announcement</span><strong>{selectedGrantorCurrentAnnouncement?.title || selectedGrantorCurrentAnnouncement?.announcementTitle || "No current announcement"}</strong></article>
+								<article><HiOutlineDocumentText /><span>Posted Announcements</span><strong>{selectedGrantorAnnouncements.length}</strong></article>
+								<article><HiOutlineAcademicCap /><span>Total Scholars</span><strong>{selectedGrantor.totalScholars || 0}</strong></article>
+							</div>
+							<div className="admin-grantor-recommended-students">
+								<div className="admin-student-recommendations-head">
+									<div>
+										<span>Recommended Student</span>
+										<strong>Top Suitable Students</strong>
+									</div>
+									<small>{selectedGrantorRecommendedStudents.length} found</small>
+								</div>
+								{selectedGrantorRecommendedStudents.length > 0 ? (
+									<div className="admin-grantor-student-grid">
+										{selectedGrantorRecommendedStudents.map((student, index) => (
+											<article key={`${selectedGrantor.id}_student_${student.id}`} className="admin-grantor-student-card">
+												<div>
+													<span>{getInitials(student.fullName || studentFullName(student))}</span>
+													<div>
+														<strong>{student.fullName || studentFullName(student)}</strong>
+														<small>{student.id} • Rank #{index + 1}</small>
+													</div>
+												</div>
+												<p>{student.recommendationReason}</p>
+												<ul>
+													<li>GWA: {student.recommendationGwa ?? "-"}</li>
+													<li>Course: {student.course || "-"}</li>
+													<li>Score: {student.recommendationScore}</li>
+												</ul>
+											</article>
+										))}
+									</div>
+								) : (
+									<p className="admin-student-recommendation-empty">No eligible student without scholarship matched this grantor yet.</p>
+								)}
+							</div>
+							<footer className="admin-detail-actions admin-grantor-detail-actions">
+								<button type="button" className="admin-table-btn" onClick={() => requestGrantorPasswordChangeFromAdmin(selectedGrantor.id)}>
+									<HiOutlineRefresh /> Request Password Change
+								</button>
+								<button type="button" className="admin-danger-btn" disabled={selectedGrantor.archived === true} onClick={() => openSingleGrantorArchiveConfirmation(selectedGrantor.id)}>
+									<HiOutlineTrash /> Archive Grantor
+								</button>
+								<button type="button" className="admin-safe-btn" onClick={() => setSelectedGrantorId("")}>
+									Close
+								</button>
+							</footer>
+						</div>
 					</div>
 				</div>
 			) : null}
