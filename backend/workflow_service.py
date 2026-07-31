@@ -409,6 +409,10 @@ def update_grantor_profile(payload: dict[str, Any]) -> dict[str, Any]:
     grantor_id = payload.get("grantorId") or ""
     data = payload.get("data") or {}
     update_portal = payload.get("updatePortal", True)
+    suppress_notification = payload.get("suppressNotification") is True
+    notification_reason = payload.get("notificationReason") or "manual_profile_update"
+    changed_fields = payload.get("changedFields") or []
+    change_summary = payload.get("changeSummary") or "Your grantor profile changes were saved."
     if not grantor_id:
         return {"ok": False, "reason": "missing_grantor_id"}
 
@@ -423,15 +427,20 @@ def update_grantor_profile(payload: dict[str, Any]) -> dict[str, Any]:
         if not portal_result.get("ok"):
             return {"ok": False, "step": "portal_update", "result": portal_result}
 
-    notification = create_grantor_notification({
-        "grantorId": grantor_id,
-        "type": "profile_updated",
-        "title": "Profile Updated",
-        "message": "Your grantor profile changes were saved.",
-        "authorName": data.get("providerName") or data.get("name") or "Grantor",
-        "authorImageUrl": data.get("profileImageUrl") or "",
-        "read": False,
-        "createdAt": utc_now_iso(),
-    })
+    notification = None
+    if not suppress_notification:
+        notification = create_grantor_notification({
+            "grantorId": grantor_id,
+            "type": "profile_updated",
+            "title": "Profile Updated",
+            "message": change_summary,
+            "changedFields": changed_fields,
+            "changeSummary": change_summary,
+            "notificationReason": notification_reason,
+            "authorName": data.get("providerName") or data.get("name") or "Grantor",
+            "authorImageUrl": data.get("profileImageUrl") or "",
+            "read": False,
+            "createdAt": utc_now_iso(),
+        })
 
     return {"ok": True, "provider": provider_result, "portal": portal_result, "notification": notification}

@@ -376,6 +376,41 @@ function formatNotificationDetailLabel(value = "") {
 		.replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+const GRANTOR_PROFILE_CHANGE_FIELDS = [
+	{ key: "providerName", label: "Display Name" },
+	{ key: "organization", label: "Organization" },
+	{ key: "email", label: "Email Address" },
+	{ key: "cpNumber", label: "Contact Number" },
+	{ key: "minimumGwa", label: "Minimum GWA to Apply" },
+	{ key: "province", label: "Province" },
+	{ key: "city", label: "City / Municipality" },
+	{ key: "street", label: "Street / Subdivision" },
+	{ key: "postalCode", label: "Postal Code" },
+	{ key: "profileImageUrl", label: "Profile Picture" },
+]
+
+function normalizeProfileChangeValue(value) {
+	if (value == null) return ""
+	if (typeof value === "number") return Number.isFinite(value) ? String(value) : ""
+	return String(value || "").trim()
+}
+
+function buildGrantorProfileChanges(previousProfile = {}, nextProfile = {}) {
+	return GRANTOR_PROFILE_CHANGE_FIELDS.map(({ key, label }) => {
+		const previousValue = key === "minimumGwa" ? previousProfile?.minimumGwa ?? previousProfile?.minGwa : previousProfile?.[key]
+		const nextValue = key === "minimumGwa" ? nextProfile?.minimumGwa ?? nextProfile?.minGwa : nextProfile?.[key]
+		const before = normalizeProfileChangeValue(previousValue)
+		const after = normalizeProfileChangeValue(nextValue)
+		if (before === after) return null
+		return {
+			field: key,
+			label,
+			from: before || "Not set",
+			to: after || "Not set",
+		}
+	}).filter(Boolean)
+}
+
 function withAlpha(hexColor, alphaHex = "33") {
 	const value = String(hexColor || "").replace("#", "")
 	if (value.length !== 6) return hexColor
@@ -910,6 +945,10 @@ export default function ProviderDashboard() {
 
 	useEffect(() => {
 		if (!grantorId) return
+		console.log("[BulsuScholar] Grantor profile sync skipped inbox notification.", {
+			reason: "automatic page-load metadata sync",
+			grantorId,
+		})
 		updateGrantorProfileWorkflow({
 			grantorId,
 			data: {
@@ -919,6 +958,8 @@ export default function ProviderDashboard() {
 				updatedAt: serverTimestamp(),
 			},
 			updatePortal: true,
+			suppressNotification: true,
+			notificationReason: "automatic_metadata_sync",
 		}).catch(() => {})
 	}, [grantorId, grantorName, grantorProviderType])
 
@@ -1683,6 +1724,11 @@ export default function ProviderDashboard() {
 		const nextBlockedState = !applicationsBlocked
 		setBusy("portal_toggle")
 		try {
+			console.log("[BulsuScholar] Grantor application toggle skipped profile inbox notification.", {
+				reason: "application toggle is not a profile edit",
+				grantorId,
+				applicationsBlocked: nextBlockedState,
+			})
 			await updateGrantorProfileWorkflow({
 				grantorId,
 				data: {
@@ -1693,6 +1739,8 @@ export default function ProviderDashboard() {
 					updatedAt: serverTimestamp(),
 				},
 				updatePortal: true,
+				suppressNotification: true,
+				notificationReason: "application_toggle_update",
 			})
 			toast.success(
 				nextBlockedState
@@ -2572,10 +2620,23 @@ export default function ProviderDashboard() {
 				postalCode: grantorProfileForm.postalCode.trim(),
 				updatedAt: serverTimestamp(),
 			}
+			const changedFields = buildGrantorProfileChanges(profile, payload)
+			const changeSummary = changedFields.length > 0
+				? `Updated: ${changedFields.map((item) => item.label).join(", ")}.`
+				: "No visible profile fields were changed."
 			const profileResult = await updateGrantorProfileWorkflow({
 				grantorId,
 				data: payload,
 				updatePortal: true,
+				changedFields,
+				changeSummary,
+				notificationReason: "manual_profile_save",
+			})
+			console.log("[BulsuScholar] Grantor profile inbox notification created.", {
+				reason: "manual profile save",
+				grantorId,
+				changedFields,
+				notification: profileResult?.notification || null,
 			})
 			if (profileResult?.notification?.ok === false) {
 				await setDoc(doc(db, "systemLogs", `profile_updated_${grantorId}_${Date.now()}`), {
@@ -2583,7 +2644,9 @@ export default function ProviderDashboard() {
 					source: "personal",
 					type: "profile_updated",
 					title: "Profile Updated",
-					message: "Your grantor profile changes were saved.",
+					message: changeSummary,
+					changedFields,
+					changeSummary,
 					authorName: payload.providerName,
 					authorImageUrl: grantorProfileImageUrl,
 					notificationFallbackTable: "systemLogs",
@@ -2619,10 +2682,22 @@ export default function ProviderDashboard() {
 		try {
 			const uploadResult = await uploadToStorage(file, { folder: `grantor-profiles/${grantorId}` })
 			const payload = { profileImageUrl: uploadResult.url, updatedAt: serverTimestamp() }
+			const changedFields = buildGrantorProfileChanges(profile, payload)
+			const changeSummary = changedFields.length > 0
+				? `Updated: ${changedFields.map((item) => item.label).join(", ")}.`
+				: "No visible profile fields were changed."
 			await updateGrantorProfileWorkflow({
 				grantorId,
 				data: payload,
 				updatePortal: true,
+				changedFields,
+				changeSummary,
+				notificationReason: "profile_photo_update",
+			})
+			console.log("[BulsuScholar] Grantor profile inbox notification created.", {
+				reason: "profile photo update",
+				grantorId,
+				changedFields,
 			})
 			setProfile((prev) => ({ ...(prev || {}), profileImageUrl: uploadResult.url }))
 			toast.success("Profile photo updated.")
@@ -3367,6 +3442,18 @@ export default function ProviderDashboard() {
 							<span>Full Message</span>
 							<p>{selectedGrantorNotification.message || "No message content was provided for this inbox item."}</p>
 						</div>
+						{Array.isArray(selectedGrantorNotification.changedFields) && selectedGrantorNotification.changedFields.length > 0 ? (
+							<div className="grantor-inbox-change-list">
+								<span>Changes Made</span>
+								{selectedGrantorNotification.changedFields.map((change, index) => (
+									<article key={`${change.field || change.label || "change"}_${index}`}>
+										<strong>{change.label || formatNotificationDetailLabel(change.field || `Change ${index + 1}`)}</strong>
+										<p><span>From</span><b>{formatNotificationDetailValue(change.from)}</b></p>
+										<p><span>To</span><b>{formatNotificationDetailValue(change.to)}</b></p>
+									</article>
+								))}
+							</div>
+						) : null}
 						{selectedGrantorNotificationDetails.length > 0 ? (
 							<div className="grantor-inbox-detail-grid">
 								{selectedGrantorNotificationDetails.map((item) => (

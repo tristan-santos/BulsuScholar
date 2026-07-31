@@ -775,6 +775,57 @@
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 }
+.grantor-inbox-change-list {
+	display: grid;
+	gap: 0.65rem;
+	margin: 1rem 1.1rem 0;
+	padding: 0.95rem;
+	border: 1px solid rgba(0, 99, 60, 0.22);
+	border-radius: 8px;
+	background: #fbfefd;
+}
+.grantor-inbox-change-list > span {
+	color: #00633c;
+	font-size: 0.68rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.grantor-inbox-change-list article {
+	display: grid;
+	grid-template-columns: minmax(120px, 0.8fr) repeat(2, minmax(0, 1fr));
+	align-items: start;
+	gap: 0.7rem;
+	padding: 0.72rem;
+	border: 1px solid #dce5e0;
+	border-radius: 7px;
+	background: #fff;
+}
+.grantor-inbox-change-list article strong {
+	color: #17342a;
+	font-size: 0.82rem;
+	font-weight: 650;
+	line-height: 1.35;
+}
+.grantor-inbox-change-list article p {
+	display: grid;
+	gap: 0.18rem;
+	margin: 0;
+	min-width: 0;
+}
+.grantor-inbox-change-list article p span {
+	color: #789087;
+	font-size: 0.64rem;
+	font-weight: 650;
+	text-transform: uppercase;
+}
+.grantor-inbox-change-list article p b {
+	color: #243b33;
+	font-size: 0.78rem;
+	font-weight: 600;
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+}
 .grantor-inbox-detail-grid {
 	overflow-y: auto;
 	padding-bottom: 0.2rem;
@@ -826,6 +877,7 @@
 	.grantor-inbox-detail-actions button { width: 100%; }
 	.grantor-inbox-detail-meta,
 	.grantor-inbox-detail-grid { grid-template-columns: 1fr; }
+	.grantor-inbox-change-list article { grid-template-columns: 1fr; }
 }
 
 .grantor-profile-form { min-width: 0; padding: 1rem 1.2rem; }
@@ -2952,6 +3004,24 @@
 .grantor-portal--dark .grantor-inbox-detail-message {
 	border-color: #334155;
 	background: #0f172a;
+}
+.grantor-portal--dark .grantor-inbox-change-list {
+	border-color: #334155;
+	background: #0f172a;
+}
+.grantor-portal--dark .grantor-inbox-change-list > span {
+	color: #6ee7b7;
+}
+.grantor-portal--dark .grantor-inbox-change-list article {
+	border-color: #334155;
+	background: #111827;
+}
+.grantor-portal--dark .grantor-inbox-change-list article strong,
+.grantor-portal--dark .grantor-inbox-change-list article p b {
+	color: #f8fafc;
+}
+.grantor-portal--dark .grantor-inbox-change-list article p span {
+	color: #94a3b8;
 }
 .grantor-portal--dark .grantor-inbox-detail-head > button {
 	border-color: #475569;
