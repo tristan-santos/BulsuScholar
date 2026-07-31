@@ -649,6 +649,165 @@
 .grantor-inbox-item-actions button:hover { color: #dc2626; }
 .grantor-inbox-item-actions > i { width: 7px; height: 7px; border-radius: 50%; background: #00633c; }
 .grantor-inbox-read-check { width: 0.9rem; height: 0.9rem; color: #94a3b8; }
+.grantor-inbox-detail-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 120;
+	display: grid;
+	place-items: center;
+	padding: 1.2rem;
+	background: rgba(15, 23, 42, 0.62);
+	backdrop-filter: blur(6px);
+}
+.grantor-inbox-detail-modal {
+	width: min(680px, 100%);
+	max-height: min(86vh, 760px);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid #cbd8d1;
+	border-radius: 10px;
+	background: #fff;
+	box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+.grantor-inbox-detail-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem 1.1rem;
+	border-bottom: 1px solid #dce5e0;
+}
+.grantor-inbox-detail-title {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.8rem;
+	min-width: 0;
+}
+.grantor-inbox-detail-icon {
+	display: grid;
+	flex: 0 0 auto;
+	place-items: center;
+	width: 42px;
+	height: 42px;
+	border-radius: 50%;
+	background: #e2f1ea;
+	color: #00633c;
+}
+.grantor-inbox-detail-title span:not(.grantor-inbox-detail-icon) {
+	display: block;
+	color: #00633c;
+	font-size: 0.68rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.grantor-inbox-detail-title h3 {
+	margin: 0.18rem 0 0;
+	color: #17231f;
+	font-size: 1.08rem;
+	font-weight: 650;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
+}
+.grantor-inbox-detail-head > button {
+	display: grid;
+	flex: 0 0 auto;
+	place-items: center;
+	width: 36px;
+	height: 36px;
+	padding: 0;
+	border: 1px solid #cbd8d1;
+	border-radius: 50%;
+	background: transparent;
+	color: #37564b;
+	cursor: pointer;
+}
+.grantor-inbox-detail-meta,
+.grantor-inbox-detail-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem;
+	padding: 1rem 1.1rem 0;
+}
+.grantor-inbox-detail-meta p,
+.grantor-inbox-detail-grid p {
+	display: grid;
+	gap: 0.22rem;
+	margin: 0;
+	min-width: 0;
+	padding: 0.75rem;
+	border: 1px solid #dce5e0;
+	border-radius: 8px;
+	background: #f8fbf9;
+}
+.grantor-inbox-detail-meta span,
+.grantor-inbox-detail-grid span,
+.grantor-inbox-detail-message > span {
+	color: #64748b;
+	font-size: 0.68rem;
+	font-weight: 650;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+.grantor-inbox-detail-meta strong,
+.grantor-inbox-detail-grid strong {
+	color: #17231f;
+	font-size: 0.82rem;
+	font-weight: 600;
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+}
+.grantor-inbox-detail-message {
+	display: grid;
+	gap: 0.45rem;
+	margin: 1rem 1.1rem 0;
+	padding: 0.95rem;
+	border: 1px solid rgba(0, 99, 60, 0.2);
+	border-radius: 8px;
+	background: linear-gradient(135deg, #ffffff 0%, #f2faf6 100%);
+}
+.grantor-inbox-detail-message p {
+	margin: 0;
+	color: #243b33;
+	font-size: 0.88rem;
+	line-height: 1.65;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.grantor-inbox-detail-grid {
+	overflow-y: auto;
+	padding-bottom: 0.2rem;
+}
+.grantor-inbox-detail-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.7rem;
+	margin-top: auto;
+	padding: 1rem 1.1rem;
+	border-top: 1px solid #dce5e0;
+}
+.grantor-inbox-detail-actions button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	min-height: 38px;
+	padding: 0 0.9rem;
+	border-radius: 5px;
+	background: transparent;
+	font-size: 0.78rem;
+	font-weight: 600;
+	cursor: pointer;
+}
+.grantor-inbox-detail-delete {
+	border: 1px solid #fecaca;
+	color: #dc2626;
+}
+.grantor-inbox-detail-close {
+	border: 1px solid #00633c;
+	color: #00633c;
+}
 
 @media (max-width: 700px) {
 	.grantor-inbox-head { align-items: flex-start; flex-direction: column; padding: 1rem; }
@@ -659,6 +818,14 @@
 	.grantor-inbox-item.unread .grantor-inbox-item-main { padding-left: calc(1rem - 3px); }
 	.grantor-inbox-item-actions { justify-content: flex-end; padding: 0 1rem 0.7rem; }
 	.grantor-inbox-item-copy small { white-space: normal; }
+	.grantor-inbox-detail-backdrop { align-items: stretch; place-items: stretch; padding: 0.75rem; }
+	.grantor-inbox-detail-modal { max-height: calc(100dvh - 1.5rem); }
+	.grantor-inbox-detail-head,
+	.grantor-inbox-detail-actions { flex-direction: column; }
+	.grantor-inbox-detail-head > button,
+	.grantor-inbox-detail-actions button { width: 100%; }
+	.grantor-inbox-detail-meta,
+	.grantor-inbox-detail-grid { grid-template-columns: 1fr; }
 }
 
 .grantor-profile-form { min-width: 0; padding: 1rem 1.2rem; }
@@ -2753,6 +2920,43 @@
 .grantor-portal--dark .grantor-inbox-item-copy strong { color: #f8fafc; }
 .grantor-portal--dark .grantor-inbox-item-copy small,
 .grantor-portal--dark .grantor-inbox-item-actions time { color: #94a3b8; }
+.grantor-portal--dark .grantor-inbox-detail-modal {
+	border-color: #334155;
+	background: #111827;
+}
+.grantor-portal--dark .grantor-inbox-detail-head,
+.grantor-portal--dark .grantor-inbox-detail-actions {
+	border-color: #334155;
+}
+.grantor-portal--dark .grantor-inbox-detail-icon,
+.grantor-portal--dark .grantor-inbox-detail-meta p,
+.grantor-portal--dark .grantor-inbox-detail-grid p {
+	border-color: #334155;
+	background: #0f172a;
+}
+.grantor-portal--dark .grantor-inbox-detail-title h3,
+.grantor-portal--dark .grantor-inbox-detail-meta strong,
+.grantor-portal--dark .grantor-inbox-detail-grid strong,
+.grantor-portal--dark .grantor-inbox-detail-message p {
+	color: #f8fafc;
+}
+.grantor-portal--dark .grantor-inbox-detail-title span:not(.grantor-inbox-detail-icon),
+.grantor-portal--dark .grantor-inbox-detail-icon {
+	color: #6ee7b7;
+}
+.grantor-portal--dark .grantor-inbox-detail-meta span,
+.grantor-portal--dark .grantor-inbox-detail-grid span,
+.grantor-portal--dark .grantor-inbox-detail-message > span {
+	color: #94a3b8;
+}
+.grantor-portal--dark .grantor-inbox-detail-message {
+	border-color: #334155;
+	background: #0f172a;
+}
+.grantor-portal--dark .grantor-inbox-detail-head > button {
+	border-color: #475569;
+	color: #cbd5e1;
+}
 
 .grantor-portal--dark .grantor-applications-panel,
 .grantor-portal--dark .grantor-applications-filters input,

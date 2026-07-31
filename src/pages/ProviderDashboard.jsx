@@ -336,6 +336,46 @@ function getGrantorNotificationCategory(notification = {}) {
 	return "Account Updates"
 }
 
+const GRANTOR_NOTIFICATION_DETAIL_EXCLUDED_KEYS = new Set([
+	"id",
+	"sourceTable",
+	"notificationFallbackTable",
+	"grantorId",
+	"title",
+	"message",
+	"type",
+	"read",
+	"createdAt",
+	"created_at",
+	"updatedAt",
+	"updated_at",
+	"readAt",
+	"read_at",
+])
+
+function formatNotificationDetailValue(value) {
+	if (value == null || value === "") return "-"
+	if (typeof value === "boolean") return value ? "Yes" : "No"
+	if (typeof value === "object") {
+		if (typeof value.toDate === "function") return formatDateTime(value)
+		try {
+			return JSON.stringify(value)
+		} catch {
+			return String(value)
+		}
+	}
+	return String(value)
+}
+
+function formatNotificationDetailLabel(value = "") {
+	return String(value)
+		.replace(/[_-]+/g, " ")
+		.replace(/([a-z])([A-Z])/g, "$1 $2")
+		.replace(/\s+/g, " ")
+		.trim()
+		.replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
 function withAlpha(hexColor, alphaHex = "33") {
 	const value = String(hexColor || "").replace("#", "")
 	if (value.length !== 6) return hexColor
@@ -582,6 +622,7 @@ export default function ProviderDashboard() {
 	const [applicationSoeDownloads, setApplicationSoeDownloads] = useState({})
 	const [announcements, setAnnouncements] = useState([])
 	const [personalNotifications, setPersonalNotifications] = useState([])
+	const [selectedGrantorNotification, setSelectedGrantorNotification] = useState(null)
 	const [range, setRange] = useState("monthly")
 	const [tab, setTab] = useState("active")
 	const [scholarSearch, setScholarSearch] = useState("")
@@ -735,6 +776,15 @@ export default function ProviderDashboard() {
 		})
 		return [...groups.entries()].map(([category, items]) => ({ category, items }))
 	}, [personalNotifications])
+	const selectedGrantorNotificationDetails = useMemo(() => {
+		if (!selectedGrantorNotification) return []
+		return Object.entries(selectedGrantorNotification)
+			.filter(([key, value]) => !GRANTOR_NOTIFICATION_DETAIL_EXCLUDED_KEYS.has(key) && value != null && value !== "")
+			.map(([key, value]) => ({
+				label: formatNotificationDetailLabel(key),
+				value: formatNotificationDetailValue(value),
+			}))
+	}, [selectedGrantorNotification])
 	const setTablePage = useCallback((tableKey, page) => {
 		setTablePages((prev) => ({ ...prev, [tableKey]: page }))
 	}, [])
@@ -2659,6 +2709,12 @@ export default function ProviderDashboard() {
 		}
 	}
 
+	const openGrantorNotificationDetail = async (notification) => {
+		if (!notification) return
+		setSelectedGrantorNotification({ ...notification, read: true })
+		await markGrantorNotificationRead(notification)
+	}
+
 	const markAllGrantorNotificationsRead = async () => {
 		if (unreadPersonalNotifications.length === 0) return
 		try {
@@ -3273,7 +3329,7 @@ export default function ProviderDashboard() {
 									<header><span><HiOutlineShieldCheck />{group.category}</span><small>{group.items.length} {group.items.length === 1 ? "notification" : "notifications"}</small></header>
 									{group.items.map((notification) => (
 										<article key={notification.id} className={`grantor-inbox-item ${notification.read === true ? "" : "unread"}`}>
-											<button type="button" className="grantor-inbox-item-main" onClick={() => markGrantorNotificationRead(notification)}>
+											<button type="button" className="grantor-inbox-item-main" onClick={() => openGrantorNotificationDetail(notification)}>
 												<span className="grantor-inbox-item-icon"><HiOutlineLockClosed /></span>
 												<span className="grantor-inbox-item-copy"><strong>{notification.title || "Account Update"}</strong><small>{notification.message || "You have a new account notification."}</small></span>
 											</button>
@@ -3286,6 +3342,52 @@ export default function ProviderDashboard() {
 					</section>
 				) : null}
 			</main>
+			{selectedGrantorNotification ? (
+				<div className="grantor-inbox-detail-backdrop" role="presentation" onClick={() => setSelectedGrantorNotification(null)}>
+					<section className="grantor-inbox-detail-modal" role="dialog" aria-modal="true" aria-label="Inbox message details" onClick={(event) => event.stopPropagation()}>
+						<header className="grantor-inbox-detail-head">
+							<div className="grantor-inbox-detail-title">
+								<span className="grantor-inbox-detail-icon"><HiOutlineInbox /></span>
+								<div>
+									<span>{getGrantorNotificationCategory(selectedGrantorNotification)}</span>
+									<h3>{selectedGrantorNotification.title || "Inbox Message"}</h3>
+								</div>
+							</div>
+							<button type="button" onClick={() => setSelectedGrantorNotification(null)} aria-label="Close inbox message"><HiX /></button>
+						</header>
+						<div className="grantor-inbox-detail-meta">
+							<p><span>Received</span><strong>{formatDateTime(selectedGrantorNotification.createdAt || selectedGrantorNotification.created_at)}</strong></p>
+							<p><span>Status</span><strong>{selectedGrantorNotification.read === true ? "Read" : "Unread"}</strong></p>
+							{selectedGrantorNotification.readAt || selectedGrantorNotification.read_at ? (
+								<p><span>Read At</span><strong>{formatDateTime(selectedGrantorNotification.readAt || selectedGrantorNotification.read_at)}</strong></p>
+							) : null}
+							<p><span>Type</span><strong>{formatNotificationDetailLabel(selectedGrantorNotification.type || "Notification")}</strong></p>
+						</div>
+						<div className="grantor-inbox-detail-message">
+							<span>Full Message</span>
+							<p>{selectedGrantorNotification.message || "No message content was provided for this inbox item."}</p>
+						</div>
+						{selectedGrantorNotificationDetails.length > 0 ? (
+							<div className="grantor-inbox-detail-grid">
+								{selectedGrantorNotificationDetails.map((item) => (
+									<p key={item.label}>
+										<span>{item.label}</span>
+										<strong>{item.value}</strong>
+									</p>
+								))}
+							</div>
+						) : null}
+						<footer className="grantor-inbox-detail-actions">
+							<button type="button" className="grantor-inbox-detail-delete" onClick={async () => { await deleteGrantorNotification(selectedGrantorNotification); setSelectedGrantorNotification(null) }}>
+								<HiOutlineTrash /> Delete Message
+							</button>
+							<button type="button" className="grantor-inbox-detail-close" onClick={() => setSelectedGrantorNotification(null)}>
+								Close
+							</button>
+						</footer>
+					</section>
+				</div>
+			) : null}
 			{selectedAnnouncement ? (
 				<div className="admin-detail-backdrop" role="presentation" onClick={() => setSelectedAnnouncement(null)}>
 					<section className="grantor-announcement-view-modal" role="dialog" aria-modal="true" aria-label="Announcement details" onClick={(event) => event.stopPropagation()}>
