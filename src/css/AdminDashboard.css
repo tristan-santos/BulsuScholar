@@ -11086,13 +11086,28 @@
 }
 
 .admin-detail-shell--grantor {
-	width: min(860px, calc(100vw - 2rem));
+	width: min(780px, calc(100vw - 2rem));
 }
 
 .admin-detail-shell--grantor .admin-detail-modal--grantor {
 	max-height: min(84vh, 780px);
 	padding: 1rem;
 	overflow-y: auto;
+}
+
+.admin-detail-backdrop--grantor {
+	position: fixed !important;
+	inset: 0 !important;
+	display: grid !important;
+	place-items: center !important;
+	padding: 1.25rem !important;
+	overflow: auto;
+	z-index: 260;
+}
+
+.admin-detail-backdrop--grantor .admin-detail-shell--grantor {
+	margin: auto !important;
+	transform: none !important;
 }
 
 .admin-grantor-modal-header {

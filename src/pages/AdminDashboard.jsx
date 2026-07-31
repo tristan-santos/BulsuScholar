@@ -6523,7 +6523,7 @@ export default function AdminDashboard() {
 			) : null}
 
 			{selectedGrantor ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={() => setSelectedGrantorId("")}>
+				<div className="admin-detail-backdrop admin-detail-backdrop--grantor" role="presentation" onClick={() => setSelectedGrantorId("")}>
 					<div className="admin-detail-shell admin-detail-shell--grantor" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="admin-detail-close" onClick={() => setSelectedGrantorId("")}>
 							<HiX />
