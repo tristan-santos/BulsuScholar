@@ -10481,12 +10481,15 @@
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 	gap: 0.7rem;
+	align-items: stretch;
 }
 
 .admin-student-recommendation-card {
 	display: grid;
+	grid-template-rows: auto auto auto 1fr auto;
 	gap: 0.62rem;
 	min-width: 0;
+	min-height: 100%;
 	padding: 0.78rem;
 	border: 1px solid rgba(0, 99, 60, 0.18);
 	border-radius: 8px;
@@ -10569,7 +10572,10 @@
 	align-items: center;
 	justify-content: center;
 	gap: 0.38rem;
+	align-self: end;
+	width: 100%;
 	min-height: 36px;
+	height: 44px;
 	border: 1px solid #00633c;
 	border-radius: 6px;
 	background: #00633c;

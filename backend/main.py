@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Any
 
 try:
@@ -8,6 +9,7 @@ except ImportError:  # pragma: no cover - dependency is installed from requireme
 
 from fastapi import Body, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 if load_dotenv:
     backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -146,6 +148,20 @@ def build_allowed_origins() -> list[str]:
 allowed_origins = build_allowed_origins()
 allowed_origin_regex = os.getenv("DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX", r"https://.*\.vercel\.app")
 
+
+def is_allowed_cors_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    normalized_origin = origin.rstrip("/")
+    if normalized_origin in allowed_origins:
+        return True
+    if not allowed_origin_regex:
+        return False
+    try:
+        return re.fullmatch(allowed_origin_regex, normalized_origin) is not None
+    except re.error:
+        return False
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -154,6 +170,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def ensure_deployed_cors_headers(request, call_next):
+    origin = request.headers.get("origin")
+    cors_origin_allowed = is_allowed_cors_origin(origin)
+
+    if request.method == "OPTIONS" and cors_origin_allowed:
+        response = Response(status_code=204)
+    else:
+        try:
+            response = await call_next(request)
+        except Exception as error:
+            if request.url.path == "/scan-document":
+                response = JSONResponse(
+                    status_code=500,
+                    content={
+                        "detail": "document_scan_failed",
+                        "message": str(error),
+                    },
+                )
+            else:
+                raise
+
+    if cors_origin_allowed and response.headers.get("access-control-allow-origin") is None:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = request.headers.get("access-control-request-headers", "*")
+        response.headers["Vary"] = "Origin"
+
+    return response
 
 REQUIRED_SUPABASE_TABLES = [
     "admins",

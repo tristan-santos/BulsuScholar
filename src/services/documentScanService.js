@@ -24,8 +24,15 @@ export async function scanStudentDocument(file, documentType = "cor") {
 	}
 
 	if (!response.ok) {
-		const message = await response.text().catch(() => "")
-		throw new Error(message || "Document scanner is not available.")
+		const errorPayload = await response.clone().json().catch(() => null)
+		const fallbackMessage = await response.text().catch(() => "")
+		const detail =
+			errorPayload?.message ||
+			errorPayload?.detail?.message ||
+			errorPayload?.detail ||
+			fallbackMessage ||
+			"Document scanner is not available."
+		throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail))
 	}
 
 	return response.json()
