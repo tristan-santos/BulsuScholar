@@ -11284,12 +11284,46 @@
 }
 
 .admin-grantor-detail-actions {
-	display: flex;
-	justify-content: flex-end;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 38px;
+	align-items: center;
 	gap: 0.65rem;
 	margin-top: 1rem;
 	padding-top: 0.85rem;
 	border-top: 1px solid #dce7e1;
+}
+
+.admin-grantor-detail-actions .admin-table-btn,
+.admin-grantor-detail-actions .admin-danger-btn {
+	width: 100%;
+	min-height: 42px;
+	border-radius: 7px;
+	font-size: 0.82rem;
+	font-weight: 650;
+}
+
+.admin-grantor-detail-icon-close {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 38px;
+	height: 38px;
+	border: 1px solid #b8d3c5;
+	border-radius: 50%;
+	background: #ffffff;
+	color: #00633c;
+	cursor: pointer;
+	transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.admin-grantor-detail-icon-close:hover {
+	background: #edf8f2;
+	transform: translateY(-1px);
+}
+
+.admin-grantor-detail-icon-close svg {
+	width: 18px;
+	height: 18px;
 }
 
 .admin-student-status--password-requested,
@@ -11360,6 +11394,12 @@
 	color: #cbd5e1;
 }
 
+.admin-portal--dark .admin-grantor-detail-icon-close {
+	background: #101a16;
+	border-color: #27443a;
+	color: #8ee0bc;
+}
+
 @media (max-width: 980px) {
 	.admin-grantor-detail-stats,
 	.admin-grantor-student-grid {
@@ -11368,6 +11408,16 @@
 
 	.admin-grantor-detail-grid {
 		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 720px) {
+	.admin-grantor-detail-actions {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-grantor-detail-icon-close {
+		justify-self: end;
 	}
 }
 
