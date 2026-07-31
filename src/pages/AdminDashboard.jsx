@@ -1318,31 +1318,6 @@ export default function AdminDashboard() {
 		[selectedStudentId, studentProfiles],
 	)
 
-	const selectedGrantor = useMemo(
-		() => grantorRows.find((grantor) => grantor.id === selectedGrantorId) || null,
-		[grantorRows, selectedGrantorId],
-	)
-
-	const selectedGrantorAnnouncements = useMemo(() => {
-		if (!selectedGrantor?.id) return []
-		const grantorKeys = new Set([selectedGrantor.id, selectedGrantor.providerType, selectedGrantor.name].filter(Boolean).map((item) => String(item).toLowerCase()))
-		return grantorAnnouncementsRaw.filter((announcement) => {
-			const values = [
-				announcement.grantorId,
-				announcement.providerType,
-				announcement.providerLabel,
-				announcement.grantorName,
-				announcement.sourceLabel,
-			].map((item) => String(item || "").toLowerCase())
-			return values.some((value) => value && grantorKeys.has(value))
-		})
-	}, [grantorAnnouncementsRaw, selectedGrantor])
-
-	const selectedGrantorCurrentAnnouncement = useMemo(
-		() => selectedGrantorAnnouncements.find((announcement) => !isAnnouncementArchived(announcement)) || selectedGrantorAnnouncements[0] || null,
-		[selectedGrantorAnnouncements],
-	)
-
 	const selectedStudentLastSoe = useMemo(() => {
 		if (!selectedStudent?.id) return "No SOE request yet"
 		const latest = soeRequests
@@ -1488,6 +1463,35 @@ export default function AdminDashboard() {
 	const archivedGrantorRows = useMemo(
 		() => grantorRows.filter((grantor) => grantor.archived === true),
 		[grantorRows],
+	)
+
+	const selectedGrantor = useMemo(
+		() => grantorRows.find((grantor) => grantor.id === selectedGrantorId) || null,
+		[grantorRows, selectedGrantorId],
+	)
+
+	const selectedGrantorAnnouncements = useMemo(() => {
+		if (!selectedGrantor?.id) return []
+		const grantorKeys = new Set(
+			[selectedGrantor.id, selectedGrantor.providerType, selectedGrantor.name]
+				.filter(Boolean)
+				.map((item) => String(item).toLowerCase()),
+		)
+		return grantorAnnouncementsRaw.filter((announcement) => {
+			const values = [
+				announcement.grantorId,
+				announcement.providerType,
+				announcement.providerLabel,
+				announcement.grantorName,
+				announcement.sourceLabel,
+			].map((item) => String(item || "").toLowerCase())
+			return values.some((value) => value && grantorKeys.has(value))
+		})
+	}, [grantorAnnouncementsRaw, selectedGrantor])
+
+	const selectedGrantorCurrentAnnouncement = useMemo(
+		() => selectedGrantorAnnouncements.find((announcement) => !isAnnouncementArchived(announcement)) || selectedGrantorAnnouncements[0] || null,
+		[selectedGrantorAnnouncements],
 	)
 
 	const visibleGrantorRows = useMemo(() => {
