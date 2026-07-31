@@ -83,6 +83,7 @@ import {
 	normalizeScholarshipList,
 	validateScholarshipDocuments,
 } from "../services/scholarshipService"
+import { loadRecommendedScholarships } from "../services/recommendedScholarshipService"
 import {
 	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
@@ -807,6 +808,9 @@ export default function AdminDashboard() {
 	const [studentArchiveTrendRange, setStudentArchiveTrendRange] = useState("monthly")
 	const [selectedStudentId, setSelectedStudentId] = useState("")
 	const [selectedScholarshipTrackingKey, setSelectedScholarshipTrackingKey] = useState("")
+	const [selectedStudentRecommendations, setSelectedStudentRecommendations] = useState([])
+	const [selectedStudentRecommendationsLoading, setSelectedStudentRecommendationsLoading] = useState(false)
+	const [recommendingScholarshipId, setRecommendingScholarshipId] = useState("")
 	const [adminStudentDuplicateAudit, setAdminStudentDuplicateAudit] = useState({ duplicateIds: [], groups: [] })
 	const [previewDocument, setPreviewDocument] = useState(null)
 	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
@@ -1455,6 +1459,18 @@ export default function AdminDashboard() {
 		[activeGrantorRows.length, archivedGrantorRows.length, grantorRows.length],
 	)
 
+	const grantorManagementStats = useMemo(() => {
+		const passwordRequests = activeGrantorRows.filter(
+			(row) => row.passwordChangeRequestStatus === "pending" || row.passwordChangeRequested === true || row.statusLabel === "Password Requested",
+		).length
+		return {
+			total: grantorRows.length,
+			active: activeGrantorRows.length,
+			passwordRequests,
+			archived: archivedGrantorRows.length,
+		}
+	}, [activeGrantorRows, archivedGrantorRows.length, grantorRows.length])
+
 	const grantorTablePage = useMemo(
 		() => paginateRows(visibleGrantorRows, tablePages[`grantors_${grantorTab}`] || 1, TABLE_PAGE_SIZE),
 		[grantorTab, tablePages, visibleGrantorRows],
@@ -1626,6 +1642,48 @@ export default function AdminDashboard() {
 			).values(),
 		]
 	}, [activeGrantorScholars, archivedGrantorScholars, grantorScholarStudentRecordLookup, selectedStudent])
+
+	const selectedStudentHasScholarship = useMemo(() => {
+		if (!selectedStudent?.id) return false
+		return (
+			selectedStudentGrantorScholarships.length > 0 ||
+			normalizeScholarshipList(selectedStudent.scholarships || []).length > 0 ||
+			getStudentScholarshipNames(selectedStudent).length > 0
+		)
+	}, [selectedStudent, selectedStudentGrantorScholarships])
+
+	useEffect(() => {
+		let active = true
+		setSelectedStudentRecommendations([])
+		if (!selectedStudent?.id || selectedStudentHasScholarship) {
+			setSelectedStudentRecommendationsLoading(false)
+			return () => {
+				active = false
+			}
+		}
+
+		setSelectedStudentRecommendationsLoading(true)
+		loadRecommendedScholarships(selectedStudent)
+			.then((result) => {
+				if (!active) return
+				setSelectedStudentRecommendations((result.recommendations || []).slice(0, 3))
+			})
+			.catch((error) => {
+				if (!active) return
+				console.error("Admin student recommendation load failed.", {
+					studentId: selectedStudent.id,
+					error,
+				})
+				setSelectedStudentRecommendations([])
+			})
+			.finally(() => {
+				if (active) setSelectedStudentRecommendationsLoading(false)
+			})
+
+		return () => {
+			active = false
+		}
+	}, [selectedStudent, selectedStudentHasScholarship])
 
 	const scholarshipOverviewRows = useMemo(() => {
 		const rows = new Map()
@@ -3112,6 +3170,50 @@ export default function AdminDashboard() {
 
 	const closeStudentModal = () => {
 		setSelectedStudentId("")
+		setSelectedStudentRecommendations([])
+		setRecommendingScholarshipId("")
+	}
+
+	const recommendScholarshipToSelectedStudent = async (recommendation = {}) => {
+		if (!selectedStudent?.id || !recommendation?.grantorId || recommendingScholarshipId) return
+		const recommendationId = recommendation.announcementId || recommendation.grantorId
+		setRecommendingScholarshipId(recommendationId)
+		try {
+			const scholarshipName =
+				recommendation.announcementTitle ||
+				recommendation.providerLabel ||
+				recommendation.grantorName ||
+				"recommended scholarship"
+			const grantorName = recommendation.grantorName || recommendation.providerLabel || "a grantor"
+			await createStudentNotification({
+				studentId: selectedStudent.id,
+				source: "personal",
+				type: "admin_scholarship_recommendation",
+				title: "Scholarship Recommendation",
+				message: `BulsuScholar Admin recommends ${scholarshipName} from ${grantorName} based on your GWA, location, and scholarship profile. Review the scholarship before applying.`,
+				studentName: selectedStudent.fullName || studentFullName(selectedStudent),
+				grantorId: recommendation.grantorId || "",
+				grantorName,
+				scholarshipName,
+				announcementId: recommendation.announcementId || "",
+				minimumGwa: recommendation.minimumGwa ?? recommendation.minGwa ?? "",
+				score: recommendation.score ?? "",
+				reasons: recommendation.reasons || [],
+				authorName: "BulsuScholar Admin",
+				read: false,
+				createdAt: serverTimestamp(),
+			})
+			toast.success(`Recommendation sent to ${selectedStudent.fullName || "student"}.`)
+		} catch (error) {
+			console.error("Unable to send student scholarship recommendation.", {
+				studentId: selectedStudent.id,
+				recommendation,
+				error,
+			})
+			toast.error("Unable to send the recommendation right now.")
+		} finally {
+			setRecommendingScholarshipId("")
+		}
 	}
 
 	const isPreviewPdf = (file = {}) => {
@@ -4741,44 +4843,57 @@ export default function AdminDashboard() {
 		}
 
 		if (activeSection === "grantors") {
-			const rowsForTable = grantorTab === "archived" ? archivedGrantorRows : activeGrantorRows
 			const selectableGrantorIds = grantorTab === "grantors" ? visibleGrantorRows.map((grantor) => grantor.id) : []
 			const allVisibleGrantorsSelected =
 				selectableGrantorIds.length > 0 &&
 				selectableGrantorIds.every((id) => selectedGrantorIds.includes(id))
 			return (
-				<section className="admin-management-panel">
+				<section className="admin-management-panel admin-grantor-management">
 					<div className="admin-panel-head">
-						<div>
-							<h2>Grantor Management</h2>
-							<p className="admin-panel-copy">Manage scholarship provider accounts, password requests, and archived grantor records.</p>
+						<div className="admin-student-title admin-grantor-title">
+							<span aria-hidden="true"><HiOutlineUserGroup /></span>
+							<div>
+								<h2>Grantor Management</h2>
+								<p className="admin-panel-copy">Manage scholarship provider accounts, password requests, and archived grantor records.</p>
+							</div>
 						</div>
 						<div className="admin-head-actions">
 							<button
 								type="button"
-								className="admin-export-btn admin-export-btn--mini"
+								className="admin-student-report-btn"
 								onClick={() => openReportPreview(createGrantorPreviewConfig(grantorReportRows, `View: ${grantorTab} | Search: ${grantorSearch || "-"}`))}
 							>
-								<HiOutlineEye /> Generate Report
+								<HiOutlineDocumentText /> Generate Report
 							</button>
 							<button
 								type="button"
-								className="admin-export-btn admin-export-btn--mini admin-export-btn--primary"
+								className="admin-grantor-new-btn"
 								onClick={() => setShowGrantorModal(true)}
 							>
 								<HiOutlineUserAdd /> New Grantor
 							</button>
 						</div>
 					</div>
-					<SectionTabs
-						tabs={[
-							{ id: "overview", label: "Overview", count: grantorTabCounts.overview, icon: HiOutlineChartPie },
-							{ id: "grantors", label: "Grantors", count: grantorTabCounts.grantors, icon: HiOutlineUserGroup },
-							{ id: "archived", label: "Archived", count: grantorTabCounts.archived, icon: HiOutlineTrash },
-						]}
-						value={grantorTab}
-						onChange={setGrantorTab}
-					/>
+					<div className="admin-grantor-pagination-row">
+						<SectionTabs
+							tabs={[
+								{ id: "overview", label: "Overview", count: grantorTabCounts.overview, icon: HiOutlineChartPie },
+								{ id: "grantors", label: "Grantors", count: grantorTabCounts.grantors, icon: HiOutlineUserGroup },
+								{ id: "archived", label: "Archived", count: grantorTabCounts.archived, icon: HiOutlineTrash },
+							]}
+							value={grantorTab}
+							onChange={setGrantorTab}
+							className="admin-grantor-inline-tabs"
+						/>
+						<button
+							type="button"
+							className="admin-student-archive-btn"
+							disabled={grantorTab !== "grantors" || selectedGrantorIds.length === 0}
+							onClick={openGrantorArchiveConfirmation}
+						>
+							<HiOutlineTrash /> Archive {selectedGrantorIds.length > 0 ? `(${selectedGrantorIds.length})` : ""}
+						</button>
+					</div>
 					{grantorTab === "overview" ? (
 						<section className="admin-tab-panel">
 							<div className="admin-summary-strip">
@@ -4799,7 +4914,7 @@ export default function AdminDashboard() {
 								</article>
 							</div>
 							<div className="admin-table-wrap">
-								<table className="admin-management-table admin-management-table--roomy">
+								<table className="admin-management-table admin-management-table--roomy admin-grantor-table">
 									<thead>
 										<tr>
 											<th>Grantor ID</th>
@@ -4828,46 +4943,65 @@ export default function AdminDashboard() {
 							</div>
 						</section>
 					) : (
-						<section className="admin-tab-panel admin-tab-panel--grantors">
-							<div className="admin-filter-bar admin-filter-bar--grantors">
-								<input
-									type="text"
-									placeholder="Search grantor ID, name, email, organization, or status"
-									value={grantorSearch}
-									onChange={(event) => setGrantorSearch(event.target.value)}
-								/>
+						<>
+							<div className="admin-student-stats-row admin-grantor-stats-row" aria-label="Grantor management statistics">
+								<article>
+									<HiOutlineUserGroup />
+									<span>Total Grantors</span>
+									<strong>{grantorManagementStats.total}</strong>
+								</article>
+								<article>
+									<HiOutlineShieldCheck />
+									<span>Active Grantors</span>
+									<strong>{grantorManagementStats.active}</strong>
+								</article>
+								<article>
+									<HiOutlineRefresh />
+									<span>Password Requests</span>
+									<strong>{grantorManagementStats.passwordRequests}</strong>
+								</article>
+								<article>
+									<HiOutlineArchive />
+									<span>Archived</span>
+									<strong>{grantorManagementStats.archived}</strong>
+								</article>
 							</div>
-							{grantorTab === "grantors" ? (
-								<div className="admin-grantor-table-toolbar">
-									<label className="admin-grantor-select-all">
+						</>
+					)}
+					{grantorTab !== "overview" ? (
+						<section className="admin-tab-panel admin-tab-panel--grantors">
+							<div className="admin-student-command-row admin-grantor-command-row">
+								<div className="admin-student-toolbar admin-grantor-toolbar">
+									<label className="admin-student-search" aria-label="Search grantor records">
+										<HiOutlineSearch />
 										<input
-											type="checkbox"
-											checked={allVisibleGrantorsSelected}
-											onChange={(event) => {
-												if (event.target.checked) {
-													setSelectedGrantorIds((prev) => [...new Set([...prev, ...selectableGrantorIds])])
-												} else {
-													setSelectedGrantorIds((prev) => prev.filter((id) => !selectableGrantorIds.includes(id)))
-												}
-											}}
+											type="text"
+											placeholder="Search grantor ID, name, email, organization, or status"
+											value={grantorSearch}
+											onChange={(event) => setGrantorSearch(event.target.value)}
 										/>
-										<span>All</span>
 									</label>
-									<button
-										type="button"
-										className="admin-danger-btn admin-danger-btn--mini"
-										disabled={selectedGrantorIds.length === 0}
-										onClick={openGrantorArchiveConfirmation}
-									>
-										<HiOutlineTrash /> Archived
-									</button>
 								</div>
-							) : null}
+							</div>
 							<div className="admin-table-wrap admin-table-wrap--grantors">
-								<table className="admin-management-table admin-management-table--roomy">
+								<table className="admin-management-table admin-management-table--roomy admin-grantor-table">
 									<thead>
 										<tr>
-											{grantorTab === "grantors" ? <th style={{ width: "44px" }} /> : null}
+											{grantorTab === "grantors" ? (
+												<th style={{ width: "40px" }}>
+													<input
+														type="checkbox"
+														checked={allVisibleGrantorsSelected}
+														onChange={(event) => {
+															if (event.target.checked) {
+																setSelectedGrantorIds((prev) => [...new Set([...prev, ...selectableGrantorIds])])
+															} else {
+																setSelectedGrantorIds((prev) => prev.filter((id) => !selectableGrantorIds.includes(id)))
+															}
+														}}
+													/>
+												</th>
+											) : null}
 											<th>Grantor ID</th>
 											<th>Name</th>
 											<th>Email</th>
@@ -4878,7 +5012,7 @@ export default function AdminDashboard() {
 										</tr>
 									</thead>
 									<tbody>
-										{rowsForTable.length === 0 ? (
+										{visibleGrantorRows.length === 0 ? (
 											<EmptyStateRow colSpan={grantorTab === "grantors" ? 8 : 6} />
 										) : (
 											grantorTablePage.rows.map((grantor) => (
@@ -4902,17 +5036,19 @@ export default function AdminDashboard() {
 													<td>{grantor.name}</td>
 													<td>{grantor.email || "-"}</td>
 													<td>{grantor.organization || "-"}</td>
-											<td>{grantor.totalScholars || 0}</td>
-											<td><span className={toStatusClass(grantor.statusLabel)}>{grantor.statusLabel}</span></td>
-											{grantorTab === "grantors" ? (
-												<td>
-													{grantor.passwordChangeRequestStatus === "pending" || grantor.passwordChangeRequested === true ? (
-														<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => approveGrantorPasswordChange(grantor.id)}>
-															<HiOutlineShieldCheck /> Approve
-														</button>
-													) : "-"}
-												</td>
-											) : null}
+													<td>{grantor.totalScholars || 0}</td>
+													<td><span className={`admin-student-status admin-student-status--${String(grantor.statusLabel || "active").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{grantor.statusLabel}</span></td>
+													{grantorTab === "grantors" ? (
+														<td>
+															{grantor.passwordChangeRequestStatus === "pending" || grantor.passwordChangeRequested === true ? (
+																<button type="button" className="admin-student-action-btn admin-grantor-approve-btn" onClick={() => approveGrantorPasswordChange(grantor.id)}>
+																	<HiOutlineShieldCheck /> Approve
+																</button>
+															) : (
+																<span className="admin-grantor-action-empty">No action</span>
+															)}
+														</td>
+													) : null}
 												</tr>
 											))
 										)}
@@ -4925,7 +5061,7 @@ export default function AdminDashboard() {
 								onPageChange={(page) => setTablePage(`grantors_${grantorTab}`, page)}
 							/>
 						</section>
-					)}
+					) : null}
 				</section>
 			)
 		}
@@ -6339,6 +6475,62 @@ export default function AdminDashboard() {
 							) : (
 								<span className="admin-detail-docs-empty">No scholarships assigned</span>
 							)}
+							{!selectedStudentHasScholarship ? (
+								<div className="admin-student-recommendations">
+									<div className="admin-student-recommendations-head">
+										<div>
+											<span>Admin Recommendation</span>
+											<strong>Recommended Scholarships</strong>
+										</div>
+										<small>{selectedStudentRecommendationsLoading ? "Checking..." : `${selectedStudentRecommendations.length} found`}</small>
+									</div>
+									{selectedStudentRecommendationsLoading ? (
+										<p className="admin-student-recommendation-empty">Loading recommended scholarships for this student.</p>
+									) : selectedStudentRecommendations.length > 0 ? (
+										<div className="admin-student-recommendation-grid">
+											{selectedStudentRecommendations.map((recommendation, index) => {
+												const recommendationId = recommendation.announcementId || recommendation.grantorId || `recommendation_${index}`
+												const grantorName = recommendation.grantorName || recommendation.providerLabel || "Grantor"
+												const scholarshipName = recommendation.announcementTitle || recommendation.providerLabel || grantorName
+												return (
+													<article key={recommendationId} className="admin-student-recommendation-card">
+														<div className="admin-student-recommendation-author">
+															<span>
+																{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
+																	<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt={grantorName} />
+																) : (
+																	getInitials(grantorName)
+																)}
+															</span>
+															<div>
+																<strong>{grantorName}</strong>
+																<small>Rank #{index + 1}</small>
+															</div>
+														</div>
+														<h5>{scholarshipName}</h5>
+														<p>{recommendation.label || "Best scholarship match for this student."}</p>
+														<div className="admin-student-recommendation-meta">
+															<span><HiOutlineAcademicCap /> Minimum GWA {recommendation.minimumGwa ?? recommendation.minGwa ?? "-"}</span>
+															<span><HiOutlineUsers /> {recommendation.rosterCount || 0} roster scholars</span>
+															<span><HiOutlineSparkles /> Score {Math.round(Number(recommendation.score || 0))}</span>
+														</div>
+														<button
+															type="button"
+															onClick={() => recommendScholarshipToSelectedStudent(recommendation)}
+															disabled={recommendingScholarshipId === recommendationId}
+														>
+															<HiOutlineSparkles />
+															{recommendingScholarshipId === recommendationId ? "Sending..." : "Recommend"}
+														</button>
+													</article>
+												)
+											})}
+										</div>
+									) : (
+										<p className="admin-student-recommendation-empty">No open scholarship recommendation matched this student yet.</p>
+									)}
+								</div>
+							) : null}
 						</div>
 						<div className="admin-detail-actions">
 							{selectedStudent.archived === true && (
