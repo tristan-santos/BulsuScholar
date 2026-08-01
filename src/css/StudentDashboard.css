@@ -5451,6 +5451,41 @@
 	padding: 0.4rem 0 0;
 }
 
+.student-announcement-apply-wrap {
+	display: grid;
+	justify-items: end;
+	gap: 0.35rem;
+	min-width: min(100%, 320px);
+}
+
+.student-announcement-apply-btn {
+	min-width: 148px;
+}
+
+.student-announcement-apply-btn--disabled,
+.student-announcement-apply-btn--disabled:disabled {
+	border-color: #cbd5e1;
+	background: #e5e7eb;
+	color: #64748b;
+	cursor: not-allowed;
+	opacity: 1;
+	filter: none;
+}
+
+.student-announcement-apply-btn--disabled svg {
+	color: #64748b;
+}
+
+.student-announcement-apply-reason {
+	max-width: 360px;
+	margin: 0;
+	color: #b45309;
+	font-size: 0.74rem;
+	font-weight: 600;
+	line-height: 1.4;
+	text-align: right;
+}
+
 .student-announcement-detail {
 	display: grid;
 	gap: 1rem;

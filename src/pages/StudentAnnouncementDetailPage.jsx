@@ -337,6 +337,71 @@ export default function StudentAnnouncementDetailPage() {
 			? grantorProfiles[announcement.grantorId] || {}
 			: {}
 	const isPosterApplicationsClosed = posterProfile?.applicationsBlocked === true
+	const applyAvailability = useMemo(() => {
+		if (!announcement || !user) return { canApply: false, reason: "" }
+		if (isPreviousAnnouncement) {
+			return { canApply: false, reason: "This announcement is already archived or past its application window." }
+		}
+		if (!isAnnouncementApplication) {
+			return { canApply: false, reason: "This announcement is for information only and is not open for applications." }
+		}
+
+		const scholarships = normalizeScholarshipList(user?.scholarships || [])
+		const hasLockedScholarship = scholarships.some((item) => item.isLocked)
+		const hasSameActiveApplication = scholarships.some(
+			(item) =>
+				item.providerType === announcementProviderType &&
+				isScholarshipActiveOrPending(item.status),
+		)
+		const hasActiveOrPendingScholarship = scholarships.some(
+			(item) => !item.isLocked && isScholarshipActiveOrPending(item.status),
+		)
+
+		if (studentAccessState.isScholarshipActionBlocked) {
+			return { canApply: false, reason: getScholarshipActionBlockMessage(user || {}) }
+		}
+		if (isPosterApplicationsClosed) {
+			return { canApply: false, reason: `Applications for ${announcement.sourceLabel || grantorDisplayName || "this grantor"} are currently closed.` }
+		}
+		if (hasLockedScholarship) {
+			return { canApply: false, reason: "Your scholarship selection is already locked for this semester." }
+		}
+		if (hasSameActiveApplication) {
+			return { canApply: false, reason: "You already have an active application for this scholarship." }
+		}
+		if (hasActiveOrPendingScholarship) {
+			return { canApply: false, reason: "You already have an existing scholarship application. You cannot apply for another until the current one is resolved." }
+		}
+		if (announcementMinimumGrade !== null) {
+			const studentGrade = toNumericGrade(user?.gwa || user?.currentGwa || user?.generalWeightedAverage)
+			if (studentGrade === null) {
+				return { canApply: false, reason: "Your current GWA is not available. Update your profile before applying." }
+			}
+			if (studentGrade > announcementMinimumGrade) {
+				return { canApply: false, reason: `Your current GWA (${studentGrade}) does not meet the required minimum GWA of ${announcementMinimumGrade}.` }
+			}
+		}
+
+		const missingRequiredDocuments = getMissingAnnouncementDocuments(user, announcement)
+		if (missingRequiredDocuments.length > 0) {
+			return {
+				canApply: false,
+				reason: `Upload the required document${missingRequiredDocuments.length === 1 ? "" : "s"} first: ${missingRequiredDocuments.join(", ")}.`,
+			}
+		}
+
+		return { canApply: true, reason: "" }
+	}, [
+		announcement,
+		announcementMinimumGrade,
+		announcementProviderType,
+		grantorDisplayName,
+		isAnnouncementApplication,
+		isPosterApplicationsClosed,
+		isPreviousAnnouncement,
+		studentAccessState.isScholarshipActionBlocked,
+		user,
+	])
 
 	useEffect(() => {
 		setActiveImageIndex(0)
@@ -357,6 +422,10 @@ export default function StudentAnnouncementDetailPage() {
 
 	const applyFromAnnouncement = useCallback(async () => {
 		if (!announcement || !user || !sessionState.storedUserId || isApplying) return
+		if (!applyAvailability.canApply) {
+			if (applyAvailability.reason) toast.info(applyAvailability.reason)
+			return
+		}
 
 		const studentId = sessionState.storedUserId
 		const scholarships = normalizeScholarshipList(user?.scholarships || [])
@@ -533,6 +602,8 @@ export default function StudentAnnouncementDetailPage() {
 		announcement,
 		announcementProviderType,
 		announcementMinimumGrade,
+		applyAvailability.canApply,
+		applyAvailability.reason,
 		isApplying,
 		isAnnouncementApplication,
 		isPosterApplicationsClosed,
@@ -584,15 +655,20 @@ export default function StudentAnnouncementDetailPage() {
 							Back to Announcements
 						</button>
 						{announcement && isAnnouncementApplication ? (
-							<button
-								type="button"
-								className="student-mini-btn student-mini-btn--primary"
-								onClick={applyFromAnnouncement}
-								disabled={isApplying || isPreviousAnnouncement}
-							>
-								<HiOutlineAcademicCap aria-hidden />
-								{isApplying ? "Applying..." : "Apply Now"}
-							</button>
+							<div className="student-announcement-apply-wrap">
+								<button
+									type="button"
+									className={`student-mini-btn student-mini-btn--primary student-announcement-apply-btn ${!applyAvailability.canApply ? "student-announcement-apply-btn--disabled" : ""}`}
+									onClick={applyFromAnnouncement}
+									disabled={isApplying || !applyAvailability.canApply}
+								>
+									<HiOutlineAcademicCap aria-hidden />
+									{isApplying ? "Applying..." : "Apply Now"}
+								</button>
+								{!applyAvailability.canApply && applyAvailability.reason ? (
+									<p className="student-announcement-apply-reason">{applyAvailability.reason}</p>
+								) : null}
+							</div>
 						) : null}
 					</section>
 
