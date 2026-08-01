@@ -3345,6 +3345,199 @@
 	line-height: 1.6;
 }
 
+.admin-reject-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 260;
+	display: grid;
+	place-items: center;
+	padding: 1rem;
+	background: rgba(15, 23, 42, 0.64);
+	backdrop-filter: blur(6px);
+}
+
+.admin-reject-modal {
+	width: min(560px, 100%);
+	overflow: hidden;
+	border: 1px solid #fecaca;
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 0 22px 70px rgba(127, 29, 29, 0.24);
+}
+
+.admin-reject-modal-head {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	gap: 0.85rem;
+	align-items: flex-start;
+	padding: 1rem 1.1rem;
+	border-bottom: 1px solid #fee2e2;
+}
+
+.admin-reject-modal-icon {
+	display: grid;
+	place-items: center;
+	width: 42px;
+	height: 42px;
+	border: 1px solid #fecaca;
+	border-radius: 50%;
+	background: #fef2f2;
+	color: #dc2626;
+}
+
+.admin-reject-modal-head span {
+	display: block;
+	margin-bottom: 0.2rem;
+	color: #dc2626;
+	font-size: 0.68rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.admin-reject-modal-head h3 {
+	margin: 0;
+	color: #7f1d1d;
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.admin-reject-modal-head p {
+	margin: 0.35rem 0 0;
+	color: #7f1d1d;
+	font-size: 0.78rem;
+	line-height: 1.5;
+}
+
+.admin-reject-modal-head button {
+	width: 34px;
+	height: 34px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid #fecaca;
+	border-radius: 50%;
+	background: #fff;
+	color: #dc2626;
+	cursor: pointer;
+}
+
+.admin-reject-modal-body {
+	display: grid;
+	gap: 0.85rem;
+	padding: 1rem 1.1rem;
+}
+
+.admin-reject-summary-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.55rem;
+}
+
+.admin-reject-summary-grid p {
+	min-width: 0;
+	margin: 0;
+	padding: 0.65rem;
+	border: 1px solid #fee2e2;
+	border-radius: 7px;
+	background: #fffafa;
+}
+
+.admin-reject-summary-grid span,
+.admin-reject-summary-grid strong {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-reject-summary-grid span {
+	color: #991b1b;
+	font-size: 0.66rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.admin-reject-summary-grid strong {
+	margin-top: 0.2rem;
+	color: #0f172a;
+	font-size: 0.8rem;
+	font-weight: 600;
+}
+
+.admin-reject-modal-body label {
+	display: grid;
+	gap: 0.35rem;
+	color: #17342a;
+	font-size: 0.78rem;
+	font-weight: 600;
+}
+
+.admin-reject-modal-body select,
+.admin-reject-modal-body textarea {
+	width: 100%;
+	border: 1px solid #dce7e1;
+	border-radius: 6px;
+	background: #fff;
+	color: #0f172a;
+	font-family: inherit;
+	font-size: 0.82rem;
+}
+
+.admin-reject-modal-body select {
+	min-height: 40px;
+	padding: 0 0.7rem;
+}
+
+.admin-reject-modal-body textarea {
+	resize: vertical;
+	min-height: 92px;
+	padding: 0.7rem;
+}
+
+.admin-reject-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.65rem;
+	padding: 0.9rem 1.1rem 1rem;
+	border-top: 1px solid #f1f5f9;
+}
+
+.admin-reject-cancel-btn,
+.admin-reject-confirm-btn {
+	min-height: 36px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	border-radius: 6px;
+	font-family: inherit;
+	font-size: 0.78rem;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.admin-reject-cancel-btn {
+	border: 1px solid #dce7e1;
+	background: #fff;
+	color: #52647a;
+	padding: 0 0.9rem;
+}
+
+.admin-reject-confirm-btn {
+	border: 1px solid #dc2626;
+	background: #dc2626;
+	color: #fff;
+	padding: 0 1rem;
+}
+
+.admin-reject-cancel-btn:disabled,
+.admin-reject-confirm-btn:disabled {
+	opacity: 0.65;
+	cursor: wait;
+}
+
 .admin-detail-grid {
 	margin-top: 0.7rem;
 }

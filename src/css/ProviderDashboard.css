@@ -4037,6 +4037,18 @@
 	border-bottom: 1px solid #fee2e2;
 }
 
+.grantor-reject-modal-icon {
+	display: grid;
+	flex: 0 0 auto;
+	place-items: center;
+	width: 42px;
+	height: 42px;
+	border: 1px solid #fecaca;
+	border-radius: 50%;
+	background: #fef2f2;
+	color: #dc2626;
+}
+
 .grantor-reject-modal-head span {
 	display: block;
 	margin-bottom: 0.2rem;
@@ -4078,6 +4090,44 @@
 	display: grid;
 	gap: 0.85rem;
 	padding: 1rem 1.1rem;
+}
+
+.grantor-reject-summary-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.55rem;
+}
+
+.grantor-reject-summary-grid p {
+	min-width: 0;
+	margin: 0;
+	padding: 0.65rem;
+	border: 1px solid #fee2e2;
+	border-radius: 7px;
+	background: #fffafa;
+}
+
+.grantor-reject-summary-grid span,
+.grantor-reject-summary-grid strong {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.grantor-reject-summary-grid span {
+	color: #991b1b;
+	font-size: 0.66rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.grantor-reject-summary-grid strong {
+	margin-top: 0.2rem;
+	color: #0f172a;
+	font-size: 0.8rem;
+	font-weight: 600;
 }
 
 .grantor-reject-modal-body label {

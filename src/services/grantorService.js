@@ -163,6 +163,8 @@ export function normalizeGrantorScholar(raw = {}, id = "") {
 export function normalizeGrantorApplication(raw = {}, id = "") {
 	return {
 		id: raw.id || id,
+		grantorId: raw.grantorId || raw.grantor_id || "",
+		grantorName: raw.grantorName || raw.providerLabel || raw.provider || "",
 		studentId: raw.studentId || raw.studentnumber || "",
 		scholarshipId: raw.scholarshipId || "",
 		applicationNumber: raw.applicationNumber || raw.requestNumber || raw.id || id,
@@ -180,6 +182,8 @@ export function normalizeGrantorApplication(raw = {}, id = "") {
 		scholarshipName: raw.scholarshipName || raw.scholarship || raw.programName || "",
 		providerType: raw.providerType || "",
 		providerLabel: raw.providerLabel || raw.provider || raw.providerType || "",
+		announcementId: raw.announcementId || "",
+		announcementSource: raw.announcementSource || "",
 		status: raw.status || "Applied",
 		appliedAt: raw.appliedAt || raw.applicationDate || raw.createdAt || null,
 		documentUrls: raw.documentUrls || {},

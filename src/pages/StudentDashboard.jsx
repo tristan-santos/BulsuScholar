@@ -47,6 +47,7 @@ import {
 	buildRecommendationApplyPayload,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
+import { getAnnouncementApplyAvailability } from "../services/announcementApplyEligibilityService"
 import { applyScholarshipWorkflow } from "../services/workflowService"
 import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
@@ -823,6 +824,14 @@ export default function StudentDashboard() {
 									const authorName = formatDisplayText(announcement.sourceLabel || (announcement.source === "grantor" ? "Grantor" : "Scholarship Office"))
 									const authorInitials = String(authorName || "SO").trim().slice(0, 2).toUpperCase()
 									const authorImage = announcement.profileImageUrl || announcement.authorImageUrl || ""
+									const applyAvailability = getAnnouncementApplyAvailability({
+										announcement,
+										user,
+										studentAccessState,
+									})
+									const isApplyBlocked =
+										announcement.applicationEnabled === true &&
+										!applyAvailability.canApply
 									return (
 										<article key={announcement.id} className="student-modern-announcement-card">
 											<div className="student-modern-announcement-media">{imageUrls[0] ? <img src={imageUrls[0]} alt={formatDisplayText(announcement.title, "Announcement")} /> : <HiOutlineBell />}</div>
@@ -833,7 +842,11 @@ export default function StudentDashboard() {
 												</div>
 												<h4>{formatDisplayText(announcement.title, "Announcement")}</h4>
 												<p>{formatDisplayText(announcement.previewText || announcement.content || announcement.description, "No Preview Text Provided.")}</p>
-												<button type="button" onClick={() => handleAnnouncementRedirect(announcement)}>
+												<button
+													type="button"
+													className={isApplyBlocked ? "student-modern-announcement-apply--blocked" : ""}
+													onClick={() => handleAnnouncementRedirect(announcement)}
+												>
 													{announcement.applicationEnabled ? "Apply Now" : "View Announcement"}
 												</button>
 											</div>

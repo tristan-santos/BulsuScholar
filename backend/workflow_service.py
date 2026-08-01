@@ -6,6 +6,7 @@ try:
         create_log,
         create_grantor_notification,
         create_student_notification,
+        supabase_document_get,
         supabase_document_insert,
         supabase_document_update,
         supabase_document_upsert,
@@ -17,6 +18,7 @@ except ImportError:  # pragma: no cover
         create_log,
         create_grantor_notification,
         create_student_notification,
+        supabase_document_get,
         supabase_document_insert,
         supabase_document_update,
         supabase_document_upsert,
@@ -122,7 +124,36 @@ def apply_scholarship(payload: dict[str, Any]) -> dict[str, Any]:
 def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
     updates = payload.get("updates") or []
     notifications = payload.get("notifications") or []
+    actor_type = str(payload.get("actorType") or "admin").strip().lower()
+    actor_id = str(payload.get("actorId") or "").strip()
     results = []
+
+    if actor_type == "grantor":
+        for update in updates:
+            table = str(update.get("table") or "").strip()
+            record_id = str(update.get("id") or "").strip()
+            if table not in {"scholarship_applications", "scholarshipApplications"} or not record_id:
+                continue
+
+            current = supabase_document_get(table, record_id)
+            if not current.get("ok"):
+                return {
+                    "ok": False,
+                    "reason": "application_ownership_check_failed",
+                    "detail": current,
+                }
+
+            current_data = current.get("data") or {}
+            application_grantor_id = str(current_data.get("grantorId") or current_data.get("grantor_id") or "").strip()
+            if not actor_id or not application_grantor_id or application_grantor_id != actor_id:
+                return {
+                    "ok": False,
+                    "reason": "cross_grantor_application_update_blocked",
+                    "currentGrantorId": actor_id,
+                    "applicationGrantorId": application_grantor_id,
+                    "applicationId": record_id,
+                }
+
     for update in updates:
         table = update.get("table")
         record_id = update.get("id")

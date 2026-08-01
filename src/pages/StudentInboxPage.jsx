@@ -17,6 +17,7 @@ import {
 	HiOutlineInbox,
 	HiOutlineMail,
 	HiOutlineTrash,
+	HiOutlineX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
@@ -58,6 +59,27 @@ function formatRelativeDate(value) {
 	return "Just now"
 }
 
+function formatDateTime(value) {
+	const date = value?.toDate ? value.toDate() : new Date(value)
+	if (!value || Number.isNaN(date.getTime())) return "Date unavailable"
+	return new Intl.DateTimeFormat("en", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+	}).format(date)
+}
+
+function formatNotificationDetailLabel(value = "") {
+	return String(value || "Notification")
+		.replace(/[_-]+/g, " ")
+		.replace(/([a-z])([A-Z])/g, "$1 $2")
+		.replace(/\s+/g, " ")
+		.trim()
+		.replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
 function getStudentNotificationCategory(notification = {}) {
 	const type = String(notification.type || notification.category || "").toLowerCase()
 	if (type.includes("scholar")) return "Scholarships"
@@ -87,6 +109,12 @@ function normalizeStudentNotification(row = {}, id = "", sourceTable = "studentN
 		authorImage: row.authorImage || row.authorImageUrl || row.profileImageUrl || row.senderImageUrl || "",
 		announcementId: String(row.announcementId || ""),
 		announcementSource: row.announcementSource || "grantor",
+		applicationNumber: row.applicationNumber || row.requestNumber || "",
+		scholarshipName: row.scholarshipName || row.providerLabel || row.provider || "",
+		grantorName: row.grantorName || row.authorName || row.senderName || "",
+		reason: row.reason || row.rejectionReason || "",
+		notes: row.notes || row.rejectionNotes || "",
+		readAt: row.readAt || row.read_at || null,
 	}
 }
 
@@ -163,6 +191,7 @@ export default function StudentInboxPage() {
 		loadReadAnnouncementIds(sessionStorage.getItem("bulsuscholar_userId")),
 	)
 	const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+	const [selectedNotification, setSelectedNotification] = useState(null)
 	const { theme, setTheme } = useThemeMode()
 	const forcedLogoutRef = useRef(false)
 	const profileMenuRef = useRef(null)
@@ -315,6 +344,24 @@ export default function StudentInboxPage() {
 		})
 		return [...groups.entries()].map(([category, items]) => ({ category, items }))
 	}, [inboxItems])
+	const selectedNotificationDetails = useMemo(() => {
+		if (!selectedNotification) return []
+		const detailKeys = [
+			["applicationNumber", "Application Number"],
+			["scholarshipName", "Scholarship"],
+			["grantorName", "Grantor"],
+			["reason", "Reason"],
+			["notes", "Notes"],
+			["announcementId", "Announcement ID"],
+		]
+		return detailKeys
+			.map(([key, label]) => {
+				const value = selectedNotification[key]
+				if (value == null || value === "") return null
+				return { key, label, value }
+			})
+			.filter(Boolean)
+	}, [selectedNotification])
 	const avatarUrl = user?.profileImageUrl || ""
 	const userInitials = `${user?.fname?.[0]?.toUpperCase() || ""}${user?.lname?.[0]?.toUpperCase() || ""}` || "ST"
 	const fullName = [user?.fname, user?.mname, user?.lname].filter(Boolean).join(" ") || "Student"
@@ -381,6 +428,7 @@ export default function StudentInboxPage() {
 			} else {
 				await deleteStudentNotification(notification.id)
 			}
+			if (selectedNotification?.id === notification.id) setSelectedNotification(null)
 		} catch (error) {
 			console.error("Unable to delete student notification.", error)
 			toast.error("Unable to delete this inbox message.")
@@ -395,7 +443,9 @@ export default function StudentInboxPage() {
 				const source = encodeURIComponent(notification.announcementSource || "grantor")
 				const announcementId = encodeURIComponent(notification.announcementId)
 				navigate(`/student-dashboard/announcements/${source}/${announcementId}`)
+				return
 			}
+			setSelectedNotification({ ...notification, read: true, readAt: notification.readAt || new Date().toISOString() })
 			return
 		}
 		const nextIds = [...readAnnouncementIds, notification.announcementId]
@@ -464,6 +514,50 @@ export default function StudentInboxPage() {
 					</section>
 				</div>
 			</main>
+			{selectedNotification ? (
+				<div className="student-inbox-detail-backdrop" role="presentation" onMouseDown={(event) => {
+					if (event.target === event.currentTarget) setSelectedNotification(null)
+				}}>
+					<section className="student-inbox-detail-modal" role="dialog" aria-modal="true" aria-labelledby="student-inbox-detail-title">
+						<header className="student-inbox-detail-head">
+							<div className="student-inbox-detail-title">
+								<span className="student-inbox-detail-icon">{renderInboxItemIcon(selectedNotification)}</span>
+								<div>
+									<span>{getStudentNotificationCategory(selectedNotification)}</span>
+									<h3 id="student-inbox-detail-title">{selectedNotification.title || "Inbox Message"}</h3>
+								</div>
+							</div>
+							<button type="button" onClick={() => setSelectedNotification(null)} aria-label="Close inbox details">
+								<HiOutlineX aria-hidden />
+							</button>
+						</header>
+						<div className="student-inbox-detail-meta">
+							<p><span>Received</span><strong>{formatDateTime(selectedNotification.createdAt)}</strong></p>
+							<p><span>Status</span><strong>{selectedNotification.read === true ? "Read" : "Unread"}</strong></p>
+							{selectedNotification.readAt ? (
+								<p><span>Read At</span><strong>{formatDateTime(selectedNotification.readAt)}</strong></p>
+							) : null}
+							<p><span>Type</span><strong>{formatNotificationDetailLabel(selectedNotification.type)}</strong></p>
+						</div>
+						<div className="student-inbox-detail-message">
+							<span>Full Message</span>
+							<p>{selectedNotification.message || "No message content was provided for this inbox item."}</p>
+						</div>
+						<div className="student-inbox-detail-grid">
+							<p><span>Author Name</span><strong>{selectedNotification.authorName || selectedNotification.grantorName || "BulsuScholar"}</strong></p>
+							{selectedNotificationDetails.map((item) => (
+								<p key={item.key}><span>{item.label}</span><strong>{item.value}</strong></p>
+							))}
+						</div>
+						<footer className="student-inbox-detail-actions">
+							<button type="button" className="student-inbox-detail-delete" onClick={async () => { await deleteNotification(selectedNotification) }}>
+								<HiOutlineTrash aria-hidden /> Delete Message
+							</button>
+							<button type="button" className="student-inbox-detail-close" onClick={() => setSelectedNotification(null)}>Close</button>
+						</footer>
+					</section>
+				</div>
+			) : null}
 		</div>
 	)
 }

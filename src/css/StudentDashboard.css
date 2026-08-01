@@ -4412,6 +4412,7 @@
 .student-modern-scholarship-item h4 { margin: 0; overflow: hidden; color: #17342a; font-size: 0.86rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .student-modern-announcement-body p { display: -webkit-box; min-height: 2.4rem; margin: 0; overflow: hidden; color: #64748b; font-size: 0.72rem; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .student-modern-announcement-body > button { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; margin-top: 0.2rem; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+.student-modern-announcement-body > button.student-modern-announcement-apply--blocked { border-color: #cbd5e1; background: #f8fafc; color: #94a3b8; box-shadow: none; }
 .student-modern-recommendation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; }
 .student-modern-recommendation-card { display: grid; grid-template-rows: auto 1fr auto; gap: 0.7rem; min-width: 0; padding: 0.85rem; border: 1px solid rgba(0, 99, 60, 0.16); border-radius: 7px; background: #fff; box-shadow: 0 10px 22px rgba(0, 99, 60, 0.055); }
 .student-modern-recommendation-top { display: flex; align-items: center; gap: 0.65rem; min-width: 0; }
@@ -4760,6 +4761,198 @@
 	color: #94a3b8;
 }
 
+.student-inbox-detail-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 120;
+	display: grid;
+	place-items: center;
+	padding: 1.2rem;
+	background: rgba(15, 23, 42, 0.62);
+	backdrop-filter: blur(6px);
+}
+
+.student-inbox-detail-modal {
+	width: min(680px, 100%);
+	max-height: min(86vh, 760px);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid #cbd8d1;
+	border-radius: 10px;
+	background: #fff;
+	box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+
+.student-inbox-detail-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem 1.1rem;
+	border-bottom: 1px solid #dce5e0;
+}
+
+.student-inbox-detail-title {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.8rem;
+	min-width: 0;
+}
+
+.student-inbox-detail-icon {
+	display: grid;
+	flex: 0 0 auto;
+	place-items: center;
+	width: 42px;
+	height: 42px;
+	overflow: hidden;
+	border-radius: 50%;
+	background: #e2f1ea;
+	color: #00633c;
+}
+
+.student-inbox-detail-icon img,
+.student-inbox-detail-icon .student-inbox-item-icon img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.student-inbox-detail-icon .student-inbox-item-icon {
+	width: 100%;
+	height: 100%;
+	background: transparent;
+}
+
+.student-inbox-detail-title span:not(.student-inbox-detail-icon) {
+	display: block;
+	color: #00633c;
+	font-size: 0.68rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.student-inbox-detail-title h3 {
+	margin: 0.18rem 0 0;
+	color: #17231f;
+	font-size: 1.08rem;
+	font-weight: 650;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
+}
+
+.student-inbox-detail-head > button {
+	display: grid;
+	flex: 0 0 auto;
+	place-items: center;
+	width: 36px;
+	height: 36px;
+	padding: 0;
+	border: 1px solid #cbd8d1;
+	border-radius: 50%;
+	background: transparent;
+	color: #37564b;
+	cursor: pointer;
+}
+
+.student-inbox-detail-meta,
+.student-inbox-detail-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem;
+	padding: 1rem 1.1rem 0;
+}
+
+.student-inbox-detail-meta p,
+.student-inbox-detail-grid p {
+	display: grid;
+	gap: 0.22rem;
+	margin: 0;
+	min-width: 0;
+	padding: 0.75rem;
+	border: 1px solid #dce5e0;
+	border-radius: 8px;
+	background: #f8fbf9;
+}
+
+.student-inbox-detail-meta span,
+.student-inbox-detail-grid span,
+.student-inbox-detail-message > span {
+	color: #64748b;
+	font-size: 0.68rem;
+	font-weight: 650;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+
+.student-inbox-detail-meta strong,
+.student-inbox-detail-grid strong {
+	color: #17231f;
+	font-size: 0.82rem;
+	font-weight: 600;
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+}
+
+.student-inbox-detail-message {
+	display: grid;
+	gap: 0.45rem;
+	margin: 1rem 1.1rem 0;
+	padding: 0.95rem;
+	border: 1px solid rgba(0, 99, 60, 0.2);
+	border-radius: 8px;
+	background: linear-gradient(135deg, #ffffff 0%, #f2faf6 100%);
+}
+
+.student-inbox-detail-message p {
+	margin: 0;
+	color: #243b33;
+	font-size: 0.88rem;
+	line-height: 1.65;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.student-inbox-detail-grid {
+	overflow-y: auto;
+	padding-bottom: 0.2rem;
+}
+
+.student-inbox-detail-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.7rem;
+	margin-top: auto;
+	padding: 1rem 1.1rem;
+	border-top: 1px solid #dce5e0;
+}
+
+.student-inbox-detail-actions button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	min-height: 38px;
+	padding: 0 0.9rem;
+	border-radius: 5px;
+	background: transparent;
+	font-size: 0.78rem;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.student-inbox-detail-delete {
+	border: 1px solid #fecaca;
+	color: #dc2626;
+}
+
+.student-inbox-detail-close {
+	border: 1px solid #00633c;
+	color: #00633c;
+}
+
 .student-header-home-link,
 .student-header-notification-btn,
 .student-header-verified-btn,
@@ -4800,6 +4993,13 @@
 	border-color: #004f30;
 	background: #f4fbf8;
 	box-shadow: 0 10px 22px rgba(0, 99, 60, 0.12);
+}
+
+.student-modern-announcement-body > button.student-modern-announcement-apply--blocked:hover {
+	border-color: #cbd5e1;
+	background: #f1f5f9;
+	color: #64748b;
+	box-shadow: none;
 }
 
 .student-header-home-link:active,
@@ -4879,6 +5079,7 @@
 .student-dashboard--dark .student-modern-announcement-author > span { background: rgba(0, 99, 60, 0.24); color: #6ee7b7; }
 .student-dashboard--dark .student-modern-announcement-body > button,
 .student-dashboard--dark .student-modern-recommendation-card > button { border-color: #34d399; background: #111827; color: #6ee7b7; }
+.student-dashboard--dark .student-modern-announcement-body > button.student-modern-announcement-apply--blocked { border-color: #475569; background: #1f2937; color: #94a3b8; box-shadow: none; }
 .student-dashboard--dark .student-modern-recommendation-body > span,
 .student-dashboard--dark .student-recommendation-algorithm,
 .student-dashboard--dark .student-recommendation-rank { border-color: #334155; color: #6ee7b7; }
@@ -4910,6 +5111,43 @@
 .student-dashboard--dark .student-inbox-item-icon { background: rgba(0, 99, 60, 0.24); color: #6ee7b7; }
 .student-dashboard--dark .student-inbox-item-copy small,
 .student-dashboard--dark .student-inbox-item-actions time { color: #94a3b8; }
+.student-dashboard--dark .student-inbox-detail-modal {
+	border-color: #334155;
+	background: #111827;
+}
+.student-dashboard--dark .student-inbox-detail-head,
+.student-dashboard--dark .student-inbox-detail-actions {
+	border-color: #334155;
+}
+.student-dashboard--dark .student-inbox-detail-icon,
+.student-dashboard--dark .student-inbox-detail-meta p,
+.student-dashboard--dark .student-inbox-detail-grid p {
+	border-color: #334155;
+	background: rgba(0, 99, 60, 0.18);
+}
+.student-dashboard--dark .student-inbox-detail-title h3,
+.student-dashboard--dark .student-inbox-detail-meta strong,
+.student-dashboard--dark .student-inbox-detail-grid strong,
+.student-dashboard--dark .student-inbox-detail-message p {
+	color: #f8fafc;
+}
+.student-dashboard--dark .student-inbox-detail-title span:not(.student-inbox-detail-icon),
+.student-dashboard--dark .student-inbox-detail-icon {
+	color: #6ee7b7;
+}
+.student-dashboard--dark .student-inbox-detail-meta span,
+.student-dashboard--dark .student-inbox-detail-grid span,
+.student-dashboard--dark .student-inbox-detail-message > span {
+	color: #94a3b8;
+}
+.student-dashboard--dark .student-inbox-detail-message {
+	border-color: rgba(52, 211, 153, 0.28);
+	background: linear-gradient(135deg, #111827 0%, rgba(0, 99, 60, 0.16) 100%);
+}
+.student-dashboard--dark .student-inbox-detail-head > button {
+	border-color: #475569;
+	color: #cbd5e1;
+}
 .student-dashboard--dark .student-modern-section-head button:hover,
 .student-dashboard--dark .student-modern-announcement-body > button:hover,
 .student-dashboard--dark .student-modern-action-grid button:hover {
@@ -5312,8 +5550,20 @@
 	color: #64748b;
 }
 
+.student-announcement-card-action--blocked {
+	border-color: #cbd5e1;
+	background: #f8fafc;
+	color: #94a3b8;
+	box-shadow: none;
+}
+
 .student-announcement-page-card:hover .student-announcement-card-action--unavailable {
 	background: #f1f5f9;
+}
+
+.student-announcement-page-card:hover .student-announcement-card-action--blocked {
+	background: #f1f5f9;
+	color: #64748b;
 }
 
 .student-announcement-page-card--previous {
@@ -5419,6 +5669,12 @@
 	border-color: #475569;
 	background: rgba(51, 65, 85, 0.35);
 	color: #cbd5e1;
+}
+
+.student-dashboard--dark .student-announcement-card-action--blocked {
+	border-color: #475569;
+	background: rgba(51, 65, 85, 0.35);
+	color: #94a3b8;
 }
 
 .student-dashboard--dark .student-announcement-page-card--previous {
@@ -6385,6 +6641,14 @@
 	.student-inbox-item.unread .student-inbox-item-main { padding-left: calc(1rem - 3px); }
 	.student-inbox-item-actions { justify-content: flex-end; padding: 0 1rem 0.7rem; }
 	.student-inbox-item-copy small { white-space: normal; }
+	.student-inbox-detail-backdrop { align-items: stretch; place-items: stretch; padding: 0.75rem; }
+	.student-inbox-detail-modal { max-height: calc(100dvh - 1.5rem); }
+	.student-inbox-detail-head,
+	.student-inbox-detail-actions { flex-direction: column; }
+	.student-inbox-detail-head > button,
+	.student-inbox-detail-actions button { width: 100%; }
+	.student-inbox-detail-meta,
+	.student-inbox-detail-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {

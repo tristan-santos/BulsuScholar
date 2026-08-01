@@ -27,6 +27,7 @@ import {
 	getStudentAccessState,
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
+import { getAnnouncementApplyAvailability } from "../services/announcementApplyEligibilityService"
 
 function formatRelativeDate(value) {
 	const date = value?.toDate ? value.toDate() : new Date(value)
@@ -204,6 +205,16 @@ export default function StudentAnnouncementsPage() {
 		(() => {
 			const imageUrls = buildAnnouncementImageList(announcement)
 			const isUnavailable = variant === "previous" || isPreviousStudentAnnouncement(announcement)
+			const applyAvailability = getAnnouncementApplyAvailability({
+				announcement,
+				user,
+				studentAccessState,
+				isPreviousAnnouncement: isUnavailable,
+			})
+			const isApplyBlocked =
+				!isUnavailable &&
+				announcement.applicationEnabled === true &&
+				!applyAvailability.canApply
 			return (
 				<button
 					key={announcement.id}
@@ -230,7 +241,7 @@ export default function StudentAnnouncementsPage() {
 								"No preview text provided."}
 							</p>
 					</div>
-					<span className={`student-announcement-card-action ${isUnavailable ? "student-announcement-card-action--unavailable" : ""}`}>
+					<span className={`student-announcement-card-action ${isUnavailable ? "student-announcement-card-action--unavailable" : ""} ${isApplyBlocked ? "student-announcement-card-action--blocked" : ""}`}>
 						{isUnavailable ? (
 							<>
 								<HiOutlineXCircle aria-hidden />

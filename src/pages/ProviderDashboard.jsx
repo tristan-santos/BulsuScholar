@@ -97,7 +97,6 @@ import {
 	getGrantorPortalDoc,
 	getGrantorScholarsCollection,
 	isAnnouncementArchived,
-	matchesGrantorProfile,
 	normalizeGrantorAnnouncement,
 	normalizeGrantorApplication,
 	normalizeGrantorPortalSettings,
@@ -430,8 +429,12 @@ function checkValidated(userData) {
 
 function findMatchingScholarshipEntry(studentRecord = {}, application = {}) {
 	const scholarships = normalizeScholarshipList(studentRecord?.scholarships || [])
+	const applicationGrantorId = String(application.grantorId || application.grantor_id || "").trim()
 	return (
 		scholarships.find((item) => {
+			if (applicationGrantorId && String(item.grantorId || "").trim() !== applicationGrantorId) {
+				return false
+			}
 			return (
 				item.id === application.scholarshipId ||
 				item.id === application.applicationNumber ||
@@ -443,9 +446,22 @@ function findMatchingScholarshipEntry(studentRecord = {}, application = {}) {
 	)
 }
 
+function getApplicationGrantorId(application = {}) {
+	return String(application.grantorId || application.grantor_id || "").trim()
+}
+
+function isApplicationOwnedByGrantor(application = {}, grantorId = "") {
+	const applicationGrantorId = getApplicationGrantorId(application)
+	return Boolean(grantorId) && Boolean(applicationGrantorId) && applicationGrantorId === String(grantorId).trim()
+}
+
 function pickLatestGrantorRow(rows = [], application = {}) {
+	const applicationGrantorId = getApplicationGrantorId(application)
 	return [...rows]
 		.filter((row) => {
+			if (applicationGrantorId && String(row.grantorId || row.grantor_id || "").trim() !== applicationGrantorId) {
+				return false
+			}
 			return (
 				row.scholarshipId === application.scholarshipId ||
 				row.applicationNumber === application.applicationNumber ||
@@ -1037,10 +1053,15 @@ export default function ProviderDashboard() {
 
 	useEffect(() => {
 		if (!grantorId) return
-		return onSnapshot(collection(db, "scholarshipApplications"), (snap) => {
-			setApplications(snap.docs.map((row) => normalizeGrantorApplication(row.data() || {}, row.id)).filter((row) => matchesGrantorProfile(row, profile || { id: grantorId })).sort((a, b) => (toJsDate(b.appliedAt || b.createdAt)?.getTime() || 0) - (toJsDate(a.appliedAt || a.createdAt)?.getTime() || 0)))
+		return onSnapshot(query(collection(db, "scholarshipApplications"), where("grantorId", "==", grantorId)), (snap) => {
+			setApplications(
+				snap.docs
+					.map((row) => normalizeGrantorApplication(row.data() || {}, row.id))
+					.filter((row) => isApplicationOwnedByGrantor(row, grantorId))
+					.sort((a, b) => (toJsDate(b.appliedAt || b.createdAt)?.getTime() || 0) - (toJsDate(a.appliedAt || a.createdAt)?.getTime() || 0)),
+			)
 		}, () => setApplications([]))
-	}, [grantorId, profile])
+	}, [grantorId])
 
 	useEffect(() => {
 		let cancelled = false
@@ -1478,6 +1499,16 @@ export default function ProviderDashboard() {
 
 	const handleConfirmRejectApplication = async () => {
 		if (!applicationModalState.application || !applicationModalState.student) return
+		if (!isApplicationOwnedByGrantor(applicationModalState.application, grantorId)) {
+			console.warn("[BulsuScholar] Blocked cross-grantor application rejection.", {
+				currentGrantorId: grantorId,
+				applicationGrantorId: getApplicationGrantorId(applicationModalState.application),
+				applicationId: applicationModalState.application.id,
+				studentId: applicationModalState.application.studentId,
+			})
+			toast.error("You can only reject applications submitted to your grantor account.")
+			return
+		}
 		if (!rejectReason) {
 			toast.error("Select a rejection reason first.")
 			return
@@ -1516,8 +1547,11 @@ export default function ProviderDashboard() {
 				application.providerLabel ||
 				grantorName ||
 				"your scholarship application"
+			const rejectionMessage = `${grantorName} rejected your application for ${scholarshipName}. Reason: ${rejectReason}${rejectNotes.trim() ? ` - ${rejectNotes.trim()}` : ""}`
 
 			await adminReviewWorkflow({
+				actorType: "grantor",
+				actorId: grantorId,
 				updates: [
 					{
 						table: "students",
@@ -1536,9 +1570,11 @@ export default function ProviderDashboard() {
 							archived: true,
 							rejectionReason: rejectReason,
 							rejectionNotes: rejectNotes.trim(),
+							rejectionMessage,
 							rejectedAt,
 							rejectedBy: grantorId,
 							rejectedByName: grantorName,
+							rejectedByRole: "grantor",
 							updatedAt: serverTimestamp(),
 						},
 					},
@@ -1551,12 +1587,16 @@ export default function ProviderDashboard() {
 					source: "personal",
 					type: "application_rejected",
 					title: "Scholarship Application Rejected",
-					message: `${grantorName} rejected your application for ${scholarshipName}. Reason: ${rejectReason}${rejectNotes.trim() ? ` - ${rejectNotes.trim()}` : ""}`,
+					message: rejectionMessage,
 					grantorId,
 					grantorName,
 					applicationNumber: application.applicationNumber || application.requestNumber || application.id || "",
 					rejectionReason: rejectReason,
 					rejectionNotes: rejectNotes.trim(),
+					rejectionMessage,
+					rejectedBy: grantorId,
+					rejectedByName: grantorName,
+					rejectedByRole: "grantor",
 					authorName: grantorName,
 					authorImageUrl: grantorProfileImageUrl,
 					read: false,
@@ -1577,7 +1617,11 @@ export default function ProviderDashboard() {
 							archived: true,
 							rejectionReason: rejectReason,
 							rejectionNotes: rejectNotes.trim(),
+							rejectionMessage,
 							rejectedAt,
+							rejectedBy: grantorId,
+							rejectedByName: grantorName,
+							rejectedByRole: "grantor",
 						}
 					: prev.application,
 				student: prev.student ? { ...prev.student, scholarships: nextScholarships } : prev.student,
@@ -1760,6 +1804,16 @@ export default function ProviderDashboard() {
 			toast.info("This application record does not have a linked student ID yet.")
 			return
 		}
+		if (!isApplicationOwnedByGrantor(application, grantorId)) {
+			console.warn("[BulsuScholar] Blocked cross-grantor application modal access.", {
+				currentGrantorId: grantorId,
+				applicationGrantorId: getApplicationGrantorId(application),
+				applicationId: application.id,
+				studentId: application.studentId,
+			})
+			toast.error("You can only view applications submitted to your grantor account.")
+			return
+		}
 
 		setApplicationModalState({
 			open: true,
@@ -1836,6 +1890,16 @@ export default function ProviderDashboard() {
 		if (!applicationModalState.application || !applicationModalState.student || !applicationModalState.scholarship) {
 			return
 		}
+		if (!isApplicationOwnedByGrantor(applicationModalState.application, grantorId)) {
+			console.warn("[BulsuScholar] Blocked cross-grantor stage completion.", {
+				currentGrantorId: grantorId,
+				applicationGrantorId: getApplicationGrantorId(applicationModalState.application),
+				applicationId: applicationModalState.application.id,
+				studentId: applicationModalState.application.studentId,
+			})
+			toast.error("You can only update applications submitted to your grantor account.")
+			return
+		}
 
 		const currentStep = applicationModalState.trackingProgress?.currentStep
 		const currentStepLabel = getGrantorCompletableStepLabel(currentStep?.id)
@@ -1906,6 +1970,8 @@ export default function ProviderDashboard() {
 				: null
 
 			await adminReviewWorkflow({
+				actorType: "grantor",
+				actorId: grantorId,
 				updates: [
 					{
 						table: "students",
@@ -3748,6 +3814,9 @@ export default function ProviderDashboard() {
 						onClick={(event) => event.stopPropagation()}
 					>
 						<header className="grantor-reject-modal-head">
+							<div className="grantor-reject-modal-icon" aria-hidden="true">
+								<HiOutlineBan />
+							</div>
 							<div>
 								<span>Application Decision</span>
 								<h3>Reject Application</h3>
@@ -3761,6 +3830,12 @@ export default function ProviderDashboard() {
 							</button>
 						</header>
 						<div className="grantor-reject-modal-body">
+							<div className="grantor-reject-summary-grid">
+								<p><span>Applicant</span><strong>{applicationModalState.student?.fullName || applicationModalState.application?.fullName || applicationModalState.application?.applicantName || "Student"}</strong></p>
+								<p><span>Application No.</span><strong>{applicationModalState.application?.applicationNumber || applicationModalState.application?.requestNumber || applicationModalState.application?.id || "-"}</strong></p>
+								<p><span>Scholarship</span><strong>{applicationModalState.application?.scholarshipName || applicationModalState.scholarship?.name || grantorName}</strong></p>
+								<p><span>Rejected By</span><strong>{grantorName || "Grantor"}</strong></p>
+							</div>
 							<label>
 								Reason
 								<select value={rejectReason} onChange={(event) => setRejectReason(event.target.value)}>
@@ -3770,11 +3845,11 @@ export default function ProviderDashboard() {
 								</select>
 							</label>
 							<label>
-								Notes
+								Message / Notes
 								<textarea
 									value={rejectNotes}
 									onChange={(event) => setRejectNotes(event.target.value)}
-									placeholder="Add a short note for the student."
+									placeholder="Add a clear message for the student, such as which document or requirement caused the rejection."
 									rows={4}
 								/>
 							</label>

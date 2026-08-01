@@ -111,6 +111,14 @@ const TREND_RANGES = ["daily", "weekly", "monthly", "yearly"]
 const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6
 const COMPLIANCE_BLOCK_THRESHOLD = 2
 const EMPTY_STATE_TEXT = "No results found matching your criteria."
+const APPLICATION_REJECTION_REASONS = [
+	"Incomplete Documents",
+	"Information Mismatch",
+	"Does Not Meet Requirements",
+	"Duplicate Scholarship Application",
+	"Outside Application Window",
+	"Other",
+]
 
 function toNumericValue(value, fallback = null) {
 	const parsed = Number.parseFloat(value)
@@ -824,6 +832,9 @@ export default function AdminDashboard() {
 	const [selectedStudentRecommendations, setSelectedStudentRecommendations] = useState([])
 	const [selectedStudentRecommendationsLoading, setSelectedStudentRecommendationsLoading] = useState(false)
 	const [recommendingScholarshipId, setRecommendingScholarshipId] = useState("")
+	const [adminRejectModalOpen, setAdminRejectModalOpen] = useState(false)
+	const [adminRejectReason, setAdminRejectReason] = useState(APPLICATION_REJECTION_REASONS[0])
+	const [adminRejectNotes, setAdminRejectNotes] = useState("")
 	const [adminStudentDuplicateAudit, setAdminStudentDuplicateAudit] = useState({ duplicateIds: [], groups: [] })
 	const [previewDocument, setPreviewDocument] = useState(null)
 	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
@@ -3518,21 +3529,30 @@ export default function AdminDashboard() {
 
 
 
-	const openCancelScholarshipApplicationConfirmation = () => {
+	const openRejectScholarshipApplicationModal = () => {
 		if (!selectedScholarshipTrackingRow?.scholarshipEntry || !selectedScholarshipTrackingRow?.studentSnapshot) return
-
-		setAdminConfirmDialog({
-			type: "cancel_application",
-			title: "Cancel Application",
-			message: `Cancel the ${selectedScholarshipTrackingRow.scholarship} application for ${selectedScholarshipTrackingRow.fullName}? This will remove the application from the student record and cancel linked request records.`,
-			confirmLabel: "Yes, Cancel Application",
-			tone: "danger",
-		})
+		setAdminRejectReason(APPLICATION_REJECTION_REASONS[0])
+		setAdminRejectNotes("")
+		setAdminRejectModalOpen(true)
 	}
 
-	const executeCancelScholarshipApplication = async (trackingRow = null) => {
+	const closeRejectScholarshipApplicationModal = () => {
+		if (isBusy) return
+		setAdminRejectModalOpen(false)
+		setAdminRejectReason(APPLICATION_REJECTION_REASONS[0])
+		setAdminRejectNotes("")
+	}
+
+	const executeRejectScholarshipApplication = async (trackingRow = null) => {
 		if (!trackingRow?.scholarshipEntry || !trackingRow?.studentSnapshot) return
+		if (!adminRejectReason) {
+			toast.error("Select a rejection reason first.")
+			return
+		}
 		await runAction(async () => {
+			const rejectedAt = new Date().toISOString()
+			const rejectedByName = "BulsuScholar Admin"
+			const rejectedMessage = `${rejectedByName} rejected your application for ${trackingRow.scholarship || trackingRow.scholarshipEntry.name || "your scholarship application"}. Reason: ${adminRejectReason}${adminRejectNotes.trim() ? ` - ${adminRejectNotes.trim()}` : ""}`
 			const nextScholarships = (trackingRow.studentSnapshot.scholarships || []).filter(
 				(item) => item.id !== trackingRow.scholarshipEntry.id,
 			)
@@ -3581,8 +3601,16 @@ export default function AdminDashboard() {
 				await setDoc(
 					doc(db, "scholarshipApplications", application.id),
 					{
-						status: "Cancelled",
-						cancelledAt: serverTimestamp(),
+						status: "Rejected",
+						rejected: true,
+						archived: true,
+						rejectionReason: adminRejectReason,
+						rejectionNotes: adminRejectNotes.trim(),
+						rejectionMessage: rejectedMessage,
+						rejectedAt,
+						rejectedBy: "admin",
+						rejectedByName,
+						rejectedByRole: "admin",
 						updatedAt: serverTimestamp(),
 					},
 					{ merge: true },
@@ -3602,8 +3630,15 @@ export default function AdminDashboard() {
 				await setDoc(
 					doc(db, "soeRequests", request.id),
 					{
-						status: "Cancelled",
-						reviewState: "cancelled",
+						status: "Rejected",
+						reviewState: "rejected",
+						rejectionReason: adminRejectReason,
+						rejectionNotes: adminRejectNotes.trim(),
+						rejectionMessage: rejectedMessage,
+						rejectedAt,
+						rejectedBy: "admin",
+						rejectedByName,
+						rejectedByRole: "admin",
 						updatedAt: serverTimestamp(),
 					},
 					{ merge: true },
@@ -3624,16 +3659,53 @@ export default function AdminDashboard() {
 				await setDoc(
 					doc(db, "soeDownloads", download.id),
 					{
-						status: "Cancelled",
-						reviewState: "cancelled",
+						status: "Rejected",
+						reviewState: "rejected",
+						rejectionReason: adminRejectReason,
+						rejectionNotes: adminRejectNotes.trim(),
+						rejectionMessage: rejectedMessage,
+						rejectedAt,
+						rejectedBy: "admin",
+						rejectedByName,
+						rejectedByRole: "admin",
 						updatedAt: serverTimestamp(),
 					},
 					{ merge: true },
 				)
 			}
 
+			await createStudentNotification({
+				studentId: trackingRow.studentId,
+				source: "personal",
+				type: "application_rejected",
+				title: "Scholarship Application Rejected",
+				message: rejectedMessage,
+				grantorId: trackingRow.scholarshipEntry.grantorId || trackingRow.scholarshipEntry.providerId || "",
+				grantorName: trackingRow.scholarshipEntry.grantorName || trackingRow.scholarshipEntry.providerLabel || "",
+				applicationNumber:
+					matchingApplications[0]?.applicationNumber ||
+					matchingApplications[0]?.requestNumber ||
+					trackingRow.scholarshipEntry.applicationNumber ||
+					trackingRow.scholarshipEntry.requestNumber ||
+					"",
+				scholarshipId: trackingRow.scholarshipEntry.id || "",
+				scholarshipName: trackingRow.scholarship || trackingRow.scholarshipEntry.name || "",
+				rejectionReason: adminRejectReason,
+				rejectionNotes: adminRejectNotes.trim(),
+				rejectionMessage: rejectedMessage,
+				rejectedBy: "admin",
+				rejectedByName,
+				rejectedByRole: "admin",
+				authorName: rejectedByName,
+				read: false,
+				createdAt: rejectedAt,
+			})
+
+			setAdminRejectModalOpen(false)
+			setAdminRejectReason(APPLICATION_REJECTION_REASONS[0])
+			setAdminRejectNotes("")
 			closeScholarshipTrackingModal()
-		}, "Scholarship application cancelled.")
+		}, "Scholarship application rejected.")
 	}
 
 	const openBatchArchiveConfirmation = () => {
@@ -3732,9 +3804,6 @@ export default function AdminDashboard() {
 			return
 		}
 
-		if (currentDialog.type === "cancel_application") {
-			await executeCancelScholarshipApplication(selectedScholarshipTrackingRow)
-		}
 	}
 
 	const unarchiveStudent = async (studentId) => {
@@ -6978,13 +7047,79 @@ export default function AdminDashboard() {
 										type="button"
 										className="admin-danger-btn"
 										disabled={isBusy}
-										onClick={openCancelScholarshipApplicationConfirmation}
+										onClick={openRejectScholarshipApplicationModal}
 									>
-										Cancel Application
+										Reject Application
 									</button>
 								</div>
 							</div>
 						</div>
+					</div>
+				</div>
+			) : null}
+
+			{adminRejectModalOpen && selectedScholarshipTrackingRow ? (
+				<div
+					className="admin-reject-modal-backdrop"
+					role="presentation"
+					onClick={closeRejectScholarshipApplicationModal}
+				>
+					<div
+						className="admin-reject-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Reject scholarship application"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<header className="admin-reject-modal-head">
+							<div className="admin-reject-modal-icon" aria-hidden="true">
+								<HiOutlineExclamation />
+							</div>
+							<div>
+								<span>Application Decision</span>
+								<h3>Reject Application</h3>
+								<p>
+									This archives the application, removes it from the student's active scholarship,
+									and sends the rejection details to their inbox.
+								</p>
+							</div>
+							<button type="button" onClick={closeRejectScholarshipApplicationModal} aria-label="Close rejection modal">
+								<HiX />
+							</button>
+						</header>
+						<div className="admin-reject-modal-body">
+							<div className="admin-reject-summary-grid">
+								<p><span>Applicant</span><strong>{selectedScholarshipTrackingRow.fullName}</strong></p>
+								<p><span>Student ID</span><strong>{selectedScholarshipTrackingRow.studentId}</strong></p>
+								<p><span>Scholarship</span><strong>{selectedScholarshipTrackingRow.scholarship}</strong></p>
+								<p><span>Rejected By</span><strong>BulsuScholar Admin</strong></p>
+							</div>
+							<label>
+								Reason
+								<select value={adminRejectReason} onChange={(event) => setAdminRejectReason(event.target.value)}>
+									{APPLICATION_REJECTION_REASONS.map((reason) => (
+										<option key={reason} value={reason}>{reason}</option>
+									))}
+								</select>
+							</label>
+							<label>
+								Message / Notes
+								<textarea
+									value={adminRejectNotes}
+									onChange={(event) => setAdminRejectNotes(event.target.value)}
+									placeholder="Add a clear message for the student, such as which document or requirement caused the rejection."
+									rows={4}
+								/>
+							</label>
+						</div>
+						<footer className="admin-reject-modal-actions">
+							<button type="button" className="admin-reject-cancel-btn" onClick={closeRejectScholarshipApplicationModal} disabled={isBusy}>
+								Cancel
+							</button>
+							<button type="button" className="admin-reject-confirm-btn" onClick={() => executeRejectScholarshipApplication(selectedScholarshipTrackingRow)} disabled={isBusy}>
+								<HiOutlineExclamation /> {isBusy ? "Rejecting..." : "Confirm Reject Application"}
+							</button>
+						</footer>
 					</div>
 				</div>
 			) : null}
