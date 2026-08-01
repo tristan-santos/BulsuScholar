@@ -6668,9 +6668,6 @@ export default function AdminDashboard() {
 								<button type="button" className="admin-danger-btn" disabled={selectedGrantor.archived === true} onClick={() => openSingleGrantorArchiveConfirmation(selectedGrantor.id)}>
 									<HiOutlineTrash /> Archive Grantor
 								</button>
-								<button type="button" className="admin-grantor-detail-icon-close" onClick={() => setSelectedGrantorId("")} aria-label="Close grantor details">
-									<HiX />
-								</button>
 							</footer>
 						</div>
 					</div>

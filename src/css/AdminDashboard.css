@@ -11285,7 +11285,27 @@
 }
 
 .admin-detail-shell--grantor {
+	position: relative;
 	width: min(780px, calc(100vw - 2rem));
+}
+
+.admin-detail-shell--grantor > .admin-detail-close {
+	position: absolute;
+	top: -14px;
+	right: -14px;
+	z-index: 12;
+	width: 42px;
+	height: 42px;
+	border: 1px solid #b8d3c5;
+	border-radius: 50%;
+	background: #ffffff;
+	color: #0f2f24;
+	box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+}
+
+.admin-detail-shell--grantor > .admin-detail-close:hover {
+	background: #edf8f2;
+	transform: translateY(-1px);
 }
 
 .admin-detail-shell--grantor .admin-detail-modal--grantor {
@@ -11519,7 +11539,7 @@
 
 .admin-grantor-detail-actions {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 38px;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	align-items: center;
 	gap: 0.65rem;
 	margin-top: 1rem;
@@ -11637,7 +11657,7 @@
 	color: #cbd5e1;
 }
 
-.admin-portal--dark .admin-grantor-detail-icon-close {
+.admin-portal--dark .admin-detail-shell--grantor > .admin-detail-close {
 	background: #101a16;
 	border-color: #27443a;
 	color: #8ee0bc;
@@ -11659,8 +11679,9 @@
 		grid-template-columns: 1fr;
 	}
 
-	.admin-grantor-detail-icon-close {
-		justify-self: end;
+	.admin-detail-shell--grantor > .admin-detail-close {
+		top: -10px;
+		right: -8px;
 	}
 }
 

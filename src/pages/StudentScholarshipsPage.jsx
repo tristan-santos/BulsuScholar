@@ -73,6 +73,7 @@ import {
 } from "../services/recommendedScholarshipService"
 
 const SOE_EXPORT_LOCK_MONTHS = 6
+const REJECTION_REAPPLY_COOLDOWN_MS = 24 * 60 * 60 * 1000
 
 function checkValidated(userData) {
 	if (!userData) return false
@@ -117,6 +118,105 @@ function isScholarshipActiveOrPending(status = "") {
 		"completed",
 		"expired",
 	].some((keyword) => normalized.includes(keyword))
+}
+
+function isScholarshipRejected(entry = {}) {
+	const normalized = String(entry?.status || entry?.reviewStatus || "").toLowerCase()
+	return (
+		entry?.rejected === true ||
+		["rejected", "denied", "declined"].some((keyword) => normalized.includes(keyword))
+	)
+}
+
+function getRejectionTimestamp(entry = {}) {
+	return (
+		toJsDate(
+			entry?.rejectedAt ||
+				entry?.archivedAt ||
+				entry?.updatedAt ||
+				entry?.applicationDate ||
+				entry?.appliedAt ||
+				entry?.createdAt,
+		)?.getTime() || 0
+	)
+}
+
+function getRejectionCooldown(entry = {}) {
+	const rejectedAt = getRejectionTimestamp(entry)
+	if (!rejectedAt) {
+		return { active: false, remainingMs: 0, readyAt: null }
+	}
+	const readyAtMs = rejectedAt + REJECTION_REAPPLY_COOLDOWN_MS
+	return {
+		active: Date.now() < readyAtMs,
+		remainingMs: Math.max(0, readyAtMs - Date.now()),
+		readyAt: new Date(readyAtMs),
+	}
+}
+
+function formatCooldownDuration(ms = 0) {
+	const totalMinutes = Math.ceil(ms / (60 * 1000))
+	if (totalMinutes <= 0) return "now"
+	const hours = Math.floor(totalMinutes / 60)
+	const minutes = totalMinutes % 60
+	if (hours <= 0) return `${minutes} minute${minutes === 1 ? "" : "s"}`
+	if (minutes <= 0) return `${hours} hour${hours === 1 ? "" : "s"}`
+	return `${hours}h ${minutes}m`
+}
+
+function getRejectionReason(entry = {}) {
+	return (
+		entry?.rejectionMessage ||
+		[
+			entry?.rejectionReason || entry?.archiveReason,
+			entry?.rejectionNotes || entry?.archiveNotes,
+		]
+			.filter(Boolean)
+			.join(" - ") ||
+		"No reason was provided."
+	)
+}
+
+function getRejectionProviderLabel(entry = {}) {
+	return (
+		entry?.grantorName ||
+		entry?.providerLabel ||
+		entry?.provider ||
+		entry?.scholarshipName ||
+		entry?.name ||
+		"this scholarship"
+	)
+}
+
+function matchesScholarshipTarget(rejectedEntry = {}, target = {}) {
+	const rejectedKeys = [
+		rejectedEntry.grantorId,
+		rejectedEntry.providerType,
+		rejectedEntry.scholarshipId,
+		rejectedEntry.applicationNumber,
+		rejectedEntry.requestNumber,
+		rejectedEntry.scholarshipName,
+		rejectedEntry.name,
+	]
+		.filter(Boolean)
+		.map((value) => String(value).trim().toLowerCase())
+	const targetKeys = [
+		target.grantorId,
+		target.providerType,
+		target.id,
+		target.scholarshipId,
+		target.applicationNumber,
+		target.requestNumber,
+		target.scholarshipName,
+		target.name,
+		target.providerLabel,
+		target.grantorName,
+	]
+		.filter(Boolean)
+		.map((value) => String(value).trim().toLowerCase())
+
+	if (rejectedKeys.length === 0 || targetKeys.length === 0) return false
+	return rejectedKeys.some((key) => targetKeys.includes(key))
 }
 
 function formatApplicationStatus(status = "") {
@@ -217,6 +317,7 @@ export default function StudentScholarshipsPage() {
 	const [confirmTarget, setConfirmTarget] = useState(null)
 	const [documentUploadPrompt, setDocumentUploadPrompt] = useState(null)
 	const [expenseModalTarget, setExpenseModalTarget] = useState(null)
+	const [studentApplications, setStudentApplications] = useState([])
 	const [studentSoeRequests, setStudentSoeRequests] = useState([])
 	const [studentSoeDownloads, setStudentSoeDownloads] = useState([])
 	const [recommendedScholarships, setRecommendedScholarships] = useState([])
@@ -248,16 +349,50 @@ export default function StudentScholarshipsPage() {
 		() => recommendedScholarships.slice(0, 3),
 		[recommendedScholarships],
 	)
-	const hasMultipleScholarshipChoices = scholarships.length >= 2
-	const hasLockedScholarship = scholarships.some((item) => item.isLocked)
-	const lockedScholarship = scholarships.find((item) => item.isLocked) || null
+	const scholarshipChoices = useMemo(
+		() => scholarships.filter((item) => !isScholarshipRejected(item)),
+		[scholarships],
+	)
+	const hasMultipleScholarshipChoices = scholarshipChoices.length >= 2
+	const hasLockedScholarship = scholarships.some((item) => item.isLocked && !isScholarshipRejected(item))
+	const lockedScholarship = scholarships.find((item) => item.isLocked && !isScholarshipRejected(item)) || null
 	const activeOrPendingScholarships = scholarships.filter((item) =>
-		!item.isLocked && isScholarshipActiveOrPending(item.status),
+		!item.isLocked && !isScholarshipRejected(item) && isScholarshipActiveOrPending(item.status),
 	)
 	const hasActiveOrPendingScholarship = activeOrPendingScholarships.length > 0
 	const activeOrPendingProviderTypes = useMemo(
 		() => new Set(activeOrPendingScholarships.map((item) => item.providerType)),
 		[activeOrPendingScholarships],
+	)
+	const rejectedApplications = useMemo(() => {
+		return [
+			...studentApplications.map((item) => ({
+				...item,
+				name: item.name || item.scholarshipName || item.providerLabel || item.grantorName,
+			})),
+			...scholarships.map((item) => ({
+				...item,
+				scholarshipName: item.scholarshipName || item.name,
+			})),
+		]
+			.filter(isScholarshipRejected)
+			.sort((left, right) => getRejectionTimestamp(right) - getRejectionTimestamp(left))
+	}, [scholarships, studentApplications])
+	const latestRejectedApplication = rejectedApplications[0] || null
+	const latestRejectedCooldown = useMemo(
+		() => getRejectionCooldown(latestRejectedApplication || {}),
+		[latestRejectedApplication],
+	)
+	const getRejectedCooldownForTarget = useCallback(
+		(target = {}) => {
+			const rejected = rejectedApplications.find((item) => matchesScholarshipTarget(item, target))
+			if (!rejected) return null
+			return {
+				record: rejected,
+				cooldown: getRejectionCooldown(rejected),
+			}
+		},
+		[rejectedApplications],
 	)
 	const applicationLockTooltip =
 		"You already have an existing scholarship application. You cannot apply for another until the current one is resolved."
@@ -516,6 +651,28 @@ export default function StudentScholarshipsPage() {
 			},
 			() => {
 				setStudentSoeRequests([])
+			},
+		)
+	}, [userId])
+
+	useEffect(() => {
+		if (!userId) {
+			setStudentApplications([])
+			return undefined
+		}
+
+		const applicationsQuery = query(
+			collection(db, "scholarshipApplications"),
+			where("studentId", "==", userId),
+		)
+		return onSnapshot(
+			applicationsQuery,
+			(snap) => {
+				setStudentApplications(snap.docs.map((row) => ({ id: row.id, ...(row.data() || {}) })))
+			},
+			(error) => {
+				console.error("StudentScholarshipsPage: failed to load scholarship applications.", error)
+				setStudentApplications([])
 			},
 		)
 	}, [userId])
@@ -801,7 +958,7 @@ export default function StudentScholarshipsPage() {
 		return (
 			scholarships.find((item) => {
 				const status = String(item?.status || "").toLowerCase().trim()
-				return Boolean(status) && status !== "saved"
+				return Boolean(status) && status !== "saved" && !isScholarshipRejected(item)
 			}) || null
 		)
 	}, [lockedScholarship, scholarships])
@@ -1054,10 +1211,25 @@ export default function StudentScholarshipsPage() {
 		}
 
 		const recommendationId = recommendation.grantorId || recommendation.id
+		const rejectedMatch = getRejectedCooldownForTarget(recommendation)
+		if (rejectedMatch?.cooldown?.active) {
+			toast.info(
+				`You can re-apply to ${getRejectionProviderLabel(rejectedMatch.record)} after ${formatCooldownDuration(rejectedMatch.cooldown.remainingMs)}.`,
+			)
+			return
+		}
+
 		setIsMutating(true)
 		setApplyingRecommendationId(recommendationId)
 		try {
-			const { workflowPayload } = buildRecommendationApplyPayload(user, userId, recommendation)
+			const reapplyScholarships = scholarships.filter(
+				(item) => !isScholarshipRejected(item) || !matchesScholarshipTarget(item, recommendation),
+			)
+			const { workflowPayload } = buildRecommendationApplyPayload(
+				{ ...user, scholarships: reapplyScholarships },
+				userId,
+				recommendation,
+			)
 			await applyScholarshipWorkflow(workflowPayload)
 			setUser((prev) => ({
 				...(prev || {}),
@@ -1078,6 +1250,13 @@ export default function StudentScholarshipsPage() {
 	const applyScholarship = async (catalogItem) => {
 		if (!user || !userId || isMutating) return
 		if (isScholarshipActionBlocked()) return
+		const rejectedMatch = getRejectedCooldownForTarget(catalogItem)
+		if (rejectedMatch?.cooldown?.active) {
+			toast.info(
+				`You can re-apply to ${getRejectionProviderLabel(rejectedMatch.record)} after ${formatCooldownDuration(rejectedMatch.cooldown.remainingMs)}.`,
+			)
+			return
+		}
 		if (blockedProviderTypes.has(catalogItem.providerType)) {
 			toast.info(
 				`Applications for ${
@@ -1116,7 +1295,10 @@ export default function StudentScholarshipsPage() {
 				documentUrls: getDocumentUrlsForStudent(user),
 				semesterTag: getCurrentSemesterTag(),
 			})
-			const nextScholarships = [...scholarships, nextRecord]
+			const reapplyScholarships = scholarships.filter(
+				(item) => !isScholarshipRejected(item) || !matchesScholarshipTarget(item, catalogItem),
+			)
+			const nextScholarships = [...reapplyScholarships, nextRecord]
 
 			await applyScholarshipWorkflow({
 				studentId: userId,
@@ -2087,6 +2269,24 @@ export default function StudentScholarshipsPage() {
 						</div>
 					)}
 
+					{latestRejectedApplication ? (
+						<section className="student-rejection-panel" role="status">
+							<div className="student-rejection-panel-icon">
+								<HiOutlineExclamation aria-hidden />
+							</div>
+							<div className="student-rejection-panel-copy">
+								<span>Application Rejected</span>
+								<h3>{getRejectionProviderLabel(latestRejectedApplication)}</h3>
+								<p>{getRejectionReason(latestRejectedApplication)}</p>
+								<strong>
+									{latestRejectedCooldown.active
+										? `You can re-apply to this scholarship after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}.`
+										: "The 24-hour cooldown is complete. You can re-apply to this scholarship if applications are still open."}
+								</strong>
+							</div>
+						</section>
+					) : null}
+
 					{kwspEntry && !hasMultipleScholarshipChoices ? (
 						<section
 							className="student-kwsp-tracker-shell"
@@ -2161,6 +2361,7 @@ export default function StudentScholarshipsPage() {
 															className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
 															disabled={
 																isMutating ||
+																entryRejected ||
 																entryFrozen ||
 																entry.adminBlocked === true ||
 																hasScholarshipActionBlock ||
@@ -2270,6 +2471,10 @@ export default function StudentScholarshipsPage() {
 								<div className="student-scholarship-cards">
 									{scholarships.map((entry) => {
 										const entryFrozen = isScholarshipFrozen(entry)
+										const entryRejected = isScholarshipRejected(entry)
+										const entryRejectedMatch = entryRejected
+											? { record: entry, cooldown: getRejectionCooldown(entry) }
+											: getRejectedCooldownForTarget(entry)
 										const entryTrackingProgress = getTrackingProgressForScholarship(entry)
 										const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
 										const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
@@ -2280,7 +2485,7 @@ export default function StudentScholarshipsPage() {
 												key={entry.id}
 												className={`student-scholarship-card ${
 													entry.adminBlocked === true || hasScholarshipActionBlock
-													|| entryFrozen
+													|| entryFrozen || entryRejected
 														? "student-scholarship-card--blocked"
 														: ""
 												}`.trim()}
@@ -2307,14 +2512,27 @@ export default function StudentScholarshipsPage() {
 														<HiOutlineExclamation aria-hidden /> Archived by grantor. Your application is frozen and cannot proceed until it is restored.
 													</p>
 												) : null}
-												{!hasMultipleScholarshipChoices && !entryTrackingProgress.canRequestMaterials ? (
+												{entryRejected ? (
+													<>
+														<p className="student-scholarship-card-note student-scholarship-card-note--warning">
+															<HiOutlineExclamation aria-hidden /> Rejected: {getRejectionReason(entry)}
+														</p>
+														<p className="student-scholarship-card-note student-scholarship-card-note--warning">
+															{entryRejectedMatch?.cooldown?.active
+																? `Re-apply cooldown: ${formatCooldownDuration(entryRejectedMatch.cooldown.remainingMs)} remaining.`
+																: "Cooldown complete. You can re-apply if this scholarship is still open."}
+														</p>
+													</>
+												) : !hasMultipleScholarshipChoices && !entryTrackingProgress.canRequestMaterials ? (
 													<p className="student-scholarship-card-note">
 														Current step: {entryTrackingProgress.currentStepLabel}. Finish this stage before requesting materials.
 													</p>
 												) : null}
-												<p className="student-scholarship-card-note">
-													SOE: {hasMultipleScholarshipChoices ? "Choose one scholarship first" : soeRequestLabel}
-												</p>
+												{entryRejected ? null : (
+													<p className="student-scholarship-card-note">
+														SOE: {hasMultipleScholarshipChoices ? "Choose one scholarship first" : soeRequestLabel}
+													</p>
+												)}
 												{entry.providerType === "morisson" ? (
 													<p className="student-scholarship-card-note">
 														Application form: Get it directly from the scholarship office because Morisson forms are confidential.
@@ -2341,6 +2559,8 @@ export default function StudentScholarshipsPage() {
 																? "Access Blocked"
 																: entryFrozen
 																? "Frozen"
+																: entryRejected
+																? "Rejected"
 																: hasComplianceBlock
 																? "Compliance Hold"
 																: entry.adminBlocked === true && !canResolveMultipleScholarshipConflict
@@ -2354,6 +2574,7 @@ export default function StudentScholarshipsPage() {
 																className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
 																disabled={
 																	isMutating ||
+																	entryRejected ||
 																	entryFrozen ||
 																	entry.adminBlocked === true ||
 																	hasScholarshipActionBlock ||
@@ -2367,6 +2588,8 @@ export default function StudentScholarshipsPage() {
 																	? "Access Blocked"
 																	: entryFrozen
 																		? "Frozen"
+																	: entryRejected
+																		? "Rejected"
 																	: hasComplianceBlock
 																		? "Compliance Hold"
 																		: entry.adminBlocked === true
@@ -2378,6 +2601,7 @@ export default function StudentScholarshipsPage() {
 																className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
 																disabled={
 																	hasScholarshipActionBlock ||
+																	entryRejected ||
 																	entryFrozen ||
 																	isExportingSoe ||
 																	isDownloadingSoe ||
@@ -2395,6 +2619,8 @@ export default function StudentScholarshipsPage() {
 																	? "Access Blocked"
 																	: entryFrozen
 																		? "Frozen"
+																	: entryRejected
+																		? "Rejected"
 																	: hasComplianceBlock
 																		? "Compliance Hold"
 																		: isExportingSoe || isDownloadingSoe
@@ -2448,6 +2674,8 @@ export default function StudentScholarshipsPage() {
 										{recommendationPreview.map((recommendation) => {
 											const recommendationId = recommendation.grantorId || recommendation.id
 											const grantorInitials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
+											const rejectedMatch = getRejectedCooldownForTarget(recommendation)
+											const hasActiveCooldown = rejectedMatch?.cooldown?.active === true
 											return (
 												<article key={recommendationId} className="student-modern-recommendation-card">
 													<div className="student-modern-recommendation-top">
@@ -2465,11 +2693,16 @@ export default function StudentScholarshipsPage() {
 														<span>{recommendation.label || "This scholarship is best for you"}</span>
 														<h4>{formatDisplayText(recommendation.announcementTitle || recommendation.providerLabel || recommendation.grantorName, "Scholarship")}</h4>
 														<p>{(recommendation.reasons || []).slice(0, 2).join(" | ") || recommendationAlgorithm || "Open application that matches your student profile."}</p>
+														{hasActiveCooldown ? (
+															<p className="student-modern-recommendation-warning">
+																Re-apply after {formatCooldownDuration(rejectedMatch.cooldown.remainingMs)}.
+															</p>
+														) : null}
 													</div>
 													<button
 														type="button"
 														onClick={() => applyRecommendedScholarship(recommendation)}
-														disabled={Boolean(applyingRecommendationId) || isMutating || hasScholarshipActionBlock}
+														disabled={Boolean(applyingRecommendationId) || isMutating || hasScholarshipActionBlock || hasActiveCooldown}
 													>
 														<HiOutlineAcademicCap />
 														{applyingRecommendationId === recommendationId ? "Applying..." : "Apply"}

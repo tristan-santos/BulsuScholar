@@ -2166,6 +2166,72 @@
 	margin-bottom: 1rem;
 }
 
+.student-rejection-panel {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 0.85rem;
+	align-items: start;
+	margin-bottom: 1rem;
+	padding: 1rem;
+	border: 1px solid rgba(220, 38, 38, 0.28);
+	border-radius: 12px;
+	background:
+		linear-gradient(145deg, rgba(254, 242, 242, 0.96), rgba(255, 255, 255, 0.98)),
+		radial-gradient(circle at top right, rgba(248, 113, 113, 0.16), transparent 42%);
+	box-shadow: 0 14px 30px rgba(185, 28, 28, 0.08);
+}
+
+.student-rejection-panel-icon {
+	display: grid;
+	place-items: center;
+	width: 42px;
+	height: 42px;
+	border-radius: 50%;
+	background: #fee2e2;
+	color: #dc2626;
+}
+
+.student-rejection-panel-icon svg {
+	width: 1.2rem;
+	height: 1.2rem;
+}
+
+.student-rejection-panel-copy {
+	min-width: 0;
+}
+
+.student-rejection-panel-copy span {
+	display: block;
+	margin-bottom: 0.3rem;
+	color: #b91c1c;
+	font-size: 0.72rem;
+	font-weight: 800;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.student-rejection-panel-copy h3 {
+	margin: 0;
+	color: #7f1d1d;
+	font-size: 1.05rem;
+	font-weight: 700;
+}
+
+.student-rejection-panel-copy p {
+	margin: 0.5rem 0 0;
+	color: #7f1d1d;
+	font-size: 0.9rem;
+	line-height: 1.55;
+}
+
+.student-rejection-panel-copy strong {
+	display: inline-flex;
+	margin-top: 0.7rem;
+	color: #991b1b;
+	font-size: 0.82rem;
+	font-weight: 700;
+}
+
 .student-kwsp-tracker-board {
 	background:
 		radial-gradient(circle at top right, rgba(34, 197, 94, 0.09), transparent 34%),
@@ -4427,6 +4493,7 @@
 .student-modern-recommendation-body > span { width: fit-content; max-width: 100%; padding: 0.24rem 0.5rem; border: 1px solid #b9d8ca; border-radius: 999px; color: #00633c; font-size: 0.66rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .student-modern-recommendation-body h4 { margin: 0; color: #17342a; font-size: 0.9rem; font-weight: 700; line-height: 1.25; }
 .student-modern-recommendation-body p { display: -webkit-box; min-height: 2.1rem; margin: 0; overflow: hidden; color: #64748b; font-size: 0.72rem; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.student-modern-recommendation-body .student-modern-recommendation-warning { display: block; min-height: 0; margin: 0.25rem 0 0; color: #b91c1c; font-size: 0.7rem; font-weight: 700; line-height: 1.35; }
 .student-modern-recommendation-card > button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
 .student-modern-recommendation-card > button:disabled { border-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
 .student-modern-recommended-empty,
@@ -5025,6 +5092,21 @@
 	background: rgba(17, 24, 39, 0.94);
 	box-shadow: 0 12px 26px rgba(0, 99, 60, 0.18);
 }
+.student-dashboard--dark .student-rejection-panel {
+	border-color: rgba(248, 113, 113, 0.28);
+	background: linear-gradient(145deg, rgba(69, 10, 10, 0.9), rgba(17, 24, 39, 0.96));
+	box-shadow: 0 14px 30px rgba(127, 29, 29, 0.22);
+}
+.student-dashboard--dark .student-rejection-panel-icon {
+	background: rgba(248, 113, 113, 0.14);
+	color: #fca5a5;
+}
+.student-dashboard--dark .student-rejection-panel-copy span,
+.student-dashboard--dark .student-rejection-panel-copy h3,
+.student-dashboard--dark .student-rejection-panel-copy p,
+.student-dashboard--dark .student-rejection-panel-copy strong {
+	color: #fecaca;
+}
 .student-dashboard--dark .student-detail-metrics article,
 .student-dashboard--dark .student-detail-head span {
 	border-color: rgba(52, 211, 153, 0.18);
@@ -5070,6 +5152,7 @@
 .student-dashboard--dark .student-recommendation-meta-grid span,
 .student-dashboard--dark .student-modern-scholarship-item p,
 .student-dashboard--dark .student-modern-action-grid small { color: #94a3b8; }
+.student-dashboard--dark .student-modern-recommendation-body .student-modern-recommendation-warning { color: #fca5a5; }
 .student-dashboard--dark .student-modern-recommended-empty,
 .student-dashboard--dark .student-modern-empty,
 .student-dashboard--dark .student-detail-avatar,
