@@ -5270,9 +5270,7 @@ export default function AdminDashboard() {
 																<button type="button" className="admin-student-action-btn admin-grantor-approve-btn" onClick={() => approveGrantorPasswordChange(grantor.id)}>
 																	<HiOutlineShieldCheck /> Approve
 																</button>
-															) : (
-																<span className="admin-grantor-action-empty">No action</span>
-															)}
+															) : null}
 																</>
 															) : null}
 														</div>
