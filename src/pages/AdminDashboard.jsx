@@ -844,7 +844,7 @@ export default function AdminDashboard() {
 	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
 	const [isPreviewLoading, setIsPreviewLoading] = useState(false)
 
-	const [grantorTab, setGrantorTab] = useState("overview")
+	const [grantorTab, setGrantorTab] = useState("grantors")
 	const [grantorSearch, setGrantorSearch] = useState("")
 	const [selectedGrantorIds, setSelectedGrantorIds] = useState([])
 	const [selectedGrantorId, setSelectedGrantorId] = useState("")
@@ -882,6 +882,7 @@ export default function AdminDashboard() {
 
 	const [reportPreview, setReportPreview] = useState(null)
 	const [reportExportFormat, setReportExportFormat] = useState("pdf")
+	const [exportTopStudentsPerGrantor, setExportTopStudentsPerGrantor] = useState(false)
 	const [isReportExporting, setIsReportExporting] = useState(false)
 
 	const [announcementTitle, setAnnouncementTitle] = useState("")
@@ -968,6 +969,10 @@ export default function AdminDashboard() {
 
 	useEffect(() => {
 		setSelectedGrantorIds([])
+	}, [grantorTab])
+
+	useEffect(() => {
+		if (grantorTab === "overview") setGrantorTab("grantors")
 	}, [grantorTab])
 
 	useEffect(() => {
@@ -1535,11 +1540,10 @@ export default function AdminDashboard() {
 
 	const grantorTabCounts = useMemo(
 		() => ({
-			overview: grantorRows.length,
 			grantors: activeGrantorRows.length,
 			archived: archivedGrantorRows.length,
 		}),
-		[activeGrantorRows.length, archivedGrantorRows.length, grantorRows.length],
+		[activeGrantorRows.length, archivedGrantorRows.length],
 	)
 
 	const grantorManagementStats = useMemo(() => {
@@ -1560,8 +1564,8 @@ export default function AdminDashboard() {
 	)
 
 	const grantorReportRows = useMemo(
-		() => (grantorTab === "overview" ? grantorRows : visibleGrantorRows).map((grantor) => buildGrantorReportRow(grantor)),
-		[grantorRows, grantorTab, visibleGrantorRows],
+		() => visibleGrantorRows.map((grantor) => buildGrantorReportRow(grantor)),
+		[visibleGrantorRows],
 	)
 
 	const grantorLabelById = useMemo(
@@ -4452,40 +4456,101 @@ export default function AdminDashboard() {
 		}
 	}
 
-	const createGrantorPreviewConfig = (rows, filterLabel) => ({
-		key: "scholarships",
-		title: "Grantor Management Report",
-		description: "Preview of grantor account records before export.",
-		filterLabel,
-		filename: `grantors-report-${Date.now()}`,
-		stats: [
-			{ label: "Grantors", value: rows.length },
-			{ label: "Active", value: rows.filter((row) => row.status !== "Archived").length },
-			{ label: "Archived", value: rows.filter((row) => row.status === "Archived").length },
-			{ label: "Password Requests", value: rows.filter((row) => row.status === "Password Requested").length },
-		],
-		columns: ["Grantor ID", "Name", "Email", "Organization", "Total Scholars", "Status", "Created"],
-		csvRows: rows.map((row) => [
-			row.id,
-			row.name,
-			row.email,
-			row.organization,
-			String(row.totalScholars),
-			row.status,
-			row.createdAt,
-		]),
-		pdfRows: rows,
-		pdfColumns: ["Grantor ID", "Name", "Email", "Organization", "Total Scholars", "Status", "Created"],
-		pdfBodyRows: rows.map((row) => [
-			row.id,
-			row.name,
-			row.email,
-			row.organization,
-			String(row.totalScholars),
-			row.status,
-			row.createdAt,
-		]),
-	})
+	const buildTopStudentsPerGrantorReport = () => {
+		const groups = new Map()
+		activeGrantorScholars
+			.filter((scholar) => getGrantorScholarProgramName(scholar))
+			.forEach((scholar) => {
+				const provider = scholar.providerType || toProviderType(scholar.grantorName || scholar.scholarshipTitle)
+				const grantorKey = scholar.grantorId || provider || scholar.grantorName || "grantor"
+				const grantorName = scholar.grantorName || grantorLabelById.get(grantorKey) || toProviderLabel(provider)
+				const studentRecordId =
+					grantorScholarStudentRecordLookup.get(`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`) || ""
+				const studentRecord = studentRecordId ? studentProfiles.find((student) => student.id === studentRecordId) : null
+				const gwaValue = studentRecord?.gwa || studentRecord?.currentGwa || studentRecord?.currentGWA || scholar.gwa || scholar.currentGwa || scholar.currentGWA || ""
+				const numericGwa = Number.parseFloat(String(gwaValue).replace(/[^\d.]/g, ""))
+				if (!groups.has(grantorKey)) {
+					groups.set(grantorKey, {
+						title: grantorName || "Grantor",
+						subtitle: "Top 10 students ranked by current GWA.",
+						headers: ["Rank", "Student ID", "Full Name", "Course", "Year Level", "GWA", "Status"],
+						rows: [],
+					})
+				}
+				groups.get(grantorKey).rows.push({
+					sortGwa: Number.isFinite(numericGwa) ? numericGwa : Number.POSITIVE_INFINITY,
+					row: [
+						"",
+						scholar.studentId || studentRecord?.id || "-",
+						buildGrantorScholarFullName(scholar) || studentRecord?.fullName || studentFullName(studentRecord || {}) || "-",
+						studentRecord?.course || getGrantorScholarProgramName(scholar) || "-",
+						scholar.yearLevel || studentRecord?.year || studentRecord?.yearLevel || "-",
+						gwaValue || "-",
+						scholar.status || "Active",
+					],
+				})
+			})
+
+		const groupedPages = [...groups.values()]
+			.map((group) => {
+				const rankedRows = group.rows
+					.sort((left, right) => {
+						if (left.sortGwa !== right.sortGwa) return left.sortGwa - right.sortGwa
+						return String(left.row[2]).localeCompare(String(right.row[2]))
+					})
+					.slice(0, 10)
+					.map((entry, index) => [String(index + 1), ...entry.row.slice(1)])
+				return { ...group, rows: rankedRows }
+			})
+			.filter((group) => group.rows.length > 0)
+			.sort((left, right) => left.title.localeCompare(right.title))
+
+		return {
+			groupedPages,
+			columns: ["Grantor", "Rank", "Student ID", "Full Name", "Course", "Year Level", "GWA", "Status"],
+			csvRows: groupedPages.flatMap((group) => group.rows.map((row) => [group.title, ...row])),
+		}
+	}
+
+	const createGrantorPreviewConfig = (rows, filterLabel) => {
+		const topStudentsReport = buildTopStudentsPerGrantorReport()
+		return {
+			key: "scholarships",
+			reportType: "grantors",
+			title: "Grantor Management Report",
+			description: "Preview of grantor account records before export.",
+			filterLabel,
+			filename: `grantors-report-${Date.now()}`,
+			stats: [
+				{ label: "Grantors", value: rows.length },
+				{ label: "Active", value: rows.filter((row) => row.status !== "Archived").length },
+				{ label: "Archived", value: rows.filter((row) => row.status === "Archived").length },
+				{ label: "Password Requests", value: rows.filter((row) => row.status === "Password Requested").length },
+			],
+			columns: ["Grantor ID", "Name", "Email", "Organization", "Total Scholars", "Status", "Created"],
+			csvRows: rows.map((row) => [
+				row.id,
+				row.name,
+				row.email,
+				row.organization,
+				String(row.totalScholars),
+				row.status,
+				row.createdAt,
+			]),
+			pdfRows: rows,
+			pdfColumns: ["Grantor ID", "Name", "Email", "Organization", "Total Scholars", "Status", "Created"],
+			pdfBodyRows: rows.map((row) => [
+				row.id,
+				row.name,
+				row.email,
+				row.organization,
+				String(row.totalScholars),
+				row.status,
+				row.createdAt,
+			]),
+			topStudentsPerGrantor: topStudentsReport,
+		}
+	}
 
 	const createSoePreviewConfig = (rows, filterLabel) => ({
 		key: "soe",
@@ -4538,6 +4603,7 @@ export default function AdminDashboard() {
 	const openReportPreview = (config) => {
 		setReportPreview(config)
 		setReportExportFormat("pdf")
+		setExportTopStudentsPerGrantor(false)
 	}
 
 	const createStudentPreviewConfig = (filters, rows) => {
@@ -4589,18 +4655,33 @@ export default function AdminDashboard() {
 		if (!reportPreview || isReportExporting) return
 		setIsReportExporting(true)
 		try {
+			const useTopStudentsPerGrantor =
+				reportPreview.reportType === "grantors" &&
+				exportTopStudentsPerGrantor &&
+				reportPreview.topStudentsPerGrantor?.groupedPages?.length > 0
 			if (reportPreview.key === "students") {
 				await downloadStudentReport(reportExportFormat, reportPreview.filters, reportPreview.reportRows || [])
 			} else if (reportExportFormat === "csv") {
-				downloadCsvReport(`${reportPreview.filename}.csv`, reportPreview.columns, reportPreview.csvRows)
+				downloadCsvReport(
+					`${reportPreview.filename}.csv`,
+					useTopStudentsPerGrantor ? reportPreview.topStudentsPerGrantor.columns : reportPreview.columns,
+					useTopStudentsPerGrantor ? reportPreview.topStudentsPerGrantor.csvRows : reportPreview.csvRows,
+				)
 			} else if (reportPreview.key === "scholarships") {
 				await exportScholarshipsReportPdf(
 					reportPreview.pdfRows,
 					reportPreview.filterLabel,
 					logo2,
-					reportPreview.pdfColumns,
-					reportPreview.pdfBodyRows,
-					reportPreview.title,
+					useTopStudentsPerGrantor ? ["Rank", "Student ID", "Full Name", "Course", "Year Level", "GWA", "Status"] : reportPreview.pdfColumns,
+					useTopStudentsPerGrantor ? [] : reportPreview.pdfBodyRows,
+					useTopStudentsPerGrantor ? "Top Students per Grantor Report" : reportPreview.title,
+					useTopStudentsPerGrantor
+						? {
+								filename: `top-students-per-grantor-${Date.now()}.pdf`,
+								subtitle: "Each page lists one grantor and their top 10 students ranked by current GWA.",
+								groupedPages: reportPreview.topStudentsPerGrantor.groupedPages,
+							}
+						: {},
 				)
 			} else if (reportPreview.key === "soe") {
 				await exportSoeRequestsReportPdf(reportPreview.pdfRows, reportPreview.filterLabel, logo2)
@@ -4621,6 +4702,8 @@ export default function AdminDashboard() {
 		const previewRows = reportPreviewTablePage.rows
 		const csvPreview = buildCsvPreview(reportPreview.columns, reportPreview.csvRows)
 		const isStudentReport = reportPreview.key === "students"
+		const isGrantorReport = reportPreview.reportType === "grantors"
+		const canExportTopStudentsPerGrantor = Boolean(isGrantorReport && reportPreview.topStudentsPerGrantor?.groupedPages?.length)
 		return (
 			<div className="admin-detail-backdrop admin-detail-backdrop--report" role="presentation" onClick={closeReportPreview}>
 				<div className="admin-detail-shell admin-detail-shell--report admin-report-preview-modal-shell" onClick={(event) => event.stopPropagation()}>
@@ -4641,6 +4724,17 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta">{reportPreview.filterLabel}</p>
 							</div>
 							<div className="admin-report-preview-controls">
+								{isGrantorReport ? (
+									<label className="admin-report-option-check">
+										<input
+											type="checkbox"
+											checked={exportTopStudentsPerGrantor}
+											onChange={(event) => setExportTopStudentsPerGrantor(event.target.checked)}
+											disabled={!canExportTopStudentsPerGrantor}
+										/>
+										<span>Export Top Students per Grantor</span>
+									</label>
+								) : null}
 								<div className="admin-report-format-toggle">
 									<button type="button" className={reportExportFormat === "pdf" ? "active" : ""} onClick={() => setReportExportFormat("pdf")}>
 										PDF
@@ -5203,7 +5297,6 @@ export default function AdminDashboard() {
 					<div className="admin-grantor-pagination-row">
 						<SectionTabs
 							tabs={[
-								{ id: "overview", label: "Overview", count: grantorTabCounts.overview, icon: HiOutlineChartPie },
 								{ id: "grantors", label: "Grantors", count: grantorTabCounts.grantors, icon: HiOutlineUserGroup },
 								{ id: "archived", label: "Archived", count: grantorTabCounts.archived, icon: HiOutlineTrash },
 							]}
@@ -5220,88 +5313,29 @@ export default function AdminDashboard() {
 							<HiOutlineTrash /> Archive {selectedGrantorIds.length > 0 ? `(${selectedGrantorIds.length})` : ""}
 						</button>
 					</div>
-					{grantorTab === "overview" ? (
-						<section className="admin-tab-panel">
-							<div className="admin-summary-strip">
-								<article className="admin-summary-card">
-									<h3>Total Grantors</h3>
-									<strong>{grantorRows.length}</strong>
-									<p>Provider accounts registered in the system.</p>
-								</article>
-								<article className="admin-summary-card">
-									<h3>Active Grantors</h3>
-									<strong>{activeGrantorRows.length}</strong>
-									<p>Grantors currently available for portal access.</p>
-								</article>
-								<article className="admin-summary-card">
-									<h3>Password Requests</h3>
-									<strong>{grantorRows.filter((row) => row.statusLabel === "Password Requested").length}</strong>
-									<p>Grantors waiting for admin password assistance.</p>
-								</article>
-							</div>
-							<div className="admin-table-wrap">
-								<table className="admin-management-table admin-management-table--roomy admin-grantor-table">
-									<thead>
-										<tr>
-											<th>Grantor ID</th>
-											<th>Name</th>
-											<th>Email</th>
-											<th>Total Scholars</th>
-											<th>Status</th>
-											<th>Action</th>
-										</tr>
-									</thead>
-									<tbody>
-										{grantorRows.length === 0 ? (
-											<EmptyStateRow colSpan={6} />
-										) : (
-											grantorRows.map((grantor) => (
-												<tr key={grantor.id}>
-													<td>{grantor.id}</td>
-													<td>{grantor.name}</td>
-													<td>{grantor.email || "-"}</td>
-													<td>{grantor.totalScholars || 0}</td>
-													<td><span className={toStatusClass(grantor.statusLabel)}>{grantor.statusLabel}</span></td>
-													<td>
-														<button type="button" className="admin-student-action-btn" onClick={() => setSelectedGrantorId(grantor.id)}>
-															<HiOutlineEye /> View
-														</button>
-													</td>
-												</tr>
-											))
-										)}
-									</tbody>
-								</table>
-							</div>
-						</section>
-					) : (
-						<>
-							<div className="admin-student-stats-row admin-grantor-stats-row" aria-label="Grantor management statistics">
-								<article>
-									<HiOutlineUserGroup />
-									<span>Total Grantors</span>
-									<strong>{grantorManagementStats.total}</strong>
-								</article>
-								<article>
-									<HiOutlineShieldCheck />
-									<span>Active Grantors</span>
-									<strong>{grantorManagementStats.active}</strong>
-								</article>
-								<article>
-									<HiOutlineRefresh />
-									<span>Password Requests</span>
-									<strong>{grantorManagementStats.passwordRequests}</strong>
-								</article>
-								<article>
-									<HiOutlineArchive />
-									<span>Archived</span>
-									<strong>{grantorManagementStats.archived}</strong>
-								</article>
-							</div>
-						</>
-					)}
-					{grantorTab !== "overview" ? (
-						<section className="admin-tab-panel admin-tab-panel--grantors">
+					<div className="admin-student-stats-row admin-grantor-stats-row" aria-label="Grantor management statistics">
+						<article>
+							<HiOutlineUserGroup />
+							<span>Total Grantors</span>
+							<strong>{grantorManagementStats.total}</strong>
+						</article>
+						<article>
+							<HiOutlineShieldCheck />
+							<span>Active Grantors</span>
+							<strong>{grantorManagementStats.active}</strong>
+						</article>
+						<article>
+							<HiOutlineRefresh />
+							<span>Password Requests</span>
+							<strong>{grantorManagementStats.passwordRequests}</strong>
+						</article>
+						<article>
+							<HiOutlineArchive />
+							<span>Archived</span>
+							<strong>{grantorManagementStats.archived}</strong>
+						</article>
+					</div>
+					<section className="admin-tab-panel admin-tab-panel--grantors">
 							<div className="admin-student-command-row admin-grantor-command-row">
 								<div className="admin-student-toolbar admin-grantor-toolbar">
 									<label className="admin-student-search" aria-label="Search grantor records">
@@ -5369,7 +5403,14 @@ export default function AdminDashboard() {
 													<td>{grantor.email || "-"}</td>
 													<td>{grantor.organization || "-"}</td>
 													<td>{grantor.totalScholars || 0}</td>
-													<td><span className={`admin-student-status admin-student-status--${String(grantor.statusLabel || "active").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>{grantor.statusLabel}</span></td>
+													<td>
+														<span
+															className={`admin-student-status admin-student-status--${String(grantor.statusLabel || "active").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+															title={grantor.statusLabel || "Active"}
+														>
+															{grantor.statusLabel}
+														</span>
+													</td>
 													<td>
 														<div className="admin-grantor-row-actions">
 															<button type="button" className="admin-student-action-btn" onClick={() => setSelectedGrantorId(grantor.id)}>
@@ -5388,8 +5429,7 @@ export default function AdminDashboard() {
 								totalItems={visibleGrantorRows.length}
 								onPageChange={(page) => setTablePage(`grantors_${grantorTab}`, page)}
 							/>
-						</section>
-					) : null}
+					</section>
 				</section>
 			)
 		}

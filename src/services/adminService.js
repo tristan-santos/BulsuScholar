@@ -414,6 +414,7 @@ async function exportTemplateReportPdf({
 	columns = [],
 	rows = [],
 	logoUrl = "",
+	groupedPages = null,
 }) {
 	const response = await fetch(`${BACKEND_API_URL}/reports/pdf`, {
 		method: "POST",
@@ -427,6 +428,7 @@ async function exportTemplateReportPdf({
 			columns,
 			rows,
 			logoUrl,
+			groupedPages,
 		}),
 	})
 	if (!response.ok) {
@@ -608,7 +610,7 @@ export async function exportStudentsReportPdf(rows = [], filterLabel = "", logoU
 	})
 }
 
-export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", logoUrl = "", columns = null, bodyRows = null, title = "Scholarship Programs Report") {
+export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", logoUrl = "", columns = null, bodyRows = null, title = "Scholarship Programs Report", options = {}) {
 	const tableColumns = Array.isArray(columns) && columns.length > 0 ? columns : ["Program Name", "Provider Type", "Total Slots", "Active Recipients", "Status"]
 	const tableBodyRows =
 		Array.isArray(bodyRows) && bodyRows.length >= 0
@@ -616,9 +618,9 @@ export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", l
 			: rows.map((row) => [row.programName, row.providerType, String(row.totalSlots), String(row.activeRecipients), row.status])
 
 	await exportTemplateReportPdf({
-		filename: `scholarships-report-${Date.now()}.pdf`,
+		filename: options.filename || `scholarships-report-${Date.now()}.pdf`,
 		title,
-		subtitle: "Program inventory and active recipient coverage rendered using the supplied formatted report template.",
+		subtitle: options.subtitle || "Program inventory and active recipient coverage rendered using the supplied formatted report template.",
 		filterLabel,
 		stats: buildScholarshipReportStats(rows),
 		logoUrl,
@@ -636,6 +638,7 @@ export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", l
 				][index] || 88,
 		})),
 		rows: tableBodyRows,
+		groupedPages: options.groupedPages || null,
 	})
 }
 

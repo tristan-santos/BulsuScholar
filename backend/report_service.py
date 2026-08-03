@@ -223,7 +223,7 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
         from pypdf import PdfReader, PdfWriter
     except ImportError as error:  # pragma: no cover - dependency guard
         raise RuntimeError("reportlab and pypdf are required for Python PDF report generation.") from error
@@ -286,20 +286,23 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
         story.append(Paragraph(f"Filters: {payload['filterLabel']}", styles["BodyText"]))
     story.append(Spacer(1, 12))
 
-    raw_headers = payload.get("headers") or payload.get("columns") or []
-    headers = [
-        item.get("label", "")
-        if isinstance(item, dict)
-        else str(item)
-        for item in raw_headers
-    ]
-    rows = payload.get("rows") or []
-    table_data = []
-    if headers:
-        table_data.append([Paragraph(header, styles["ReportTableHeader"]) for header in headers])
-    for row in rows:
-        table_data.append([Paragraph(_text(value), styles["ReportTableCell"]) for value in row])
-    if table_data:
+    def normalize_headers(raw_headers: list[Any]) -> list[str]:
+        return [
+            item.get("label", "")
+            if isinstance(item, dict)
+            else str(item)
+            for item in raw_headers
+        ]
+
+    def append_report_table(headers: list[str], rows: list[list[Any]]) -> None:
+        table_data = []
+        if headers:
+            table_data.append([Paragraph(header, styles["ReportTableHeader"]) for header in headers])
+        for row in rows:
+            table_data.append([Paragraph(_text(value), styles["ReportTableCell"]) for value in row])
+        if not table_data:
+            story.append(Paragraph("No rows available for the selected report.", styles["BodyText"]))
+            return
         column_widths = _report_column_widths(headers, page_width - margin_left - margin_right)
         table = Table(table_data, colWidths=column_widths, repeatRows=1, hAlign="LEFT", splitByRow=1)
         table.setStyle(TableStyle([
@@ -316,8 +319,28 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ]))
         story.append(table)
+
+    grouped_pages = payload.get("groupedPages") if isinstance(payload.get("groupedPages"), list) else []
+    if grouped_pages:
+        for group_index, group in enumerate(grouped_pages):
+            if group_index > 0:
+                story.append(PageBreak())
+                story.append(Paragraph("BulsuScholar", styles["Title"]))
+                story.append(Paragraph(payload.get("title") or "Report", styles["Heading2"]))
+                if payload.get("filterLabel"):
+                    story.append(Paragraph(f"Filters: {payload['filterLabel']}", styles["BodyText"]))
+                story.append(Spacer(1, 12))
+            story.append(Paragraph(_text(group.get("title") or f"Grantor {group_index + 1}"), styles["Heading2"]))
+            if group.get("subtitle"):
+                story.append(Paragraph(_text(group.get("subtitle")), styles["BodyText"]))
+            story.append(Spacer(1, 8))
+            group_headers = normalize_headers(group.get("headers") or payload.get("headers") or payload.get("columns") or [])
+            append_report_table(group_headers, group.get("rows") or [])
     else:
-        story.append(Paragraph("No rows available for the selected report.", styles["BodyText"]))
+        raw_headers = payload.get("headers") or payload.get("columns") or []
+        headers = normalize_headers(raw_headers)
+        rows = payload.get("rows") or []
+        append_report_table(headers, rows)
 
     def draw_template_marker_masks(canvas, _document):
         if not template_page:

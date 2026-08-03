@@ -5458,6 +5458,32 @@
 	flex-wrap: wrap;
 }
 
+.admin-report-option-check {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	min-height: 38px;
+	padding: 0.45rem 0.7rem;
+	border: 1px solid rgba(0, 99, 60, 0.22);
+	border-radius: 8px;
+	background: rgba(0, 99, 60, 0.04);
+	color: #0f3f30;
+	font-size: 0.78rem;
+	font-weight: 650;
+	white-space: nowrap;
+}
+
+.admin-report-option-check input {
+	width: 0.95rem;
+	height: 0.95rem;
+	accent-color: #00633c;
+}
+
+.admin-report-option-check:has(input:disabled) {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
 .admin-report-format-toggle {
 	display: inline-flex;
 	padding: 0.25rem;
@@ -5561,6 +5587,7 @@
 .admin-portal--dark .admin-distribution-item,
 .admin-portal--dark .admin-report-preview-shell,
 .admin-portal--dark .admin-report-format-toggle,
+.admin-portal--dark .admin-report-option-check,
 .admin-portal--dark .admin-floating-field input,
 .admin-portal--dark .admin-floating-field textarea,
 .admin-portal--dark .admin-floating-field select,
@@ -8083,6 +8110,11 @@
 .admin-portal--dark {
 	background: #0f172a;
 	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-report-option-check {
+	background: rgba(52, 211, 153, 0.08);
+	color: #d1fae5;
 }
 
 .admin-portal--dark .admin-topbar {
@@ -11262,7 +11294,15 @@
 
 .admin-grantor-table th:last-child,
 .admin-grantor-table td:last-child {
-	width: 170px;
+	width: 124px;
+	text-align: right;
+	overflow: visible;
+	text-overflow: clip;
+}
+
+.admin-grantor-table th:nth-last-child(2),
+.admin-grantor-table td:nth-last-child(2) {
+	width: 172px;
 	overflow: visible;
 	text-overflow: clip;
 }
@@ -11270,8 +11310,10 @@
 .admin-grantor-row-actions {
 	display: inline-flex;
 	align-items: center;
+	justify-content: flex-end;
 	gap: 0.45rem;
 	max-width: 100%;
+	width: 100%;
 }
 
 .admin-grantor-action-empty {
