@@ -11291,11 +11291,11 @@
 
 .admin-detail-shell--grantor > .admin-detail-close {
 	position: absolute;
-	top: -14px;
-	right: -14px;
+	top: 0.75rem;
+	right: 0.75rem;
 	z-index: 12;
-	width: 42px;
-	height: 42px;
+	width: 40px;
+	height: 40px;
 	border: 1px solid #b8d3c5;
 	border-radius: 50%;
 	background: #ffffff;
@@ -11680,8 +11680,8 @@
 	}
 
 	.admin-detail-shell--grantor > .admin-detail-close {
-		top: -10px;
-		right: -8px;
+		top: 0.65rem;
+		right: 0.65rem;
 	}
 }
 

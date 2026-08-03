@@ -72,6 +72,7 @@ import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
 import { uploadToStorage } from "../services/storageService"
 import { convertPdfToImage } from "../utils/pdfConverter"
 import {
+	createAdminNotification,
 	createStudentNotification,
 	deleteGrantorNotification as deleteGrantorNotificationRecord,
 	updateGrantorNotification,
@@ -117,6 +118,13 @@ import {
 	getScholarshipTrackingStepBadgeLabel,
 	getScholarshipTrackingStatusLabel,
 } from "../services/scholarshipTrackingService"
+import {
+	formatApplicationDecisionLabel,
+	formatApplicationDecisionVerb,
+	formatConfirmationDeadline,
+	getPendingApplicationDecisionConfirmation,
+	isApplicationDecisionConfirmationExpired,
+} from "../services/applicationDecisionConfirmationService"
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Filler, Tooltip, Legend)
 
@@ -748,6 +756,7 @@ export default function ProviderDashboard() {
 	const [rejectNotes, setRejectNotes] = useState("")
 	const [busy, setBusy] = useState("")
 	const [tablePages, setTablePages] = useState({})
+	const autoConfirmationResolutionRef = useRef("")
 	const grantorId = session.storedUserId || ""
 	const grantorName = useMemo(() => toGrantorDisplayName(profile, grantorId), [grantorId, profile])
 	const grantorInitials = useMemo(() => {
@@ -1281,6 +1290,16 @@ export default function ProviderDashboard() {
 		grantorActionStepLabel &&
 		applicationModalState.trackingProgress?.canAdminCompleteCurrentStep,
 	)
+	const pendingApplicationDecision = useMemo(
+		() => getPendingApplicationDecisionConfirmation(applicationModalState.application || {}),
+		[applicationModalState.application],
+	)
+	const pendingApplicationDecisionLabel = pendingApplicationDecision
+		? formatApplicationDecisionLabel(pendingApplicationDecision.decision)
+		: ""
+	const pendingApplicationDecisionVerb = pendingApplicationDecision
+		? formatApplicationDecisionVerb(pendingApplicationDecision.decision)
+		: ""
 
 	const importPreviewPage = useMemo(
 		() => paginateRows(importData || [], tablePages.grantor_import_preview || 1, TABLE_PAGE_SIZE),
@@ -1497,7 +1516,7 @@ export default function ProviderDashboard() {
 		setRejectNotes("")
 	}
 
-	const handleConfirmRejectApplication = async () => {
+	const handleConfirmRejectApplication = async (override = {}) => {
 		if (!applicationModalState.application || !applicationModalState.student) return
 		if (!isApplicationOwnedByGrantor(applicationModalState.application, grantorId)) {
 			console.warn("[BulsuScholar] Blocked cross-grantor application rejection.", {
@@ -1509,7 +1528,10 @@ export default function ProviderDashboard() {
 			toast.error("You can only reject applications submitted to your grantor account.")
 			return
 		}
-		if (!rejectReason) {
+		const effectiveReason = override.reason || rejectReason
+		const effectiveNotes = override.notes ?? rejectNotes
+		const isConfirmationResolution = override.fromConfirmation === true
+		if (!effectiveReason) {
 			toast.error("Select a rejection reason first.")
 			return
 		}
@@ -1547,7 +1569,7 @@ export default function ProviderDashboard() {
 				application.providerLabel ||
 				grantorName ||
 				"your scholarship application"
-			const rejectionMessage = `${grantorName} rejected your application for ${scholarshipName}. Reason: ${rejectReason}${rejectNotes.trim() ? ` - ${rejectNotes.trim()}` : ""}`
+			const rejectionMessage = `${grantorName} rejected your application for ${scholarshipName}. Reason: ${effectiveReason}${effectiveNotes.trim() ? ` - ${effectiveNotes.trim()}` : ""}`
 
 			await adminReviewWorkflow({
 				actorType: "grantor",
@@ -1568,13 +1590,17 @@ export default function ProviderDashboard() {
 							status: "Rejected",
 							rejected: true,
 							archived: true,
-							rejectionReason: rejectReason,
-							rejectionNotes: rejectNotes.trim(),
+							rejectionReason: effectiveReason,
+							rejectionNotes: effectiveNotes.trim(),
 							rejectionMessage,
 							rejectedAt,
 							rejectedBy: grantorId,
 							rejectedByName: grantorName,
 							rejectedByRole: "grantor",
+							decisionConfirmation: null,
+							grantorConfirmationPending: false,
+							grantorConfirmationDecision: null,
+							grantorConfirmationDeadlineAt: null,
 							updatedAt: serverTimestamp(),
 						},
 					},
@@ -1591,8 +1617,8 @@ export default function ProviderDashboard() {
 					grantorId,
 					grantorName,
 					applicationNumber: application.applicationNumber || application.requestNumber || application.id || "",
-					rejectionReason: rejectReason,
-					rejectionNotes: rejectNotes.trim(),
+					rejectionReason: effectiveReason,
+					rejectionNotes: effectiveNotes.trim(),
 					rejectionMessage,
 					rejectedBy: grantorId,
 					rejectedByName: grantorName,
@@ -1606,6 +1632,21 @@ export default function ProviderDashboard() {
 				console.error("Application rejected, but student notification failed.", notificationError)
 				toast.warning("Application rejected, but the student inbox notification could not be delivered.")
 			}
+			if (getPendingApplicationDecisionConfirmation(application)?.requestedBy === "admin") {
+				await createAdminNotification({
+					type: "application_confirmation_resolved",
+					title: "Grantor Confirmed Rejection",
+					message: `${grantorName} confirmed the rejection of ${[student.fname, student.mname, student.lname].filter(Boolean).join(" ").trim() || "the student"}'s application for ${scholarshipName}.`,
+					grantorId,
+					grantorName,
+					studentId: student.id || application.studentId,
+					studentName: [student.fname, student.mname, student.lname].filter(Boolean).join(" ").trim(),
+					applicationNumber: application.applicationNumber || application.requestNumber || application.id || "",
+					decision: "reject",
+					read: false,
+					createdAt: serverTimestamp(),
+				}).catch((error) => console.error("Admin notification for grantor rejection confirmation failed.", error))
+			}
 
 			setApplicationModalState((prev) => ({
 				...prev,
@@ -1615,20 +1656,24 @@ export default function ProviderDashboard() {
 							status: "Rejected",
 							rejected: true,
 							archived: true,
-							rejectionReason: rejectReason,
-							rejectionNotes: rejectNotes.trim(),
+							rejectionReason: effectiveReason,
+							rejectionNotes: effectiveNotes.trim(),
 							rejectionMessage,
 							rejectedAt,
 							rejectedBy: grantorId,
 							rejectedByName: grantorName,
 							rejectedByRole: "grantor",
+							decisionConfirmation: null,
+							grantorConfirmationPending: false,
+							grantorConfirmationDecision: null,
+							grantorConfirmationDeadlineAt: null,
 						}
 					: prev.application,
 				student: prev.student ? { ...prev.student, scholarships: nextScholarships } : prev.student,
 			}))
 			setRejectModalOpen(false)
 			closeApplicationModal()
-			toast.success("Application rejected and moved to archived records.")
+			toast.success(isConfirmationResolution ? "Rejection confirmed and the application was archived." : "Application rejected and moved to archived records.")
 		} catch (error) {
 			console.error("Unable to reject application.", error)
 			toast.error("Unable to reject the application right now.")
@@ -1918,6 +1963,7 @@ export default function ProviderDashboard() {
 
 		setBusy("grantor_tracking")
 		try {
+			const pendingDecision = getPendingApplicationDecisionConfirmation(applicationModalState.application || {})
 			const nextTracking = completeScholarshipTrackingStep(
 				applicationModalState.scholarship.tracking,
 				{
@@ -1987,6 +2033,10 @@ export default function ProviderDashboard() {
 						data: {
 							status: nextStatus,
 							tracking: nextTracking,
+							decisionConfirmation: null,
+							grantorConfirmationPending: false,
+							grantorConfirmationDecision: null,
+							grantorConfirmationDeadlineAt: null,
 							updatedAt: serverTimestamp(),
 						},
 					},
@@ -2024,9 +2074,39 @@ export default function ProviderDashboard() {
 					},
 				})
 			}
+			if (pendingDecision?.requestedBy === "admin") {
+				await createAdminNotification({
+					type: "application_confirmation_resolved",
+					title: "Grantor Confirmed Approval",
+					message: `${grantorName} confirmed the approval of ${applicationModalState.application.fullName || "the student"}'s application for ${nextScholarship.name || "the scholarship"}.`,
+					grantorId,
+					grantorName,
+					studentId: applicationModalState.student.id,
+					studentName: applicationModalState.application.fullName || "",
+					applicationNumber:
+						applicationModalState.application.applicationNumber ||
+						applicationModalState.application.requestNumber ||
+						applicationModalState.application.id ||
+						"",
+					decision: "approve",
+					read: false,
+					createdAt: serverTimestamp(),
+				}).catch((error) => console.error("Admin notification for grantor approval confirmation failed.", error))
+			}
 
 			setApplicationModalState((prev) => ({
 				...prev,
+				application: prev.application
+					? {
+							...prev.application,
+							status: nextStatus,
+							tracking: nextTracking,
+							decisionConfirmation: null,
+							grantorConfirmationPending: false,
+							grantorConfirmationDecision: null,
+							grantorConfirmationDeadlineAt: null,
+						}
+					: prev.application,
 				scholarship: nextScholarship,
 				student: prev.student
 					? {
@@ -2044,6 +2124,94 @@ export default function ProviderDashboard() {
 			setBusy("")
 		}
 	}
+
+	const handleConfirmPendingApplicationDecision = async (options = {}) => {
+		const pendingDecision = getPendingApplicationDecisionConfirmation(applicationModalState.application || {})
+		if (!pendingDecision) return
+		if (pendingDecision.decision === "reject") {
+			await handleConfirmRejectApplication({
+				reason: pendingDecision.reason || APPLICATION_REJECTION_REASONS[0],
+				notes: pendingDecision.notes || "",
+				fromConfirmation: true,
+			})
+			return
+		}
+		await handleCompleteGrantorStage()
+		if (options.automatic) {
+			toast.info(`${formatApplicationDecisionLabel(pendingDecision.decision)} was applied automatically after the 3-day confirmation window.`)
+		}
+	}
+
+	const handleCancelPendingApplicationDecision = async () => {
+		const pendingDecision = getPendingApplicationDecisionConfirmation(applicationModalState.application || {})
+		if (!pendingDecision || !applicationModalState.application) return
+		setBusy("decision_confirmation")
+		try {
+			await adminReviewWorkflow({
+				actorType: "grantor",
+				actorId: grantorId,
+				updates: [
+					{
+						table: "scholarship_applications",
+						id: applicationModalState.application.id,
+						data: {
+							decisionConfirmation: null,
+							grantorConfirmationPending: false,
+							grantorConfirmationDecision: null,
+							grantorConfirmationDeadlineAt: null,
+							updatedAt: serverTimestamp(),
+						},
+					},
+				],
+			})
+			await createAdminNotification({
+				type: "application_confirmation_cancelled",
+				title: `Grantor Cancelled ${formatApplicationDecisionLabel(pendingDecision.decision)}`,
+				message: `${grantorName} cancelled the admin-proposed ${formatApplicationDecisionVerb(pendingDecision.decision)} decision for ${applicationModalState.application.fullName || "the student"}.`,
+				grantorId,
+				grantorName,
+				studentId: applicationModalState.application.studentId || "",
+				studentName: applicationModalState.application.fullName || "",
+				applicationNumber:
+					applicationModalState.application.applicationNumber ||
+					applicationModalState.application.requestNumber ||
+					applicationModalState.application.id ||
+					"",
+				decision: pendingDecision.decision,
+				read: false,
+				createdAt: serverTimestamp(),
+			}).catch((error) => console.error("Admin notification for cancelled application confirmation failed.", error))
+			setApplicationModalState((prev) => ({
+				...prev,
+				application: prev.application
+					? {
+							...prev.application,
+							decisionConfirmation: null,
+							grantorConfirmationPending: false,
+							grantorConfirmationDecision: null,
+							grantorConfirmationDeadlineAt: null,
+						}
+					: prev.application,
+			}))
+			toast.success(`${formatApplicationDecisionLabel(pendingDecision.decision)} confirmation cancelled.`)
+		} catch (error) {
+			console.error("Unable to cancel application decision confirmation.", error)
+			toast.error("Unable to cancel the confirmation right now.")
+		} finally {
+			setBusy("")
+		}
+	}
+
+	useEffect(() => {
+		if (!applicationModalState.open || busy) return
+		const pendingDecision = getPendingApplicationDecisionConfirmation(applicationModalState.application || {})
+		if (!pendingDecision || !isApplicationDecisionConfirmationExpired(pendingDecision)) return
+		const key = `${applicationModalState.application?.id || ""}_${pendingDecision.decision}_${pendingDecision.deadlineAt || ""}`
+		if (autoConfirmationResolutionRef.current === key) return
+		autoConfirmationResolutionRef.current = key
+		toast.info(`The 3-day ${formatApplicationDecisionLabel(pendingDecision.decision).toLowerCase()} confirmation window expired. Applying it automatically.`)
+		void handleConfirmPendingApplicationDecision({ automatic: true })
+	}, [applicationModalState.open, applicationModalState.application, busy])
 
 	const handleCreateScholar = async () => {
 		if (!grantorId || busy) return
@@ -3707,34 +3875,72 @@ export default function ProviderDashboard() {
 											</section>
 										</div>
 
+										{pendingApplicationDecision ? (
+											<div className={`grantor-decision-confirmation grantor-decision-confirmation--${pendingApplicationDecision.decision}`.trim()}>
+												<div>
+													<span>Admin decision needs grantor confirmation</span>
+													<strong>
+														This student has been {pendingApplicationDecision.decision === "reject" ? "rejected" : "approved"}. Confirm to {pendingApplicationDecisionVerb} the application of {applicationModalState.application?.fullName || "this student"}.
+													</strong>
+													<p>
+														Deadline: {formatConfirmationDeadline(pendingApplicationDecision)}. If no action is taken, this {pendingApplicationDecisionLabel.toLowerCase()} will apply automatically after 3 days.
+													</p>
+												</div>
+											</div>
+										) : null}
+
 										<div className="grantor-application-actions">
-											<button
-												type="button"
-												className="admin-export-btn grantor-reject-application-btn"
-												onClick={openRejectModal}
-												disabled={
-													busy === "grantor_tracking" ||
-													busy === "reject_application" ||
-													isRejectedApplication(applicationModalState.application || {})
-												}
-											>
-												<HiOutlineBan /> Reject Application
-											</button>
-											<button
-												type="button"
-												className="admin-export-btn"
-												onClick={handleCompleteGrantorStage}
-												disabled={
-													busy === "grantor_tracking" ||
-													!canCompleteGrantorCurrentStage
-												}
-											>
-												{busy === "grantor_tracking"
-													? "Completing..."
-													: canCompleteGrantorCurrentStage
-														? <><HiCheck /> Complete Current Stage</>
-														: <><HiOutlineBan /> Complete Current Stage</>}
-											</button>
+											{pendingApplicationDecision ? (
+												<>
+													<button
+														type="button"
+														className={`admin-export-btn ${pendingApplicationDecision.decision === "reject" ? "grantor-reject-application-btn" : ""}`.trim()}
+														onClick={handleConfirmPendingApplicationDecision}
+														disabled={busy === "grantor_tracking" || busy === "reject_application" || busy === "decision_confirmation"}
+													>
+														{pendingApplicationDecision.decision === "reject" ? <HiOutlineBan /> : <HiCheck />}
+														Confirm {pendingApplicationDecisionLabel}
+													</button>
+													<button
+														type="button"
+														className="admin-export-btn grantor-cancel-confirmation-btn"
+														onClick={handleCancelPendingApplicationDecision}
+														disabled={busy === "grantor_tracking" || busy === "reject_application" || busy === "decision_confirmation"}
+													>
+														<HiX /> Cancel {pendingApplicationDecisionLabel}
+													</button>
+												</>
+											) : (
+												<>
+													<button
+														type="button"
+														className="admin-export-btn grantor-reject-application-btn"
+														onClick={openRejectModal}
+														disabled={
+															busy === "grantor_tracking" ||
+															busy === "reject_application" ||
+															isRejectedApplication(applicationModalState.application || {})
+														}
+													>
+														<HiOutlineBan /> Reject Application
+													</button>
+													<button
+														type="button"
+														className="admin-export-btn"
+														onClick={handleCompleteGrantorStage}
+														disabled={
+															busy === "grantor_tracking" ||
+															!canCompleteGrantorCurrentStage
+														}
+													>
+														{busy === "grantor_tracking"
+															? "Completing..."
+															: canCompleteGrantorCurrentStage
+																? <><HiCheck /> Complete Current Stage</>
+																: <><HiOutlineBan /> Complete Current Stage</>}
+													</button>
+												</>
+											)}
 										</div>
 									</>
 								)}

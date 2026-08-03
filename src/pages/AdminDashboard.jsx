@@ -55,6 +55,10 @@ import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
 import { createGrantorNotification, createStudentNotification } from "../services/notificationService"
 import { materialRequestWorkflow } from "../services/workflowService"
+import {
+	buildApplicationDecisionConfirmation,
+	canUseGrantorConfirmationForStep,
+} from "../services/applicationDecisionConfirmationService"
 import { checkAdminStudentDuplicates, matchAdminGrantorStudents } from "../services/adminMatchingService"
 import {
 	GRANTOR_SUBCOLLECTIONS,
@@ -1479,6 +1483,11 @@ export default function AdminDashboard() {
 	const selectedGrantor = useMemo(
 		() => grantorRows.find((grantor) => grantor.id === selectedGrantorId) || null,
 		[grantorRows, selectedGrantorId],
+	)
+	const selectedGrantorPasswordChangePending = Boolean(
+		selectedGrantor?.passwordChangeRequested === true ||
+			selectedGrantor?.passwordChangeRequestStatus === "pending" ||
+			selectedGrantor?.statusLabel === "Password Requested",
 	)
 
 	const selectedGrantorAnnouncements = useMemo(() => {
@@ -3418,6 +3427,77 @@ export default function AdminDashboard() {
 			return
 		}
 
+		const matchingApplication = applicationsRaw
+			.filter((application) => application.studentId === selectedScholarshipTrackingRow.studentId)
+			.sort((left, right) => {
+				const leftDate =
+					toJsDate(
+						left.updatedAt || left.applicationDate || left.createdAt || left.timestamp,
+					)?.getTime() || 0
+				const rightDate =
+					toJsDate(
+						right.updatedAt || right.applicationDate || right.createdAt || right.timestamp,
+					)?.getTime() || 0
+				return rightDate - leftDate
+			})
+			.find((application) => {
+				return (
+					application.scholarshipId === selectedScholarshipTrackingRow.scholarshipEntry.id ||
+					application.applicationNumber ===
+						selectedScholarshipTrackingRow.scholarshipEntry.applicationNumber ||
+					application.requestNumber === selectedScholarshipTrackingRow.scholarshipEntry.requestNumber ||
+					application.providerType ===
+						selectedScholarshipTrackingRow.scholarshipEntry.providerType
+				)
+			})
+
+		if (canUseGrantorConfirmationForStep(currentStep.id) && matchingApplication?.grantorId) {
+			await runAction(async () => {
+				const confirmation = buildApplicationDecisionConfirmation({
+					decision: "approve",
+					stepId: currentStep.id,
+					stepLabel: currentStep.label,
+					studentId: selectedScholarshipTrackingRow.studentId,
+					studentName: selectedScholarshipTrackingRow.fullName,
+					scholarshipName:
+						selectedScholarshipTrackingRow.scholarship ||
+						selectedScholarshipTrackingRow.scholarshipEntry.name ||
+						"Scholarship Application",
+					applicationNumber:
+						matchingApplication.applicationNumber ||
+						matchingApplication.requestNumber ||
+						matchingApplication.id ||
+						"",
+				})
+				await setDoc(
+					doc(db, "scholarshipApplications", matchingApplication.id),
+					{
+						decisionConfirmation: confirmation,
+						grantorConfirmationPending: true,
+						grantorConfirmationDecision: "approve",
+						grantorConfirmationDeadlineAt: confirmation.deadlineAt,
+						updatedAt: serverTimestamp(),
+					},
+					{ merge: true },
+				)
+				await createGrantorNotification({
+					grantorId: matchingApplication.grantorId,
+					type: "application_decision_confirmation",
+					title: "Application Approval Needs Confirmation",
+					message: `Admin approved ${selectedScholarshipTrackingRow.fullName}'s ${currentStep.label}. Confirm approval within 3 days or it will be approved automatically.`,
+					studentId: selectedScholarshipTrackingRow.studentId,
+					studentName: selectedScholarshipTrackingRow.fullName,
+					applicationNumber: confirmation.applicationNumber,
+					scholarshipName: confirmation.scholarshipName,
+					decision: "approve",
+					deadlineAt: confirmation.deadlineAt,
+					read: false,
+					createdAt: serverTimestamp(),
+				})
+			}, `${currentStep.label} approval sent to the grantor for confirmation.`)
+			return
+		}
+
 		await runAction(async () => {
 			const nextTracking = completeScholarshipTrackingStep(
 				selectedScholarshipTrackingRow.trackingProgress.tracking,
@@ -3462,30 +3542,6 @@ export default function AdminDashboard() {
 				},
 				{ merge: true },
 			)
-
-			const matchingApplication = applicationsRaw
-				.filter((application) => application.studentId === selectedScholarshipTrackingRow.studentId)
-				.sort((left, right) => {
-					const leftDate =
-						toJsDate(
-							left.updatedAt || left.applicationDate || left.createdAt || left.timestamp,
-						)?.getTime() || 0
-					const rightDate =
-						toJsDate(
-							right.updatedAt || right.applicationDate || right.createdAt || right.timestamp,
-						)?.getTime() || 0
-					return rightDate - leftDate
-				})
-				.find((application) => {
-					return (
-						application.scholarshipId === selectedScholarshipTrackingRow.scholarshipEntry.id ||
-						application.applicationNumber ===
-							selectedScholarshipTrackingRow.scholarshipEntry.applicationNumber ||
-						application.requestNumber === selectedScholarshipTrackingRow.scholarshipEntry.requestNumber ||
-						application.providerType ===
-							selectedScholarshipTrackingRow.scholarshipEntry.providerType
-					)
-				})
 
 			if (matchingApplication?.id) {
 				await setDoc(
@@ -3553,6 +3609,71 @@ export default function AdminDashboard() {
 			const rejectedAt = new Date().toISOString()
 			const rejectedByName = "BulsuScholar Admin"
 			const rejectedMessage = `${rejectedByName} rejected your application for ${trackingRow.scholarship || trackingRow.scholarshipEntry.name || "your scholarship application"}. Reason: ${adminRejectReason}${adminRejectNotes.trim() ? ` - ${adminRejectNotes.trim()}` : ""}`
+			const matchingApplications = applicationsRaw.filter((application) => {
+				return (
+					application.studentId === trackingRow.studentId &&
+					(application.scholarshipId === trackingRow.scholarshipEntry.id ||
+						application.applicationNumber === trackingRow.scholarshipEntry.applicationNumber ||
+						application.requestNumber === trackingRow.scholarshipEntry.requestNumber ||
+						application.providerType === trackingRow.scholarshipEntry.providerType)
+				)
+			})
+
+			const grantorOwnedMatchingApplications = matchingApplications.filter((application) => application.grantorId)
+			if (
+				canUseGrantorConfirmationForStep(trackingRow.trackingProgress?.currentStep?.id) &&
+				grantorOwnedMatchingApplications.length > 0
+			) {
+				for (const application of grantorOwnedMatchingApplications) {
+					const confirmation = buildApplicationDecisionConfirmation({
+						decision: "reject",
+						stepId: trackingRow.trackingProgress?.currentStep?.id || "",
+						stepLabel: trackingRow.trackingProgress?.currentStepLabel || "Current Stage",
+						studentId: trackingRow.studentId,
+						studentName: trackingRow.fullName,
+						scholarshipName:
+							trackingRow.scholarship || trackingRow.scholarshipEntry.name || "Scholarship Application",
+						applicationNumber:
+							application.applicationNumber || application.requestNumber || application.id || "",
+						reason: adminRejectReason,
+						notes: adminRejectNotes.trim(),
+					})
+					await setDoc(
+						doc(db, "scholarshipApplications", application.id),
+						{
+							decisionConfirmation: confirmation,
+							grantorConfirmationPending: true,
+							grantorConfirmationDecision: "reject",
+							grantorConfirmationDeadlineAt: confirmation.deadlineAt,
+							adminProposedRejectionReason: adminRejectReason,
+							adminProposedRejectionNotes: adminRejectNotes.trim(),
+							adminProposedRejectionMessage: rejectedMessage,
+							updatedAt: serverTimestamp(),
+						},
+						{ merge: true },
+					)
+					await createGrantorNotification({
+						grantorId: application.grantorId,
+						type: "application_decision_confirmation",
+						title: "Application Rejection Needs Confirmation",
+						message: `Admin rejected ${trackingRow.fullName}'s application. Confirm rejection within 3 days or it will be rejected automatically. Reason: ${adminRejectReason}${adminRejectNotes.trim() ? ` - ${adminRejectNotes.trim()}` : ""}`,
+						studentId: trackingRow.studentId,
+						studentName: trackingRow.fullName,
+						applicationNumber: confirmation.applicationNumber,
+						scholarshipName: confirmation.scholarshipName,
+						decision: "reject",
+						reason: adminRejectReason,
+						notes: adminRejectNotes.trim(),
+						deadlineAt: confirmation.deadlineAt,
+						read: false,
+						createdAt: serverTimestamp(),
+					})
+				}
+				setAdminRejectModalOpen(false)
+				toast.success("Rejection sent to the grantor for confirmation.")
+				return
+			}
+
 			const nextScholarships = (trackingRow.studentSnapshot.scholarships || []).filter(
 				(item) => item.id !== trackingRow.scholarshipEntry.id,
 			)
@@ -3586,16 +3707,6 @@ export default function AdminDashboard() {
 				},
 				{ merge: true },
 			)
-
-			const matchingApplications = applicationsRaw.filter((application) => {
-				return (
-					application.studentId === trackingRow.studentId &&
-					(application.scholarshipId === trackingRow.scholarshipEntry.id ||
-						application.applicationNumber === trackingRow.scholarshipEntry.applicationNumber ||
-						application.requestNumber === trackingRow.scholarshipEntry.requestNumber ||
-						application.providerType === trackingRow.scholarshipEntry.providerType)
-				)
-			})
 
 			for (const application of matchingApplications) {
 				await setDoc(
@@ -5264,15 +5375,6 @@ export default function AdminDashboard() {
 															<button type="button" className="admin-student-action-btn" onClick={() => setSelectedGrantorId(grantor.id)}>
 																<HiOutlineEye /> View
 															</button>
-															{grantorTab === "grantors" ? (
-																<>
-															{grantor.passwordChangeRequestStatus === "pending" || grantor.passwordChangeRequested === true ? (
-																<button type="button" className="admin-student-action-btn admin-grantor-approve-btn" onClick={() => approveGrantorPasswordChange(grantor.id)}>
-																	<HiOutlineShieldCheck /> Approve
-																</button>
-															) : null}
-																</>
-															) : null}
 														</div>
 													</td>
 												</tr>
@@ -6662,8 +6764,18 @@ export default function AdminDashboard() {
 								)}
 							</div>
 							<footer className="admin-detail-actions admin-grantor-detail-actions">
-								<button type="button" className="admin-table-btn" onClick={() => requestGrantorPasswordChangeFromAdmin(selectedGrantor.id)}>
-									<HiOutlineRefresh /> Request Password Change
+								<button
+									type="button"
+									className="admin-table-btn"
+									disabled={!selectedGrantorPasswordChangePending}
+									title={
+										selectedGrantorPasswordChangePending
+											? "Approve this grantor password change request"
+											: "No password change request is pending for this grantor"
+									}
+									onClick={() => approveGrantorPasswordChange(selectedGrantor.id)}
+								>
+									<HiOutlineShieldCheck /> Approve Password Change
 								</button>
 								<button type="button" className="admin-danger-btn" disabled={selectedGrantor.archived === true} onClick={() => openSingleGrantorArchiveConfirmation(selectedGrantor.id)}>
 									<HiOutlineTrash /> Archive Grantor
@@ -7020,7 +7132,9 @@ export default function AdminDashboard() {
 										</strong>
 										<span>
 											{selectedScholarshipTrackingRow.trackingProgress.canAdminCompleteCurrentStep
-												? `Complete "${selectedScholarshipTrackingRow.trackingProgress.currentStepLabel}" to move the student to the next step.`
+												? canUseGrantorConfirmationForStep(selectedScholarshipTrackingRow.trackingProgress.currentStep?.id)
+													? `Confirm "${selectedScholarshipTrackingRow.trackingProgress.currentStepLabel}" for review. Grantor-owned applications will be sent to the grantor for final confirmation.`
+													: `Complete "${selectedScholarshipTrackingRow.trackingProgress.currentStepLabel}" to move the student to the next step.`
 												: selectedScholarshipTrackingRow.trackingProgress.adminCompletionReason}
 										</span>
 									</div>
@@ -7036,7 +7150,7 @@ export default function AdminDashboard() {
 										}
 										onClick={completeScholarshipTrackingCurrentStep}
 									>
-										Complete Current Step
+										Confirm Approval
 									</button>
 									<button
 										type="button"
@@ -7112,7 +7226,7 @@ export default function AdminDashboard() {
 								Cancel
 							</button>
 							<button type="button" className="admin-reject-confirm-btn" onClick={() => executeRejectScholarshipApplication(selectedScholarshipTrackingRow)} disabled={isBusy}>
-								<HiOutlineExclamation /> {isBusy ? "Rejecting..." : "Confirm Reject Application"}
+								<HiOutlineExclamation /> {isBusy ? "Confirming..." : "Confirm Rejection"}
 							</button>
 						</footer>
 					</div>
