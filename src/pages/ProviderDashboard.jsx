@@ -696,6 +696,7 @@ export default function ProviderDashboard() {
 	const [showEditModal, setShowEditModal] = useState(false)
 	const [createForm, setCreateForm] = useState(SCHOLAR_FORM)
 	const [editForm, setEditForm] = useState(SCHOLAR_FORM)
+	const [editScholarAccountExists, setEditScholarAccountExists] = useState(false)
 	const [announcementForm, setAnnouncementForm] = useState(ANNOUNCEMENT_FORM)
 	const [announcementSubmitAttempted, setAnnouncementSubmitAttempted] = useState(false)
 	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
@@ -896,6 +897,11 @@ export default function ProviderDashboard() {
 			announcementForm.applicationEnabled &&
 			(!String(announcementForm.minimumGrade || "").trim() ||
 				Number.isNaN(Number(announcementForm.minimumGrade))),
+		otherRequirement:
+			announcementForm.applicationEnabled &&
+			(Array.isArray(announcementForm.otherRequirements) ? announcementForm.otherRequirements : []).some(
+				(item) => !String(item?.name || "").trim() || item?.confirmed !== true,
+			),
 	}), [announcementForm])
 
 	useEffect(() => {
@@ -1460,6 +1466,7 @@ export default function ProviderDashboard() {
 	const closeEditModal = () => {
 		setShowEditModal(false)
 		setEditForm(SCHOLAR_FORM)
+		setEditScholarAccountExists(false)
 	}
 
 	const openEditModal = async () => {
@@ -1469,6 +1476,7 @@ export default function ProviderDashboard() {
 		}
 
 		setEditForm(scholarToForm(selectedScholar))
+		setEditScholarAccountExists(false)
 		setShowEditModal(true)
 
 		const studentId = String(selectedScholar.studentId || "").trim()
@@ -1477,6 +1485,7 @@ export default function ProviderDashboard() {
 		try {
 			const studentSnapshot = await getDoc(doc(db, "students", studentId))
 			if (studentSnapshot.exists()) {
+				setEditScholarAccountExists(true)
 				setEditForm(scholarToForm(selectedScholar, studentSnapshot.data() || {}))
 			}
 		} catch (error) {
@@ -2328,7 +2337,12 @@ export default function ProviderDashboard() {
 		}
 		setBusy("edit")
 		try {
-			const payload = scholarPayload(editForm, grantorId, grantorName, grantorProviderType)
+			const lockedStudentId = String(selectedScholar.studentId || "").trim()
+			const saveForm =
+				editScholarAccountExists && lockedStudentId
+					? { ...editForm, studentId: lockedStudentId }
+					: editForm
+			const payload = scholarPayload(saveForm, grantorId, grantorName, grantorProviderType)
 			const existingScholars = await getAllGrantorScholars(db)
 			const duplicate = await findScholarDuplicate(payload, existingScholars, {
 				excludeId: selectedScholar.id,
@@ -2609,7 +2623,7 @@ export default function ProviderDashboard() {
 			if (requirements.length > 0) return prev
 			return {
 				...prev,
-				otherRequirements: [{ name: "", fileType: "pdf", uploadCount: 1 }],
+				otherRequirements: [{ name: "", fileType: "pdf", uploadCount: 1, confirmed: false }],
 			}
 		})
 	}
@@ -2618,7 +2632,23 @@ export default function ProviderDashboard() {
 		setAnnouncementForm((prev) => ({
 			...prev,
 			otherRequirements: (Array.isArray(prev.otherRequirements) ? prev.otherRequirements : []).map((item, itemIndex) =>
-				itemIndex === index ? { ...item, [field]: value } : item,
+				itemIndex === index ? { ...item, [field]: value, confirmed: false } : item,
+			),
+		}))
+	}
+
+	const confirmAnnouncementRequirement = (index) => {
+		const requirement = Array.isArray(announcementForm.otherRequirements)
+			? announcementForm.otherRequirements[index]
+			: null
+		if (!String(requirement?.name || "").trim()) {
+			toast.error("Add the other requirement name before confirming it.")
+			return
+		}
+		setAnnouncementForm((prev) => ({
+			...prev,
+			otherRequirements: (Array.isArray(prev.otherRequirements) ? prev.otherRequirements : []).map((item, itemIndex) =>
+				itemIndex === index ? { ...item, confirmed: true } : item,
 			),
 		}))
 	}
@@ -2673,9 +2703,14 @@ export default function ProviderDashboard() {
 			announcementMissingFields.title ||
 			announcementMissingFields.description ||
 			announcementMissingFields.applicationWindow ||
-			announcementMissingFields.minimumGrade
+			announcementMissingFields.minimumGrade ||
+			announcementMissingFields.otherRequirement
 		) {
-			toast.error("Complete the announcement fields before posting.")
+			toast.error(
+				announcementMissingFields.otherRequirement
+					? "Confirm the other requirement with the check button before posting."
+					: "Complete the announcement fields before posting.",
+			)
 			return
 		}
 		setBusy("announcement")
@@ -2712,8 +2747,9 @@ export default function ProviderDashboard() {
 									name: String(item.name || "").trim(),
 									fileType: String(item.fileType || "pdf").toLowerCase() === "png" ? "png" : "pdf",
 									uploadCount: Math.max(1, Number.parseInt(item.uploadCount, 10) || 1),
+									confirmed: item.confirmed === true,
 								}))
-								.filter((item) => item.name)
+								.filter((item) => item.name && item.confirmed)
 						: [],
 					applicationWindow: announcementForm.applicationEnabled ? announcementForm.applicationWindow.trim() : "",
 					startDate: announcementForm.applicationEnabled && announcementWindowStart ? new Date(`${announcementWindowStart}T00:00:00`).toISOString() : null,
@@ -3569,9 +3605,10 @@ export default function ProviderDashboard() {
 															<div className="grantor-announcement-other-list">
 																{announcementForm.otherRequirements.map((requirement, index) => (
 																	<div className="grantor-announcement-other-row" key={`other_requirement_${index}`}>
-																		<label><span>Requirement Name</span><input type="text" value={requirement.name || ""} onChange={(event) => updateAnnouncementRequirement(index, "name", event.target.value)} placeholder="Example: Barangay Clearance" /></label>
+																		<label><span>Requirement Name</span><input type="text" className={announcementSubmitAttempted && (!String(requirement.name || "").trim() || requirement.confirmed !== true) ? "is-missing" : ""} value={requirement.name || ""} onChange={(event) => updateAnnouncementRequirement(index, "name", event.target.value)} placeholder="Example: Barangay Clearance" /></label>
 																		<label><span>Type</span><select value={requirement.fileType || "pdf"} onChange={(event) => updateAnnouncementRequirement(index, "fileType", event.target.value)}><option value="pdf">PDF</option><option value="png">PNG</option></select></label>
 																		<label><span>Uploads Needed</span><input type="number" min="1" step="1" value={requirement.uploadCount || 1} onChange={(event) => updateAnnouncementRequirement(index, "uploadCount", event.target.value)} /></label>
+																		<button type="button" className={`grantor-announcement-other-confirm ${requirement.confirmed === true ? "is-confirmed" : ""}`} onClick={() => confirmAnnouncementRequirement(index)} aria-label="Confirm other requirement"><HiCheck /></button>
 																		<button type="button" onClick={() => removeAnnouncementRequirement(index)} aria-label="Remove other requirement"><HiOutlineTrash /></button>
 																	</div>
 																))}
@@ -4255,7 +4292,22 @@ export default function ProviderDashboard() {
 								<section className="grantor-edit-form-section">
 									<div className="grantor-edit-section-head"><h4><HiOutlineIdentification /> Personal Information</h4><span>Identity and contact details</span></div>
 									<div className="grantor-form-grid grantor-form-grid--edit">
-										<label><span>Student ID</span><input type="text" placeholder="e.g. 2021100063" value={editForm.studentId} onChange={(event) => setEditForm((prev) => ({ ...prev, studentId: event.target.value }))} /></label>
+										<label>
+											<span>Student ID</span>
+											<input
+												type="text"
+												placeholder="e.g. 2021100063"
+												value={editForm.studentId}
+												readOnly={editScholarAccountExists}
+												aria-readonly={editScholarAccountExists}
+												title={editScholarAccountExists ? "Student ID is locked because this student already created an account." : ""}
+												onChange={(event) => {
+													if (editScholarAccountExists) return
+													setEditForm((prev) => ({ ...prev, studentId: event.target.value }))
+												}}
+											/>
+											{editScholarAccountExists ? <small className="grantor-edit-field-note">Locked because the student account already exists.</small> : null}
+										</label>
 										<label><span>First Name</span><input type="text" placeholder="Enter first name" value={editForm.fname} onChange={(event) => setEditForm((prev) => ({ ...prev, fname: event.target.value }))} /></label>
 										<label><span>Middle Name</span><input type="text" placeholder="Enter middle name" value={editForm.mname} onChange={(event) => setEditForm((prev) => ({ ...prev, mname: event.target.value }))} /></label>
 										<label><span>Last Name</span><input type="text" placeholder="Enter last name" value={editForm.lname} onChange={(event) => setEditForm((prev) => ({ ...prev, lname: event.target.value }))} /></label>

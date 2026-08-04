@@ -11246,13 +11246,45 @@
 	table-layout: fixed;
 }
 
+.admin-grantor-col-select {
+	width: 46px;
+}
+
+.admin-grantor-col-id {
+	width: 13%;
+}
+
+.admin-grantor-col-name {
+	width: 14%;
+}
+
+.admin-grantor-col-email {
+	width: 14%;
+}
+
+.admin-grantor-col-org {
+	width: 13%;
+}
+
+.admin-grantor-col-total {
+	width: 13%;
+}
+
+.admin-grantor-col-status {
+	width: 13%;
+}
+
+.admin-grantor-col-action {
+	width: 116px;
+}
+
 .admin-grantor-table th,
 .admin-grantor-table td {
 	white-space: nowrap !important;
 }
 
 .admin-grantor-table thead th {
-	padding: 0.48rem 0.8rem;
+	padding: 0.5rem 0.72rem;
 	color: #102a20;
 	font-size: 0.7rem;
 	font-weight: 700;
@@ -11262,7 +11294,7 @@
 }
 
 .admin-grantor-table tbody td {
-	padding: 0.52rem 0.8rem;
+	padding: 0.54rem 0.72rem;
 	color: #334155;
 	font-size: 0.78rem;
 	font-weight: 500;
@@ -11276,15 +11308,11 @@
 }
 
 .admin-grantor-table input[type="checkbox"] {
+	display: block;
 	width: 14px;
 	height: 14px;
+	margin: 0 auto;
 	accent-color: #00633c;
-}
-
-.admin-grantor-table td:nth-child(4),
-.admin-grantor-table td:nth-child(5) {
-	overflow: hidden;
-	text-overflow: ellipsis;
 }
 
 .admin-grantor-table td {
@@ -11292,17 +11320,21 @@
 	text-overflow: ellipsis;
 }
 
+.admin-grantor-table th:nth-last-child(3),
+.admin-grantor-table td:nth-last-child(3),
+.admin-grantor-table th:nth-last-child(2),
+.admin-grantor-table td:nth-last-child(2) {
+	text-align: center;
+}
+
 .admin-grantor-table th:last-child,
 .admin-grantor-table td:last-child {
-	width: 124px;
 	text-align: right;
 	overflow: visible;
 	text-overflow: clip;
 }
 
-.admin-grantor-table th:nth-last-child(2),
 .admin-grantor-table td:nth-last-child(2) {
-	width: 172px;
 	overflow: visible;
 	text-overflow: clip;
 }
@@ -11314,6 +11346,12 @@
 	gap: 0.45rem;
 	max-width: 100%;
 	width: 100%;
+}
+
+.admin-grantor-row-actions .admin-student-action-btn {
+	min-width: 84px;
+	min-height: 36px;
+	justify-content: center;
 }
 
 .admin-grantor-action-empty {
@@ -11334,8 +11372,8 @@
 
 .admin-detail-shell--grantor > .admin-detail-close {
 	position: absolute;
-	top: 0.75rem;
-	right: 0.75rem;
+	top: 1rem;
+	right: 1rem;
 	z-index: 12;
 	width: 40px;
 	height: 40px;
@@ -11347,12 +11385,12 @@
 }
 
 .admin-detail-shell--grantor > .admin-detail-close {
-	transform: translate(50%, -50%);
+	transform: none;
 }
 
 .admin-detail-shell--grantor > .admin-detail-close:hover {
 	background: #edf8f2;
-	transform: translate(50%, -50%) translateY(-1px);
+	transform: translateY(-1px);
 }
 
 .admin-detail-shell--grantor .admin-detail-modal--grantor {

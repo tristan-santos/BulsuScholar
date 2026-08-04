@@ -4461,6 +4461,10 @@
 .student-modern-section-head h3 { font-size: 1rem; }
 .student-modern-section-head p { margin: 0.18rem 0 0; }
 .student-modern-section-head button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; padding: 0 0.7rem; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.student-modern-announcement-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; min-width: 0; }
+.student-modern-announcement-counts { display: inline-flex; align-items: center; gap: 0.55rem; min-height: 34px; padding: 0 0.7rem; border: 1px solid rgba(0, 99, 60, 0.16); border-radius: 5px; background: rgba(0, 99, 60, 0.035); color: #52675f; font-size: 0.72rem; font-weight: 500; white-space: nowrap; }
+.student-modern-announcement-counts strong { color: #00633c; font-weight: 700; }
+.student-modern-announcement-counts i { display: block; width: 1px; height: 16px; background: rgba(0, 99, 60, 0.22); }
 .student-modern-announcement-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; }
 .student-modern-announcement-card { display: grid; grid-template-rows: 150px 1fr; min-width: 0; overflow: hidden; border: 1px solid rgba(0, 99, 60, 0.16); border-radius: 7px; background: #fff; text-align: left; box-shadow: 0 10px 22px rgba(0, 99, 60, 0.055); }
 .student-modern-announcement-media { display: grid; place-items: center; height: 150px; overflow: hidden; background: #eef8f3; color: #00633c; }
@@ -5160,6 +5164,9 @@
 .student-dashboard--dark .student-modern-recommendation-avatar,
 .student-dashboard--dark .student-modern-scholarship-item > span { border-color: #334155; background: #0f172a; }
 .student-dashboard--dark .student-modern-announcement-author > span { background: rgba(0, 99, 60, 0.24); color: #6ee7b7; }
+.student-dashboard--dark .student-modern-announcement-counts { border-color: rgba(52, 211, 153, 0.2); background: rgba(0, 99, 60, 0.18); color: #94a3b8; }
+.student-dashboard--dark .student-modern-announcement-counts strong { color: #6ee7b7; }
+.student-dashboard--dark .student-modern-announcement-counts i { background: rgba(52, 211, 153, 0.24); }
 .student-dashboard--dark .student-modern-announcement-body > button,
 .student-dashboard--dark .student-modern-recommendation-card > button { border-color: #34d399; background: #111827; color: #6ee7b7; }
 .student-dashboard--dark .student-modern-announcement-body > button.student-modern-announcement-apply--blocked { border-color: #475569; background: #1f2937; color: #94a3b8; box-shadow: none; }
@@ -6744,6 +6751,8 @@
 	.student-detail-metrics { grid-template-columns: 1fr; }
 	.student-detail-name { grid-column: auto; }
 	.student-detail-avatar { width: 68px; height: 68px; }
+	.student-modern-announcement-head-actions { align-items: stretch; flex-direction: column; width: 100%; }
+	.student-modern-announcement-counts { justify-content: center; width: 100%; white-space: normal; }
 	.student-modern-section-head button { width: 100%; }
 	.student-modern-announcement-grid,
 	.student-modern-action-grid { grid-template-columns: 1fr; }

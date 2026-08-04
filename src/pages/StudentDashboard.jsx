@@ -153,6 +153,7 @@ export default function StudentDashboard() {
 	const [user, setUser] = useState(null)
 	const [userLoaded, setUserLoaded] = useState(() => !sessionState.isStudent)
 	const [announcements, setAnnouncements] = useState([])
+	const [allAnnouncements, setAllAnnouncements] = useState([])
 	const [studentNotifications, setStudentNotifications] = useState([])
 	const [recommendedScholarships, setRecommendedScholarships] = useState([])
 	const [recommendationAlgorithm, setRecommendationAlgorithm] = useState("")
@@ -231,8 +232,9 @@ export default function StudentDashboard() {
 			const merged = sortStudentAnnouncements([
 				...adminRows,
 				...grantorRows,
-			]).filter((item) => !isPreviousStudentAnnouncement(item))
-			setAnnouncements(merged)
+			])
+			setAllAnnouncements(merged)
+			setAnnouncements(merged.filter((item) => !isPreviousStudentAnnouncement(item)))
 		}
 
 		const unsubscribeAdminAnnouncements = onSnapshot(
@@ -339,6 +341,10 @@ export default function StudentDashboard() {
 	)
 	const scholarshipPreview = scholarships.slice(0, 6)
 	const latestAnnouncements = useMemo(() => announcements.slice(0, 3), [announcements])
+	const previousAnnouncementCount = useMemo(
+		() => allAnnouncements.filter((item) => isPreviousStudentAnnouncement(item)).length,
+		[allAnnouncements],
+	)
 	const recommendationPreview = useMemo(
 		() => recommendedScholarships.slice(0, 3),
 		[recommendedScholarships],
@@ -814,7 +820,14 @@ export default function StudentDashboard() {
 						<section className="student-modern-section">
 							<header className="student-modern-section-head">
 								<div><h3>Announcements</h3><p>Available and latest scholarship announcements.</p></div>
-								<button type="button" onClick={() => navigate("/student-dashboard/announcements")}>See all <HiOutlineExternalLink /></button>
+								<div className="student-modern-announcement-head-actions">
+									<div className="student-modern-announcement-counts" aria-label="Announcement summary">
+										<span><strong>{announcements.length}</strong> active announcement{announcements.length === 1 ? "" : "s"}</span>
+										<i aria-hidden="true" />
+										<span><strong>{previousAnnouncementCount}</strong> previous announcement{previousAnnouncementCount === 1 ? "" : "s"}</span>
+									</div>
+									<button type="button" onClick={() => navigate("/student-dashboard/announcements")}>See all <HiOutlineExternalLink /></button>
+								</div>
 							</header>
 							<div className="student-modern-announcement-grid">
 								{latestAnnouncements.length === 0 ? (

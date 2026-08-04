@@ -5351,6 +5351,16 @@ export default function AdminDashboard() {
 							</div>
 							<div className="admin-table-wrap admin-table-wrap--grantors">
 								<table className="admin-management-table admin-management-table--roomy admin-grantor-table">
+									<colgroup>
+										{grantorTab === "grantors" ? <col className="admin-grantor-col-select" /> : null}
+										<col className="admin-grantor-col-id" />
+										<col className="admin-grantor-col-name" />
+										<col className="admin-grantor-col-email" />
+										<col className="admin-grantor-col-org" />
+										<col className="admin-grantor-col-total" />
+										<col className="admin-grantor-col-status" />
+										<col className="admin-grantor-col-action" />
+									</colgroup>
 									<thead>
 										<tr>
 											{grantorTab === "grantors" ? (
