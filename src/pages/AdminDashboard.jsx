@@ -1828,6 +1828,7 @@ export default function AdminDashboard() {
 			if (!rows.has(key)) {
 				rows.set(key, {
 					programName,
+					grantorId: scholar.grantorId || "",
 					providerType: provider,
 					grantorName: scholar.grantorName || toProviderLabel(provider),
 					totalSlots: "-",
@@ -1841,29 +1842,53 @@ export default function AdminDashboard() {
 	}, [activeGrantorScholars])
 
 	const scholarshipProviderOptions = useMemo(() => {
-		const rows = [...activeGrantorScholars, ...archivedGrantorScholars].filter((row) => getGrantorScholarProgramName(row))
-		const options = new Map()
-		rows.forEach((row) => {
-			const provider =
-				row.providerType || toProviderType(row.grantorName || row.scholarshipTitle || "")
-			if (!provider || options.has(provider)) return
-			options.set(provider, row.grantorName || toProviderLabel(provider))
-		})
-		if (options.size === 0) {
-			scholarshipOverviewRows.forEach((row) => {
-				if (!row.providerType || options.has(row.providerType)) return
-				options.set(row.providerType, row.grantorName || toProviderLabel(row.providerType))
-			})
-		}
-		return [...options.entries()]
-			.map(([value, label]) => ({ value, label }))
+		return activeGrantorRows
+			.map((grantor) => ({
+				value: grantor.id,
+				label: grantor.name || buildGrantorName(grantor) || grantor.id,
+			}))
 			.sort((left, right) => left.label.localeCompare(right.label))
-	}, [activeGrantorScholars, archivedGrantorScholars, scholarshipOverviewRows])
+	}, [activeGrantorRows])
+
+	const selectedScholarshipGrantor = useMemo(
+		() => activeGrantorRows.find((grantor) => grantor.id === scholarshipProvider) || null,
+		[activeGrantorRows, scholarshipProvider],
+	)
+
+	const matchesSelectedScholarshipGrantor = useCallback(
+		(row = {}) => {
+			if (scholarshipProvider === "All") return true
+			const grantor = selectedScholarshipGrantor
+			const accepted = new Set(
+				[
+					scholarshipProvider,
+					grantor?.id,
+					grantor?.providerType,
+					grantor?.name,
+					grantor ? buildGrantorName(grantor) : "",
+					grantor ? toProviderType(grantor.name || buildGrantorName(grantor) || grantor.providerType || "") : "",
+				]
+					.filter(Boolean)
+					.map((value) => String(value).toLowerCase()),
+			)
+			return [
+				row.grantorId,
+				row.providerType,
+				row.provider,
+				row.grantorName,
+				row.providerName,
+				row.scholarship,
+			]
+				.filter(Boolean)
+				.some((value) => accepted.has(String(value).toLowerCase()))
+		},
+		[scholarshipProvider, selectedScholarshipGrantor],
+	)
 
 	const filteredScholarships = useMemo(() => {
 		const keyword = scholarshipSearch.trim().toLowerCase()
 		return scholarshipOverviewRows.filter((row) => {
-			const providerMatch = scholarshipProvider === "All" || row.providerType === scholarshipProvider
+			const providerMatch = matchesSelectedScholarshipGrantor(row)
 			const searchMatch =
 				!keyword ||
 				String(row.programName || "").toLowerCase().includes(keyword) ||
@@ -1871,7 +1896,7 @@ export default function AdminDashboard() {
 				String(row.status || "").toLowerCase().includes(keyword)
 			return providerMatch && searchMatch
 		})
-	}, [scholarshipOverviewRows, scholarshipProvider, scholarshipSearch])
+	}, [matchesSelectedScholarshipGrantor, scholarshipOverviewRows, scholarshipSearch])
 
 	const studentGrantorMatches = useMemo(() => {
 		return studentProfiles
@@ -2139,6 +2164,8 @@ export default function AdminDashboard() {
 					fullName: student.fullName,
 					scholarship: scholarship.name || scholarship.provider || "Scholarship",
 					provider,
+					grantorId: scholarship.grantorId || scholarship.providerId || scholarship.grantor_id || "",
+					grantorName: scholarship.grantorName || scholarship.providerName || scholarship.provider || "",
 					status: scholarship.adminBlocked
 						? "Blocked"
 						: getScholarshipTrackingStatusLabel(trackingProgress),
@@ -2281,10 +2308,10 @@ export default function AdminDashboard() {
 					row.grantorName.toLowerCase().includes(keyword) ||
 					row.contactNumber.toLowerCase().includes(keyword) ||
 					row.street.toLowerCase().includes(keyword)) &&
-				(scholarshipProvider === "All" || row.provider === scholarshipProvider)
+				matchesSelectedScholarshipGrantor(row)
 			)
 		})
-	}, [scholarshipProvider, scholarshipSearch, scholarshipStudentRows])
+	}, [matchesSelectedScholarshipGrantor, scholarshipSearch, scholarshipStudentRows])
 
 	const archivedScholarshipRows = useMemo(
 		() =>
@@ -2322,10 +2349,10 @@ export default function AdminDashboard() {
 					row.scholarship.toLowerCase().includes(keyword) ||
 					row.status.toLowerCase().includes(keyword) ||
 					row.grantorName.toLowerCase().includes(keyword)) &&
-				(scholarshipProvider === "All" || row.provider === scholarshipProvider)
+				matchesSelectedScholarshipGrantor(row)
 			)
 		})
-	}, [archivedScholarshipRows, scholarshipProvider, scholarshipSearch])
+	}, [archivedScholarshipRows, matchesSelectedScholarshipGrantor, scholarshipSearch])
 
 	const scholarshipTrackingRows = useMemo(() => {
 		const keyword = scholarshipSearch.trim().toLowerCase()
@@ -2339,10 +2366,10 @@ export default function AdminDashboard() {
 					row.currentStepLabel.toLowerCase().includes(keyword) ||
 					row.currentStepOwnerLabel.toLowerCase().includes(keyword) ||
 					toProviderLabel(row.provider).toLowerCase().includes(keyword)) &&
-				(scholarshipProvider === "All" || row.provider === scholarshipProvider)
+				matchesSelectedScholarshipGrantor(row)
 			)
 		})
-	}, [allScholarshipTrackingRows, scholarshipProvider, scholarshipSearch])
+	}, [allScholarshipTrackingRows, matchesSelectedScholarshipGrantor, scholarshipSearch])
 
 	const scholarshipTabCounts = useMemo(
 		() => ({

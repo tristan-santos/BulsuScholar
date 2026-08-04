@@ -11953,6 +11953,14 @@
 	margin-top: 0.9rem;
 }
 
+.admin-scholarship-management .admin-tab-panel {
+	padding: 0;
+	border: 0 !important;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
 .admin-scholarship-inline-tabs {
 	display: inline-flex;
 	align-items: center;
