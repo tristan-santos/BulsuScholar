@@ -5446,21 +5446,48 @@ export default function AdminDashboard() {
 
 		if (activeSection === "scholarships") {
 			return (
-				<section className="admin-management-panel">
+				<section className="admin-management-panel admin-scholarship-management">
 					<div className="admin-panel-head">
-						<div>
-							<h2>Scholarship Programs</h2>
-							<p className="admin-panel-copy">Review synced grantor scholar rosters, application tracking, archived records, and scholarship conflicts.</p>
+						<div className="admin-student-title admin-scholarship-title">
+							<span aria-hidden="true">
+								<HiOutlineDocumentText />
+							</span>
+							<div>
+								<h2>Scholarship Programs</h2>
+								<p className="admin-panel-copy">Review synced grantor scholar rosters, application tracking, archived records, and scholarship conflicts.</p>
+							</div>
 						</div>
 						<div className="admin-head-actions">
 							<button
 								type="button"
-								className="admin-export-btn admin-export-btn--mini"
+								className="admin-student-report-btn"
 								onClick={() => openReportPreview(scholarshipSectionPreviewConfig)}
 							>
 								<HiOutlineEye /> Generate Preview
 							</button>
 						</div>
+					</div>
+					<div className="admin-student-stats-row admin-scholarship-stats-row" aria-label="Scholarship program statistics">
+						<article>
+							<HiOutlineDocumentText />
+							<span>Programs</span>
+							<strong>{scholarshipTabCounts.overview}</strong>
+						</article>
+						<article>
+							<HiOutlineUsers />
+							<span>Active Scholars</span>
+							<strong>{scholarshipOverviewTotalRecipients}</strong>
+						</article>
+						<article>
+							<HiOutlineClock />
+							<span>Tracking Records</span>
+							<strong>{scholarshipTabCounts.tracking}</strong>
+						</article>
+						<article>
+							<HiOutlineArchive />
+							<span>Archived Records</span>
+							<strong>{scholarshipTabCounts.archived}</strong>
+						</article>
 					</div>
 					<SectionTabs
 						tabs={[
@@ -5472,25 +5499,30 @@ export default function AdminDashboard() {
 						]}
 						value={scholarshipTab}
 						onChange={setScholarshipTab}
-						className="admin-section-tabs--compact admin-section-tabs--scholarships"
+						className="admin-section-tabs--compact admin-section-tabs--scholarships admin-scholarship-inline-tabs"
 					/>
 					{scholarshipTab === "overview" ? (
 						<section className="admin-tab-panel">
-							<div className="admin-filter-bar">
-								<input
-									type="text"
-									placeholder="Search by scholarship name or grantor"
-									value={scholarshipSearch}
-									onChange={(event) => setScholarshipSearch(event.target.value)}
-								/>
-								<select value={scholarshipProvider} onChange={(event) => setScholarshipProvider(event.target.value)}>
-									<option value="All">All Grantors</option>
-									{scholarshipProviderOptions.map((option) => (
-										<option key={option.value} value={option.value}>
-											{option.label}
-										</option>
-									))}
-								</select>
+							<div className="admin-student-command-row admin-scholarship-command-row">
+								<div className="admin-student-toolbar admin-scholarship-toolbar">
+									<label className="admin-student-search" aria-label="Search scholarship programs">
+										<HiOutlineSearch />
+										<input
+											type="text"
+											placeholder="Search by scholarship name or grantor"
+											value={scholarshipSearch}
+											onChange={(event) => setScholarshipSearch(event.target.value)}
+										/>
+									</label>
+									<select value={scholarshipProvider} onChange={(event) => setScholarshipProvider(event.target.value)}>
+										<option value="All">All Grantors</option>
+										{scholarshipProviderOptions.map((option) => (
+											<option key={option.value} value={option.value}>
+												{option.label}
+											</option>
+										))}
+									</select>
+								</div>
 							</div>
 							<div className="admin-summary-strip">
 								<article className="admin-summary-card">
@@ -5592,8 +5624,8 @@ export default function AdminDashboard() {
 												<p className="admin-trend-copy">Scholarship-level summary aligned to the live grantor roster filters and export preview.</p>
 											</div>
 										</div>
-									<div className="admin-table-wrap">
-										<table className="admin-management-table admin-management-table--roomy">
+									<div className="admin-table-wrap admin-table-wrap--scholarships">
+										<table className="admin-management-table admin-management-table--roomy admin-scholarship-table">
 											<thead>
 												<tr>
 													<th>Program Name</th>
@@ -5636,22 +5668,25 @@ export default function AdminDashboard() {
 						</section>
 					) : (
 						<section className="admin-tab-panel">
-							<div className="admin-filter-bar">
-								<input
-									type="text"
-									placeholder={
-										scholarshipTab === "warning"
-											? "Search by student ID, student name, grantor, or conflict"
-											: scholarshipTab === "tracking"
-												? "Search by student ID, student name, scholarship, current step, or status"
-												: scholarshipTab === "archived"
-													? "Search by student ID, student name, scholarship, or grantor"
-													: "Search by student ID, student name, scholarship, contact number, or grantor"
-									}
-									value={scholarshipSearch}
-									onChange={(event) => setScholarshipSearch(event.target.value)}
-								/>
-								{scholarshipTab !== "overview" ? (
+							<div className="admin-student-command-row admin-scholarship-command-row">
+								<div className="admin-student-toolbar admin-scholarship-toolbar">
+									<label className="admin-student-search" aria-label="Search scholarship records">
+										<HiOutlineSearch />
+										<input
+											type="text"
+											placeholder={
+												scholarshipTab === "warning"
+													? "Search by student ID, student name, grantor, or conflict"
+													: scholarshipTab === "tracking"
+														? "Search by student ID, student name, scholarship, current step, or status"
+														: scholarshipTab === "archived"
+															? "Search by student ID, student name, scholarship, or grantor"
+															: "Search by student ID, student name, scholarship, contact number, or grantor"
+											}
+											value={scholarshipSearch}
+											onChange={(event) => setScholarshipSearch(event.target.value)}
+										/>
+									</label>
 									<select value={scholarshipProvider} onChange={(event) => setScholarshipProvider(event.target.value)}>
 										<option value="All">All Grantors</option>
 										{scholarshipProviderOptions.map((option) => (
@@ -5660,10 +5695,10 @@ export default function AdminDashboard() {
 											</option>
 										))}
 									</select>
-								) : null}
+								</div>
 							</div>
-							<div className="admin-table-wrap">
-								<table className="admin-management-table admin-management-table--roomy">
+							<div className="admin-table-wrap admin-table-wrap--scholarships">
+								<table className="admin-management-table admin-management-table--roomy admin-scholarship-table">
 									<thead>
 										{scholarshipTab === "warning" ? (
 											<tr>
@@ -5711,7 +5746,7 @@ export default function AdminDashboard() {
 												<td
 													colSpan={
 														scholarshipTab === "warning"
-															? 5
+															? 4
 															: scholarshipTab === "tracking"
 																? 7
 																: scholarshipTab === "archived"
@@ -5726,7 +5761,7 @@ export default function AdminDashboard() {
 											<EmptyStateRow
 												colSpan={
 													scholarshipTab === "warning"
-														? 5
+														? 4
 														: scholarshipTab === "tracking"
 															? 7
 															: scholarshipTab === "archived"
@@ -6744,10 +6779,10 @@ export default function AdminDashboard() {
 			{selectedGrantor ? (
 				<div className="admin-detail-backdrop admin-detail-backdrop--grantor" role="presentation" onClick={() => setSelectedGrantorId("")}>
 					<div className="admin-detail-shell admin-detail-shell--grantor" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={() => setSelectedGrantorId("")}>
-							<HiX />
-						</button>
 						<div className="admin-detail-modal admin-detail-modal--grantor" role="dialog" aria-modal="true" aria-label="Grantor details">
+							<button type="button" className="admin-detail-close" onClick={() => setSelectedGrantorId("")} aria-label="Close grantor details">
+								<HiX />
+							</button>
 							<div className="admin-detail-header admin-grantor-modal-header">
 								<div className="admin-detail-avatar admin-detail-avatar--grantor">
 									{selectedGrantor.profileImageUrl || selectedGrantor.imageUrl || selectedGrantor.authorImageUrl ? (
