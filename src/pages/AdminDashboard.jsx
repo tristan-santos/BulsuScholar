@@ -53,7 +53,7 @@ import TablePagination from "../components/TablePagination"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
-import { createGrantorNotification, createStudentNotification } from "../services/notificationService"
+import { createAdminNotification, createGrantorNotification, createStudentNotification } from "../services/notificationService"
 import { materialRequestWorkflow } from "../services/workflowService"
 import {
 	buildApplicationDecisionConfirmation,
@@ -1934,53 +1934,79 @@ export default function AdminDashboard() {
 
 	const warningRows = useMemo(() => {
 		const keyword = scholarshipSearch.trim().toLowerCase()
-		return studentProfiles
-			.map((student) => {
-				const scholarships = normalizeScholarshipList(student.scholarships || [])
-				const distinctGrantors = [
-					...new Map(
-						scholarships.map((entry) => {
-							const provider = toProviderType(
-								entry.providerType || entry.provider || entry.name || "Scholarship",
-							)
-							return [
-								provider,
-								{
-									id: provider,
-									label: toProviderLabel(provider),
-									provider,
-								},
-							]
-						}),
-					).values(),
-				]
-				const scholarshipTitles = [
-					...new Set(
-						scholarships.map((entry) => entry.name || entry.provider || "Scholarship"),
-					),
-				]
-				const hasConflict =
-					scholarships.length > 1 ||
-					student.scholarshipConflictWarning === true ||
-					student.scholarshipRestrictionReason === "multiple_scholarships"
-
-				return { student, scholarships, distinctGrantors, scholarshipTitles, hasConflict }
+		const flaggedRosterEntries = activeGrantorScholars
+			.filter((scholar) => scholar.scholarshipConflictWarning || scholar.duplicateScholarshipWarning || scholar.duplicateScholarshipDetected)
+			.map((scholar) => {
+				const student =
+					studentProfiles.find((profile) => {
+						const studentId = normalizeGrantorScholarLookupValue(profile.id || profile.studentId || profile.studentnumber)
+						const scholarStudentId = normalizeGrantorScholarLookupValue(scholar.studentId || scholar.studentnumber || scholar.id)
+						return Boolean(studentId && scholarStudentId && studentId === scholarStudentId) || matchesGrantorScholarToStudent(profile, scholar)
+					}) || {
+						id: scholar.studentId || scholar.id,
+						fullName: buildGrantorScholarFullName(scholar),
+					}
+				const matchedGrantorLabel =
+					scholar.duplicateMatchedGrantorName ||
+					grantorLabelById.get(scholar.duplicateMatchedGrantorId) ||
+					scholar.duplicateMatchedGrantorId ||
+					"Another grantor"
+				return {
+					student,
+					matches: [scholar],
+					distinctGrantors: [
+						{
+							id: scholar.grantorId || scholar.providerType || scholar.grantorName || "current",
+							label: scholar.grantorName || grantorLabelById.get(scholar.grantorId) || "Current grantor",
+							provider: scholar.providerType || toProviderType(scholar.grantorName || scholar.scholarshipTitle),
+						},
+						{
+							id: scholar.duplicateMatchedGrantorId || matchedGrantorLabel,
+							label: matchedGrantorLabel,
+							provider: toProviderType(matchedGrantorLabel),
+						},
+					],
+					scholarshipTitles: [getGrantorScholarProgramName(scholar)].filter(Boolean),
+					hasConflict: true,
+				}
 			})
-			.filter((entry) => entry.hasConflict)
+
+		const rosterConflictEntries = studentGrantorMatches
+			.filter((entry) => entry.distinctGrantors.length > 1)
+			.map((entry) => ({ ...entry, hasConflict: true }))
+
+		const combinedEntries = [...rosterConflictEntries, ...flaggedRosterEntries]
+		const dedupedEntries = [
+			...new Map(
+				combinedEntries.map((entry) => [
+					normalizeGrantorScholarLookupValue(entry.student?.id || entry.student?.studentId || entry.student?.fullName),
+					entry,
+				]),
+			).values(),
+		]
+
+		return dedupedEntries
 			.filter(
 				(entry) =>
 					scholarshipProvider === "All" ||
-					entry.distinctGrantors.some((grantor) => grantor.provider === scholarshipProvider),
+					entry.distinctGrantors.some((grantor) => {
+						const selected = String(scholarshipProvider || "").toLowerCase()
+						return (
+							String(grantor.id || "").toLowerCase() === selected ||
+							String(grantor.provider || "").toLowerCase() === selected ||
+							String(grantor.label || "").toLowerCase() === selected
+						)
+					}),
 			)
 			.map((entry) => {
 				const grantorLabels = entry.distinctGrantors.map((grantor) => grantor.label)
 				return {
-					trackingKey: `warning::${entry.student.id}`,
-					studentId: entry.student.id,
-					fullName: entry.student.fullName,
+					trackingKey: `warning::${entry.student.id || entry.student.studentId || entry.student.fullName}`,
+					studentId: String(entry.student.id || entry.student.studentId || "-"),
+					fullName: String(entry.student.fullName || studentFullName(entry.student) || "Student"),
 					details: `Grantors: ${grantorLabels.join(", ") || "-"} | Scholarships: ${entry.scholarshipTitles.join(", ") || "-"}`,
 					grantors: grantorLabels.join(", "),
-					studentRecordId: entry.student.id,
+					studentRecordId: entry.student.id || "",
 				}
 			})
 			.filter(
@@ -1991,7 +2017,41 @@ export default function AdminDashboard() {
 					row.details.toLowerCase().includes(keyword) ||
 					row.grantors.toLowerCase().includes(keyword),
 			)
-	}, [scholarshipProvider, scholarshipSearch, studentGrantorMatches])
+	}, [activeGrantorScholars, grantorLabelById, scholarshipProvider, scholarshipSearch, studentGrantorMatches, studentProfiles])
+
+	useEffect(() => {
+		if (!warningRows.length) return
+		const storageKey = "bulsuscholar_admin_duplicate_scholarship_notices"
+		let deliveredKeys = []
+		try {
+			deliveredKeys = JSON.parse(localStorage.getItem(storageKey) || "[]")
+		} catch {
+			deliveredKeys = []
+		}
+		const deliveredSet = new Set(Array.isArray(deliveredKeys) ? deliveredKeys : [])
+		const newWarnings = warningRows.filter((row) => {
+			const key = `${row.studentId || row.fullName}::${row.grantors || row.details}`
+			return key && !deliveredSet.has(key)
+		})
+		if (!newWarnings.length) return
+
+		newWarnings.forEach((row) => {
+			const key = `${row.studentId || row.fullName}::${row.grantors || row.details}`
+			deliveredSet.add(key)
+			createAdminNotification({
+				type: "duplicate_scholarship_detected",
+				title: "Duplicate Scholarship Detected",
+				message: `${row.fullName || "A student"} appears in multiple grantor scholarship rosters. ${row.details || ""}`,
+				studentId: row.studentId,
+				studentName: row.fullName,
+				grantors: row.grantors,
+				source: "admin_warning_section",
+				read: false,
+				createdAt: serverTimestamp(),
+			}).catch((error) => console.error("Admin duplicate scholarship notification failed.", error))
+		})
+		localStorage.setItem(storageKey, JSON.stringify([...deliveredSet].slice(-250)))
+	}, [warningRows])
 
 	const grantorConflictSyncPayloads = useMemo(() => {
 		const conflictLookup = new Map(
@@ -2357,6 +2417,14 @@ export default function AdminDashboard() {
 	const scholarshipTrackingRows = useMemo(() => {
 		const keyword = scholarshipSearch.trim().toLowerCase()
 		return allScholarshipTrackingRows.filter((row) => {
+			const statusText = String(row.status || "").toLowerCase()
+			const stepText = String(row.currentStepLabel || "").toLowerCase()
+			const isClosedTrackingRow =
+				row.archived === true ||
+				["rejected", "archived", "cancelled", "withdrawn"].some((value) => statusText.includes(value)) ||
+				(["approved", "active", "complete", "completed"].some((value) => statusText === value || statusText.includes(value)) &&
+					["completed", "complete"].some((value) => stepText === value || stepText.includes(value)))
+			if (isClosedTrackingRow) return false
 			return (
 				(!keyword ||
 					row.studentId.toLowerCase().includes(keyword) ||

@@ -2752,6 +2752,26 @@
 	color: #9a3412;
 }
 
+.grantor-import-table .grantor-import-row--warning td,
+.grantor-scholar-table .grantor-row-warning td {
+	border-top: 1px solid rgba(245, 158, 11, 0.55);
+	border-bottom: 1px solid rgba(245, 158, 11, 0.55);
+	background: #fffbeb;
+	color: #78350f;
+}
+
+.grantor-scholar-table .grantor-row-warning td:first-child {
+	border-left: 3px solid #f59e0b;
+}
+
+.grantor-import-table .grantor-import-row--warning td:first-child {
+	border-left: 3px solid #f59e0b;
+}
+
+.grantor-import-table .grantor-import-row--warning td:last-child {
+	border-right: 1px solid rgba(245, 158, 11, 0.55);
+}
+
 .grantor-import-table .grantor-import-row--duplicate td:first-child {
 	border-left: 3px solid #f59e0b;
 }

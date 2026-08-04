@@ -150,7 +150,7 @@ const COURSE_OPTIONS = [
 	"Bachelor of Science in Industrial Engineering",
 	"Bachelor in Industrial Technology",
 ]
-const SCHOLAR_TABS = ["active", "archived"]
+const SCHOLAR_TABS = ["active", "warning", "archived"]
 const GRANTOR_COMPLETABLE_STEP_LABELS = {
 	document_review: "Document Review",
 	interview: "Interview",
@@ -265,6 +265,126 @@ function hasScholarIdentity(scholar = {}) {
 		String(scholar.email || "").trim() ||
 		String(scholar.cpNumber || "").trim(),
 	)
+}
+
+function normalizeStudentIdKey(value = "") {
+	return String(value || "")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "")
+}
+
+function normalizeDuplicateOwnerId(record = {}) {
+	return String(record.grantorId || record.parentId || record.providerType || "").trim()
+}
+
+function isDuplicateOwnedByGrantor(duplicate = null, grantorId = "", providerType = "") {
+	if (!duplicate?.record) return false
+	const ownerId = normalizeDuplicateOwnerId(duplicate.record)
+	const currentGrantorId = String(grantorId || "").trim()
+	const currentProviderType = String(providerType || "").trim()
+	return Boolean(
+		(currentGrantorId && ownerId === currentGrantorId) ||
+		(currentProviderType && ownerId === currentProviderType) ||
+		(currentProviderType && String(duplicate.record.providerType || "").trim() === currentProviderType),
+	)
+}
+
+function splitStudentName(student = {}) {
+	const existingParts = [student.fname, student.mname, student.lname].filter(Boolean)
+	if (existingParts.length > 0) {
+		return {
+			fname: String(student.fname || "").trim(),
+			mname: String(student.mname || "").trim(),
+			lname: String(student.lname || "").trim(),
+		}
+	}
+	const parts = String(student.fullName || student.studentName || "")
+		.trim()
+		.split(/\s+/)
+		.filter(Boolean)
+	return {
+		fname: parts[0] || "",
+		mname: parts.length > 2 ? parts.slice(1, -1).join(" ") : "",
+		lname: parts.length > 1 ? parts[parts.length - 1] : "",
+	}
+}
+
+function buildScholarPayloadFromStudentAccount(student = {}, fallback = {}) {
+	const nameParts = splitStudentName(student)
+	const studentId = String(student.id || student.studentId || student.studentnumber || student.studentNumber || fallback.studentId || "").trim()
+	return {
+		...fallback,
+		studentId,
+		fname: nameParts.fname || fallback.fname || "",
+		mname: nameParts.mname || fallback.mname || "",
+		lname: nameParts.lname || fallback.lname || "",
+		fullName:
+			student.fullName ||
+			[nameParts.fname, nameParts.mname, nameParts.lname].filter(Boolean).join(" ").trim() ||
+			fallback.fullName ||
+			"Scholar",
+		email: student.email || fallback.email || "",
+		cpNumber: student.cpNumber || student.contactNumber || student.phoneNumber || fallback.cpNumber || "",
+		street: student.street || student.address || fallback.street || "",
+		city: student.city || fallback.city || "",
+		province: student.province || fallback.province || "",
+		barangay: student.barangay || fallback.barangay || "",
+		postalCode: student.postalCode || student.zipCode || fallback.postalCode || "",
+		course: student.course || student.program || fallback.course || "",
+		yearLevel: String(student.yearLevel || student.year || fallback.yearLevel || "1"),
+	}
+}
+
+function buildCrossGrantorWarningPayload(duplicate = null) {
+	const matched = duplicate?.record || {}
+	return {
+		scholarshipConflictWarning: true,
+		duplicateScholarshipWarning: true,
+		duplicateScholarshipDetected: true,
+		duplicateWarningType: "cross_grantor_roster_match",
+		duplicateMatchedGrantorId: matched.grantorId || matched.parentId || "",
+		duplicateMatchedGrantorName: matched.grantorName || matched.providerName || matched.providerType || "Another grantor",
+		duplicateMatchedScholarId: matched.id || "",
+		duplicateMatchedStudentId: matched.studentId || matched.studentnumber || "",
+		duplicateMatchedStudentName: matched.fullName || [matched.fname, matched.mname, matched.lname].filter(Boolean).join(" ").trim(),
+		duplicateSimilarityScore: duplicate?.score ?? duplicate?.evaluation?.score ?? "",
+		duplicateReasons: duplicate?.reasons || duplicate?.evaluation?.reasons || [],
+		duplicateDetectedAt: serverTimestamp(),
+	}
+}
+
+function buildExactStudentIdConflict(record = {}, kind = "roster") {
+	return {
+		record,
+		kind,
+		sameGrantor: true,
+		reasons: ["Student ID"],
+		score: 100,
+	}
+}
+
+function findCurrentGrantorStudentIdConflict(candidate = {}, rosterRows = [], applicationRows = [], grantorId = "", providerType = "", acceptedRows = []) {
+	const candidateId = normalizeStudentIdKey(candidate.studentId || candidate.studentnumber || candidate.studentNumber)
+	if (!candidateId) return null
+
+	const rosterConflict = [...rosterRows, ...acceptedRows].find((row) => {
+		const rowStudentId = normalizeStudentIdKey(row.studentId || row.studentnumber || row.studentNumber)
+		if (!rowStudentId || rowStudentId !== candidateId) return false
+		return (
+			row === candidate ||
+			String(row.grantorId || "").trim() === String(grantorId || "").trim() ||
+			String(row.providerType || "").trim() === String(providerType || "").trim()
+		)
+	})
+	if (rosterConflict) return buildExactStudentIdConflict(rosterConflict, "roster")
+
+	const applicationConflict = applicationRows.find((row) => {
+		const rowStudentId = normalizeStudentIdKey(row.studentId || row.studentnumber || row.studentNumber)
+		return rowStudentId && rowStudentId === candidateId && isApplicationOwnedByGrantor(row, grantorId)
+	})
+	if (applicationConflict) return buildExactStudentIdConflict(applicationConflict, "application")
+
+	return null
 }
 
 function sectionFromPath(pathname = "") {
@@ -646,12 +766,17 @@ function EmptyRow({ colSpan, message }) {
 }
 
 function ScholarTabs({ value, onChange }) {
+	const labels = {
+		active: "Scholars",
+		warning: "Warning",
+		archived: "Archived",
+	}
 	return (
 		<div className="admin-section-tabs grantor-scholar-tabs" role="tablist">
 			{SCHOLAR_TABS.map((tab) => (
 				<button key={tab} type="button" className={`admin-section-tab ${value === tab ? "active" : ""}`} onClick={() => onChange(tab)}>
 					<span className="admin-section-tab-main">
-						<span className="admin-section-tab-label">{tab === "active" ? "Scholars" : "Archived"}</span>
+						<span className="admin-section-tab-label">{labels[tab]}</span>
 					</span>
 				</button>
 			))}
@@ -821,6 +946,10 @@ export default function ProviderDashboard() {
 	)
 	const activeSection = useMemo(() => sectionFromPath(location.pathname), [location.pathname])
 	const activeScholars = useMemo(() => scholars.filter((row) => row.archived !== true), [scholars])
+	const warningScholars = useMemo(
+		() => activeScholars.filter((row) => row.scholarshipConflictWarning || row.duplicateScholarshipWarning || row.duplicateScholarshipDetected),
+		[activeScholars],
+	)
 	const archivedScholars = useMemo(() => scholars.filter((row) => row.archived === true), [scholars])
 	const selectedScholar = useMemo(() => scholars.find((row) => row.id === selectedScholarId) || null, [scholars, selectedScholarId])
 	const applicationsBlocked = portalSettings?.applicationsBlocked === true
@@ -1155,7 +1284,7 @@ export default function ProviderDashboard() {
 		setEditForm(scholarToForm(selectedScholar))
 	}, [selectedScholar, showEditModal])
 
-	const visibleScholarPool = tab === "archived" ? archivedScholars : activeScholars
+	const visibleScholarPool = tab === "archived" ? archivedScholars : tab === "warning" ? warningScholars : activeScholars
 	const visibleScholars = useMemo(() => {
 		const keyword = scholarSearch.trim().toLowerCase()
 		return visibleScholarPool.filter((row) => {
@@ -1317,6 +1446,8 @@ export default function ProviderDashboard() {
 	)
 	const allVisibleImportRowsSelected = visibleImportRowIndexes.length > 0 && visibleImportRowIndexes.every((rowIndex) => selectedImportRowIndexes.includes(rowIndex))
 	const importDuplicateCount = Object.keys(importDuplicateMatches).length
+	const importBlockedDuplicateCount = Object.values(importDuplicateMatches).filter((duplicate) => duplicate?.sameGrantor).length
+	const importWarningDuplicateCount = importDuplicateCount - importBlockedDuplicateCount
 	const editCityOptions = useMemo(() => getCitiesByProvince(editForm.province), [editForm.province])
 
 	useEffect(() => {
@@ -1386,8 +1517,25 @@ export default function ProviderDashboard() {
 						providerType: grantorProviderType,
 					})
 					if (!hasScholarIdentity(scholar)) continue
+					const exactConflict = findCurrentGrantorStudentIdConflict(
+						scholar,
+						existingScholars,
+						applications,
+						grantorId,
+						grantorProviderType,
+						acceptedFileRows,
+					)
+					if (exactConflict) {
+						matches[rowIndex] = exactConflict
+						continue
+					}
 					const duplicate = await findScholarDuplicate(scholar, [...existingScholars, ...acceptedFileRows])
-					if (duplicate) matches[rowIndex] = duplicate
+					if (duplicate) {
+						matches[rowIndex] = {
+							...duplicate,
+							sameGrantor: isDuplicateOwnedByGrantor(duplicate, grantorId, grantorProviderType),
+						}
+					}
 					else acceptedFileRows.push(scholar)
 				}
 				if (active) setImportDuplicateMatches(matches)
@@ -1403,7 +1551,7 @@ export default function ProviderDashboard() {
 			active = false
 			window.clearTimeout(timer)
 		}
-	}, [columnMapping, customImportFields, grantorId, grantorName, grantorProviderType, importData])
+	}, [applications, columnMapping, customImportFields, grantorId, grantorName, grantorProviderType, importData])
 
 	const allVisibleSelected = visibleScholars.length > 0 && visibleScholars.every((row) => selectedScholarIds.includes(row.id))
 
@@ -2234,11 +2382,14 @@ export default function ProviderDashboard() {
 			setBusy("create")
 			try {
 				const existingScholars = await getAllGrantorScholars(db)
+				const studentsSnapshot = await getDocs(collection(db, "students"))
+				const existingStudents = studentsSnapshot.docs.map((row) => ({ id: row.id, ...(row.data() || {}) }))
 				const acceptedScholars = []
-				const duplicateRows = []
+				const blockedRows = []
+				const warningRows = []
 
 				for (const [rowIndex, row] of importData.entries()) {
-					const scholarObj = {
+					let scholarObj = {
 						...buildMappedImportScholar(row, columnMapping, customImportFields, {
 							grantorId,
 							grantorName,
@@ -2257,15 +2408,50 @@ export default function ProviderDashboard() {
 						scholarObj.fullName = [scholarObj.fname, scholarObj.mname, scholarObj.lname].filter(Boolean).join(" ").trim() || "Scholar"
 					}
 
+					const existingStudentDuplicate = await findScholarDuplicate(scholarObj, existingStudents)
+					if (existingStudentDuplicate?.record) {
+						scholarObj = buildScholarPayloadFromStudentAccount(existingStudentDuplicate.record, scholarObj)
+					}
+
+					const exactConflict = findCurrentGrantorStudentIdConflict(
+						scholarObj,
+						existingScholars,
+						applications,
+						grantorId,
+						grantorProviderType,
+						acceptedScholars,
+					)
+					if (exactConflict) {
+						blockedRows.push({ rowNumber: rowIndex + 1, scholar: scholarObj, duplicate: exactConflict })
+						continue
+					}
+
 					const duplicate = await findScholarDuplicate(
 						scholarObj,
 						[...existingScholars, ...acceptedScholars],
 					)
 					if (duplicate) {
-						duplicateRows.push({ rowNumber: rowIndex + 1, scholar: scholarObj, duplicate })
-						return
+						if (isDuplicateOwnedByGrantor(duplicate, grantorId, grantorProviderType)) {
+							blockedRows.push({ rowNumber: rowIndex + 1, scholar: scholarObj, duplicate })
+							continue
+						}
+						scholarObj = {
+							...scholarObj,
+							...buildCrossGrantorWarningPayload(duplicate),
+						}
+						warningRows.push({ rowNumber: rowIndex + 1, scholar: scholarObj, duplicate })
 					}
 					acceptedScholars.push(scholarObj)
+				}
+
+				if (warningRows.length > 0) {
+					const examples = warningRows.slice(0, 3).map(({ rowNumber, scholar, duplicate }) => {
+						const matchedName = duplicate.record.fullName || "an existing student"
+						const owner = duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"
+						return `row ${rowNumber} (${scholar.fullName || "Student"}) matches ${matchedName} under ${owner}`
+					}).join("; ")
+					const confirmed = window.confirm(`${warningRows.length} student${warningRows.length === 1 ? "" : "s"} already appear in another grantor roster. They will be added with warning highlights. Continue?\n\n${examples}`)
+					if (!confirmed) return
 				}
 
 				if (acceptedScholars.length > 0) {
@@ -2276,13 +2462,27 @@ export default function ProviderDashboard() {
 					toast.success(`Successfully imported ${acceptedScholars.length} new scholar${acceptedScholars.length === 1 ? "" : "s"}.`)
 				}
 
-				if (duplicateRows.length > 0) {
-					const examples = duplicateRows.slice(0, 2).map(({ rowNumber, scholar, duplicate }) => {
+				if (blockedRows.length > 0) {
+					const examples = blockedRows.slice(0, 2).map(({ rowNumber, scholar, duplicate }) => {
 						const matchedName = duplicate.record.fullName || "an existing student"
-						const owner = duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"
-						return `row ${rowNumber} (${scholar.fullName || "Student"}) matches ${matchedName} under ${owner}`
+						return `row ${rowNumber} (${scholar.fullName || "Student"}) matches ${matchedName}`
 					}).join("; ")
-					toast.warning(`${duplicateRows.length} duplicate student${duplicateRows.length === 1 ? " was" : "s were"} not imported. ${examples}`)
+					toast.warning(`${blockedRows.length} row${blockedRows.length === 1 ? " was" : "s were"} already in this grantor roster and were not imported. ${examples}`)
+				}
+
+				if (warningRows.length > 0) {
+					toast.warning(`${warningRows.length} imported scholar${warningRows.length === 1 ? " has" : "s have"} a multiple-scholarship warning.`)
+					await createAdminNotification({
+						type: "duplicate_scholarship_detected",
+						title: "Duplicate Scholarship Detected",
+						message: `${grantorName} imported ${warningRows.length} student${warningRows.length === 1 ? "" : "s"} already listed under another grantor.`,
+						grantorId,
+						grantorName,
+						count: warningRows.length,
+						source: "grantor_import",
+						read: false,
+						createdAt: serverTimestamp(),
+					}).catch((error) => console.error("Admin duplicate warning notification failed.", error))
 				}
 
 				if (acceptedScholars.length > 0) closeCreateModal()
@@ -2302,15 +2502,44 @@ export default function ProviderDashboard() {
 		}
 		setBusy("create")
 		try {
-			const payload = scholarPayload(createForm, grantorId, grantorName, grantorProviderType, uploadFile)
+			let payload = scholarPayload(createForm, grantorId, grantorName, grantorProviderType, uploadFile)
 			const existingScholars = await getAllGrantorScholars(db)
+			const studentsSnapshot = await getDocs(collection(db, "students"))
+			const existingStudents = studentsSnapshot.docs.map((row) => ({ id: row.id, ...(row.data() || {}) }))
+			const existingStudentDuplicate = await findScholarDuplicate(payload, existingStudents)
+			if (existingStudentDuplicate?.record) {
+				payload = buildScholarPayloadFromStudentAccount(existingStudentDuplicate.record, payload)
+			}
+			const exactConflict = findCurrentGrantorStudentIdConflict(
+				payload,
+				existingScholars,
+				applications,
+				grantorId,
+				grantorProviderType,
+			)
+			if (exactConflict) {
+				const matchedName = exactConflict.record.fullName || exactConflict.record.studentName || "an existing student"
+				const source = exactConflict.kind === "application" ? "application list" : "grantor roster"
+				toast.warning(`Student not added. Student ID ${payload.studentId} already exists in this grantor's ${source} as ${matchedName}.`)
+				return
+			}
 			const duplicate = await findScholarDuplicate(payload, existingScholars)
 			if (duplicate) {
-				const matchedName = duplicate.record.fullName || "an existing student"
-				const owner = duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"
-				const reason = duplicate.reasons.length > 0 ? ` Matching fields: ${duplicate.reasons.join(", ")}.` : ""
-				toast.warning(`Duplicate student not added. This record matches ${matchedName} under ${owner}.${reason}`)
-				return
+				if (!isDuplicateOwnedByGrantor(duplicate, grantorId, grantorProviderType)) {
+					const matchedName = duplicate.record.fullName || "an existing student"
+					const owner = duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"
+					const confirmed = window.confirm(`This student already appears under ${owner} (${matchedName}). Add them to this grantor roster with a warning highlight?`)
+					if (!confirmed) return
+					payload = {
+						...payload,
+						...buildCrossGrantorWarningPayload(duplicate),
+					}
+				} else {
+					const matchedName = duplicate.record.fullName || "an existing student"
+					const reason = duplicate.reasons.length > 0 ? ` Matching fields: ${duplicate.reasons.join(", ")}.` : ""
+					toast.warning(`Duplicate student not added. This student is already in this grantor roster as ${matchedName}.${reason}`)
+					return
+				}
 			}
 			await createGrantorScholarsWorkflow({
 				grantorId,
@@ -2321,7 +2550,23 @@ export default function ProviderDashboard() {
 				}],
 			})
 			closeCreateModal()
-			toast.success("Scholar added to the grantor roster.")
+			if (payload.scholarshipConflictWarning) {
+				toast.warning("Scholar added with a multiple-scholarship warning.")
+				await createAdminNotification({
+					type: "duplicate_scholarship_detected",
+					title: "Duplicate Scholarship Detected",
+					message: `${grantorName} added ${payload.fullName || "a student"} who already appears under another grantor.`,
+					grantorId,
+					grantorName,
+					studentId: payload.studentId,
+					studentName: payload.fullName,
+					source: "grantor_manual_add",
+					read: false,
+					createdAt: serverTimestamp(),
+				}).catch((error) => console.error("Admin duplicate warning notification failed.", error))
+			} else {
+				toast.success("Scholar added to the grantor roster.")
+			}
 		} catch (error) {
 			console.error(error)
 			toast.error("Unable to add scholar right now.")
@@ -3445,7 +3690,7 @@ export default function ProviderDashboard() {
 								</thead>
 								<tbody>
 									{visibleScholars.length === 0 ? <EmptyRow colSpan={7} message="No results found matching your criteria." /> : visibleScholarsPage.rows.map((scholar) => (
-										<tr key={scholar.id} className={selectedScholarId === scholar.id ? "grantor-row-selected" : ""} onClick={() => setSelectedScholarId(scholar.id)}>
+									<tr key={scholar.id} className={[selectedScholarId === scholar.id ? "grantor-row-selected" : "", scholar.scholarshipConflictWarning || scholar.duplicateScholarshipWarning || scholar.duplicateScholarshipDetected ? "grantor-row-warning" : ""].filter(Boolean).join(" ")} onClick={() => setSelectedScholarId(scholar.id)}>
 											<td className="grantor-checkbox-col" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selectedScholarIds.includes(scholar.id)} onChange={() => setSelectedScholarIds((prev) => prev.includes(scholar.id) ? prev.filter((id) => id !== scholar.id) : [...prev, scholar.id])} /></td>
 											<td>{scholar.studentId || "-"}</td><td>{scholar.fullName}</td><td>{scholar.course || "-"}</td><td>{scholar.yearLevel || "-"}</td><td><span className={statusClass(scholar.status)}>{scholar.status}</span></td><td>{formatRelativeDate(scholar.updatedAt || scholar.createdAt)}</td>
 										</tr>
@@ -4136,7 +4381,7 @@ export default function ProviderDashboard() {
 										</div>
 										<div className={`grantor-duplicate-policy-note ${importDuplicateCount > 0 ? "is-warning" : ""}`} role="note">
 											<HiOutlineExclamationCircle aria-hidden="true" />
-											<span>{checkingImportDuplicates ? "Checking mapped rows for duplicates..." : importDuplicateCount > 0 ? `${importDuplicateCount} duplicate row${importDuplicateCount === 1 ? "" : "s"} detected. Warning-highlighted rows will not be imported.` : "Duplicate protection is active. Matching students already listed by this or another grantor will not be imported."}</span>
+											<span>{checkingImportDuplicates ? "Checking mapped rows for duplicates..." : importDuplicateCount > 0 ? `${importBlockedDuplicateCount} same-roster duplicate${importBlockedDuplicateCount === 1 ? "" : "s"} will not be imported. ${importWarningDuplicateCount} cross-grantor match${importWarningDuplicateCount === 1 ? "" : "es"} can proceed with warning highlights.` : "Duplicate protection is active. Same-roster duplicates are blocked; cross-grantor matches can be added with warning highlights."}</span>
 										</div>
 										<div className="grantor-import-table-wrap">
 											<table className="grantor-import-table">
@@ -4207,7 +4452,12 @@ export default function ProviderDashboard() {
 													{importPreviewPage.rows.map((row, rowIndex) => {
 														const absoluteRowIndex = (importPreviewPage.currentPage - 1) * TABLE_PAGE_SIZE + rowIndex
 														const duplicate = importDuplicateMatches[absoluteRowIndex]
-														return <tr key={absoluteRowIndex} className={duplicate ? "grantor-import-row--duplicate" : ""} title={duplicate ? `Duplicate of ${duplicate.record.fullName || "an existing student"} under ${duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"}` : undefined}>
+														const duplicateTitle = duplicate
+															? duplicate.sameGrantor
+																? `Already in this grantor roster as ${duplicate.record.fullName || "an existing student"}`
+																: `Cross-grantor match: ${duplicate.record.fullName || "an existing student"} under ${duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"}`
+															: undefined
+														return <tr key={absoluteRowIndex} className={duplicate ? duplicate.sameGrantor ? "grantor-import-row--duplicate" : "grantor-import-row--warning" : ""} title={duplicateTitle}>
 															<td className="grantor-import-checkbox-col"><input type="checkbox" aria-label={`Select import row ${absoluteRowIndex + 1}`} checked={selectedImportRowIndexes.includes(absoluteRowIndex)} onChange={() => setSelectedImportRowIndexes((prev) => prev.includes(absoluteRowIndex) ? prev.filter((item) => item !== absoluteRowIndex) : [...prev, absoluteRowIndex])} /></td>
 															{row.map((cell, cellIndex) => (
 																<td key={cellIndex}>{cell}</td>
