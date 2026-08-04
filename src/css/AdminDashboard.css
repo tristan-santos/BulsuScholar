@@ -11959,7 +11959,7 @@
 	min-height: 34px;
 	width: 100%;
 	margin: 0.85rem 0 0;
-	gap: 1.45rem;
+	gap: 1.85rem;
 	padding: 0;
 	border: 0;
 	border-bottom: 1px solid #dce7e1;
@@ -11970,6 +11970,10 @@
 
 .admin-scholarship-inline-tabs .admin-section-tab {
 	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 0.48rem;
 	min-height: 34px;
 	padding: 0 0 0.45rem;
 	border: 0;
@@ -11980,6 +11984,12 @@
 	box-shadow: none;
 	font-size: 0.92rem;
 	font-weight: 650;
+}
+
+.admin-scholarship-inline-tabs .admin-section-tab-main {
+	display: inline-flex;
+	align-items: center;
+	gap: 0;
 }
 
 .admin-scholarship-inline-tabs .admin-section-tab::after,
@@ -11993,7 +12003,7 @@
 	justify-content: center;
 	min-width: 1.45rem;
 	height: 1.45rem;
-	margin-left: 0.25rem;
+	margin-left: 0;
 	padding: 0 0.4rem;
 	border: 1px solid #cfe3d9;
 	border-radius: 999px;
@@ -12009,6 +12019,13 @@
 	background: transparent;
 	color: #00633c;
 	box-shadow: none;
+}
+
+.admin-scholarship-inline-tabs .admin-section-tab.active small,
+.admin-scholarship-inline-tabs .admin-section-tab[aria-selected="true"] small {
+	border-color: #b9d8ca;
+	background: rgba(0, 99, 60, 0.1);
+	color: #00633c;
 }
 
 .admin-scholarship-command-row {

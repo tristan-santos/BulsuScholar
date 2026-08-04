@@ -861,7 +861,7 @@ export default function AdminDashboard() {
 
 	const [scholarshipProvider, setScholarshipProvider] = useState("All")
 	const [scholarshipSearch, setScholarshipSearch] = useState("")
-	const [scholarshipTab, setScholarshipTab] = useState("overview")
+	const [scholarshipTab, setScholarshipTab] = useState("scholars")
 	const [scholarshipGrantorHoverId, setScholarshipGrantorHoverId] = useState("")
 	const [grantorScholarTrendRange, setGrantorScholarTrendRange] = useState("monthly")
 	const [grantorDistributionHoverId, setGrantorDistributionHoverId] = useState("")
@@ -5491,7 +5491,6 @@ export default function AdminDashboard() {
 					</div>
 					<SectionTabs
 						tabs={[
-							{ id: "overview", label: "Overview", count: scholarshipTabCounts.overview, icon: HiOutlineDocumentText },
 							{ id: "scholars", label: "Scholars", count: scholarshipTabCounts.scholars, icon: HiOutlineUsers },
 							{ id: "tracking", label: "Tracking", count: scholarshipTabCounts.tracking, icon: HiOutlineClock },
 							{ id: "warning", label: "Warning", count: scholarshipTabCounts.warning, icon: HiOutlineExclamation },
