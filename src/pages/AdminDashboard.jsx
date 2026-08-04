@@ -5792,7 +5792,7 @@ export default function AdminDashboard() {
 								</div>
 							</div>
 							<div className="admin-table-wrap admin-table-wrap--scholarships">
-								<table className="admin-management-table admin-management-table--roomy admin-scholarship-table">
+								<table className={`admin-management-table admin-management-table--roomy admin-scholarship-table ${scholarshipTab === "tracking" ? "admin-scholarship-table--tracking" : ""}`}>
 									<thead>
 										{scholarshipTab === "warning" ? (
 											<tr>
@@ -7272,28 +7272,28 @@ export default function AdminDashboard() {
 								<div className="admin-detail-docs">
 									<strong>Submitted Documents</strong>
 									<div className="admin-detail-docs-grid admin-detail-docs-grid--review">
-										{(() => {
+												{(() => {
 											const documentUrls = getDocumentUrlsForStudent(
 												selectedScholarshipTrackingRow.studentSnapshot,
 											)
 											return [
-												{ label: "View COR", url: documentUrls.cor },
-												{ label: "View COG", url: documentUrls.cog },
-												{ label: "View School ID", url: documentUrls.schoolId },
-												{ label: "View Application Form", url: documentUrls.applicationForm },
+												{ label: "COR", title: "Certificate of Registration", url: documentUrls.cor },
+												{ label: "COG", title: "Certificate of Grades", url: documentUrls.cog },
+												{ label: "School ID", title: "School ID", url: documentUrls.schoolId },
+												{ label: "Application Form", title: "Application Form", url: documentUrls.applicationForm },
 											].map((document) =>
 												document.url ? (
-													<a
+													<button
 														key={document.label}
-														href={document.url}
-														target="_blank"
-														rel="noreferrer"
+														type="button"
+														onClick={() => openDocumentPreview(document)}
 													>
-														{document.label}
-													</a>
+														<HiOutlineEye />
+														<span>View {document.label}</span>
+													</button>
 												) : (
 													<span key={document.label} className="admin-detail-docs-empty">
-														{document.label} Unavailable
+														{document.label} unavailable
 													</span>
 												),
 											)

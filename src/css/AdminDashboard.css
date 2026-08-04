@@ -3211,7 +3211,7 @@
 
 .admin-detail-shell--review {
 	position: relative;
-	width: min(700px, 100%);
+	width: min(760px, calc(100vw - 2rem));
 }
 
 .admin-detail-shell--report {
@@ -3230,6 +3230,9 @@
 
 .admin-detail-modal--review {
 	width: 100%;
+	max-height: min(86vh, 780px);
+	overflow: auto;
+	border-radius: 10px;
 }
 
 .admin-detail-modal--confirm {
@@ -4164,17 +4167,18 @@
 .admin-tracking-summary-grid {
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 0.9rem;
-	margin-top: 1rem;
+	gap: 0.75rem;
+	margin-top: 0.85rem;
 }
 
 .admin-tracking-summary-card {
 	display: grid;
 	gap: 0.2rem;
-	padding: 0.9rem 1rem;
-	border-radius: 16px;
-	border: 1px solid #d6e2ea;
-	background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+	padding: 0.78rem 0.9rem;
+	border-radius: 8px;
+	border: 1px solid rgba(0, 99, 60, 0.16);
+	background: #ffffff;
+	box-shadow: 0 8px 18px rgba(0, 99, 60, 0.045);
 }
 
 .admin-tracking-summary-card span,
@@ -4190,16 +4194,16 @@
 
 .admin-tracking-step-list {
 	display: grid;
-	gap: 0.8rem;
-	margin-top: 1rem;
+	gap: 0.65rem;
+	margin-top: 0.85rem;
 }
 
 .admin-tracking-step {
 	display: grid;
-	grid-template-columns: 42px minmax(0, 1fr);
-	gap: 0.85rem;
-	padding: 0.95rem 1rem;
-	border-radius: 18px;
+	grid-template-columns: 38px minmax(0, 1fr);
+	gap: 0.75rem;
+	padding: 0.82rem 0.9rem;
+	border-radius: 8px;
 	border: 1px solid #dbe4ee;
 	background: #ffffff;
 }
@@ -4208,9 +4212,9 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 42px;
-	height: 42px;
-	border-radius: 14px;
+	width: 38px;
+	height: 38px;
+	border-radius: 8px;
 	background: #e2e8f0;
 	color: #475569;
 	font-weight: 800;
@@ -4267,8 +4271,99 @@
 
 .admin-tracking-modal-footer {
 	display: grid;
-	gap: 0.9rem;
-	margin-top: 1rem;
+	gap: 0.75rem;
+	margin-top: 0.85rem;
+}
+
+.admin-detail-modal--review .admin-detail-info {
+	padding: 1rem;
+}
+
+.admin-detail-modal--review .admin-detail-docs {
+	margin-top: 0.85rem;
+	padding: 0.95rem;
+	border: 1px solid rgba(0, 99, 60, 0.18);
+	border-radius: 8px;
+	background: #ffffff;
+	box-shadow: 0 10px 22px rgba(0, 99, 60, 0.045);
+}
+
+.admin-detail-modal--review .admin-detail-docs > strong {
+	display: block;
+	margin-bottom: 0.75rem;
+	color: #102a20;
+	font-size: 0.98rem;
+	font-weight: 650;
+}
+
+.admin-detail-docs-grid--review {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.65rem;
+}
+
+.admin-detail-docs-grid--review button,
+.admin-detail-docs-grid--review .admin-detail-docs-empty {
+	min-height: 42px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.42rem;
+	padding: 0.6rem 0.75rem;
+	border: 1px solid rgba(0, 99, 60, 0.4);
+	border-radius: 7px;
+	background: rgba(0, 99, 60, 0.055);
+	color: #00633c;
+	font-family: inherit;
+	font-size: 0.82rem;
+	font-weight: 600;
+	text-align: center;
+	line-height: 1.2;
+	cursor: pointer;
+}
+
+.admin-detail-docs-grid--review button:hover {
+	border-color: #00633c;
+	background: rgba(0, 99, 60, 0.1);
+}
+
+.admin-detail-docs-grid--review button svg {
+	width: 1rem;
+	height: 1rem;
+	flex: 0 0 auto;
+}
+
+.admin-detail-docs-grid--review .admin-detail-docs-empty {
+	border-color: #cbd5e1;
+	background: #f8fafc;
+	color: #7a8a84;
+	cursor: default;
+}
+
+.admin-detail-modal--review .admin-student-alert {
+	border-radius: 8px;
+	padding: 0.78rem 0.9rem;
+}
+
+.admin-detail-modal--review .admin-student-warning-copy strong {
+	font-size: 0.86rem;
+}
+
+.admin-detail-modal--review .admin-student-warning-copy span {
+	font-size: 0.84rem;
+	line-height: 1.45;
+}
+
+.admin-detail-modal--review .admin-soe-review-actions--split {
+	gap: 0.75rem;
+}
+
+.admin-detail-modal--review .admin-safe-btn,
+.admin-detail-modal--review .admin-danger-btn {
+	min-height: 42px;
+	border-radius: 7px;
+	font-size: 0.86rem;
+	font-weight: 650;
 }
 
 .admin-restriction-panel {
@@ -12147,6 +12242,64 @@
 	border-radius: 6px;
 	font-size: 0.76rem;
 	font-weight: 650;
+}
+
+.admin-scholarship-table--tracking {
+	min-width: 1080px;
+	table-layout: fixed;
+}
+
+.admin-scholarship-table--tracking th:nth-child(1),
+.admin-scholarship-table--tracking td:nth-child(1) {
+	width: 14%;
+}
+
+.admin-scholarship-table--tracking th:nth-child(2),
+.admin-scholarship-table--tracking td:nth-child(2) {
+	width: 16%;
+}
+
+.admin-scholarship-table--tracking th:nth-child(3),
+.admin-scholarship-table--tracking td:nth-child(3) {
+	width: 16%;
+}
+
+.admin-scholarship-table--tracking th:nth-child(4),
+.admin-scholarship-table--tracking td:nth-child(4) {
+	width: 15%;
+}
+
+.admin-scholarship-table--tracking th:nth-child(5),
+.admin-scholarship-table--tracking td:nth-child(5) {
+	width: 11%;
+}
+
+.admin-scholarship-table--tracking th:nth-child(6),
+.admin-scholarship-table--tracking td:nth-child(6) {
+	width: 16%;
+	overflow: visible;
+	text-overflow: clip;
+}
+
+.admin-scholarship-table--tracking th:nth-child(7),
+.admin-scholarship-table--tracking td:nth-child(7) {
+	width: 12%;
+	text-align: right;
+	overflow: visible;
+}
+
+.admin-scholarship-table--tracking td:nth-child(6) .admin-status-badge {
+	max-width: 100%;
+	justify-content: flex-start;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.admin-scholarship-table--tracking .admin-table-btn {
+	min-width: 118px;
+	padding-inline: 0.78rem;
+	white-space: nowrap;
 }
 
 .admin-scholarship-management .admin-table-pagination {
