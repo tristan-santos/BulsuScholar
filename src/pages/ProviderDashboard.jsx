@@ -52,7 +52,7 @@ import {
 	HiOutlineRefresh,
 	HiOutlineSearch,
 	HiOutlineSave,
-	HiOutlineShieldCheck,
+	HiOutlineCheckCircle,
 	HiOutlineSun,
 	HiOutlineTrash,
 	HiOutlineUserGroup,
@@ -657,23 +657,23 @@ function scholarToForm(scholar = {}, student = {}) {
 
 	return {
 		studentId: merged.studentId || merged.studentnumber || merged.studentNumber || scholar.id || "",
-		fname: scholar.fname || student.fname || student.firstName || fallbackFirstName,
-		mname: scholar.mname || student.mname || student.middleName || fallbackMiddleName,
-		lname: scholar.lname || student.lname || student.lastName || fallbackLastName,
-		email: scholar.email || student.email || "",
+		fname: student.fname || student.firstName || scholar.fname || fallbackFirstName,
+		mname: student.mname || student.middleName || scholar.mname || fallbackMiddleName,
+		lname: student.lname || student.lastName || scholar.lname || fallbackLastName,
+		email: student.email || scholar.email || "",
 		cpNumber:
-			scholar.cpNumber ||
 			student.cpNumber ||
 			student.contactNumber ||
 			student.phoneNumber ||
+			scholar.cpNumber ||
 			"",
-		street: scholar.street || student.street || student.address || "",
-		city: scholar.city || student.city || "",
-		province: scholar.province || student.province || "",
-		barangay: scholar.barangay || student.barangay || "",
-		postalCode: scholar.postalCode || student.postalCode || student.zipCode || "",
-		course: scholar.course || student.course || student.program || "",
-		yearLevel: String(scholar.yearLevel || student.yearLevel || student.year || "1"),
+		street: student.street || student.address || scholar.street || "",
+		city: student.city || scholar.city || "",
+		province: student.province || scholar.province || "",
+		barangay: student.barangay || scholar.barangay || "",
+		postalCode: student.postalCode || student.zipCode || scholar.postalCode || "",
+		course: student.course || student.program || scholar.course || "",
+		yearLevel: String(student.yearLevel || student.year || scholar.yearLevel || "1"),
 		scholarshipTitle:
 			scholar.scholarshipTitle || scholar.scholarshipName || student.scholarshipTitle || "",
 		status: scholar.status || "Active",
@@ -822,6 +822,7 @@ export default function ProviderDashboard() {
 	const [createForm, setCreateForm] = useState(SCHOLAR_FORM)
 	const [editForm, setEditForm] = useState(SCHOLAR_FORM)
 	const [editScholarAccountExists, setEditScholarAccountExists] = useState(false)
+	const [editScholarLockedProfile, setEditScholarLockedProfile] = useState(null)
 	const [announcementForm, setAnnouncementForm] = useState(ANNOUNCEMENT_FORM)
 	const [announcementSubmitAttempted, setAnnouncementSubmitAttempted] = useState(false)
 	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
@@ -1615,6 +1616,7 @@ export default function ProviderDashboard() {
 		setShowEditModal(false)
 		setEditForm(SCHOLAR_FORM)
 		setEditScholarAccountExists(false)
+		setEditScholarLockedProfile(null)
 	}
 
 	const openEditModal = async () => {
@@ -1625,16 +1627,23 @@ export default function ProviderDashboard() {
 
 		setEditForm(scholarToForm(selectedScholar))
 		setEditScholarAccountExists(false)
+		setEditScholarLockedProfile(null)
 		setShowEditModal(true)
 
 		const studentId = String(selectedScholar.studentId || "").trim()
 		if (!studentId) return
 
 		try {
-			const studentSnapshot = await getDoc(doc(db, "students", studentId))
-			if (studentSnapshot.exists()) {
+			const [studentSnapshot, pendingStudentSnapshot] = await Promise.all([
+				getDoc(doc(db, "students", studentId)),
+				getDoc(doc(db, "pending_students", studentId)),
+			])
+			const linkedSnapshot = studentSnapshot.exists() ? studentSnapshot : pendingStudentSnapshot.exists() ? pendingStudentSnapshot : null
+			if (linkedSnapshot) {
+				const linkedProfile = { id: linkedSnapshot.id, ...(linkedSnapshot.data() || {}) }
 				setEditScholarAccountExists(true)
-				setEditForm(scholarToForm(selectedScholar, studentSnapshot.data() || {}))
+				setEditScholarLockedProfile(linkedProfile)
+				setEditForm(scholarToForm(selectedScholar, linkedProfile))
 			}
 		} catch (error) {
 			console.error("Unable to load the linked student profile for editing.", error)
@@ -2583,9 +2592,19 @@ export default function ProviderDashboard() {
 		setBusy("edit")
 		try {
 			const lockedStudentId = String(selectedScholar.studentId || "").trim()
+			const lockedProfileForm = editScholarAccountExists && editScholarLockedProfile
+				? scholarToForm(selectedScholar, editScholarLockedProfile)
+				: null
 			const saveForm =
 				editScholarAccountExists && lockedStudentId
-					? { ...editForm, studentId: lockedStudentId }
+					? {
+							...(lockedProfileForm || editForm),
+							studentId: lockedStudentId,
+							scholarshipTitle: editForm.scholarshipTitle,
+							status: editForm.status,
+							notes: editForm.notes,
+							customColumns: editForm.customColumns,
+						}
 					: editForm
 			const payload = scholarPayload(saveForm, grantorId, grantorName, grantorProviderType)
 			const existingScholars = await getAllGrantorScholars(db)
@@ -3925,7 +3944,7 @@ export default function ProviderDashboard() {
 								<div className="admin-empty-state-card"><HiOutlineInbox /><strong>Your inbox is empty.</strong></div>
 							) : groupedPersonalNotifications.map((group) => (
 								<section key={group.category} className="grantor-inbox-group">
-									<header><span><HiOutlineShieldCheck />{group.category}</span><small>{group.items.length} {group.items.length === 1 ? "notification" : "notifications"}</small></header>
+									<header><span><HiOutlineCheckCircle />{group.category}</span><small>{group.items.length} {group.items.length === 1 ? "notification" : "notifications"}</small></header>
 									{group.items.map((notification) => (
 										<article key={notification.id} className={`grantor-inbox-item ${notification.read === true ? "" : "unread"}`}>
 											<button type="button" className="grantor-inbox-item-main" onClick={() => openGrantorNotificationDetail(notification)}>
@@ -4558,28 +4577,28 @@ export default function ProviderDashboard() {
 											/>
 											{editScholarAccountExists ? <small className="grantor-edit-field-note">Locked because the student account already exists.</small> : null}
 										</label>
-										<label><span>First Name</span><input type="text" placeholder="Enter first name" value={editForm.fname} onChange={(event) => setEditForm((prev) => ({ ...prev, fname: event.target.value }))} /></label>
-										<label><span>Middle Name</span><input type="text" placeholder="Enter middle name" value={editForm.mname} onChange={(event) => setEditForm((prev) => ({ ...prev, mname: event.target.value }))} /></label>
-										<label><span>Last Name</span><input type="text" placeholder="Enter last name" value={editForm.lname} onChange={(event) => setEditForm((prev) => ({ ...prev, lname: event.target.value }))} /></label>
-										<label><span><HiOutlineMail /> Email Address</span><input type="email" placeholder="student@email.com" value={editForm.email} onChange={(event) => setEditForm((prev) => ({ ...prev, email: event.target.value }))} /></label>
-										<label><span>Contact Number</span><input type="text" placeholder="e.g. 0917 123 4567" value={editForm.cpNumber} onChange={(event) => setEditForm((prev) => ({ ...prev, cpNumber: event.target.value }))} /></label>
+										<label><span>First Name</span><input type="text" placeholder="Enter first name" value={editForm.fname} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, fname: event.target.value })) }} /></label>
+										<label><span>Middle Name</span><input type="text" placeholder="Enter middle name" value={editForm.mname} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, mname: event.target.value })) }} /></label>
+										<label><span>Last Name</span><input type="text" placeholder="Enter last name" value={editForm.lname} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, lname: event.target.value })) }} /></label>
+										<label><span><HiOutlineMail /> Email Address</span><input type="email" placeholder="student@email.com" value={editForm.email} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, email: event.target.value })) }} /></label>
+										<label><span>Contact Number</span><input type="text" placeholder="e.g. 0917 123 4567" value={editForm.cpNumber} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, cpNumber: event.target.value })) }} /></label>
 									</div>
 								</section>
 								<section className="grantor-edit-form-section">
 									<div className="grantor-edit-section-head"><h4><HiOutlineLocationMarker /> Address</h4><span>Current residential information</span></div>
 									<div className="grantor-form-grid grantor-form-grid--edit">
-										<label><span>Province</span><select value={editForm.province} onChange={(event) => setEditForm((prev) => ({ ...prev, province: event.target.value, city: "" }))}><option value="">Select province</option>{editForm.province && !PROVINCES.includes(editForm.province) ? <option value={editForm.province}>{editForm.province}</option> : null}{PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}</select></label>
-										<label><span>City / Municipality</span><select value={editForm.city} disabled={!editForm.province} onChange={(event) => setEditForm((prev) => ({ ...prev, city: event.target.value }))}><option value="">Select city or municipality</option>{editForm.city && !editCityOptions.includes(editForm.city) ? <option value={editForm.city}>{editForm.city}</option> : null}{editCityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</select></label>
-										<label><span>Barangay</span><input type="text" placeholder="Barangay" value={editForm.barangay} onChange={(event) => setEditForm((prev) => ({ ...prev, barangay: event.target.value }))} /></label>
-										<label><span>Street / Subdivision</span><input type="text" placeholder="House number, street, or subdivision" value={editForm.street} onChange={(event) => setEditForm((prev) => ({ ...prev, street: event.target.value }))} /></label>
-										<label><span>Postal Code</span><input type="text" placeholder="e.g. 3000" value={editForm.postalCode} onChange={(event) => setEditForm((prev) => ({ ...prev, postalCode: event.target.value }))} /></label>
+										<label><span>Province</span><select value={editForm.province} disabled={editScholarAccountExists} onChange={(event) => setEditForm((prev) => ({ ...prev, province: event.target.value, city: "" }))}><option value="">Select province</option>{editForm.province && !PROVINCES.includes(editForm.province) ? <option value={editForm.province}>{editForm.province}</option> : null}{PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}</select></label>
+										<label><span>City / Municipality</span><select value={editForm.city} disabled={editScholarAccountExists || !editForm.province} onChange={(event) => setEditForm((prev) => ({ ...prev, city: event.target.value }))}><option value="">Select city or municipality</option>{editForm.city && !editCityOptions.includes(editForm.city) ? <option value={editForm.city}>{editForm.city}</option> : null}{editCityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</select></label>
+										<label><span>Barangay</span><input type="text" placeholder="Barangay" value={editForm.barangay} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, barangay: event.target.value })) }} /></label>
+										<label><span>Street / Subdivision</span><input type="text" placeholder="House number, street, or subdivision" value={editForm.street} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, street: event.target.value })) }} /></label>
+										<label><span>Postal Code</span><input type="text" placeholder="e.g. 3000" value={editForm.postalCode} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, postalCode: event.target.value })) }} /></label>
 									</div>
 								</section>
 								<section className="grantor-edit-form-section grantor-edit-form-section--academic">
 									<div className="grantor-edit-section-head"><h4><HiOutlineAcademicCap /> Academic Record</h4><span>Scholarship and enrollment details</span></div>
 									<div className="grantor-form-grid grantor-form-grid--edit">
-										<label><span>Course</span><select value={editForm.course} onChange={(event) => setEditForm((prev) => ({ ...prev, course: event.target.value }))}><option value="">Select course</option>{editForm.course && !COURSE_OPTIONS.includes(editForm.course) ? <option value={editForm.course}>{editForm.course}</option> : null}{COURSE_OPTIONS.map((course) => <option key={course} value={course}>{course}</option>)}</select></label>
-										<label><span>Year Level</span><select value={editForm.yearLevel} onChange={(event) => setEditForm((prev) => ({ ...prev, yearLevel: event.target.value }))}>{YEAR_LEVELS.map((level) => <option key={level} value={level}>Year {level}</option>)}</select></label>
+										<label><span>Course</span><select value={editForm.course} disabled={editScholarAccountExists} onChange={(event) => setEditForm((prev) => ({ ...prev, course: event.target.value }))}><option value="">Select course</option>{editForm.course && !COURSE_OPTIONS.includes(editForm.course) ? <option value={editForm.course}>{editForm.course}</option> : null}{COURSE_OPTIONS.map((course) => <option key={course} value={course}>{course}</option>)}</select></label>
+										<label><span>Year Level</span><select value={editForm.yearLevel} disabled={editScholarAccountExists} onChange={(event) => setEditForm((prev) => ({ ...prev, yearLevel: event.target.value }))}>{YEAR_LEVELS.map((level) => <option key={level} value={level}>Year {level}</option>)}</select></label>
 										<label className="grantor-edit-field--wide"><span>Notes</span><textarea placeholder="Add notes about this scholar" value={editForm.notes} onChange={(event) => setEditForm((prev) => ({ ...prev, notes: event.target.value }))} /></label>
 									</div>
 								</section>

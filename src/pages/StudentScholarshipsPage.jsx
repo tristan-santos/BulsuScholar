@@ -2337,6 +2337,7 @@ export default function StudentScholarshipsPage() {
 										{kwspEntry ? (() => {
 											const entry = kwspEntry
 											const entryFrozen = isScholarshipFrozen(entry)
+											const entryRejected = isScholarshipRejected(entry)
 											const entryTrackingProgress = getTrackingProgressForScholarship(entry)
 											const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
 											const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
@@ -2375,6 +2376,8 @@ export default function StudentScholarshipsPage() {
 																? "Access Blocked"
 																: entryFrozen
 																	? "Frozen"
+																: entryRejected
+																	? "Rejected"
 																: hasComplianceBlock
 																	? "Compliance Hold"
 																	: entry.adminBlocked === true
@@ -2386,6 +2389,7 @@ export default function StudentScholarshipsPage() {
 															className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
 															disabled={
 																hasScholarshipActionBlock ||
+																entryRejected ||
 																entryFrozen ||
 																isExportingSoe ||
 																isDownloadingSoe ||
@@ -2403,6 +2407,8 @@ export default function StudentScholarshipsPage() {
 																? "Access Blocked"
 																: entryFrozen
 																	? "Frozen"
+																: entryRejected
+																	? "Rejected"
 																: hasComplianceBlock
 																	? "Compliance Hold"
 																	: isExportingSoe || isDownloadingSoe

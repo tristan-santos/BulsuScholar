@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: bulsuscholar
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: FRONTEND_URL
+        value: https://bulsu-scholar.vercel.app
+      - key: DOCUMENT_SCAN_ALLOWED_ORIGINS
+        value: https://bulsu-scholar.vercel.app

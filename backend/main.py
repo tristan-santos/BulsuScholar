@@ -18,7 +18,7 @@ if load_dotenv:
     load_dotenv(os.path.join(backend_dir, ".env"), override=True)
 
 try:
-    from .document_scanner import extract_image_text, parse_document, parse_pdf_document
+    from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from .email_service import send_email_notification
     from .grantor_algorithms import (
         check_student_table_duplicates,
@@ -71,7 +71,7 @@ try:
         update_material_request,
     )
 except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backend/
-    from document_scanner import extract_image_text, parse_document, parse_pdf_document
+    from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from email_service import send_email_notification
     from grantor_algorithms import (
         check_student_table_duplicates,
@@ -245,6 +245,7 @@ def health() -> dict[str, Any]:
         "supabaseServerConfigured": bool(supabase_url and service_role_key),
         "hasSupabaseUrl": bool(supabase_url),
         "hasSupabaseServiceRoleKey": bool(service_role_key),
+        "scannerDependencies": get_scanner_dependency_status(),
     }
 
 
@@ -275,10 +276,21 @@ def deployment_health() -> dict[str, Any]:
             "hasResendApiKey": bool(resend_api_key),
             "hasResendFromEmail": bool(resend_from_email),
         },
+        "scannerDependencies": get_scanner_dependency_status(),
         "tables": table_results,
         "missingTables": missing_tables,
         "failedTables": failed_tables,
-        "nextStep": "Run supabase/security-hardening.sql and redeploy Render if tables are missing.",
+        "nextStep": "Run supabase/security-hardening.sql if tables are missing. Redeploy Render with Docker if scannerDependencies.tesseractInstalled is false.",
+    }
+
+
+@app.get("/scan-document/health")
+def scan_document_health() -> dict[str, Any]:
+    dependencies = get_scanner_dependency_status()
+    return {
+        "status": "ok" if dependencies["tesseractInstalled"] else "needs_attention",
+        "dependencies": dependencies,
+        "nextStep": "Use the Docker deployment on Render so tesseract-ocr and poppler-utils are installed.",
     }
 
 
@@ -579,11 +591,24 @@ async def scan_document(
     content_type = (file.content_type or "").lower()
     filename = (file.filename or "").lower()
 
-    if content_type == "application/pdf" or filename.endswith(".pdf"):
-        extracted = parse_pdf_document(file_bytes, document_type)
-    else:
-        text = extract_image_text(file_bytes)
-        extracted = parse_document(text, document_type)
+    try:
+        if content_type == "application/pdf" or filename.endswith(".pdf"):
+            extracted = parse_pdf_document(file_bytes, document_type)
+        else:
+            text = extract_image_text(file_bytes)
+            extracted = parse_document(text, document_type)
+    except RuntimeError as error:
+        message = str(error)
+        status_code = 503 if "tesseract_not_installed" in message else 500
+        raise HTTPException(
+            status_code=status_code,
+            detail={
+                "error": "ocr_dependency_missing" if status_code == 503 else "document_scan_failed",
+                "message": message,
+                "scannerDependencies": get_scanner_dependency_status(),
+                "nextStep": "Redeploy the Render backend with Docker so tesseract-ocr and poppler-utils are installed.",
+            },
+        ) from error
 
     return {
         "ok": True,

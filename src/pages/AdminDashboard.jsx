@@ -33,7 +33,7 @@ import {
 	HiOutlineMoon,
 	HiOutlineRefresh,
 	HiOutlineSearch,
-	HiOutlineShieldCheck,
+	HiOutlineCheckCircle,
 	HiOutlineSparkles,
 	HiOutlineSun,
 	HiOutlineTrash,
@@ -106,7 +106,7 @@ const ADMIN_SECTIONS = [
 	{ id: "students", label: "Student Management", icon: HiOutlineUsers, path: "/admin/students" },
 	{ id: "grantors", label: "Grantor Management", icon: HiOutlineUserGroup, path: "/admin/grantors" },
 	{ id: "scholarships", label: "Scholarship Programs", icon: HiOutlineDocumentText, path: "/admin/scholarships" },
-	{ id: "requirements", label: "Requirements", icon: HiOutlineShieldCheck, path: "/admin/requirements" },
+	{ id: "requirements", label: "Requirements", icon: HiOutlineCheckCircle, path: "/admin/requirements" },
 	{ id: "reports", label: "Report Generation", icon: HiOutlineChartBar, path: "/admin/reports" },
 	{ id: "announcements", label: "Announcements", icon: HiOutlineBell, path: "/admin/announcements" },
 ]
@@ -2527,15 +2527,13 @@ export default function AdminDashboard() {
 							value: trackingReportRows.length > 0 ? trackingReportRows[0].currentStep : "-",
 						},
 					],
-					columns: ["Student ID", "Full Name", "Scholarship", "Grantor", "Current Step", "Owned By", "Status"],
+					columns: ["Student ID", "Full Name", "Scholarship", "Grantor", "Current Step"],
 					csvRows: trackingReportRows.map((row) => [
 						row.studentId,
 						row.fullName,
 						row.scholarship,
 						row.grantor,
 						row.currentStep,
-						row.owner,
-						row.status,
 					]),
 				},
 			)
@@ -4927,7 +4925,7 @@ export default function AdminDashboard() {
 								<button key={notification.id} type="button" className={`admin-inbox-item ${notification.read === true ? "" : "unread"}`} onClick={() => { markAdminNotificationRead(notification); if (notification.route) navigate(notification.route) }}>
 									<span className="admin-inbox-item-icon"><HiOutlineBell /></span>
 									<span className="admin-inbox-item-copy"><strong>{toAdminNotificationTitle(notification)}</strong><small>{toAdminNotificationMessage(notification)}</small></span>
-									<span className="admin-inbox-item-meta"><time>{formatRelativeTime(notification.createdAt || notification.created_at)}</time>{notification.read !== true ? <i aria-label="Unread" /> : <HiOutlineShieldCheck aria-label="Read" />}</span>
+									<span className="admin-inbox-item-meta"><time>{formatRelativeTime(notification.createdAt || notification.created_at)}</time>{notification.read !== true ? <i aria-label="Unread" /> : <HiOutlineCheckCircle aria-label="Read" />}</span>
 								</button>
 							))}
 						</div>
@@ -4952,7 +4950,7 @@ export default function AdminDashboard() {
 					<div className="admin-mail-toolbar">
 						<label className="admin-mail-search"><HiOutlineSearch /><input value={notificationSearch} onChange={(event) => setNotificationSearch(event.target.value)} placeholder="Search notifications" /></label>
 						<select value={notificationFilter} onChange={(event) => { setNotificationFilter(event.target.value); setSelectedAdminNotificationIds([]) }} aria-label="Filter notifications"><option value="inbox">Inbox</option><option value="unread">Unread</option><option value="read">Read</option><option value="archived">Archived</option></select>
-						<button type="button" onClick={markAllAdminNotificationsRead} disabled={unreadAdminNotifications.length === 0}><HiOutlineShieldCheck /> Mark all read</button>
+						<button type="button" onClick={markAllAdminNotificationsRead} disabled={unreadAdminNotifications.length === 0}><HiOutlineCheckCircle /> Mark all read</button>
 						<button type="button" onClick={() => archiveAdminNotifications(selectedRows)} disabled={selectedRows.length === 0}><HiOutlineArchive /> Archive{selectedRows.length ? ` (${selectedRows.length})` : ""}</button>
 					</div>
 					<div className="admin-mail-list">
@@ -5210,7 +5208,7 @@ export default function AdminDashboard() {
 									<strong>{studentManagementStats.total}</strong>
 								</article>
 								<article>
-									<HiOutlineShieldCheck />
+									<HiOutlineCheckCircle />
 									<span>Active Records</span>
 									<strong>{studentManagementStats.active}</strong>
 								</article>
@@ -5415,7 +5413,7 @@ export default function AdminDashboard() {
 							<strong>{grantorManagementStats.total}</strong>
 						</article>
 						<article>
-							<HiOutlineShieldCheck />
+							<HiOutlineCheckCircle />
 							<span>Active Grantors</span>
 							<strong>{grantorManagementStats.active}</strong>
 						</article>
@@ -5807,8 +5805,6 @@ export default function AdminDashboard() {
 												<th>Full Name</th>
 												<th>Scholarship</th>
 												<th>Current Step</th>
-												<th>Owned By</th>
-												<th>Status</th>
 												<th>Action</th>
 											</tr>
 										) : scholarshipTab === "archived" ? (
@@ -5842,7 +5838,7 @@ export default function AdminDashboard() {
 														scholarshipTab === "warning"
 															? 4
 															: scholarshipTab === "tracking"
-																? 7
+																? 5
 																: scholarshipTab === "archived"
 																	? 7
 																	: 8
@@ -5856,8 +5852,8 @@ export default function AdminDashboard() {
 												colSpan={
 													scholarshipTab === "warning"
 														? 4
-														: scholarshipTab === "tracking"
-															? 7
+													: scholarshipTab === "tracking"
+															? 5
 															: scholarshipTab === "archived"
 																? 7
 																: 8
@@ -5877,7 +5873,7 @@ export default function AdminDashboard() {
 															disabled={!row.studentRecordId}
 														>
 															<HiOutlineEye />
-															{row.studentRecordId ? "View Information" : "No Student Record"}
+															{row.studentRecordId ? "View" : "Unavailable"}
 														</button>
 													</td>
 												</tr>
@@ -5889,8 +5885,6 @@ export default function AdminDashboard() {
 													<td>{row.fullName || "-"}</td>
 													<td>{row.scholarship || "-"}</td>
 													<td>{row.currentStepLabel || "-"}</td>
-													<td>{row.currentStepOwnerLabel || "-"}</td>
-													<td><span className={toStatusClass(row.status)}>{row.status || "-"}</span></td>
 													<td>
 														<div className="admin-table-action-row">
 															<button
@@ -5898,8 +5892,8 @@ export default function AdminDashboard() {
 																className="admin-table-btn admin-table-btn--mini admin-table-btn--view"
 																onClick={() => setSelectedScholarshipTrackingKey(row.trackingKey)}
 															>
-																<HiOutlineClock />
-																View Application
+																<HiOutlineEye />
+																View
 															</button>
 														</div>
 													</td>
@@ -5923,7 +5917,7 @@ export default function AdminDashboard() {
 																disabled={!row.studentRecordId}
 															>
 																<HiOutlineEye />
-																{row.studentRecordId ? "View Information" : "No Student Record"}
+																{row.studentRecordId ? "View" : "Unavailable"}
 															</button>
 														</div>
 													</td>
@@ -5948,7 +5942,7 @@ export default function AdminDashboard() {
 																disabled={!row.studentRecordId}
 															>
 																<HiOutlineEye />
-																{row.studentRecordId ? "View Information" : "No Student Record"}
+																{row.studentRecordId ? "View" : "Unavailable"}
 															</button>
 														</div>
 													</td>
@@ -5991,7 +5985,7 @@ export default function AdminDashboard() {
 					<SectionTabs
 						tabs={[
 							{ id: "requesting", label: "Requesting", count: soeRequestTabCounts.requesting, icon: HiOutlineClock },
-							{ id: "requested", label: "Requested", count: soeRequestTabCounts.requested, icon: HiOutlineShieldCheck },
+							{ id: "requested", label: "Requested", count: soeRequestTabCounts.requested, icon: HiOutlineCheckCircle },
 							{ id: "checking", label: "Checking", count: soeCheckingRows.length, icon: HiOutlineEye },
 						]}
 						value={soeTab}
@@ -6001,7 +5995,7 @@ export default function AdminDashboard() {
 						<SectionTabs
 							tabs={[
 								{ id: "incoming", label: "Pending", count: soeCheckingCounts.incoming, icon: HiOutlineClock },
-								{ id: "signed", label: "Signed", count: soeCheckingCounts.signed, icon: HiOutlineShieldCheck },
+								{ id: "signed", label: "Signed", count: soeCheckingCounts.signed, icon: HiOutlineCheckCircle },
 								{ id: "non_compliant", label: "Non-Compliant", count: soeCheckingCounts.non_compliant, icon: HiOutlineExclamation },
 							]}
 							value={soeCheckingTab}
@@ -6208,7 +6202,7 @@ export default function AdminDashboard() {
 					<SectionTabs
 						tabs={[
 							{ id: "incoming", label: "Pending", count: soeCheckingCounts.incoming, icon: HiOutlineClock },
-							{ id: "signed", label: "Signed", count: soeCheckingCounts.signed, icon: HiOutlineShieldCheck },
+							{ id: "signed", label: "Signed", count: soeCheckingCounts.signed, icon: HiOutlineCheckCircle },
 							{ id: "non_compliant", label: "Non-Compliant", count: soeCheckingCounts.non_compliant, icon: HiOutlineExclamation },
 						]}
 						value={soeCheckingTab}
@@ -6421,7 +6415,7 @@ export default function AdminDashboard() {
 							<article className="admin-report-card admin-report-card--compliance">
 								<div className="admin-report-card__head">
 									<div className="admin-report-card__icon">
-										<HiOutlineShieldCheck />
+										<HiOutlineCheckCircle />
 									</div>
 									<div>
 										<span className="admin-report-card__eyebrow">Risk Oversight</span>
@@ -6954,7 +6948,7 @@ export default function AdminDashboard() {
 									}
 									onClick={() => approveGrantorPasswordChange(selectedGrantor.id)}
 								>
-									<HiOutlineShieldCheck /> Approve Password Change
+									<HiOutlineCheckCircle /> Approve Password Change
 								</button>
 								<button type="button" className="admin-danger-btn" disabled={selectedGrantor.archived === true} onClick={() => openSingleGrantorArchiveConfirmation(selectedGrantor.id)}>
 									<HiOutlineTrash /> Archive Grantor
@@ -7190,7 +7184,7 @@ export default function AdminDashboard() {
 			) : null}
 
 			{selectedScholarshipTrackingRow ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={closeScholarshipTrackingModal}>
+				<div className="admin-detail-backdrop admin-detail-backdrop--review" role="presentation" onClick={closeScholarshipTrackingModal}>
 					<div className="admin-detail-shell admin-detail-shell--review" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="admin-detail-close" onClick={closeScholarshipTrackingModal}>
 							<HiX />
@@ -7202,9 +7196,13 @@ export default function AdminDashboard() {
 							aria-label="Scholarship application tracking"
 						>
 							<div className="admin-detail-info">
-								<div className="admin-soe-review-head">
+								<div className="admin-soe-review-head admin-soe-review-head--tracking">
+									<span className="admin-review-modal-icon" aria-hidden="true">
+										<HiOutlineAcademicCap />
+									</span>
 									<div>
-										<h3>Scholarship Application Tracking</h3>
+										<span>Scholarship Programs</span>
+										<h3>Application Tracking</h3>
 										<p className="admin-detail-meta">
 											Track the student application flow and complete the current admin-owned step when it is ready.
 										</p>
@@ -7269,8 +7267,14 @@ export default function AdminDashboard() {
 										</article>
 									))}
 								</div>
-								<div className="admin-detail-docs">
-									<strong>Submitted Documents</strong>
+								<div className="admin-detail-docs admin-detail-docs--tracking">
+									<div className="admin-detail-docs-head">
+										<span aria-hidden="true"><HiOutlineDocumentText /></span>
+										<div>
+											<strong>Documents</strong>
+											<p>Preview submitted files before taking action.</p>
+										</div>
+									</div>
 									<div className="admin-detail-docs-grid admin-detail-docs-grid--review">
 												{(() => {
 											const documentUrls = getDocumentUrlsForStudent(

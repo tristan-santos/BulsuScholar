@@ -1,5 +1,6 @@
 ﻿import io
 import re
+import shutil
 from typing import Any
 
 import pdfplumber
@@ -33,6 +34,34 @@ COURSE_PATTERNS = [
 
 ACCEPTED_COR_TITLES = ["Advising Slip", "Certificate of Registration"]
 ACCEPTED_COG_TITLES = ["Report of Grades"]
+
+
+def configure_tesseract_command() -> str:
+    configured = shutil.which("tesseract")
+    known_paths = [
+        configured,
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract",
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ]
+    for path in known_paths:
+        if path:
+            pytesseract.pytesseract.tesseract_cmd = path
+            return path
+    return ""
+
+
+TESSERACT_COMMAND = configure_tesseract_command()
+
+
+def get_scanner_dependency_status() -> dict[str, Any]:
+    return {
+        "tesseractInstalled": bool(shutil.which("tesseract") or TESSERACT_COMMAND),
+        "tesseractCommand": TESSERACT_COMMAND,
+        "popplerAvailable": bool(shutil.which("pdftoppm")),
+        "pdfImageFallbackAvailable": convert_from_bytes is not None,
+    }
 
 NAME_LABEL_PATTERN = r"(?:Student\s*Name|Name\s+of\s+Student|Full\s*Name|Fullname|Name)"
 NAME_BLOCKED_WORDS = re.compile(
@@ -86,8 +115,8 @@ def ocr_image(image: Image.Image) -> str:
         return pytesseract.image_to_string(prepared)
     except pytesseract.pytesseract.TesseractNotFoundError as error:
         raise RuntimeError(
-            "tesseract_not_installed: Tesseract OCR is required for image uploads. "
-            "Deploy the Render backend with the Dockerfile or install the tesseract-ocr system package."
+            "tesseract_not_installed: Tesseract OCR is required for image-based PDFs and image uploads. "
+            "Redeploy the Render backend with Docker so tesseract-ocr and poppler-utils are installed."
         ) from error
 
 

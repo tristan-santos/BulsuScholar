@@ -26,6 +26,11 @@ export async function scanStudentDocument(file, documentType = "cor") {
 	if (!response.ok) {
 		const errorPayload = await response.clone().json().catch(() => null)
 		const fallbackMessage = await response.text().catch(() => "")
+		if (errorPayload?.detail?.error === "ocr_dependency_missing") {
+			throw new Error(
+				"Tesseract OCR is not installed on the deployed backend. Redeploy the Render service using the Dockerfile so COR/ROG scanned PDFs can be read.",
+			)
+		}
 		const detail =
 			errorPayload?.message ||
 			errorPayload?.detail?.message ||

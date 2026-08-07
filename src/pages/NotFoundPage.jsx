@@ -5,7 +5,7 @@ import {
 	HiOutlineBell,
 	HiOutlineHome,
 	HiOutlineSearch,
-	HiOutlineShieldCheck,
+	HiOutlineCheckCircle,
 	HiOutlineUser,
 } from "react-icons/hi"
 import logo from "../assets/logo.png"
@@ -73,7 +73,7 @@ export default function NotFoundPage() {
 				</div>
 
 				<div className="not-found-note">
-					<HiOutlineShieldCheck aria-hidden />
+					<HiOutlineCheckCircle aria-hidden />
 					<span>If this link came from an email, use the latest message sent by BulsuScholar.</span>
 				</div>
 
