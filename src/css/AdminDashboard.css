@@ -2077,6 +2077,19 @@
 	color: #166534;
 }
 
+.admin-safe-btn:disabled,
+.admin-safe-btn:disabled:hover,
+.admin-soe-review-actions .admin-safe-btn:disabled,
+.admin-soe-review-actions .admin-safe-btn:disabled:hover {
+	border-color: #cbd5e1;
+	background: #f1f5f9;
+	color: #94a3b8;
+	cursor: not-allowed;
+	box-shadow: none;
+	opacity: 1;
+	transform: none;
+}
+
 .admin-portal--dark .admin-subpanel,
 .admin-portal--dark .admin-announcement-form input,
 .admin-portal--dark .admin-announcement-form textarea,
@@ -4296,6 +4309,25 @@
 	box-shadow: 0 10px 22px rgba(0, 99, 60, 0.045);
 }
 
+.admin-detail-docs-title {
+	display: block;
+	margin-bottom: 0.85rem;
+	color: #001f18;
+	font-size: 0.98rem;
+	font-weight: 650;
+}
+
+.admin-detail-docs--tracking {
+	border-top: 1px solid rgba(0, 99, 60, 0.18);
+	border-bottom: 1px solid rgba(0, 99, 60, 0.18);
+	border-left: 0;
+	border-right: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	padding: 1rem 0 1.05rem;
+}
+
 .admin-detail-docs-head {
 	display: flex;
 	align-items: center;
@@ -4340,14 +4372,14 @@
 
 .admin-detail-docs-grid--review button,
 .admin-detail-docs-grid--review .admin-detail-docs-empty {
-	min-height: 42px;
+	min-height: 44px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	gap: 0.42rem;
 	padding: 0.6rem 0.75rem;
 	border: 1px solid #00633c;
-	border-radius: 7px;
+	border-radius: 8px;
 	background: #ffffff;
 	color: #00633c;
 	font-family: inherit;
@@ -4370,10 +4402,72 @@
 }
 
 .admin-detail-docs-grid--review .admin-detail-docs-empty {
-	border-color: #cbd5e1;
+	border-color: rgba(0, 99, 60, 0.22);
 	background: #f8fafc;
 	color: #7a8a84;
 	cursor: default;
+}
+
+.admin-detail-other-docs {
+	display: grid;
+	gap: 0.65rem;
+	margin-top: 0.85rem;
+	padding-top: 0.85rem;
+	border-top: 1px solid #dce7e1;
+}
+
+.admin-detail-other-docs > strong {
+	color: #123c2b;
+	font-size: 0.9rem;
+	font-weight: 700;
+}
+
+.admin-detail-other-docs-list {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.65rem 0.75rem;
+}
+
+.admin-detail-other-docs-list button {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 0.15rem 0.45rem;
+	align-items: center;
+	min-height: 50px;
+	padding: 0.62rem 0.75rem;
+	border: 1px solid #00633c;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #00633c;
+	font: inherit;
+	font-size: 0.82rem;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+}
+
+.admin-detail-other-docs-list button svg {
+	grid-row: span 2;
+	width: 1rem;
+	height: 1rem;
+}
+
+.admin-detail-other-docs-list button small {
+	color: #64748b;
+	font-size: 0.72rem;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-detail-other-docs-list button:hover {
+	background: rgba(0, 99, 60, 0.08);
+}
+
+.admin-detail-other-docs--student {
+	grid-column: 1 / -1;
+	width: 100%;
 }
 
 .admin-detail-modal--review .admin-student-alert {

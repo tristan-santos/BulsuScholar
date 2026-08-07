@@ -20,6 +20,32 @@ function statusIncludesAny(value = "", keywords = []) {
 	return keywords.some((keyword) => normalized.includes(String(keyword || "").toLowerCase()))
 }
 
+function getCurrentAcademicYear(date = new Date()) {
+	const year = date.getFullYear()
+	const month = date.getMonth() + 1
+	return month >= 7 ? `${year}-${year + 1}` : `${year - 1}-${year}`
+}
+
+function getCurrentSemesterTag(date = new Date()) {
+	const month = date.getMonth() + 1
+	return `${getCurrentAcademicYear(date)}-${month >= 7 ? "1ST" : "2ND"}`
+}
+
+function isStepCompletedByAuthority(tracking = {}, stepId = "", authorities = []) {
+	const allowed = new Set(authorities.map((item) => String(item || "").toLowerCase()))
+	return (Array.isArray(tracking.history) ? tracking.history : []).some((item) => {
+		return item?.stepId === stepId && allowed.has(String(item?.completedBy || "").toLowerCase())
+	})
+}
+
+function shouldResetToMaterialRequestForCurrentCycle(scholarship = {}, currentSemesterTag = getCurrentSemesterTag()) {
+	const scholarshipSemesterTag = String(scholarship.semesterTag || "").trim()
+	if (!scholarshipSemesterTag || scholarshipSemesterTag === currentSemesterTag) return false
+	const status = String(scholarship.status || "").toLowerCase()
+	if (status.includes("rejected") || status.includes("archived") || status.includes("frozen")) return false
+	return true
+}
+
 function withAnnouncementApplyStep(steps = [], appliedViaAnnouncement = false) {
 	if (!appliedViaAnnouncement) return steps
 	return [
@@ -282,6 +308,7 @@ export function formatScholarshipTrackingStateLabel(state = "") {
 export function getScholarshipTrackingStepBadgeLabel(step = null, steps = []) {
 	if (!step) return ""
 	if (step.state === "complete") return "Completed"
+	if (step.id === "signing_materials" && step.state === "current") return "Go to admin for the signature"
 	if (step.state === "current") return "On-going"
 	if (step.state === "attention") return "Action Needed"
 	if (step.state !== "upcoming") return ""
@@ -335,6 +362,8 @@ export function getScholarshipTrackingProgress({
 		Boolean(scholarship.announcementId || scholarship.announcementSource) ||
 		scholarship.tracking?.appliedViaAnnouncement === true ||
 		scholarship.tracking?.completedStepIds?.includes?.("announcement_apply")
+	const currentSemesterTag = getCurrentSemesterTag()
+	const resetToMaterialRequest = shouldResetToMaterialRequestForCurrentCycle(scholarship, currentSemesterTag)
 	const stepsDefinition = getScholarshipTrackingSteps(providerType, scholarshipName, { appliedViaAnnouncement })
 	const baseTracking = normalizeScholarshipTrackingState(scholarship.tracking, {
 		providerType,
@@ -360,7 +389,11 @@ export function getScholarshipTrackingProgress({
 		Boolean(scholarship.applicationFormUrl) ||
 		Boolean(scholarship.applicationFormFile?.url)
 
-	const normalizedRequest = latestMaterialRequest ? normalizeMaterialRequest(latestMaterialRequest) : null
+	const requestSemesterTag = String(latestMaterialRequest?.semesterTag || "").trim()
+	const isCurrentCycleMaterialRequest =
+		Boolean(latestMaterialRequest) &&
+		(!resetToMaterialRequest || requestSemesterTag === currentSemesterTag)
+	const normalizedRequest = isCurrentCycleMaterialRequest ? normalizeMaterialRequest(latestMaterialRequest) : null
 	const requestedMaterials = ["soe"].filter((materialKey) => {
 		if (!normalizedRequest) return false
 		const materialEntry = getMaterialEntry(normalizedRequest, materialKey)
@@ -401,14 +434,16 @@ export function getScholarshipTrackingProgress({
 		account: true,
 		announcement_apply: appliedViaAnnouncement,
 		[applyStepId]: true,
-		document_uploading: completedStepIds.has("document_uploading"),
-		application_form: completedStepIds.has("application_form") || hasApplicationForm,
-		document_review: completedStepIds.has("document_review"),
-		admin_review: completedStepIds.has("admin_review"),
-		interview: completedStepIds.has("interview"),
-		application_review: completedStepIds.has("application_review"),
-		final_screening: completedStepIds.has("final_screening"),
-		request_materials: hasRequestedMaterials,
+		document_uploading: resetToMaterialRequest || completedStepIds.has("document_uploading"),
+		application_form: resetToMaterialRequest || completedStepIds.has("application_form") || hasApplicationForm,
+		document_review: resetToMaterialRequest || completedStepIds.has("document_review"),
+		admin_review: resetToMaterialRequest || completedStepIds.has("admin_review"),
+		interview: resetToMaterialRequest || completedStepIds.has("interview"),
+		application_review: resetToMaterialRequest || completedStepIds.has("application_review"),
+		final_screening: resetToMaterialRequest || completedStepIds.has("final_screening"),
+		request_materials:
+			hasApprovedMaterials ||
+			isStepCompletedByAuthority(tracking, "request_materials", ["admin", "grantor", "system"]),
 		download_materials: hasDownloadedMaterials,
 		signing_materials: signingComplete,
 		payout: payoutComplete,
@@ -496,6 +531,7 @@ export function getScholarshipTrackingProgress({
 		adminCompletionReason,
 		canRequestMaterials:
 			steps.find((step) => step.id === "request_materials")?.state !== "upcoming",
+		resetToMaterialRequest,
 	}
 }
 

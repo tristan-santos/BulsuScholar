@@ -1063,6 +1063,57 @@
 .grantor-announcement-other-row > button.grantor-announcement-other-confirm { border-color: #b9d8ca; color: #00633c; }
 .grantor-announcement-other-row > button.grantor-announcement-other-confirm:hover,
 .grantor-announcement-other-row > button.grantor-announcement-other-confirm.is-confirmed { border-color: #00633c; background: #edf7f2; color: #00633c; }
+.grantor-announcement-other-confirmed-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 32px 32px;
+	align-items: center;
+	gap: 0.55rem;
+	padding: 0.65rem;
+	border: 1px solid #dce7e1;
+	border-radius: 5px;
+	background: #f8fcfa;
+}
+.grantor-announcement-other-confirmed-row > div {
+	display: grid;
+	gap: 0.16rem;
+	min-width: 0;
+}
+.grantor-announcement-other-confirmed-row strong {
+	color: #052f20;
+	font-size: 0.82rem;
+	font-weight: 650;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.grantor-announcement-other-confirmed-row span {
+	color: #64748b;
+	font-size: 0.72rem;
+}
+.grantor-announcement-other-confirmed-row > button {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 1px solid #b9d8ca;
+	border-radius: 4px;
+	background: #fff;
+	color: #00633c;
+	cursor: pointer;
+}
+.grantor-announcement-other-confirmed-row > button:last-child {
+	border-color: #fecaca;
+	color: #dc2626;
+}
+.grantor-announcement-other-confirmed-row > button:hover {
+	background: #edf7f2;
+	border-color: #00633c;
+}
+.grantor-announcement-other-confirmed-row > button:last-child:hover {
+	background: #fff5f5;
+	border-color: #dc2626;
+}
 .grantor-announcement-compose-form input,
 .grantor-announcement-compose-form textarea { width: 100%; border: 1px solid #cddbd4; border-radius: 4px; background: #fff; color: #17342a; font: inherit; font-size: 0.78rem; font-weight: 400; }
 .grantor-announcement-compose-form input { height: 39px; padding: 0 0.65rem; }
@@ -1202,6 +1253,7 @@
 	.grantor-announcement-requirements > div { grid-template-columns: 1fr; }
 	.grantor-announcement-other-row { grid-template-columns: 1fr; }
 	.grantor-announcement-other-row > button { width: 100%; }
+	.grantor-announcement-other-confirmed-row { grid-template-columns: minmax(0, 1fr) 32px 32px; }
 	.grantor-announcement-card-grid { grid-template-columns: 1fr; }
 	.grantor-announcement-tabs { gap: 0.8rem; overflow-x: auto; }
 	.grantor-announcement-view-modal > footer { align-items: stretch; flex-direction: column; }
@@ -3136,8 +3188,10 @@
 .grantor-portal--dark .grantor-announcement-requirements label,
 .grantor-portal--dark .grantor-announcement-checkbox-control,
 .grantor-portal--dark .grantor-announcement-other-row,
+.grantor-portal--dark .grantor-announcement-other-confirmed-row,
 .grantor-portal--dark .grantor-announcement-other-row select,
 .grantor-portal--dark .grantor-announcement-other-row > button,
+.grantor-portal--dark .grantor-announcement-other-confirmed-row > button,
 .grantor-portal--dark .grantor-announcement-card,
 .grantor-portal--dark .grantor-announcement-card-actions button,
 .grantor-portal--dark .grantor-announcement-history-actions button,
@@ -3173,6 +3227,7 @@
 .grantor-portal--dark .grantor-announcement-requirements label,
 .grantor-portal--dark .grantor-announcement-checkbox-control,
 .grantor-portal--dark .grantor-announcement-other-row select,
+.grantor-portal--dark .grantor-announcement-other-confirmed-row strong,
 .grantor-portal--dark .grantor-announcement-card h4,
 .grantor-portal--dark .grantor-announcement-author strong,
 .grantor-portal--dark .grantor-announcement-view-modal h3,
@@ -3195,8 +3250,13 @@
 .grantor-portal--dark .grantor-announcement-requirements label,
 .grantor-portal--dark .grantor-announcement-checkbox-control,
 .grantor-portal--dark .grantor-announcement-other-row,
+.grantor-portal--dark .grantor-announcement-other-confirmed-row,
 .grantor-portal--dark .grantor-announcement-other-row select { border-color: #475569; }
 .grantor-portal--dark .grantor-announcement-requirements > span { color: #cbd5e1; }
+.grantor-portal--dark .grantor-announcement-other-confirmed-row { background: #111827; }
+.grantor-portal--dark .grantor-announcement-other-confirmed-row span { color: #94a3b8; }
+.grantor-portal--dark .grantor-announcement-other-confirmed-row > button { border-color: #34d399; color: #6ee7b7; }
+.grantor-portal--dark .grantor-announcement-other-confirmed-row > button:last-child { border-color: #7f1d1d; color: #fca5a5; }
 .grantor-portal--dark .grantor-announcement-other-add { border-color: #34d399; color: #6ee7b7; }
 .grantor-portal--dark .grantor-announcement-other-add:hover { background: rgba(0, 99, 60, 0.2); }
 .grantor-portal--dark .grantor-announcement-other-add:disabled,
@@ -3872,31 +3932,82 @@
 
 .grantor-application-card--documents .grantor-document-links {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 0.45rem 0.65rem;
+	gap: 0.65rem 0.75rem;
 }
 
-.grantor-document-link strong {
+.grantor-application-card--documents .grantor-document-link {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: 28px;
-	padding: 0 0.6rem;
+	gap: 0.42rem;
+	min-height: 44px;
+	padding: 0.62rem 0.75rem;
 	border: 1px solid #00633c;
-	border-radius: 5px;
+	border-radius: 8px;
+	background: #ffffff;
 	color: #00633c;
-	font-size: 0.74rem;
+	font-size: 0.82rem;
 	font-weight: 600;
+	text-align: center;
+	line-height: 1.2;
 }
 
-.grantor-document-link.is-disabled {
-	color: #94a3b8;
+.grantor-application-card--documents .grantor-document-link svg {
+	width: 1rem;
+	height: 1rem;
+	flex: 0 0 auto;
+}
+
+.grantor-application-card--documents .grantor-document-link:not(.is-disabled):hover {
+	background: rgba(0, 99, 60, 0.08);
+}
+
+.grantor-application-card--documents .grantor-document-link.is-disabled {
+	border-color: rgba(0, 99, 60, 0.22);
+	background: #f8fafc;
+	color: #7a8a84;
 	opacity: 1;
 	cursor: not-allowed;
 }
 
-.grantor-document-link.is-disabled strong {
-	border-color: transparent;
-	color: #94a3b8;
+.grantor-other-documents {
+	display: grid;
+	gap: 0.65rem;
+	margin-top: 0.85rem;
+	padding-top: 0.85rem;
+	border-top: 1px solid #dce7e1;
+}
+
+.grantor-other-documents > strong {
+	color: #123c2b;
+	font-size: 0.9rem;
+	font-weight: 700;
+}
+
+.grantor-other-documents-list {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.65rem 0.75rem;
+}
+
+.grantor-other-documents-list .grantor-document-link {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 0.15rem 0.45rem;
+	text-align: left;
+}
+
+.grantor-other-documents-list .grantor-document-link svg {
+	grid-row: span 2;
+}
+
+.grantor-other-documents-list .grantor-document-link small {
+	color: #64748b;
+	font-size: 0.72rem;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .grantor-document-preview-backdrop {

@@ -511,6 +511,7 @@ export default function StudentAnnouncementDetailPage() {
 				grantorId: announcement.grantorId || "",
 				minimumGrade: announcementMinimumGrade,
 				requiredDocuments: announcement.requiredDocuments || {},
+				otherRequirements: announcement.otherRequirements || [],
 			}
 			const nextScholarships = [...scholarships, nextRecord]
 
@@ -536,6 +537,7 @@ export default function StudentAnnouncementDetailPage() {
 				announcementSource: announcement.source || source || "admin",
 				minimumGrade: announcementMinimumGrade,
 				requiredDocuments: announcement.requiredDocuments || {},
+				otherRequirements: announcement.otherRequirements || [],
 				status: nextRecord.status,
 				tracking: nextRecord.tracking,
 				applicationDate: serverTimestamp(),

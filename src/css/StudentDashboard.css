@@ -2471,6 +2471,128 @@
 	justify-content: center;
 }
 
+.student-other-requirements-box {
+	display: grid;
+	gap: 0.75rem;
+	padding: 0.85rem;
+	border: 1px solid rgba(0, 99, 60, 0.2);
+	border-radius: 14px;
+	background: rgba(240, 253, 244, 0.72);
+	box-shadow: 0 8px 20px rgba(0, 99, 60, 0.06);
+}
+
+.student-other-requirements-head {
+	display: grid;
+	gap: 0.2rem;
+}
+
+.student-other-requirements-head span,
+.student-other-requirement-card span:first-child {
+	color: #00633c;
+	font-size: 0.72rem;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.student-other-requirements-head strong {
+	color: #123c2b;
+	font-size: 0.88rem;
+	font-weight: 600;
+}
+
+.student-other-requirement-list {
+	display: grid;
+	gap: 0.65rem;
+}
+
+.student-other-requirement-card {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(180px, 0.42fr);
+	gap: 0.8rem;
+	align-items: center;
+	padding: 0.75rem;
+	border: 1px solid rgba(0, 99, 60, 0.16);
+	border-radius: 12px;
+	background: #ffffff;
+}
+
+.student-other-requirement-card strong {
+	display: block;
+	margin-top: 0.18rem;
+	color: #102f24;
+	font-size: 0.92rem;
+	font-weight: 700;
+}
+
+.student-other-requirement-card p {
+	margin: 0.25rem 0 0;
+	color: #52657a;
+	font-size: 0.78rem;
+	line-height: 1.4;
+}
+
+.student-other-file-list {
+	display: grid;
+	gap: 0.25rem;
+	margin: 0.55rem 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.student-other-file-list li {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	color: #334155;
+	font-size: 0.78rem;
+	line-height: 1.35;
+	word-break: break-word;
+}
+
+.student-other-file-list svg {
+	width: 0.9rem;
+	height: 0.9rem;
+	color: #00633c;
+	flex: 0 0 auto;
+}
+
+.student-other-upload-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	min-height: 42px;
+	padding: 0.58rem 0.75rem;
+	border: 1px solid #00633c;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #00633c;
+	font-size: 0.8rem;
+	font-weight: 700;
+	text-align: center;
+	cursor: pointer;
+	transition:
+		background 160ms ease,
+		border-color 160ms ease,
+		color 160ms ease;
+}
+
+.student-other-upload-button input {
+	display: none;
+}
+
+.student-other-upload-button:not(.is-disabled):hover {
+	background: rgba(0, 99, 60, 0.08);
+}
+
+.student-other-upload-button.is-disabled {
+	border-color: #cbd5e1;
+	background: #f8fafc;
+	color: #94a3b8;
+	cursor: not-allowed;
+}
+
 .student-kwsp-step-list {
 	display: grid;
 	gap: 0.7rem;
@@ -3959,6 +4081,39 @@
 
 .student-dashboard--dark .student-welcome-user-name {
 	color: #a7f3d0;
+}
+
+.student-dashboard--dark .student-other-requirements-box {
+	border-color: rgba(52, 211, 153, 0.32);
+	background: rgba(6, 78, 59, 0.28);
+	box-shadow: 0 10px 24px rgba(5, 46, 22, 0.28);
+}
+
+.student-dashboard--dark .student-other-requirements-head strong,
+.student-dashboard--dark .student-other-requirement-card strong {
+	color: #dcfce7;
+}
+
+.student-dashboard--dark .student-other-requirement-card {
+	border-color: rgba(52, 211, 153, 0.28);
+	background: rgba(15, 23, 42, 0.72);
+}
+
+.student-dashboard--dark .student-other-requirement-card p,
+.student-dashboard--dark .student-other-file-list li {
+	color: #cbd5e1;
+}
+
+.student-dashboard--dark .student-other-upload-button {
+	border-color: rgba(52, 211, 153, 0.72);
+	background: rgba(15, 23, 42, 0.86);
+	color: #bbf7d0;
+}
+
+.student-dashboard--dark .student-other-upload-button.is-disabled {
+	border-color: rgba(148, 163, 184, 0.35);
+	background: rgba(15, 23, 42, 0.55);
+	color: #94a3b8;
 }
 
 /* ----- Implementation plan fixes ----- */
@@ -7962,6 +8117,7 @@
 	.student-profile-form-grid,
 	.student-vault-grid,
 	.student-scholarship-control-stats,
+	.student-other-requirement-card,
 	.student-kwsp-next-meta {
 		grid-template-columns: 1fr;
 	}

@@ -19,6 +19,7 @@ import { toast } from "react-toastify"
 import {
 	HiOutlineAcademicCap,
 	HiOutlineCheckCircle,
+	HiOutlineCloudUpload,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
 	HiOutlineExternalLink,
@@ -58,6 +59,7 @@ import {
 import { downloadSoePdfBytes, exportSoePdfDocument } from "../services/soeService"
 import { resolveSoeRequestNumber } from "../services/soeRequestNumberService"
 import {
+	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
 	getScholarshipTrackingStepBadgeLabel,
 } from "../services/scholarshipTrackingService"
@@ -71,6 +73,12 @@ import {
 	buildRecommendationApplyPayload,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
+import { uploadToStorage } from "../services/storageService"
+import {
+	getOtherRequirementUploadEntry,
+	normalizeOtherRequirements,
+	toRequirementKey,
+} from "../services/otherRequirementService"
 
 const SOE_EXPORT_LOCK_MONTHS = 6
 const REJECTION_REAPPLY_COOLDOWN_MS = 24 * 60 * 60 * 1000
@@ -334,6 +342,7 @@ export default function StudentScholarshipsPage() {
 	const [soePreviewUrl, setSoePreviewUrl] = useState("")
 	const [soePreviewBytes, setSoePreviewBytes] = useState(null)
 	const [soePreviewRequestNumber, setSoePreviewRequestNumber] = useState("")
+	const [otherRequirementUploadBusy, setOtherRequirementUploadBusy] = useState("")
 	const { theme, setTheme } = useThemeMode()
 	const userMenuRef = useRef(null)
 	const forcedLogoutRef = useRef(false)
@@ -1116,8 +1125,9 @@ export default function StudentScholarshipsPage() {
 			nextActionCopy = "Your downloaded SOE was marked non-compliant. Coordinate with the scholarship office before proceeding."
 			summaryTone = "attention"
 		} else if (trackingProgress.currentStep?.id === "signing_materials") {
-			nextActionTitle = "Wait for signing of materials"
-			nextActionCopy = "Your downloaded SOE is now waiting for scholarship office checking and signing."
+			nextActionTitle = "Go to admin for the signature"
+			nextActionCopy = "Your downloaded SOE is ready for scholarship office checking and signature."
+			nextActionHelp = "Bring the downloaded SOE to the scholarship office or assigned admin for signature."
 			summaryTone = "current"
 		} else if (trackingProgress.signingComplete) {
 			nextActionTitle = isKwspFlow
@@ -1200,6 +1210,162 @@ export default function StudentScholarshipsPage() {
 		if (message) {
 			toast.success(message)
 		}
+	}
+
+	const validateOtherRequirementFiles = (files = [], requirement = {}) => {
+		const expectedType = String(requirement.fileType || "PDF").toUpperCase()
+		return files.every((file) => {
+			const name = String(file?.name || "").toLowerCase()
+			const type = String(file?.type || "").toLowerCase()
+			if (expectedType === "PNG") {
+				return type === "image/png" || name.endsWith(".png")
+			}
+			if (expectedType === "PDF") {
+				return type === "application/pdf" || name.endsWith(".pdf")
+			}
+			return true
+		})
+	}
+
+	const handleOtherRequirementUpload = async (target, requirement, index, fileList) => {
+		if (!user || !userId || isMutating || !target || !requirement) return
+		const selected = scholarships.find((item) => item.id === target.id)
+		if (!selected) {
+			toast.error("Scholarship record not found.")
+			return
+		}
+
+		const files = Array.from(fileList || []).filter(Boolean)
+		if (files.length === 0) return
+		if (!validateOtherRequirementFiles(files, requirement)) {
+			toast.error(`Invalid ${requirement.name}. Upload ${requirement.fileType || "PDF"} file${requirement.uploadCount > 1 ? "s" : ""} only.`)
+			return
+		}
+
+		const requirementKey = toRequirementKey(requirement, index)
+		const existingEntry = getOtherRequirementUploadEntry(selected, requirement, index)
+		const existingFiles = Array.isArray(existingEntry.files) ? existingEntry.files : []
+		const uploadLimit = Number(requirement.uploadCount || 1)
+		const remainingSlots = Math.max(uploadLimit - existingFiles.length, 0)
+		if (remainingSlots <= 0) {
+			toast.info(`${requirement.name} already has the required ${uploadLimit} upload${uploadLimit > 1 ? "s" : ""}.`)
+			return
+		}
+
+		const filesToUpload = files.slice(0, remainingSlots)
+		const busyKey = `${selected.id}_${requirementKey}`
+		setOtherRequirementUploadBusy(busyKey)
+		try {
+			const uploads = await Promise.all(
+				filesToUpload.map((file) =>
+					uploadToStorage(file, {
+						folder: `students/${userId}/other-requirements/${selected.id || selected.requestNumber || "scholarship"}`,
+					}),
+				),
+			)
+			const preparedUploads = uploads.map((upload, uploadIndex) => ({
+				url: upload.url,
+				name: upload.name || filesToUpload[uploadIndex]?.name || requirement.name,
+				type: upload.type || filesToUpload[uploadIndex]?.type || requirement.fileType,
+				size: upload.size || filesToUpload[uploadIndex]?.size || 0,
+				path: upload.path || upload.publicId || "",
+				uploadedAt: new Date().toISOString(),
+			}))
+			const nextEntry = {
+				requirementId: requirementKey,
+				name: requirement.name,
+				fileType: requirement.fileType || "PDF",
+				uploadCount: uploadLimit,
+				files: [...existingFiles, ...preparedUploads].slice(0, uploadLimit),
+				updatedAt: new Date().toISOString(),
+			}
+			const nextScholarships = scholarships.map((item) =>
+				item.id === selected.id
+					? {
+							...item,
+							otherRequirementUploads: {
+								...(item.otherRequirementUploads || {}),
+								[requirementKey]: nextEntry,
+							},
+							updatedAt: serverTimestamp(),
+						}
+					: item,
+			)
+			await persistScholarships(nextScholarships, `${requirement.name} uploaded.`)
+		} catch (error) {
+			console.error("Failed to upload other requirement:", error)
+			toast.error(`Failed to upload ${requirement.name}. Please try again.`)
+		} finally {
+			setOtherRequirementUploadBusy("")
+		}
+	}
+
+	const renderOtherRequirementUploads = (entry) => {
+		const requirements = normalizeOtherRequirements(entry?.otherRequirements || [])
+		if (requirements.length === 0) return null
+		const entryFrozen = isScholarshipFrozen(entry)
+		const entryRejected = isScholarshipRejected(entry)
+		const disabledByState =
+			isMutating ||
+			entryFrozen ||
+			entryRejected ||
+			entry?.adminBlocked === true ||
+			hasScholarshipActionBlock
+
+		return (
+			<div className="student-other-requirements-box">
+				<div className="student-other-requirements-head">
+					<span>Other Requirements</span>
+					<strong>Upload added requirements from your grantor.</strong>
+				</div>
+				<div className="student-other-requirement-list">
+					{requirements.map((requirement, index) => {
+						const uploadEntry = getOtherRequirementUploadEntry(entry, requirement, index)
+						const uploadedFiles = Array.isArray(uploadEntry.files) ? uploadEntry.files : []
+						const uploadLimit = Number(requirement.uploadCount || 1)
+						const complete = uploadedFiles.length >= uploadLimit
+						const busyKey = `${entry.id}_${toRequirementKey(requirement, index)}`
+						const isBusy = otherRequirementUploadBusy === busyKey
+						const accept = requirement.fileType === "PNG" ? ".png,image/png" : ".pdf,application/pdf"
+						return (
+							<div className="student-other-requirement-card" key={`${entry.id}_${requirement.id}`}>
+								<div>
+									<span>{complete ? "Submitted" : `Upload ${requirement.name}`}</span>
+									<strong>{requirement.name}</strong>
+									<p>
+										{uploadedFiles.length}/{uploadLimit} {requirement.fileType} file{uploadLimit > 1 ? "s" : ""} uploaded
+									</p>
+									{uploadedFiles.length > 0 ? (
+										<ul className="student-other-file-list">
+											{uploadedFiles.map((file, fileIndex) => (
+												<li key={`${file.url || file.name}_${fileIndex}`}>
+													<HiOutlineDocumentText aria-hidden />
+													<span>{file.name || `${requirement.name} ${fileIndex + 1}`}</span>
+												</li>
+											))}
+										</ul>
+									) : null}
+								</div>
+								<label className={`student-other-upload-button ${disabledByState || complete || isBusy ? "is-disabled" : ""}`.trim()}>
+									<HiOutlineCloudUpload aria-hidden />
+									<span>{isBusy ? "Uploading..." : complete ? "Complete" : `Upload ${requirement.name}`}</span>
+									<input
+										type="file"
+										accept={accept}
+										multiple={uploadLimit > 1}
+										disabled={disabledByState || complete || isBusy}
+										onChange={(event) => {
+											handleOtherRequirementUpload(entry, requirement, index, event.target.files)
+											event.target.value = ""
+										}}
+									/>
+								</label>
+							</div>
+						)
+					})}
+				</div>
+			</div>
+		)
 	}
 
 	const applyRecommendedScholarship = async (recommendation) => {
@@ -2077,6 +2243,29 @@ export default function StudentScholarshipsPage() {
 						: [],
 				},
 			}
+			const nextLatestScholarships = latestStudent.scholarships.map((entry) => {
+				const isTarget =
+					entry.id === previewTarget?.id ||
+					entry.requestNumber === previewTarget?.requestNumber ||
+					entry.applicationNumber === applicationNumber
+				if (!isTarget) return entry
+				const withRequestCompleted = completeScholarshipTrackingStep(entry.tracking, {
+					providerType: entry.providerType || entry.provider || entry.name,
+					scholarshipName: entry.name || entry.provider || "Scholarship",
+					stepId: "request_materials",
+					completedBy: "student",
+				})
+				return {
+					...entry,
+					tracking: completeScholarshipTrackingStep(withRequestCompleted, {
+						providerType: entry.providerType || entry.provider || entry.name,
+						scholarshipName: entry.name || entry.provider || "Scholarship",
+						stepId: "download_materials",
+						completedBy: "student",
+					}),
+					soeDownloadedAt: downloadedAtIso,
+				}
+			})
 			await materialRequestWorkflow({
 				inserts: [
 					{
@@ -2100,6 +2289,7 @@ export default function StudentScholarshipsPage() {
 						table: "students",
 						id: userId,
 						data: {
+							scholarships: nextLatestScholarships,
 							soeLastExportAt: serverTimestamp(),
 							updatedAt: serverTimestamp(),
 						},
@@ -2108,6 +2298,7 @@ export default function StudentScholarshipsPage() {
 			})
 			setUser((prev) => ({
 				...(prev || {}),
+				scholarships: nextLatestScholarships,
 				soeLastExportAt: new Date().toISOString(),
 			}))
 			const nextAllowedDate = addMonths(new Date(), SOE_EXPORT_LOCK_MONTHS)
@@ -2416,6 +2607,7 @@ export default function StudentScholarshipsPage() {
 																		: soeDownloadGate.label}
 														</button>
 													</div>
+													{renderOtherRequirementUploads(entry)}
 												</div>
 											)
 										})() : null}
@@ -2636,6 +2828,7 @@ export default function StudentScholarshipsPage() {
 														</>
 													)}
 												</div>
+												{!hasMultipleScholarshipChoices ? renderOtherRequirementUploads(entry) : null}
 											</div>
 											</article>
 										)

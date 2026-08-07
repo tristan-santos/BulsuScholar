@@ -88,6 +88,7 @@ import {
 	validateScholarshipDocuments,
 } from "../services/scholarshipService"
 import { loadRecommendedScholarships } from "../services/recommendedScholarshipService"
+import { collectOtherRequirementDocuments } from "../services/otherRequirementService"
 import {
 	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
@@ -3516,6 +3517,11 @@ export default function AdminDashboard() {
 			return
 		}
 
+		if (currentStep.owner === "student") {
+			toast.info("This step must be completed by the student.")
+			return
+		}
+
 		if (!selectedScholarshipTrackingRow.trackingProgress.canAdminCompleteCurrentStep) {
 			toast.info(
 				selectedScholarshipTrackingRow.trackingProgress.adminCompletionReason ||
@@ -4157,9 +4163,19 @@ export default function AdminDashboard() {
 						entry.requestNumber === row.requestNumber ||
 						entry.requestNumber === row.scholarshipId
 					if (!matchesRequest) return entry
+					const nextTracking =
+						action === "signed"
+							? completeScholarshipTrackingStep(entry.tracking, {
+									providerType: entry.providerType || entry.provider || entry.name,
+									scholarshipName: entry.name || entry.provider || "Scholarship",
+									stepId: "request_materials",
+									completedBy: "admin",
+								})
+							: entry.tracking
 					return {
 						...entry,
 						finalizedState: action === "signed" ? "Approved" : "Non-Compliant",
+						tracking: nextTracking,
 					}
 				})
 
@@ -7041,6 +7057,29 @@ export default function AdminDashboard() {
 									</span>
 								),
 							)}
+							{(() => {
+								const otherDocuments = (Array.isArray(selectedStudent.scholarships) ? selectedStudent.scholarships : [])
+									.flatMap((scholarship) => collectOtherRequirementDocuments(scholarship))
+								if (otherDocuments.length === 0) return null
+								return (
+									<div className="admin-detail-other-docs admin-detail-other-docs--student">
+										<strong>Other documents</strong>
+										<div className="admin-detail-other-docs-list">
+											{otherDocuments.map((document, index) => (
+												<button
+													key={`${document.requirementId}_${document.url}_${index}`}
+													type="button"
+													onClick={() => openDocumentPreview(document)}
+												>
+													<HiOutlineEye />
+													<span>{document.requirementName}</span>
+													<small>{document.name}</small>
+												</button>
+											))}
+										</div>
+									</div>
+								)
+							})()}
 						</div>
 						<div className="admin-detail-scholarships">
 							<strong>Scholarships</strong>
@@ -7268,15 +7307,9 @@ export default function AdminDashboard() {
 									))}
 								</div>
 								<div className="admin-detail-docs admin-detail-docs--tracking">
-									<div className="admin-detail-docs-head">
-										<span aria-hidden="true"><HiOutlineDocumentText /></span>
-										<div>
-											<strong>Documents</strong>
-											<p>Preview submitted files before taking action.</p>
-										</div>
-									</div>
+									<strong className="admin-detail-docs-title">Documents</strong>
 									<div className="admin-detail-docs-grid admin-detail-docs-grid--review">
-												{(() => {
+										{(() => {
 											const documentUrls = getDocumentUrlsForStudent(
 												selectedScholarshipTrackingRow.studentSnapshot,
 											)
@@ -7297,12 +7330,36 @@ export default function AdminDashboard() {
 													</button>
 												) : (
 													<span key={document.label} className="admin-detail-docs-empty">
-														{document.label} unavailable
+														View {document.label} Unavailable
 													</span>
 												),
 											)
 										})()}
 									</div>
+									{(() => {
+										const otherDocuments = collectOtherRequirementDocuments(
+											selectedScholarshipTrackingRow.scholarshipEntry,
+										)
+										if (otherDocuments.length === 0) return null
+										return (
+											<div className="admin-detail-other-docs">
+												<strong>Other documents</strong>
+												<div className="admin-detail-other-docs-list">
+													{otherDocuments.map((document, index) => (
+														<button
+															key={`${document.requirementId}_${document.url}_${index}`}
+															type="button"
+															onClick={() => openDocumentPreview(document)}
+														>
+															<HiOutlineEye />
+															<span>{document.requirementName}</span>
+															<small>{document.name}</small>
+														</button>
+													))}
+												</div>
+											</div>
+										)
+									})()}
 								</div>
 							</div>
 							<div className="admin-tracking-modal-footer">
@@ -7329,7 +7386,13 @@ export default function AdminDashboard() {
 										className="admin-safe-btn"
 										disabled={
 											isBusy ||
+											selectedScholarshipTrackingRow.trackingProgress.currentStep?.owner === "student" ||
 											!selectedScholarshipTrackingRow.trackingProgress.canAdminCompleteCurrentStep
+										}
+										title={
+											selectedScholarshipTrackingRow.trackingProgress.currentStep?.owner === "student"
+												? "This step must be completed by the student."
+												: selectedScholarshipTrackingRow.trackingProgress.adminCompletionReason || ""
 										}
 										onClick={completeScholarshipTrackingCurrentStep}
 									>

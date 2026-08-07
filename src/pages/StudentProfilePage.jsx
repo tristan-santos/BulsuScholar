@@ -34,7 +34,6 @@ import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/
 import StudentTopbar from "../components/StudentTopbar"
 import CustomSelect from "../components/CustomSelect"
 import { exportApplicationFormPdfDocument } from "../services/applicationFormService"
-import { scanStudentDocument } from "../services/documentScanService"
 import "../css/StudentDashboard.css"
 import useThemeMode from "../hooks/useThemeMode"
 
@@ -226,11 +225,16 @@ export default function StudentProfilePage() {
 	const canUploadCor = canUploadDocument(user?.corFile, currentSemesterTag)
 	const canUploadCog = canUploadDocument(user?.cogFile, currentSemesterTag)
 	const canUploadSchoolId = canUploadDocument(user?.schoolIdFile, currentSemesterTag)
-	const canUploadApplicationForm = canUploadDocument(user?.scholarshipApplicationFile, currentSemesterTag)
 	const applicationScholarship = normalizeScholarshipList(user?.scholarships || []).find((item) => {
 		const status = String(item?.status || "").toLowerCase()
 		return !["rejected", "denied", "cancelled", "canceled", "expired"].some((value) => status.includes(value))
 	}) || null
+	const hasDownloadedApplicationForm = Boolean(applicationScholarship?.applicationFormDownloadedAt)
+	const canDownloadApplicationForm = Boolean(applicationScholarship)
+	const canUploadApplicationForm =
+		Boolean(applicationScholarship) &&
+		hasDownloadedApplicationForm &&
+		canUploadDocument(user?.scholarshipApplicationFile, currentSemesterTag)
 
 	const [formData, setFormData] = useState({
 		fname: "",
@@ -329,6 +333,27 @@ export default function StudentProfilePage() {
 				studentId: userId,
 				scholarship: applicationScholarship,
 			})
+			const downloadedAt = new Date().toISOString()
+			const nextScholarships = normalizeScholarshipList(user?.scholarships || []).map((entry) =>
+				entry.id === applicationScholarship.id ||
+				entry.applicationNumber === applicationScholarship.applicationNumber ||
+				entry.requestNumber === applicationScholarship.requestNumber
+					? {
+							...entry,
+							applicationFormDownloadedAt: downloadedAt,
+							applicationFormDownloadedSemesterTag: currentSemesterTag,
+						}
+					: entry,
+			)
+			await setDoc(
+				doc(db, "students", userId),
+				{
+					scholarships: nextScholarships,
+					updatedAt: serverTimestamp(),
+				},
+				{ merge: true },
+			)
+			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
 			toast.success("Application form downloaded.")
 		} catch (error) {
 			console.error("Failed to generate application form:", error)
@@ -453,20 +478,28 @@ export default function StudentProfilePage() {
 
 	const handleDocumentUpload = async (type, file) => {
 		if (!file || !userId) return
+		if (type === "applicationForm") {
+			if (!applicationScholarship) {
+				toast.info("Apply for a scholarship before uploading an application form.")
+				return
+			}
+			if (!hasDownloadedApplicationForm) {
+				toast.info("Download the application form first before uploading it.")
+				return
+			}
+		}
 
 		const mimeType = String(file.type || "").toLowerCase()
 		const isApplicationFormUpload = type === "applicationForm"
 		const isAllowedFile = isApplicationFormUpload
-			? mimeType.startsWith("image/") ||
-				mimeType === "application/pdf" ||
-				/\.(png|jpe?g|pdf)$/i.test(file.name || "")
+			? mimeType === "application/pdf" || /\.pdf$/i.test(file.name || "")
 			: mimeType.startsWith("image/") ||
 				mimeType === "application/pdf" ||
 				/\.(png|jpe?g|pdf)$/i.test(file.name || "")
 		if (!isAllowedFile) {
 			toast.error(
 				isApplicationFormUpload
-					? "Scholarship application must be uploaded as PDF, PNG, JPG, or JPEG."
+					? "Scholarship application must be uploaded as a PDF file."
 					: "Only PNG, JPG, JPEG, and PDF files are allowed.",
 			)
 			return
@@ -475,50 +508,12 @@ export default function StudentProfilePage() {
 		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
 		try {
 			let fileToUpload = file
-			let applicationFormScan = null
 
 			// Convert PDF to image if needed for document preview compatibility.
 			if (isPdf(file) && (type === "cor" || type === "cog" || type === "schoolId")) {
 				toast.info("Converting PDF to image...")
 				fileToUpload = await convertPdfToImageFile(file)
 				toast.success("PDF converted successfully!")
-			}
-
-			if (type === "applicationForm") {
-				toast.info("Checking application form identity...")
-				const scanResult = await scanStudentDocument(file, "application_form")
-				const extracted = scanResult?.extracted || {}
-				const identityCheck = validateApplicationFormIdentity({
-					student: user || {},
-					studentId: userId,
-					extracted,
-				})
-				applicationFormScan = {
-					checkedAt: new Date().toISOString(),
-					passed: identityCheck.passed,
-					extracted,
-					identityCheck,
-				}
-				console.log("Application form identity comparison:", {
-					expected: identityCheck.expected,
-					scanned: identityCheck.scanned,
-					normalized: identityCheck.normalized,
-					score: identityCheck.score,
-					nameSimilarity: identityCheck.nameSimilarity,
-					studentNumberMatched: identityCheck.studentNumberMatched,
-					studentNumberRuleSkipped: identityCheck.studentNumberRuleSkipped,
-					failedRules: identityCheck.failedRules,
-					algorithm: identityCheck.algorithm,
-					rawExtracted: extracted,
-				})
-
-				if (!identityCheck.passed) {
-					toast.error(
-						identityCheck.failedRules[0] ||
-							"Uploaded application form does not match your student information.",
-					)
-					return
-				}
 			}
 
 			const uploadResult = await uploadToStorage(fileToUpload)
@@ -537,7 +532,6 @@ export default function StudentProfilePage() {
 				size: uploadResult.size || fileToUpload.size,
 				uploadedAt: new Date().toISOString(),
 				semesterTag: currentSemesterTag,
-				...(applicationFormScan ? { scan: applicationFormScan } : {}),
 			}
 
 			await setDoc(
@@ -1191,29 +1185,41 @@ export default function StudentProfilePage() {
 												type="button"
 												className="student-vault-link"
 												onClick={handleDownloadApplicationForm}
-												disabled={isDownloadingApplicationForm}
+												disabled={!canDownloadApplicationForm || isDownloadingApplicationForm}
+												title={
+													canDownloadApplicationForm
+														? "Download your scholarship application form"
+														: "Apply for a scholarship before downloading the application form."
+												}
 											>
 												<HiOutlineDownload aria-hidden />
-												{isDownloadingApplicationForm ? "Preparing..." : "Download Form"}
+												{isDownloadingApplicationForm
+													? "Preparing..."
+													: canDownloadApplicationForm
+														? "Download Form"
+														: "Download Locked"}
 											</button>
-											{user?.scholarshipApplicationFile?.url || canUploadApplicationForm ? (
-												<button
-													type="button"
-													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
-													onClick={() => triggerDocumentUpload("applicationForm")}
-													disabled={isDocumentUploading.applicationForm}
-												>
-													{isDocumentUploading.applicationForm
-														? "Uploading..."
-														: user?.scholarshipApplicationFile?.url
-															? "Update Application Form"
-															: "Upload Application Form"}
-												</button>
-											) : null}
+											<button
+												type="button"
+												className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
+												onClick={() => triggerDocumentUpload("applicationForm")}
+												disabled={!canUploadApplicationForm || isDocumentUploading.applicationForm}
+												title={
+													canUploadApplicationForm
+														? "Upload your completed PDF application form"
+														: "Download the application form first before uploading."
+												}
+											>
+												{isDocumentUploading.applicationForm
+													? "Uploading..."
+													: user?.scholarshipApplicationFile?.url
+														? "Update Application Form"
+														: "Upload Application Form"}
+											</button>
 											<input
 												ref={applicationFormFileInputRef}
 												type="file"
-												accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+												accept=".pdf,application/pdf"
 												className="student-profile-file-input"
 												onChange={(e) => {
 													const file = e.target.files?.[0]

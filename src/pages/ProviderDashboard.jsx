@@ -49,6 +49,7 @@ import {
 	HiOutlineMenu,
 	HiOutlineMoon,
 	HiOutlinePhone,
+	HiOutlinePencil,
 	HiOutlineRefresh,
 	HiOutlineSearch,
 	HiOutlineSave,
@@ -112,6 +113,7 @@ import {
 	toScholarshipProviderType,
 	validateScholarshipDocuments,
 } from "../services/scholarshipService"
+import { collectOtherRequirementDocuments } from "../services/otherRequirementService"
 import {
 	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
@@ -2114,6 +2116,10 @@ export default function ProviderDashboard() {
 
 		const currentStep = applicationModalState.trackingProgress?.currentStep
 		const currentStepLabel = getGrantorCompletableStepLabel(currentStep?.id)
+		if (currentStep?.owner === "student") {
+			toast.info("This step must be completed by the student.")
+			return
+		}
 		if (!currentStepLabel) {
 			toast.info("Grantor actions are limited to document review, interview, application review, and final screening.")
 			return
@@ -2884,10 +2890,13 @@ export default function ProviderDashboard() {
 	const addAnnouncementRequirement = () => {
 		setAnnouncementForm((prev) => {
 			const requirements = Array.isArray(prev.otherRequirements) ? prev.otherRequirements : []
-			if (requirements.length > 0) return prev
+			if (requirements.some((item) => item.confirmed !== true)) return prev
 			return {
 				...prev,
-				otherRequirements: [{ name: "", fileType: "pdf", uploadCount: 1, confirmed: false }],
+				otherRequirements: [
+					...requirements,
+					{ name: "", fileType: "pdf", uploadCount: 1, confirmed: false },
+				],
 			}
 		})
 	}
@@ -2913,6 +2922,15 @@ export default function ProviderDashboard() {
 			...prev,
 			otherRequirements: (Array.isArray(prev.otherRequirements) ? prev.otherRequirements : []).map((item, itemIndex) =>
 				itemIndex === index ? { ...item, confirmed: true } : item,
+			),
+		}))
+	}
+
+	const editAnnouncementRequirement = (index) => {
+		setAnnouncementForm((prev) => ({
+			...prev,
+			otherRequirements: (Array.isArray(prev.otherRequirements) ? prev.otherRequirements : []).map((item, itemIndex) =>
+				itemIndex === index ? { ...item, confirmed: false } : item,
 			),
 		}))
 	}
@@ -3864,18 +3882,33 @@ export default function ProviderDashboard() {
 														</div>
 													</div>
 													<div className="grantor-announcement-other-requirements">
-														<button type="button" className="grantor-announcement-other-add" onClick={addAnnouncementRequirement} disabled={Array.isArray(announcementForm.otherRequirements) && announcementForm.otherRequirements.length > 0}>Other Requirement</button>
+														<button type="button" className="grantor-announcement-other-add" onClick={addAnnouncementRequirement} disabled={Array.isArray(announcementForm.otherRequirements) && announcementForm.otherRequirements.some((item) => item.confirmed !== true)}>Other Requirement</button>
 														{Array.isArray(announcementForm.otherRequirements) && announcementForm.otherRequirements.length > 0 ? (
 															<div className="grantor-announcement-other-list">
-																{announcementForm.otherRequirements.map((requirement, index) => (
-																	<div className="grantor-announcement-other-row" key={`other_requirement_${index}`}>
-																		<label><span>Requirement Name</span><input type="text" className={announcementSubmitAttempted && (!String(requirement.name || "").trim() || requirement.confirmed !== true) ? "is-missing" : ""} value={requirement.name || ""} onChange={(event) => updateAnnouncementRequirement(index, "name", event.target.value)} placeholder="Example: Barangay Clearance" /></label>
-																		<label><span>Type</span><select value={requirement.fileType || "pdf"} onChange={(event) => updateAnnouncementRequirement(index, "fileType", event.target.value)}><option value="pdf">PDF</option><option value="png">PNG</option></select></label>
-																		<label><span>Uploads Needed</span><input type="number" min="1" step="1" value={requirement.uploadCount || 1} onChange={(event) => updateAnnouncementRequirement(index, "uploadCount", event.target.value)} /></label>
-																		<button type="button" className={`grantor-announcement-other-confirm ${requirement.confirmed === true ? "is-confirmed" : ""}`} onClick={() => confirmAnnouncementRequirement(index)} aria-label="Confirm other requirement"><HiCheck /></button>
-																		<button type="button" onClick={() => removeAnnouncementRequirement(index)} aria-label="Remove other requirement"><HiOutlineTrash /></button>
-																	</div>
-																))}
+																{announcementForm.otherRequirements.map((requirement, index) =>
+																	requirement.confirmed === true ? (
+																		<div className="grantor-announcement-other-confirmed-row" key={`other_requirement_${index}`}>
+																			<div>
+																				<strong>{index + 1}: {String(requirement.name || "").trim()}</strong>
+																				<span>{String(requirement.fileType || "pdf").toUpperCase()} | {Number(requirement.uploadCount || 1)} upload{Number(requirement.uploadCount || 1) === 1 ? "" : "s"} needed</span>
+																			</div>
+																			<button type="button" onClick={() => editAnnouncementRequirement(index)} aria-label={`Edit ${requirement.name || "other requirement"}`} title="Edit">
+																				<HiOutlinePencil />
+																			</button>
+																			<button type="button" onClick={() => removeAnnouncementRequirement(index)} aria-label={`Delete ${requirement.name || "other requirement"}`} title="Delete">
+																				<HiOutlineTrash />
+																			</button>
+																		</div>
+																	) : (
+																		<div className="grantor-announcement-other-row" key={`other_requirement_${index}`}>
+																			<label><span>Requirement Name</span><input type="text" className={announcementSubmitAttempted && (!String(requirement.name || "").trim() || requirement.confirmed !== true) ? "is-missing" : ""} value={requirement.name || ""} onChange={(event) => updateAnnouncementRequirement(index, "name", event.target.value)} placeholder="Example: Barangay Clearance" /></label>
+																			<label><span>Type</span><select value={requirement.fileType || "pdf"} onChange={(event) => updateAnnouncementRequirement(index, "fileType", event.target.value)}><option value="pdf">PDF</option><option value="png">PNG</option></select></label>
+																			<label><span>Uploads Needed</span><input type="number" min="1" step="1" value={requirement.uploadCount || 1} onChange={(event) => updateAnnouncementRequirement(index, "uploadCount", event.target.value)} /></label>
+																			<button type="button" className="grantor-announcement-other-confirm" onClick={() => confirmAnnouncementRequirement(index)} aria-label="Confirm other requirement" title="Confirm"><HiCheck /></button>
+																			<button type="button" onClick={() => removeAnnouncementRequirement(index)} aria-label="Delete other requirement" title="Delete"><HiOutlineTrash /></button>
+																		</div>
+																	),
+																)}
 															</div>
 														) : null}
 													</div>
@@ -4165,14 +4198,39 @@ export default function ProviderDashboard() {
 																onClick={() => openDocumentPreview(document.label, url)}
 																disabled={!url}
 															>
-																<span>{document.label}</span>
-																<strong>
-																	{url ? "Preview Document" : "Not Uploaded"}
-																</strong>
+																<HiOutlineEye />
+																<span>
+																	{url ? `View ${document.label}` : `View ${document.label} Unavailable`}
+																</span>
 															</button>
 														)
 													})}
 												</div>
+												{(() => {
+													const otherDocuments = collectOtherRequirementDocuments(
+														applicationModalState.scholarship || {},
+													)
+													if (otherDocuments.length === 0) return null
+													return (
+														<div className="grantor-other-documents">
+															<strong>Other documents</strong>
+															<div className="grantor-other-documents-list">
+																{otherDocuments.map((document, index) => (
+																	<button
+																		key={`${document.requirementId}_${document.url}_${index}`}
+																		type="button"
+																		className="grantor-document-link"
+																		onClick={() => openDocumentPreview(document.requirementName, document.url)}
+																	>
+																		<HiOutlineEye />
+																		<span>{document.requirementName}</span>
+																		<small>{document.name}</small>
+																	</button>
+																))}
+															</div>
+														</div>
+													)
+												})()}
 											</section>
 										</div>
 
