@@ -5404,25 +5404,6 @@ export default function AdminDashboard() {
 							</button>
 						</div>
 					</div>
-					<div className="admin-grantor-pagination-row">
-						<SectionTabs
-							tabs={[
-								{ id: "grantors", label: "Grantors", count: grantorTabCounts.grantors, icon: HiOutlineUserGroup },
-								{ id: "archived", label: "Archived", count: grantorTabCounts.archived, icon: HiOutlineTrash },
-							]}
-							value={grantorTab}
-							onChange={setGrantorTab}
-							className="admin-grantor-inline-tabs"
-						/>
-						<button
-							type="button"
-							className="admin-student-archive-btn"
-							disabled={grantorTab !== "grantors" || selectedGrantorIds.length === 0}
-							onClick={openGrantorArchiveConfirmation}
-						>
-							<HiOutlineTrash /> Archive {selectedGrantorIds.length > 0 ? `(${selectedGrantorIds.length})` : ""}
-						</button>
-					</div>
 					<div className="admin-student-stats-row admin-grantor-stats-row" aria-label="Grantor management statistics">
 						<article>
 							<HiOutlineUserGroup />
@@ -5444,6 +5425,25 @@ export default function AdminDashboard() {
 							<span>Archived</span>
 							<strong>{grantorManagementStats.archived}</strong>
 						</article>
+					</div>
+					<div className="admin-grantor-pagination-row">
+						<SectionTabs
+							tabs={[
+								{ id: "grantors", label: "Grantors", count: grantorTabCounts.grantors, icon: HiOutlineUserGroup },
+								{ id: "archived", label: "Archived", count: grantorTabCounts.archived, icon: HiOutlineTrash },
+							]}
+							value={grantorTab}
+							onChange={setGrantorTab}
+							className="admin-grantor-inline-tabs"
+						/>
+						<button
+							type="button"
+							className="admin-student-archive-btn"
+							disabled={grantorTab !== "grantors" || selectedGrantorIds.length === 0}
+							onClick={openGrantorArchiveConfirmation}
+						>
+							<HiOutlineTrash /> Archive {selectedGrantorIds.length > 0 ? `(${selectedGrantorIds.length})` : ""}
+						</button>
 					</div>
 					<section className="admin-tab-panel admin-tab-panel--grantors">
 							<div className="admin-student-command-row admin-grantor-command-row">
@@ -5623,14 +5623,12 @@ export default function AdminDashboard() {
 											onChange={(event) => setScholarshipSearch(event.target.value)}
 										/>
 									</label>
-									<select value={scholarshipProvider} onChange={(event) => setScholarshipProvider(event.target.value)}>
-										<option value="All">All Grantors</option>
-										{scholarshipProviderOptions.map((option) => (
-											<option key={option.value} value={option.value}>
-												{option.label}
-											</option>
-										))}
-									</select>
+									<AdminFilterSelect
+										label="Filter by grantor"
+										value={scholarshipProvider}
+										options={[{ value: "All", label: "All Grantors" }, ...scholarshipProviderOptions]}
+										onChange={setScholarshipProvider}
+									/>
 								</div>
 							</div>
 							<div className="admin-summary-strip">
@@ -5796,14 +5794,12 @@ export default function AdminDashboard() {
 											onChange={(event) => setScholarshipSearch(event.target.value)}
 										/>
 									</label>
-									<select value={scholarshipProvider} onChange={(event) => setScholarshipProvider(event.target.value)}>
-										<option value="All">All Grantors</option>
-										{scholarshipProviderOptions.map((option) => (
-											<option key={option.value} value={option.value}>
-												{option.label}
-											</option>
-										))}
-									</select>
+									<AdminFilterSelect
+										label="Filter by grantor"
+										value={scholarshipProvider}
+										options={[{ value: "All", label: "All Grantors" }, ...scholarshipProviderOptions]}
+										onChange={setScholarshipProvider}
+									/>
 								</div>
 							</div>
 							<div className="admin-table-wrap admin-table-wrap--scholarships">
@@ -7247,9 +7243,6 @@ export default function AdminDashboard() {
 											Track the student application flow and complete the current admin-owned step when it is ready.
 										</p>
 									</div>
-									<span className={toStatusClass(selectedScholarshipTrackingRow.status)}>
-										{selectedScholarshipTrackingRow.status}
-									</span>
 								</div>
 								<div className="admin-tracking-summary-grid">
 									<article className="admin-tracking-summary-card">
@@ -7307,9 +7300,9 @@ export default function AdminDashboard() {
 										</article>
 									))}
 								</div>
-								<div className="admin-detail-docs admin-detail-docs--tracking">
-									<strong className="admin-detail-docs-title">Documents</strong>
-									<div className="admin-detail-docs-grid admin-detail-docs-grid--review">
+								<div className="admin-tracking-documents">
+									<strong className="admin-tracking-documents-title">Documents</strong>
+									<div className="admin-tracking-documents-grid">
 										{(() => {
 											const documentUrls = getDocumentUrlsForStudent(
 												selectedScholarshipTrackingRow.studentSnapshot,
@@ -7330,7 +7323,7 @@ export default function AdminDashboard() {
 														<span>View {document.label}</span>
 													</button>
 												) : (
-													<span key={document.label} className="admin-detail-docs-empty">
+													<span key={document.label} className="admin-tracking-documents-empty">
 														View {document.label} Unavailable
 													</span>
 												),
@@ -7341,23 +7334,26 @@ export default function AdminDashboard() {
 										const otherDocuments = collectOtherRequirementDocuments(
 											selectedScholarshipTrackingRow.scholarshipEntry,
 										)
-										if (otherDocuments.length === 0) return null
 										return (
-											<div className="admin-detail-other-docs">
-												<strong>Other documents</strong>
-												<div className="admin-detail-other-docs-list">
-													{otherDocuments.map((document, index) => (
-														<button
-															key={`${document.requirementId}_${document.url}_${index}`}
-															type="button"
-															onClick={() => openDocumentPreview(document)}
-														>
-															<HiOutlineEye />
-															<span>{document.requirementName}</span>
-															<small>{document.name}</small>
-														</button>
-													))}
-												</div>
+											<div className="admin-tracking-other-documents">
+												<strong>Other Documents</strong>
+												{otherDocuments.length === 0 ? (
+													<span className="admin-tracking-other-documents-none">None</span>
+												) : (
+													<div className="admin-tracking-other-documents-list">
+														{otherDocuments.map((document, index) => (
+															<button
+																key={`${document.requirementId}_${document.url}_${index}`}
+																type="button"
+																onClick={() => openDocumentPreview(document)}
+															>
+																<HiOutlineEye />
+																<span>{document.requirementName}</span>
+																<small>{document.name}</small>
+															</button>
+														))}
+													</div>
+												)}
 											</div>
 										)
 									})()}

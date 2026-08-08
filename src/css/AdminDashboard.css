@@ -4417,6 +4417,138 @@
 	cursor: default;
 }
 
+.admin-tracking-documents {
+	display: grid;
+	gap: 0.85rem;
+	margin-top: 0.85rem;
+	padding: 0.95rem;
+	border: 1px solid rgba(0, 99, 60, 0.16);
+	border-radius: 8px;
+	background: #ffffff;
+	box-shadow: 0 10px 22px rgba(0, 99, 60, 0.045);
+}
+
+.admin-tracking-documents-title {
+	display: block;
+	color: #001f18;
+	font-size: 0.98rem;
+	font-weight: 650;
+}
+
+.admin-tracking-documents-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.65rem 0.7rem;
+	width: 100%;
+}
+
+.admin-tracking-documents-grid button,
+.admin-tracking-documents-empty {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.42rem;
+	width: 100%;
+	min-height: 52px;
+	padding: 0.6rem 0.75rem;
+	border: 1px solid #00633c;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #00633c;
+	font-family: inherit;
+	font-size: 0.82rem;
+	font-weight: 600;
+	line-height: 1.2;
+	text-align: center;
+	cursor: pointer;
+}
+
+.admin-tracking-documents-grid button:hover {
+	background: rgba(0, 99, 60, 0.1);
+}
+
+.admin-tracking-documents-grid button svg {
+	width: 1rem;
+	height: 1rem;
+	flex: 0 0 auto;
+}
+
+.admin-tracking-documents-empty {
+	border-color: rgba(0, 99, 60, 0.22);
+	background: #f8fafc;
+	color: #7a8a84;
+	cursor: default;
+}
+
+.admin-tracking-other-documents {
+	display: grid;
+	gap: 0.65rem;
+	padding-top: 0.85rem;
+	border-top: 1px solid #dce7e1;
+}
+
+.admin-tracking-other-documents > strong {
+	color: #123c2b;
+	font-size: 0.9rem;
+	font-weight: 700;
+}
+
+.admin-tracking-other-documents-none {
+	display: flex;
+	align-items: center;
+	min-height: 42px;
+	padding: 0.7rem 0.8rem;
+	border: 1px dashed rgba(0, 99, 60, 0.24);
+	border-radius: 8px;
+	background: #fbfefd;
+	color: #64748b;
+	font-size: 0.82rem;
+	font-weight: 600;
+}
+
+.admin-tracking-other-documents-list {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.65rem 0.75rem;
+}
+
+.admin-tracking-other-documents-list button {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: 0.15rem 0.45rem;
+	min-height: 50px;
+	padding: 0.62rem 0.75rem;
+	border: 1px solid #00633c;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #00633c;
+	font: inherit;
+	font-size: 0.82rem;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+}
+
+.admin-tracking-other-documents-list button:hover {
+	background: rgba(0, 99, 60, 0.08);
+}
+
+.admin-tracking-other-documents-list button svg {
+	grid-row: span 2;
+	width: 1rem;
+	height: 1rem;
+}
+
+.admin-tracking-other-documents-list button small {
+	color: #64748b;
+	font-size: 0.72rem;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .admin-detail-other-docs {
 	display: grid;
 	gap: 0.65rem;
@@ -12545,5 +12677,397 @@
 	.admin-scholarship-management .admin-summary-card + .admin-summary-card {
 		border-left: 0;
 		border-top: 1px solid #dce7e1;
+	}
+}
+
+/* Shared admin data-table polish for grantors and scholarship programs */
+.admin-grantor-management .admin-student-stats-row,
+.admin-scholarship-management .admin-student-stats-row {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 0;
+	margin: 0.95rem 0 0;
+	padding: 0;
+	border-top: 1px solid #d9e7df;
+	border-bottom: 1px solid #d9e7df;
+}
+
+.admin-grantor-management .admin-student-stats-row article,
+.admin-scholarship-management .admin-student-stats-row article {
+	display: grid;
+	grid-template-columns: 34px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.65rem;
+	min-height: 64px;
+	padding: 0.8rem 1rem;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.admin-grantor-management .admin-student-stats-row article + article,
+.admin-scholarship-management .admin-student-stats-row article + article {
+	border-left: 1px solid #d9e7df;
+}
+
+.admin-grantor-management .admin-student-stats-row article svg,
+.admin-scholarship-management .admin-student-stats-row article svg {
+	width: 18px;
+	height: 18px;
+	color: #00633c;
+}
+
+.admin-grantor-management .admin-student-stats-row article span,
+.admin-scholarship-management .admin-student-stats-row article span {
+	min-width: 0;
+	color: #5b6f66;
+	font-size: 0.8rem;
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.admin-grantor-management .admin-student-stats-row article strong,
+.admin-scholarship-management .admin-student-stats-row article strong {
+	color: #071f18;
+	font-size: 1.05rem;
+	font-weight: 700;
+	text-align: right;
+}
+
+.admin-grantor-pagination-row {
+	margin-top: 0.95rem;
+	padding: 0;
+	border-bottom: 1px solid #d9e7df;
+}
+
+.admin-grantor-inline-tabs,
+.admin-scholarship-inline-tabs {
+	gap: 1.45rem;
+	min-height: 42px;
+	border-bottom: 0;
+}
+
+.admin-grantor-inline-tabs .admin-section-tab,
+.admin-scholarship-inline-tabs .admin-section-tab {
+	min-height: 42px;
+	padding: 0 0 0.55rem;
+	border-bottom-width: 3px;
+	color: #334155;
+	font-size: 0.98rem;
+	font-weight: 650;
+}
+
+.admin-grantor-inline-tabs .admin-section-tab small,
+.admin-scholarship-inline-tabs .admin-section-tab small {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.55rem;
+	height: 1.35rem;
+	margin-left: 0.35rem;
+	padding: 0 0.45rem;
+	border: 1px solid #cfe3d9;
+	border-radius: 999px;
+	background: #f3faf6;
+	color: #00633c;
+	font-size: 0.72rem;
+	font-weight: 650;
+}
+
+.admin-grantor-inline-tabs .admin-section-tab.active,
+.admin-grantor-inline-tabs .admin-section-tab[aria-selected="true"],
+.admin-scholarship-inline-tabs .admin-section-tab.active,
+.admin-scholarship-inline-tabs .admin-section-tab[aria-selected="true"] {
+	border-bottom-color: #00633c;
+	color: #00633c;
+}
+
+.admin-grantor-command-row,
+.admin-scholarship-command-row {
+	padding: 0.85rem 0 0;
+	border-bottom: 0;
+}
+
+.admin-grantor-toolbar,
+.admin-scholarship-toolbar {
+	display: grid;
+	align-items: center;
+	width: 100%;
+	gap: 0.9rem;
+}
+
+.admin-grantor-toolbar {
+	grid-template-columns: minmax(280px, 1fr);
+}
+
+.admin-scholarship-toolbar {
+	grid-template-columns: minmax(320px, 1fr) minmax(180px, 260px);
+}
+
+.admin-grantor-toolbar .admin-student-search,
+.admin-scholarship-toolbar .admin-student-search {
+	min-height: 42px;
+	border-bottom: 1px solid #8aa798;
+}
+
+.admin-grantor-toolbar .admin-student-search input,
+.admin-scholarship-toolbar .admin-student-search input {
+	font-size: 0.86rem;
+	font-weight: 500;
+}
+
+.admin-scholarship-toolbar .admin-filter-select__button {
+	min-height: 42px;
+	font-size: 0.86rem;
+}
+
+.admin-grantor-management .admin-table-wrap,
+.admin-table-wrap--scholarships {
+	margin-top: 0.85rem;
+	overflow-x: auto;
+}
+
+.admin-grantor-table,
+.admin-scholarship-table {
+	width: 100% !important;
+	min-width: 1040px;
+	border-collapse: collapse;
+	border-spacing: 0;
+	table-layout: fixed;
+}
+
+.admin-grantor-table thead th,
+.admin-scholarship-table thead th {
+	padding: 0.72rem 0.85rem;
+	border-bottom: 1px solid #90a4b8;
+	background: #ffffff;
+	color: #06231b;
+	font-size: 0.72rem;
+	font-weight: 700;
+	line-height: 1.2;
+	text-align: center;
+	text-transform: uppercase;
+	letter-spacing: 0;
+	white-space: nowrap;
+}
+
+.admin-grantor-table tbody td,
+.admin-scholarship-table tbody td {
+	padding: 0.82rem 0.85rem;
+	border-bottom: 1px solid #cbd7e5;
+	background: transparent;
+	color: #102a20;
+	font-size: 0.86rem;
+	font-weight: 550;
+	line-height: 1.25;
+	vertical-align: middle;
+	white-space: nowrap !important;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.admin-grantor-table tbody tr:hover,
+.admin-scholarship-table tbody tr:hover {
+	background: rgba(0, 99, 60, 0.035);
+}
+
+.admin-grantor-table input[type="checkbox"],
+.admin-scholarship-table input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	margin: 0 auto;
+	accent-color: #00633c;
+}
+
+.admin-grantor-table th:first-child,
+.admin-grantor-table td:first-child {
+	text-align: center;
+}
+
+.admin-grantor-table th:nth-last-child(3),
+.admin-grantor-table td:nth-last-child(3),
+.admin-grantor-table th:nth-last-child(2),
+.admin-grantor-table td:nth-last-child(2),
+.admin-grantor-table th:last-child,
+.admin-grantor-table td:last-child,
+.admin-scholarship-table th:last-child,
+.admin-scholarship-table td:last-child {
+	text-align: center;
+}
+
+.admin-grantor-table td:last-child,
+.admin-scholarship-table td:last-child {
+	overflow: visible;
+	text-overflow: clip;
+}
+
+.admin-grantor-row-actions,
+.admin-scholarship-table .admin-table-action-row {
+	justify-content: center;
+}
+
+.admin-grantor-row-actions .admin-student-action-btn,
+.admin-scholarship-table .admin-table-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.35rem;
+	min-width: 84px;
+	min-height: 36px;
+	padding: 0.45rem 0.8rem;
+	border: 1px solid #00633c;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #00633c;
+	font-size: 0.8rem;
+	font-weight: 700;
+	line-height: 1;
+	box-shadow: none;
+}
+
+.admin-grantor-row-actions .admin-student-action-btn svg,
+.admin-scholarship-table .admin-table-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.admin-scholarship-table .admin-status-badge {
+	gap: 0.45rem;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	font-size: 0.8rem;
+	font-weight: 600;
+	line-height: 1;
+}
+
+.admin-scholarship-table .admin-status-badge::before {
+	content: "";
+	width: 8px;
+	height: 8px;
+	flex: 0 0 auto;
+	border-radius: 999px;
+	background: currentColor;
+}
+
+.admin-scholarship-table .admin-status-badge--ok {
+	color: #00633c;
+}
+
+.admin-scholarship-table .admin-status-badge--pending {
+	color: #c76a00;
+}
+
+.admin-scholarship-table .admin-status-badge--danger {
+	color: #b91c1c;
+}
+
+.admin-scholarship-table .admin-status-badge--neutral {
+	color: #64748b;
+}
+
+.admin-grantor-table .admin-student-status {
+	font-size: 0.8rem;
+	font-weight: 600;
+}
+
+.admin-tab-panel--grantors > .admin-table-pagination,
+.admin-scholarship-management .admin-table-pagination {
+	margin-top: 0.9rem;
+	padding: 0.9rem 0 0;
+	border-top: 1px solid #dce7e1;
+}
+
+.admin-portal--dark .admin-grantor-management .admin-student-stats-row,
+.admin-portal--dark .admin-scholarship-management .admin-student-stats-row,
+.admin-portal--dark .admin-grantor-management .admin-student-stats-row article + article,
+.admin-portal--dark .admin-scholarship-management .admin-student-stats-row article + article,
+.admin-portal--dark .admin-grantor-pagination-row,
+.admin-portal--dark .admin-tab-panel--grantors > .admin-table-pagination,
+.admin-portal--dark .admin-scholarship-management .admin-table-pagination {
+	border-color: #27443a;
+}
+
+.admin-portal--dark .admin-grantor-table thead th,
+.admin-portal--dark .admin-scholarship-table thead th {
+	background: #101a16;
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-grantor-table tbody td,
+.admin-portal--dark .admin-scholarship-table tbody td,
+.admin-portal--dark .admin-grantor-management .admin-student-stats-row article strong,
+.admin-portal--dark .admin-scholarship-management .admin-student-stats-row article strong {
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-grantor-table tbody tr:hover,
+.admin-portal--dark .admin-scholarship-table tbody tr:hover {
+	background: rgba(142, 224, 188, 0.08);
+}
+
+.admin-portal--dark .admin-grantor-row-actions .admin-student-action-btn,
+.admin-portal--dark .admin-scholarship-table .admin-table-btn {
+	background: #101a16;
+	border-color: #2f6f55;
+	color: #8ee0bc;
+}
+
+.admin-portal--dark .admin-tracking-documents {
+	background: #101a16;
+	border-color: #27443a;
+	box-shadow: none;
+}
+
+.admin-portal--dark .admin-tracking-documents-title,
+.admin-portal--dark .admin-tracking-other-documents > strong {
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-tracking-documents-grid button,
+.admin-portal--dark .admin-tracking-other-documents-list button {
+	background: #101a16;
+	border-color: #2f6f55;
+	color: #8ee0bc;
+}
+
+.admin-portal--dark .admin-tracking-documents-grid button:hover,
+.admin-portal--dark .admin-tracking-other-documents-list button:hover {
+	background: rgba(142, 224, 188, 0.08);
+}
+
+.admin-portal--dark .admin-tracking-documents-empty,
+.admin-portal--dark .admin-tracking-other-documents-none {
+	background: #111827;
+	border-color: #27443a;
+	color: #94a3b8;
+}
+
+.admin-portal--dark .admin-tracking-other-documents {
+	border-top-color: #27443a;
+}
+
+.admin-portal--dark .admin-tracking-other-documents-list button small {
+	color: #cbd5e1;
+}
+
+@media (max-width: 900px) {
+	.admin-grantor-management .admin-student-stats-row,
+	.admin-scholarship-management .admin-student-stats-row {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-grantor-management .admin-student-stats-row article + article,
+	.admin-scholarship-management .admin-student-stats-row article + article {
+		border-left: 0;
+		border-top: 1px solid #d9e7df;
+	}
+
+	.admin-scholarship-toolbar {
+		grid-template-columns: 1fr;
 	}
 }
