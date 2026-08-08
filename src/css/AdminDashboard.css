@@ -10099,6 +10099,25 @@
 	font-weight: 650;
 }
 
+.admin-detail-modal--student .admin-detail-scholarships {
+	width: 100%;
+}
+
+.admin-detail-modal--student .admin-detail-scholarships .admin-student-current-stage,
+.admin-detail-modal--student .admin-detail-scholarships .admin-detail-scholarship-row,
+.admin-detail-modal--student .admin-detail-scholarships .admin-detail-docs-empty,
+.admin-detail-modal--student .admin-detail-scholarships .admin-student-recommendations {
+	grid-column: 1 / -1;
+	width: 100%;
+}
+
+.admin-detail-modal--student .admin-detail-scholarships .admin-detail-scholarship-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.85rem;
+}
+
 .admin-detail-modal--student .admin-detail-docs a,
 .admin-detail-modal--student .admin-detail-docs-empty,
 .admin-detail-scholarship-row {
@@ -13069,5 +13088,452 @@
 
 	.admin-scholarship-toolbar {
 		grid-template-columns: 1fr;
+	}
+}
+
+/* Requirements management aligned with current admin table design */
+.admin-requirements-management {
+	border: 0 !important;
+	padding: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.admin-requirements-management .admin-panel-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 0.75rem 0 0.95rem;
+	border-bottom: 1px solid #d9e7df;
+	background: transparent;
+}
+
+.admin-requirements-title {
+	display: flex !important;
+	align-items: center;
+	gap: 1rem;
+	min-width: 0;
+}
+
+.admin-requirements-title > span {
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	flex: 0 0 auto;
+	border: 1px solid #b9d8ca;
+	border-radius: 6px;
+	background: #ffffff;
+	color: #00633c;
+}
+
+.admin-requirements-title > span svg {
+	width: 1.2rem;
+	height: 1.2rem;
+}
+
+.admin-requirements-title > div {
+	display: grid;
+	gap: 0.18rem;
+}
+
+.admin-requirements-management .admin-panel-head h2 {
+	display: block;
+	margin: 0;
+	color: #102a20;
+	font-size: 1.28rem;
+	font-weight: 620;
+	line-height: 1.15;
+}
+
+.admin-requirements-management .admin-panel-head h2::before {
+	display: none;
+}
+
+.admin-requirements-management .admin-panel-copy {
+	margin: 0.22rem 0 0;
+	color: #64748b;
+	font-size: 0.78rem;
+	line-height: 1.35;
+}
+
+.admin-requirements-management .admin-student-report-btn,
+.admin-requirements-management .admin-export-btn {
+	min-height: 36px;
+	padding: 0.44rem 0.82rem;
+	border: 1px solid #00633c;
+	border-radius: 6px;
+	background: #ffffff;
+	color: #00633c;
+	font-size: 0.78rem;
+	font-weight: 650;
+	box-shadow: none;
+}
+
+.admin-requirements-stats-row {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 0;
+	margin: 0.95rem 0 0;
+	padding: 0;
+	border-top: 1px solid #d9e7df;
+	border-bottom: 1px solid #d9e7df;
+}
+
+.admin-requirements-stats-row article {
+	display: grid;
+	grid-template-columns: 34px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.65rem;
+	min-height: 64px;
+	padding: 0.8rem 1rem;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.admin-requirements-stats-row article + article {
+	border-left: 1px solid #d9e7df;
+}
+
+.admin-requirements-stats-row article svg {
+	width: 18px;
+	height: 18px;
+	color: #00633c;
+}
+
+.admin-requirements-stats-row article span {
+	min-width: 0;
+	color: #5b6f66;
+	font-size: 0.8rem;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-requirements-stats-row article strong {
+	color: #071f18;
+	font-size: 1.05rem;
+	font-weight: 700;
+	text-align: right;
+}
+
+.admin-requirements-inline-tabs,
+.admin-requirements-subtabs {
+	display: inline-flex;
+	align-items: center;
+	width: 100%;
+	min-height: 42px;
+	gap: 1.45rem;
+	margin: 0.95rem 0 0;
+	padding: 0;
+	border: 0;
+	border-bottom: 1px solid #d9e7df;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.admin-requirements-subtabs {
+	margin-top: 0.55rem;
+	gap: 1.15rem;
+	border-bottom-color: #e4eee8;
+}
+
+.admin-requirements-inline-tabs .admin-section-tab,
+.admin-requirements-subtabs .admin-section-tab {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.48rem;
+	min-height: 42px;
+	padding: 0 0 0.55rem;
+	border: 0;
+	border-bottom: 3px solid transparent;
+	border-radius: 0;
+	background: transparent;
+	color: #334155;
+	box-shadow: none;
+	font-size: 0.98rem;
+	font-weight: 650;
+}
+
+.admin-requirements-subtabs .admin-section-tab {
+	min-height: 36px;
+	font-size: 0.86rem;
+}
+
+.admin-requirements-inline-tabs .admin-section-tab::after,
+.admin-requirements-inline-tabs .admin-section-tab-icon,
+.admin-requirements-subtabs .admin-section-tab::after,
+.admin-requirements-subtabs .admin-section-tab-icon {
+	display: none;
+}
+
+.admin-requirements-inline-tabs .admin-section-tab small,
+.admin-requirements-subtabs .admin-section-tab small {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.55rem;
+	height: 1.35rem;
+	margin-left: 0.35rem;
+	padding: 0 0.45rem;
+	border: 1px solid #cfe3d9;
+	border-radius: 999px;
+	background: #f3faf6;
+	color: #00633c;
+	font-size: 0.72rem;
+	font-weight: 650;
+}
+
+.admin-requirements-inline-tabs .admin-section-tab.active,
+.admin-requirements-inline-tabs .admin-section-tab[aria-selected="true"],
+.admin-requirements-subtabs .admin-section-tab.active,
+.admin-requirements-subtabs .admin-section-tab[aria-selected="true"] {
+	border-bottom-color: #00633c;
+	color: #00633c;
+}
+
+.admin-requirements-command-row {
+	padding: 0.85rem 0 0;
+	border-bottom: 0;
+}
+
+.admin-requirements-toolbar {
+	display: grid;
+	grid-template-columns: minmax(320px, 1fr) minmax(180px, 245px) minmax(170px, 230px);
+	align-items: center;
+	width: 100%;
+	gap: 0.9rem;
+}
+
+.admin-requirements-toolbar:has(.admin-student-search:only-child) {
+	grid-template-columns: minmax(320px, 1fr);
+}
+
+.admin-requirements-toolbar .admin-student-search {
+	width: 100%;
+	min-height: 42px;
+	border-bottom: 1px solid #8aa798;
+}
+
+.admin-requirements-toolbar .admin-student-search input,
+.admin-requirements-toolbar .admin-filter-select__button {
+	font-size: 0.86rem;
+	font-weight: 500;
+}
+
+.admin-requirements-toolbar .admin-filter-select__button {
+	min-height: 42px;
+}
+
+.admin-table-wrap--requirements {
+	margin-top: 0.85rem;
+	width: 100%;
+	overflow-x: auto;
+}
+
+.admin-requirements-table {
+	width: 100% !important;
+	min-width: 1120px;
+	border-collapse: collapse;
+	border-spacing: 0;
+	table-layout: fixed;
+}
+
+.admin-requirements-table thead th {
+	padding: 0.72rem 0.85rem;
+	border-bottom: 1px solid #90a4b8;
+	background: #ffffff;
+	color: #06231b;
+	font-size: 0.72rem;
+	font-weight: 700;
+	line-height: 1.2;
+	text-align: center;
+	text-transform: uppercase;
+	letter-spacing: 0;
+	white-space: nowrap;
+}
+
+.admin-requirements-table tbody td {
+	padding: 0.82rem 0.85rem;
+	border-bottom: 1px solid #cbd7e5;
+	background: transparent;
+	color: #102a20;
+	font-size: 0.86rem;
+	font-weight: 550;
+	line-height: 1.25;
+	vertical-align: middle;
+	white-space: nowrap !important;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.admin-requirements-table tbody tr:hover {
+	background: rgba(0, 99, 60, 0.035);
+}
+
+.admin-requirements-table th:last-child,
+.admin-requirements-table td:last-child,
+.admin-requirements-table .admin-table-action-row {
+	text-align: center;
+	justify-content: center;
+	overflow: visible;
+	text-overflow: clip;
+}
+
+.admin-requirements-table .admin-table-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.35rem;
+	min-width: 84px;
+	min-height: 36px;
+	padding: 0.45rem 0.8rem;
+	border: 1px solid #00633c;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #00633c;
+	font-size: 0.8rem;
+	font-weight: 700;
+	line-height: 1;
+	box-shadow: none;
+}
+
+.admin-requirements-table .admin-table-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.admin-requirements-table .admin-status-badge {
+	gap: 0.45rem;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	font-size: 0.8rem;
+	font-weight: 600;
+	line-height: 1;
+}
+
+.admin-requirements-table .admin-status-badge::before {
+	content: "";
+	width: 8px;
+	height: 8px;
+	flex: 0 0 auto;
+	border-radius: 999px;
+	background: currentColor;
+}
+
+.admin-requirements-table .admin-status-badge--ok {
+	color: #00633c;
+}
+
+.admin-requirements-table .admin-status-badge--pending {
+	color: #c76a00;
+}
+
+.admin-requirements-table .admin-status-badge--danger {
+	color: #b91c1c;
+}
+
+.admin-requirements-table .admin-status-badge--neutral {
+	color: #64748b;
+}
+
+.admin-requirements-management .admin-table-pagination {
+	margin-top: 0.9rem;
+	padding: 0.9rem 0 0;
+	border-top: 1px solid #dce7e1;
+}
+
+.admin-portal--dark .admin-requirements-title > span,
+.admin-portal--dark .admin-requirements-management .admin-student-report-btn,
+.admin-portal--dark .admin-requirements-management .admin-export-btn,
+.admin-portal--dark .admin-requirements-table .admin-table-btn {
+	background: #101a16;
+	border-color: #2f6f55;
+	color: #8ee0bc;
+}
+
+.admin-portal--dark .admin-requirements-management .admin-panel-head,
+.admin-portal--dark .admin-requirements-stats-row,
+.admin-portal--dark .admin-requirements-stats-row article + article,
+.admin-portal--dark .admin-requirements-inline-tabs,
+.admin-portal--dark .admin-requirements-subtabs,
+.admin-portal--dark .admin-requirements-management .admin-table-pagination {
+	border-color: #27443a;
+}
+
+.admin-portal--dark .admin-requirements-management .admin-panel-head h2,
+.admin-portal--dark .admin-requirements-stats-row article strong,
+.admin-portal--dark .admin-requirements-table thead th,
+.admin-portal--dark .admin-requirements-table tbody td {
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-requirements-management .admin-panel-copy,
+.admin-portal--dark .admin-requirements-stats-row article span,
+.admin-portal--dark .admin-requirements-inline-tabs .admin-section-tab,
+.admin-portal--dark .admin-requirements-subtabs .admin-section-tab {
+	color: #cbd5e1;
+}
+
+.admin-portal--dark .admin-requirements-inline-tabs .admin-section-tab.active,
+.admin-portal--dark .admin-requirements-inline-tabs .admin-section-tab[aria-selected="true"],
+.admin-portal--dark .admin-requirements-subtabs .admin-section-tab.active,
+.admin-portal--dark .admin-requirements-subtabs .admin-section-tab[aria-selected="true"] {
+	color: #8ee0bc;
+	border-bottom-color: #8ee0bc;
+}
+
+.admin-portal--dark .admin-requirements-inline-tabs .admin-section-tab small,
+.admin-portal--dark .admin-requirements-subtabs .admin-section-tab small {
+	background: #13271f;
+	border-color: #27443a;
+	color: #8ee0bc;
+}
+
+.admin-portal--dark .admin-requirements-table thead th {
+	background: #101a16;
+}
+
+.admin-portal--dark .admin-requirements-table tbody tr:hover {
+	background: rgba(142, 224, 188, 0.08);
+}
+
+@media (max-width: 900px) {
+	.admin-requirements-management .admin-panel-head,
+	.admin-requirements-toolbar {
+		grid-template-columns: 1fr;
+		align-items: stretch;
+	}
+
+	.admin-requirements-management .admin-panel-head {
+		flex-direction: column;
+	}
+
+	.admin-requirements-management .admin-head-actions,
+	.admin-requirements-management .admin-student-report-btn,
+	.admin-requirements-management .admin-export-btn {
+		width: 100%;
+	}
+
+	.admin-requirements-stats-row {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-requirements-stats-row article + article {
+		border-left: 0;
+		border-top: 1px solid #d9e7df;
+	}
+
+	.admin-requirements-inline-tabs,
+	.admin-requirements-subtabs {
+		overflow-x: auto;
 	}
 }

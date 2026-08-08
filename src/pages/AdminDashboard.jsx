@@ -5979,11 +5979,16 @@ export default function AdminDashboard() {
 		if (activeSection === "requirements") {
 			const visibleRows = soeTab === "requesting" ? requestingSoeReportRows : requestedSoeReportRows
 			return (
-				<section className="admin-management-panel">
+				<section className="admin-management-panel admin-requirements-management">
 					<div className="admin-panel-head">
-						<div>
-							<h2>Requirements</h2>
-							<p className="admin-panel-copy">Review requested materials, track approved releases, and verify downloaded SOE records.</p>
+						<div className="admin-student-title admin-requirements-title">
+							<span aria-hidden="true">
+								<HiOutlineCheckCircle />
+							</span>
+							<div>
+								<h2>Requirements</h2>
+								<p className="admin-panel-copy">Review requested materials, track approved releases, and verify downloaded SOE records.</p>
+							</div>
 						</div>
 						<div className="admin-head-actions">
 							<button
@@ -5995,6 +6000,28 @@ export default function AdminDashboard() {
 							</button>
 						</div>
 					</div>
+					<div className="admin-student-stats-row admin-requirements-stats-row" aria-label="Requirements statistics">
+						<article>
+							<HiOutlineClock />
+							<span>Pending Requests</span>
+							<strong>{soeRequestTabCounts.requesting}</strong>
+						</article>
+						<article>
+							<HiOutlineCheckCircle />
+							<span>Approved Requests</span>
+							<strong>{soeRequestTabCounts.requested}</strong>
+						</article>
+						<article>
+							<HiOutlineEye />
+							<span>Checking</span>
+							<strong>{soeCheckingRows.length}</strong>
+						</article>
+						<article>
+							<HiOutlineExclamation />
+							<span>Non-Compliant</span>
+							<strong>{soeCheckingCounts.non_compliant}</strong>
+						</article>
+					</div>
 					<SectionTabs
 						tabs={[
 							{ id: "requesting", label: "Requesting", count: soeRequestTabCounts.requesting, icon: HiOutlineClock },
@@ -6003,6 +6030,7 @@ export default function AdminDashboard() {
 						]}
 						value={soeTab}
 						onChange={setSoeTab}
+						className="admin-requirements-inline-tabs"
 					/>
 					{soeTab === "checking" ? (
 						<SectionTabs
@@ -6013,44 +6041,58 @@ export default function AdminDashboard() {
 							]}
 							value={soeCheckingTab}
 							onChange={setSoeCheckingTab}
-							className="admin-section-tabs--compact"
+							className="admin-section-tabs--compact admin-requirements-subtabs"
 						/>
 					) : null}
-					<div className="admin-filter-bar">
+					<div className="admin-student-command-row admin-requirements-command-row">
+						<div className="admin-student-toolbar admin-requirements-toolbar">
 						{soeTab === "checking" ? (
-							<input type="text" placeholder="Search by SOE request number, student number, student, or scholarship" value={soeCheckSearch} onChange={(event) => setSoeCheckSearch(event.target.value)} />
+							<label className="admin-student-search" aria-label="Search SOE checking records">
+								<HiOutlineSearch />
+								<input type="text" placeholder="Search by SOE request number, student number, student, or scholarship" value={soeCheckSearch} onChange={(event) => setSoeCheckSearch(event.target.value)} />
+							</label>
 						) : (
 							<>
-								<input
-									type="text"
-									placeholder={
-										soeTab === "requesting"
-											? "Search approval requests by application number, student, scholarship, or material"
-											: "Search approved requests by application number, student, scholarship, material, or SOE download status"
-									}
-									value={soeSearch}
-									onChange={(event) => setSoeSearch(event.target.value)}
+								<label className="admin-student-search" aria-label="Search requirement requests">
+									<HiOutlineSearch />
+									<input
+										type="text"
+										placeholder={
+											soeTab === "requesting"
+												? "Search approval requests by application number, student, scholarship, or material"
+												: "Search approved requests by application number, student, scholarship, material, or SOE download status"
+										}
+										value={soeSearch}
+										onChange={(event) => setSoeSearch(event.target.value)}
+									/>
+								</label>
+								<AdminFilterSelect
+									label="Filter by grantor"
+									value={soeProviderFilter}
+									options={[
+										{ value: "All", label: "All Grantors" },
+										...soeProviderOptions.map((provider) => ({ value: provider, label: toProviderLabel(provider) })),
+									]}
+									onChange={setSoeProviderFilter}
 								/>
-								<select value={soeProviderFilter} onChange={(event) => setSoeProviderFilter(event.target.value)}>
-									<option value="All">All Grantors</option>
-									{soeProviderOptions.map((provider) => (
-										<option key={provider} value={provider}>
-											{toProviderLabel(provider)}
-										</option>
-									))}
-								</select>
-								<select value={soeMaterialFilter} onChange={(event) => setSoeMaterialFilter(event.target.value)}>
-									<option value="All">All Requirements</option>
-									<option value="soe">SOE</option>
-									<option value="application_form">Application Form</option>
-								</select>
+								<AdminFilterSelect
+									label="Filter by requirement"
+									value={soeMaterialFilter}
+									options={[
+										{ value: "All", label: "All Requirements" },
+										{ value: "soe", label: "SOE" },
+										{ value: "application_form", label: "Application Form" },
+									]}
+									onChange={setSoeMaterialFilter}
+								/>
 							</>
 						)}
+						</div>
 					</div>
 					{soeTab === "requesting" ? (
 						<>
-							<div className="admin-table-wrap">
-								<table className="admin-management-table admin-management-table--roomy">
+							<div className="admin-table-wrap admin-table-wrap--requirements">
+								<table className="admin-management-table admin-management-table--roomy admin-requirements-table">
 									<thead>
 										<tr>
 											<th>Application No.</th>
@@ -6077,7 +6119,7 @@ export default function AdminDashboard() {
 													<td><span className={toStatusClass(row.status)}>{row.status || "-"}</span></td>
 													<td>{formatDate(row.requestDate)}</td>
 													<td>
-														<div className="admin-head-actions">
+															<div className="admin-table-action-row">
 															<button
 																type="button"
 																className="admin-table-btn admin-table-btn--mini admin-table-btn--view"
@@ -6102,8 +6144,8 @@ export default function AdminDashboard() {
 						</>
 					) : soeTab === "requested" ? (
 						<>
-							<div className="admin-table-wrap">
-								<table className="admin-management-table admin-management-table--roomy">
+							<div className="admin-table-wrap admin-table-wrap--requirements">
+								<table className="admin-management-table admin-management-table--roomy admin-requirements-table">
 									<thead>
 										<tr>
 											<th>Application No.</th>
@@ -6151,8 +6193,8 @@ export default function AdminDashboard() {
 						</>
 					) : (
 						<>
-							<div className="admin-table-wrap">
-								<table className="admin-management-table admin-management-table--roomy">
+							<div className="admin-table-wrap admin-table-wrap--requirements">
+								<table className="admin-management-table admin-management-table--roomy admin-requirements-table">
 									<thead>
 										<tr>
 											<th>SOE Request No.</th>
