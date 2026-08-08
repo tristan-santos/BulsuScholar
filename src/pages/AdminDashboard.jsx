@@ -7555,20 +7555,24 @@ export default function AdminDashboard() {
 			) : null}
 
 			{selectedSoeReviewRow ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={() => setSelectedSoeReviewId("")}>
-					<div className="admin-detail-shell admin-detail-shell--review" onClick={(event) => event.stopPropagation()}>
+				<div className="admin-detail-backdrop admin-detail-backdrop--soe-review" role="presentation" onClick={() => setSelectedSoeReviewId("")}>
+					<div className="admin-detail-shell admin-detail-shell--review admin-detail-shell--soe-review" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="admin-detail-close" onClick={() => setSelectedSoeReviewId("")}>
 							<HiX />
 						</button>
 						<div
-							className="admin-detail-modal admin-detail-modal--review"
+							className="admin-detail-modal admin-detail-modal--review admin-detail-modal--soe-review"
 							role="dialog"
 							aria-modal="true"
 							aria-label={isSelectedSoeDownloadReview ? "SOE checking review" : "Materials request review"}
 						>
 							<div className="admin-detail-info">
 								<div className="admin-soe-review-head">
+									<span className="admin-review-modal-icon" aria-hidden="true">
+										{isSelectedSoeDownloadReview ? <HiOutlineEye /> : <HiOutlineCheckCircle />}
+									</span>
 									<div>
+										<span>{isSelectedSoeDownloadReview ? "SOE Verification" : "Requirements Review"}</span>
 										<h3>{isSelectedSoeDownloadReview ? "SOE Checking Review" : "Requirements Request Review"}</h3>
 										<p className="admin-detail-meta">
 											{isSelectedSoeDownloadReview
