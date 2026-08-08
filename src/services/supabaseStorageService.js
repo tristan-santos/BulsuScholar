@@ -73,7 +73,15 @@ export async function uploadToSupabaseStorage(file, options = {}) {
 		upsert: false,
 		contentType: file.type || undefined,
 	})
-	if (error) throw error
+	if (error) {
+		const message = String(error?.message || "")
+		if (message.toLowerCase().includes("row-level security")) {
+			throw new Error(
+				"storage_policy_missing: Supabase Storage blocked the upload. Run supabase/storage-policies.sql for the bulsuscholar bucket.",
+			)
+		}
+		throw error
+	}
 
 	const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(data.path)
 	return {
