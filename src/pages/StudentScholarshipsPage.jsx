@@ -245,6 +245,21 @@ function toJsDate(value) {
 	return Number.isNaN(date.getTime()) ? null : date
 }
 
+function getStudentFullName(userData = {}) {
+	return (
+		userData.fullName ||
+		userData.name ||
+		[userData.fname || userData.firstName, userData.mname || userData.middleName, userData.lname || userData.lastName]
+			.filter(Boolean)
+			.join(" ")
+			.trim() ||
+		userData.studentName ||
+		userData.studentnumber ||
+		userData.studentId ||
+		"Student"
+	)
+}
+
 function addMonths(date, months) {
 	const next = new Date(date)
 	next.setMonth(next.getMonth() + months)
@@ -406,8 +421,8 @@ export default function StudentScholarshipsPage() {
 	const applicationLockTooltip =
 		"You already have an existing scholarship application. You cannot apply for another until the current one is resolved."
 	const isValidated = checkValidated(user)
-	const avatarUrl = user?.profileImageUrl || ""
-	const studentNumber = userId
+	const _avatarUrl = user?.profileImageUrl || ""
+	const _studentNumber = userId
 	const studentAccessState = useMemo(() => getStudentAccessState(user || {}), [user])
 	const hasComplianceBlock = studentAccessState.soeComplianceBlocked
 	const hasScholarshipActionBlock = studentAccessState.isScholarshipActionBlocked
@@ -439,12 +454,12 @@ export default function StudentScholarshipsPage() {
 			return lookup
 		}, {})
 	}, [blockedGrantorPortals])
-	const announcementFocusProviderType = useMemo(
+	const _announcementFocusProviderType = useMemo(
 		() => String(location.state?.focusProviderType || "").trim(),
 		[location.state],
 	)
 
-	const getUserInitials = () => {
+	const _getUserInitials = () => {
 		const f = user?.fname?.[0]?.toUpperCase() || ""
 		const l = user?.lname?.[0]?.toUpperCase() || ""
 		return f + l || "ST"
@@ -474,7 +489,6 @@ export default function StudentScholarshipsPage() {
 			canResolveMultipleScholarshipConflict,
 			portalAccessBlockMessage,
 			scholarshipActionBlockMessage,
-			studentAccessState.accountAccessBlocked,
 			studentAccessState.isPortalAccessBlocked,
 			studentAccessState.scholarshipEligibilityBlocked,
 			studentAccessState.soeComplianceBlocked,
@@ -1413,7 +1427,7 @@ export default function StudentScholarshipsPage() {
 		}
 	}
 
-	const applyScholarship = async (catalogItem) => {
+	const _applyScholarship = async (catalogItem) => {
 		if (!user || !userId || isMutating) return
 		if (isScholarshipActionBlocked()) return
 		const rejectedMatch = getRejectedCooldownForTarget(catalogItem)
@@ -1693,9 +1707,16 @@ export default function StudentScholarshipsPage() {
 							applicationNumber:
 								selected.applicationNumber || selected.requestNumber || selected.id,
 							studentId: userId,
+							studentName: getStudentFullName(user),
+							fullName: getStudentFullName(user),
 							scholarshipId: selected.id,
 							scholarshipName: selected.name,
+							grantorId: selected.grantorId || selected.matchedGrantorId || "",
+							grantorName: selected.grantorName || selected.matchedGrantorName || selected.provider || "",
 							providerType: selected.providerType,
+							materialKey,
+							materialLabel: materialConfig.label,
+							requestType: materialConfig.label,
 							timestamp: serverTimestamp(),
 							status: "Pending",
 							reviewState: "incoming",

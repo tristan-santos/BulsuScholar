@@ -50,7 +50,7 @@ def get_document_urls_for_student(student: dict[str, Any] | None = None) -> dict
 
     return {
         "cor": first_url(["corFile", "corDocument", "cor"]),
-        "cog": first_url(["cogFile", "cogDocument", "cog"]),
+        "cog": first_url(["rogFile", "cogFile", "rogDocument", "cogDocument", "rog", "cog"]),
         "schoolId": first_url(["schoolIdFile", "studentIdFile", "validIdFile", "idFile"]),
         "applicationForm": first_url(["scholarshipApplicationFile", "applicationFormFile", "scholarshipFormFile"]),
     }
@@ -62,7 +62,15 @@ def validate_scholarship_documents(student: dict[str, Any] | None = None, provid
     missing: list[str] = []
     expired: list[str] = []
     cor = student.get("corFile") or student.get("corDocument") or student.get("cor") or {}
-    cog = student.get("cogFile") or student.get("cogDocument") or student.get("cog") or {}
+    cog = (
+        student.get("rogFile")
+        or student.get("cogFile")
+        or student.get("rogDocument")
+        or student.get("cogDocument")
+        or student.get("rog")
+        or student.get("cog")
+        or {}
+    )
 
     if not isinstance(cor, dict) or not cor.get("url"):
         missing.append("COR")
@@ -70,9 +78,9 @@ def validate_scholarship_documents(student: dict[str, Any] | None = None, provid
         expired.append("COR")
 
     if not isinstance(cog, dict) or not cog.get("url"):
-        missing.append("COG")
+        missing.append("ROG")
     elif cog.get("semesterTag") and cog.get("semesterTag") != semester_tag:
-        expired.append("COG")
+        expired.append("ROG")
 
     return {
         "ok": len(missing) == 0 and len(expired) == 0,

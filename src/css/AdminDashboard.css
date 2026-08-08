@@ -15890,3 +15890,252 @@
 		padding-right: 3rem;
 	}
 }
+
+/* Final admin table compact polish */
+.admin-portal .admin-table-wrap,
+.admin-portal .admin-log-table-wrap,
+.admin-portal .admin-report-table-scroll {
+	width: 100%;
+	overflow-x: auto;
+}
+
+.admin-portal .admin-management-table,
+.admin-portal .admin-grantor-table,
+.admin-portal .admin-scholarship-table,
+.admin-portal .admin-requirements-table,
+.admin-portal .admin-log-table {
+	table-layout: fixed;
+	border-collapse: collapse;
+}
+
+.admin-portal .admin-requirements-table,
+.admin-portal .admin-scholarship-table--tracking,
+.admin-portal .admin-management-table--preview,
+.admin-portal .admin-log-table {
+	min-width: 1040px;
+}
+
+.admin-portal .admin-management-table thead th,
+.admin-portal .admin-grantor-table thead th,
+.admin-portal .admin-scholarship-table thead th,
+.admin-portal .admin-requirements-table thead th,
+.admin-portal .admin-log-table thead th {
+	padding: 0.56rem 0.82rem !important;
+	overflow: hidden;
+	background: #fff;
+	color: #06231b;
+	font-size: 0.72rem !important;
+	font-weight: 650 !important;
+	letter-spacing: 0;
+	line-height: 1.25;
+	text-align: center;
+	text-overflow: ellipsis;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.admin-portal .admin-management-table tbody td,
+.admin-portal .admin-grantor-table tbody td,
+.admin-portal .admin-scholarship-table tbody td,
+.admin-portal .admin-requirements-table tbody td,
+.admin-portal .admin-log-table tbody td {
+	padding: 0.58rem 0.82rem !important;
+	overflow: hidden;
+	color: #0f2137;
+	font-size: 0.78rem !important;
+	font-weight: 500;
+	line-height: 1.35;
+	text-align: center;
+	text-overflow: ellipsis;
+	vertical-align: middle;
+	white-space: nowrap;
+}
+
+.admin-portal .admin-management-table tbody td > span:not(.admin-status-badge):not(.admin-student-status),
+.admin-portal .admin-grantor-table tbody td > span:not(.admin-status-badge):not(.admin-student-status),
+.admin-portal .admin-scholarship-table tbody td > span:not(.admin-status-badge):not(.admin-student-status),
+.admin-portal .admin-requirements-table tbody td > span:not(.admin-status-badge):not(.admin-student-status),
+.admin-portal .admin-log-table tbody td > span:not(.admin-status-badge):not(.admin-student-status) {
+	display: block;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-portal .admin-management-table th:first-child,
+.admin-portal .admin-management-table td:first-child,
+.admin-portal .admin-grantor-table th:first-child,
+.admin-portal .admin-grantor-table td:first-child,
+.admin-portal .admin-scholarship-table th:first-child,
+.admin-portal .admin-scholarship-table td:first-child {
+	width: 46px;
+	max-width: 46px;
+	overflow: visible;
+}
+
+.admin-portal .admin-management-table th:last-child,
+.admin-portal .admin-management-table td:last-child,
+.admin-portal .admin-grantor-table th:last-child,
+.admin-portal .admin-grantor-table td:last-child,
+.admin-portal .admin-scholarship-table th:last-child,
+.admin-portal .admin-scholarship-table td:last-child,
+.admin-portal .admin-requirements-table th:last-child,
+.admin-portal .admin-requirements-table td:last-child {
+	width: 116px;
+	max-width: 116px;
+	overflow: visible;
+}
+
+.admin-portal .admin-requirements-table th:nth-child(1),
+.admin-portal .admin-requirements-table td:nth-child(1),
+.admin-portal .admin-requirements-table th:nth-child(2),
+.admin-portal .admin-requirements-table td:nth-child(2) {
+	width: 132px;
+}
+
+.admin-portal .admin-requirements-table th:nth-child(3),
+.admin-portal .admin-requirements-table td:nth-child(3),
+.admin-portal .admin-requirements-table th:nth-child(4),
+.admin-portal .admin-requirements-table td:nth-child(4) {
+	width: 180px;
+}
+
+.admin-portal .admin-table-action-row,
+.admin-portal .admin-grantor-row-actions {
+	justify-content: center;
+	gap: 0.35rem;
+	min-width: 0;
+}
+
+.admin-portal .admin-table-btn,
+.admin-portal .admin-student-action-btn {
+	min-height: 32px !important;
+	min-width: 76px;
+	padding: 0.36rem 0.62rem !important;
+	border-radius: 6px;
+	font-size: 0.72rem !important;
+	font-weight: 650;
+	white-space: nowrap;
+}
+
+.admin-portal .admin-table-btn svg,
+.admin-portal .admin-student-action-btn svg {
+	width: 0.88rem;
+	height: 0.88rem;
+	flex: 0 0 auto;
+}
+
+.admin-portal .admin-status-badge,
+.admin-portal .admin-student-status {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	max-width: 100%;
+	overflow: hidden;
+	gap: 0.38rem;
+	padding: 0 !important;
+	border: 0 !important;
+	background: transparent !important;
+	font-size: 0.76rem !important;
+	font-weight: 650 !important;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-portal .admin-management-table input[type="checkbox"],
+.admin-portal .admin-grantor-table input[type="checkbox"],
+.admin-portal .admin-scholarship-table input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	margin: 0 auto;
+}
+
+.admin-portal--dark .admin-management-table thead th,
+.admin-portal--dark .admin-grantor-table thead th,
+.admin-portal--dark .admin-scholarship-table thead th,
+.admin-portal--dark .admin-requirements-table thead th,
+.admin-portal--dark .admin-log-table thead th {
+	background: #101a16;
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-management-table tbody td,
+.admin-portal--dark .admin-grantor-table tbody td,
+.admin-portal--dark .admin-scholarship-table tbody td,
+.admin-portal--dark .admin-requirements-table tbody td,
+.admin-portal--dark .admin-log-table tbody td {
+	color: #d8eee4;
+}
+
+/* Catch-all for admin tables that are introduced outside the main table classes. */
+.admin-portal table {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+
+.admin-portal table thead th {
+	padding: 0.56rem 0.82rem;
+	overflow: hidden;
+	color: #06231b;
+	font-size: 0.72rem;
+	font-weight: 650;
+	letter-spacing: 0;
+	line-height: 1.25;
+	text-align: center;
+	text-overflow: ellipsis;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.admin-portal table tbody td {
+	padding: 0.58rem 0.82rem;
+	overflow: hidden;
+	color: #0f2137;
+	font-size: 0.78rem;
+	font-weight: 500;
+	line-height: 1.35;
+	text-align: center;
+	text-overflow: ellipsis;
+	vertical-align: middle;
+	white-space: nowrap;
+}
+
+.admin-portal table tbody td > *:not(button):not(input):not(select):not(textarea):not(.admin-status-badge):not(.admin-student-status) {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-portal .admin-scholar-import-table th,
+.admin-portal .admin-scholar-import-table td {
+	padding: 0.52rem 0.74rem !important;
+}
+
+.admin-portal .admin-scholar-import-table th:first-child,
+.admin-portal .admin-scholar-import-table td:first-child {
+	width: 44px;
+	max-width: 44px;
+	overflow: visible;
+}
+
+.admin-portal .admin-scholar-import-table th:nth-child(2),
+.admin-portal .admin-scholar-import-table td:nth-child(2) {
+	width: 185px;
+	max-width: 185px;
+}
+
+.admin-portal .admin-scholar-import-table select,
+.admin-portal .admin-scholar-import-table button {
+	max-width: 100%;
+}
+
+.admin-portal--dark table thead th {
+	color: #e2e8f0;
+}
+
+.admin-portal--dark table tbody td {
+	color: #d8eee4;
+}

@@ -794,7 +794,6 @@ def extract_semester(text: str) -> dict[str, str]:
 
 
 def extract_flags(text: str, final_grade_debug: dict[str, Any] | None = None) -> dict[str, Any]:
-    gwa_debug = extract_gwa_result(text)
     final_grade_debug = final_grade_debug or extract_final_grades_from_text(text)
     return {
         "hasAcademicConcern": len(final_grade_debug["concernMatches"]) > 0,
@@ -802,15 +801,6 @@ def extract_flags(text: str, final_grade_debug: dict[str, Any] | None = None) ->
             "Failed remark" if "Failed" in match.get("reason", "") else match["grade"]
             for match in final_grade_debug["concernMatches"]
         ],
-        "gradeDebug": {
-            "grades": final_grade_debug["grades"],
-            "computedAverage": "",
-            "concernMatches": final_grade_debug["concernMatches"],
-            "rowDebug": final_grade_debug["rowDebug"],
-            "extractionMethod": final_grade_debug["extractionMethod"],
-            "explanation": final_grade_debug["explanation"],
-        },
-        "gwaDebug": gwa_debug,
     }
 
 
@@ -824,28 +814,20 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
     )
     name = extract_name(text)
     semester = extract_semester(text)
-    flags = extract_flags(text, final_grade_debug) if document_type.lower() == "cog" else {
+    normalized_document_type = document_type.lower()
+    is_rog_document = normalized_document_type in {"cog", "rog"}
+    flags = extract_flags(text, final_grade_debug) if is_rog_document else {
         "hasAcademicConcern": False,
         "academicConcernTerms": [],
-        "gradeDebug": {
-            "grades": [],
-            "computedAverage": "",
-            "concernMatches": [],
-            "rowDebug": [],
-            "extractionMethod": "not applied",
-            "explanation": "Final Grade concern detection is applied only to ROG documents.",
-        },
-        "gwaDebug": extract_gwa_result(text),
     }
-    normalized_document_type = document_type.lower()
     title_check = {}
     if normalized_document_type == "cor":
         title_check = detect_cor_document_title(text)
-    elif normalized_document_type == "cog":
+    elif is_rog_document:
         title_check = detect_cog_document_title(text)
 
     return {
-        "documentType": document_type,
+        "documentType": "rog" if is_rog_document else document_type,
         "studentId": student_id.replace("-", ""),
         "firstName": name["firstName"],
         "middleName": name["middleName"],
@@ -858,14 +840,13 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
         **semester,
         **flags,
         **title_check,
-        "rawTextPreview": normalize_space(text)[:1200],
     }
 
 
 def parse_pdf_document(file_bytes: bytes, document_type: str) -> dict[str, Any]:
     text = extract_pdf_text(file_bytes)
     final_grade_debug = None
-    if document_type.lower() == "cog":
+    if document_type.lower() in {"cog", "rog"}:
         table_grade_debug = extract_final_grades_from_pdf_tables(file_bytes)
         if table_grade_debug.get("grades"):
             final_grade_debug = table_grade_debug

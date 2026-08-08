@@ -334,7 +334,7 @@ function normalizeMatchValue(value = "") {
 		.trim()
 }
 
-function normalizeIdentifier(value = "") {
+function _normalizeIdentifier(value = "") {
 	return normalizeMatchValue(value).replace(/\s+/g, "")
 }
 
@@ -364,15 +364,15 @@ export function levenshteinSimilarity(leftValue = "", rightValue = "") {
 	return 1 - distances[right.length] / Math.max(left.length, right.length)
 }
 
-function tokenSortedValue(value = "") {
+function _tokenSortedValue(value = "") {
 	return normalizeMatchValue(value).split(/\s+/).filter(Boolean).sort().join(" ")
 }
 
-function scholarFullName(raw = {}) {
+function _scholarFullName(raw = {}) {
 	return raw.fullName || [raw.fname, raw.mname, raw.lname].filter(Boolean).join(" ")
 }
 
-function comparableSimilarity(left, right, normalizer = normalizeMatchValue) {
+function _comparableSimilarity(left, right, normalizer = normalizeMatchValue) {
 	const normalizedLeft = normalizer(left)
 	const normalizedRight = normalizer(right)
 	if (!normalizedLeft || !normalizedRight) return null

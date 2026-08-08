@@ -2378,6 +2378,8 @@ export default function ProviderDashboard() {
 		autoConfirmationResolutionRef.current = key
 		toast.info(`The 3-day ${formatApplicationDecisionLabel(pendingDecision.decision).toLowerCase()} confirmation window expired. Applying it automatically.`)
 		void handleConfirmPendingApplicationDecision({ automatic: true })
+		// The confirmation handler intentionally uses the current modal state.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [applicationModalState.open, applicationModalState.application, busy])
 
 	const handleCreateScholar = async () => {

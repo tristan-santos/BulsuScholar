@@ -226,7 +226,7 @@ function getFirstValidDocument(student = {}, keys = []) {
 
 export function getDocumentUrlsForStudent(student = {}) {
 	const cor = getFirstValidDocument(student, ["corFile", "corDocument", "cor"])
-	const cog = getFirstValidDocument(student, ["cogFile", "cogDocument", "cog"])
+	const cog = getFirstValidDocument(student, ["rogFile", "cogFile", "rogDocument", "cogDocument", "rog", "cog"])
 	const schoolId = getFirstValidDocument(student, [
 		"schoolIdFile",
 		"studentIdFile",
@@ -247,13 +247,13 @@ export function getDocumentUrlsForStudent(student = {}) {
 	}
 }
 
-export function validateScholarshipDocuments(student = {}, provider = "") {
+export function validateScholarshipDocuments(student = {}) {
 	const semesterTag = getCurrentSemesterTag()
 	const missing = []
 	const expired = []
 
 	const cor = getFirstValidDocument(student, ["corFile", "corDocument", "cor"])
-	const cog = getFirstValidDocument(student, ["cogFile", "cogDocument", "cog"])
+	const cog = getFirstValidDocument(student, ["rogFile", "cogFile", "rogDocument", "cogDocument", "rog", "cog"])
 	if (!cor?.url) {
 		missing.push("COR")
 	} else if (cor.semesterTag && cor.semesterTag !== semesterTag) {

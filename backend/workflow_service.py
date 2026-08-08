@@ -246,16 +246,35 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
         else:
             results.append(supabase_document_update(table, record_id, data))
     notification = None
-    request_insert = next((item.get("data") or {} for item in inserts if item.get("table") in {"soe_requests", "soeRequests"}), None)
+    grantor_notification = None
+    request_change = next(
+        (
+            item
+            for item in [*inserts, *updates]
+            if item.get("table") in {"soe_requests", "soeRequests"}
+        ),
+        None,
+    )
+    request_insert = request_change.get("data") if request_change else None
     if request_insert:
         student_name = request_insert.get("fullName") or request_insert.get("studentName") or request_insert.get("studentId") or "A student"
         material_label = request_insert.get("materialLabel") or request_insert.get("requestType") or "scholarship material"
+        request_number = request_insert.get("requestNumber") or request_insert.get("applicationNumber") or ""
+        scholarship_name = request_insert.get("scholarshipName") or request_insert.get("providerType") or "a scholarship"
+        grantor_id = request_insert.get("grantorId") or request_insert.get("matchedGrantorId") or ""
+        grantor_name = request_insert.get("grantorName") or request_insert.get("matchedGrantorName") or ""
         notification = create_admin_notification({
             "type": "material_request",
             "title": "New Material Request",
-            "message": f"{student_name} requested {material_label}.",
+            "message": f"{student_name} requested {material_label} for {scholarship_name}.",
             "studentId": request_insert.get("studentId") or "",
-            "requestNumber": request_insert.get("requestNumber") or "",
+            "studentName": student_name,
+            "requestNumber": request_number,
+            "applicationNumber": request_insert.get("applicationNumber") or request_number,
+            "scholarshipName": scholarship_name,
+            "grantorId": grantor_id,
+            "grantorName": grantor_name,
+            "materialLabel": material_label,
             "route": "/admin/requirements",
             "actorType": "student",
             "actorId": request_insert.get("studentId") or "",
@@ -263,6 +282,26 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
             "archived": False,
             "createdAt": utc_now_iso(),
         })
+        if grantor_id:
+            grantor_notification = create_grantor_notification({
+                "grantorId": grantor_id,
+                "type": "material_request",
+                "title": "New Material Request",
+                "message": f"{student_name} requested {material_label} for {scholarship_name}.",
+                "studentId": request_insert.get("studentId") or "",
+                "studentName": student_name,
+                "requestNumber": request_number,
+                "applicationNumber": request_insert.get("applicationNumber") or request_number,
+                "scholarshipId": request_insert.get("scholarshipId") or "",
+                "scholarshipName": scholarship_name,
+                "materialLabel": material_label,
+                "route": "/provider-dashboard/applications",
+                "actorType": "student",
+                "actorId": request_insert.get("studentId") or "",
+                "read": False,
+                "archived": False,
+                "createdAt": utc_now_iso(),
+            })
     log_result = create_log({
         "action": "material_request_updated",
         "actorId": (request_insert or {}).get("studentId") or payload.get("actorId") or "",
@@ -271,7 +310,13 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
         "details": {"inserts": len(inserts), "updates": len(updates)},
         "createdAt": utc_now_iso(),
     })
-    return {"ok": all(item.get("ok") for item in results), "results": results, "adminNotification": notification, "log": log_result}
+    return {
+        "ok": all(item.get("ok") for item in results),
+        "results": results,
+        "adminNotification": notification,
+        "grantorNotification": grantor_notification,
+        "log": log_result,
+    }
 
 
 def create_grantor_scholars(payload: dict[str, Any]) -> dict[str, Any]:

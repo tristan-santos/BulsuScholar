@@ -36,7 +36,10 @@ def normalize_email(value: Any = "") -> str:
 
 
 def normalize_cp(value: Any = "") -> str:
-    return re.sub(r"\D+", "", str(value or ""))
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if re.fullmatch(r"9\d{9}", digits):
+        return f"0{digits}"
+    return digits
 
 
 def normalize_student_id(value: Any = "") -> str:
@@ -81,6 +84,64 @@ def build_semester_tag(document_scan: dict[str, Any]) -> str:
     if not academic_year or not semester:
         return ""
     return f"{academic_year}-{semester}"
+
+
+def compact_document_scan(scan: dict[str, Any] | None, file_payload: dict[str, Any] | None = None, document_type: str = "") -> dict[str, Any] | None:
+    if not isinstance(scan, dict):
+        return None
+    return {
+        "documentType": document_type or scan.get("documentType") or "",
+        "isValid": True,
+        "fileUrl": (file_payload or {}).get("url") or scan.get("fileUrl") or "",
+        "fileName": (file_payload or {}).get("name") or scan.get("fileName") or "",
+        "filePath": (file_payload or {}).get("path") or scan.get("filePath") or "",
+        "studentId": scan.get("studentId") or "",
+        "fullName": scan.get("fullName") or "",
+        "firstName": scan.get("firstName") or "",
+        "lastName": scan.get("lastName") or "",
+        "course": scan.get("course") or "",
+        "year": scan.get("year") or "",
+        "section": scan.get("section") or "",
+        "gwa": scan.get("gwa") or "",
+        "academicYear": scan.get("academicYear") or "",
+        "semester": scan.get("semester") or "",
+        "semesterTag": build_semester_tag(scan) or scan.get("semesterTag") or "",
+        "hasAcademicConcern": bool(scan.get("hasAcademicConcern")),
+        "scannedAt": scan.get("scannedAt") or utc_now_iso(),
+    }
+
+
+def sanitize_student_payload(student: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(student or {})
+    for duplicate_key in [
+        "password",
+        "first_name",
+        "middle_name",
+        "last_name",
+        "user_type",
+        "auth_user_id",
+        "contact_number",
+        "year_level",
+    ]:
+        sanitized.pop(duplicate_key, None)
+
+    if sanitized.get("cogFile") and not sanitized.get("rogFile"):
+        sanitized["rogFile"] = sanitized.get("cogFile")
+    sanitized.pop("cogFile", None)
+
+    document_scan = sanitized.get("documentScan") or {}
+    if isinstance(document_scan, dict):
+        cor_scan = document_scan.get("cor") or {}
+        rog_scan = document_scan.get("rog") or document_scan.get("cog") or {}
+        sanitized["documentScan"] = {
+            "cor": compact_document_scan(cor_scan, sanitized.get("corFile"), "cor"),
+            "rog": compact_document_scan(rog_scan, sanitized.get("rogFile"), "rog"),
+        }
+
+    sanitized["cpNumber"] = normalize_cp(sanitized.get("cpNumber"))
+    sanitized["studentnumber"] = normalize_student_id(sanitized.get("studentnumber") or sanitized.get("studentId") or sanitized.get("id"))
+    sanitized.pop("studentId", None)
+    return sanitized
 
 
 def expected_previous_rog_year_level(cor_year: Any = "", current_tag: str = "") -> str:
@@ -129,7 +190,7 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     cor = payload.get("cor") or {}
     document_scan = student.get("documentScan") or {}
     cor_scan = document_scan.get("cor") or {}
-    rog_scan = document_scan.get("cog") or {}
+    rog_scan = document_scan.get("rog") or document_scan.get("cog") or {}
 
     email = normalize_email(student.get("email"))
     cp_number = normalize_cp(student.get("cpNumber"))
@@ -208,10 +269,19 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "reason": "email_check_failed", "result": email_owner}
         return {"ok": False, "reason": "email_exists", "table": email_owner["table"]}
 
-    cp_owner = first_existing_record([
-        ("students", {"contact_number": cp_number}),
-        ("pending_students", {"contact_number": cp_number}),
-    ])
+    cp_lookup_values = [cp_number]
+    if cp_number.startswith("0"):
+        cp_lookup_values.append(cp_number[1:])
+    elif re.fullmatch(r"9\d{9}", cp_number):
+        cp_lookup_values.append(f"0{cp_number}")
+    cp_owner = None
+    for cp_lookup in dict.fromkeys(value for value in cp_lookup_values if value):
+        cp_owner = first_existing_record([
+            ("students", {"contact_number": cp_lookup}),
+            ("pending_students", {"contact_number": cp_lookup}),
+        ])
+        if cp_owner:
+            break
     if cp_owner:
         if cp_owner.get("error"):
             return {"ok": False, "reason": "cp_check_failed", "result": cp_owner}
@@ -265,7 +335,7 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         return validation
 
     student_id = validation["studentId"]
-    student = dict(payload.get("student") or {})
+    student = sanitize_student_payload(dict(payload.get("student") or {}))
     auth = payload.get("auth") or {}
     is_auto_verified = payload.get("isAutoVerified", True)
     auth_result = None
@@ -308,14 +378,10 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     usage_payload = {
         "id": f"{student_id}_{cor.get('academicYear') or 'unknown'}_{cor.get('semester') or 'unknown'}",
         "studentId": student_id,
-        "student_id": student_id,
         "accountId": student_id,
-        "account_id": student_id,
         "academicYear": cor.get("academicYear") or "",
-        "academic_year": cor.get("academicYear") or "",
         "semester": cor.get("semester") or "",
         "corHash": cor.get("hash") or "",
-        "cor_hash": cor.get("hash") or "",
         "createdAt": utc_now_iso(),
     }
     if cor.get("hash") or (cor.get("academicYear") and cor.get("semester")):

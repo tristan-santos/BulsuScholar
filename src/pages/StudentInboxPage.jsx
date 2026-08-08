@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
 	collection,
@@ -231,7 +231,9 @@ export default function StudentInboxPage() {
 
 	useEffect(() => {
 		if (!sessionState.storedUserId) return undefined
-		setReadAnnouncementIds(loadReadAnnouncementIds(sessionState.storedUserId))
+		const syncReadIds = window.setTimeout(() => {
+			setReadAnnouncementIds(loadReadAnnouncementIds(sessionState.storedUserId))
+		}, 0)
 		let notificationRows = []
 		let warningRows = []
 		const updateInboxNotifications = () => {
@@ -268,6 +270,7 @@ export default function StudentInboxPage() {
 			},
 		)
 		return () => {
+			window.clearTimeout(syncReadIds)
 			unsubscribeNotifications()
 			unsubscribeWarnings()
 		}
@@ -362,17 +365,6 @@ export default function StudentInboxPage() {
 			})
 			.filter(Boolean)
 	}, [selectedNotification])
-	const avatarUrl = user?.profileImageUrl || ""
-	const userInitials = `${user?.fname?.[0]?.toUpperCase() || ""}${user?.lname?.[0]?.toUpperCase() || ""}` || "ST"
-	const fullName = [user?.fname, user?.mname, user?.lname].filter(Boolean).join(" ") || "Student"
-	const studentEmail = user?.email ? String(user.email).trim().toLowerCase() : "Student account"
-
-	const handleLogout = useCallback(() => {
-		sessionStorage.removeItem("bulsuscholar_userId")
-		sessionStorage.removeItem("bulsuscholar_userType")
-		navigate("/", { replace: true })
-	}, [navigate])
-
 	const markNotificationRead = async (notification) => {
 		if (notification.source !== "personal" || !notification?.id || notification.read === true) return
 		try {

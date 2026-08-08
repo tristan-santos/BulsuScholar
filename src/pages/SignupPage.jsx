@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
 	HiOutlineMail,
@@ -301,16 +301,21 @@ export default function SignupPage() {
 
 	useEffect(() => {
 		let isCancelled = false
-		setBarangay("")
-		setBarangayOptions([])
-		setBarangayError("")
+		const resetBarangayState = window.setTimeout(() => {
+			setBarangay("")
+			setBarangayOptions([])
+			setBarangayError("")
+		}, 0)
 
 		if (!province || !city) {
-			setBarangayLoading(false)
-			return undefined
+			const stopLoading = window.setTimeout(() => setBarangayLoading(false), 0)
+			return () => {
+				window.clearTimeout(resetBarangayState)
+				window.clearTimeout(stopLoading)
+			}
 		}
 
-		setBarangayLoading(true)
+		const startLoading = window.setTimeout(() => setBarangayLoading(true), 0)
 		getBarangaysByLocation(province, city)
 			.then((options) => {
 				if (isCancelled) return
@@ -330,6 +335,8 @@ export default function SignupPage() {
 
 		return () => {
 			isCancelled = true
+			window.clearTimeout(resetBarangayState)
+			window.clearTimeout(startLoading)
 		}
 	}, [province, city])
 
@@ -404,8 +411,12 @@ export default function SignupPage() {
 
 	const normalizeStudentNumber = (value = "") => String(value).replace(/\D/g, "")
 	const normalizeEmail = (value = "") => String(value || "").trim().toLowerCase()
-	const normalizeCpNumber = (value = "") => String(value || "").replace(/\D/g, "")
-	const isValidCpNumber = (value = "") => /^09\d{9}$/.test(normalizeCpNumber(value))
+	const normalizeCpNumber = (value = "") => {
+		const digits = String(value || "").replace(/\D/g, "")
+		if (/^9\d{9}$/.test(digits)) return `0${digits}`
+		return digits
+	}
+	const isValidCpNumber = useCallback((value = "") => /^09\d{9}$/.test(normalizeCpNumber(value)), [])
 	const getFileSha256 = async (file) => {
 		if (!file) return ""
 		const buffer = await file.arrayBuffer()
@@ -417,6 +428,30 @@ export default function SignupPage() {
 
 	const getTokenSortedName = (value = "") =>
 		normalizeIdentityText(value).split(" ").filter(Boolean).sort().join(" ")
+
+	const buildStoredDocumentScan = (scan = {}, filePayload = null, documentType = "cor") => {
+		if (!scan || typeof scan !== "object") return null
+		return {
+			documentType,
+			isValid: true,
+			fileUrl: filePayload?.url || "",
+			fileName: filePayload?.name || "",
+			filePath: filePayload?.path || "",
+			studentId: scan.studentId || "",
+			fullName: scan.fullName || "",
+			firstName: scan.firstName || "",
+			lastName: scan.lastName || "",
+			course: scan.course || "",
+			year: scan.year || "",
+			section: scan.section || "",
+			gwa: scan.gwa || "",
+			academicYear: scan.academicYear || "",
+			semester: scan.semester || "",
+			semesterTag: buildSemesterTagFromScan(scan) || scan.semesterTag || "",
+			hasAcademicConcern: Boolean(scan.hasAcademicConcern),
+			scannedAt: new Date().toISOString(),
+		}
+	}
 
 	const getNameTokens = (value = "") =>
 		normalizeIdentityText(value).split(" ").filter(Boolean)
@@ -650,19 +685,15 @@ export default function SignupPage() {
 		if (!extracted || typeof extracted !== "object") return
 
 		const isCorScan = extracted.documentType === "cor"
-		const isCogScan = extracted.documentType === "cog"
+		const isCogScan = extracted.documentType === "cog" || extracted.documentType === "rog"
 		const fallbackName = splitNameParts(extracted.fullName)
 		const scannedFirstName = extracted.firstName || fallbackName.firstName
 		const scannedLastName = extracted.lastName || fallbackName.lastName
-		const scannedYearIsReliable = /\b(?:Year\s*(?:Level)?\s*(?:\/|&|and)?\s*Section|Yr\s*\/\s*Sec|[1-6](?:st|nd|rd|th)\s+Year)\b/i.test(
-			String(extracted.rawTextPreview || ""),
-		)
-
 		if (extracted.studentId && (!userId.trim() || isCorScan)) setUserId(extracted.studentId)
 		if (scannedFirstName && (!fname.trim() || isCorScan)) setFname(scannedFirstName)
 		if (scannedLastName && (!lname.trim() || isCorScan)) setLname(scannedLastName)
 		if (extracted.course && (!course || isCorScan)) setCourse(extracted.course)
-		if (isCorScan && extracted.year && scannedYearIsReliable) setYear(String(extracted.year))
+		if (isCorScan && extracted.year) setYear(String(extracted.year))
 		if (extracted.gwa && (!gwa.trim() || isCogScan)) setGwa(extracted.gwa)
 
 		if (isCorScan && Array.isArray(extracted.academicConcernTerms) && extracted.academicConcernTerms.length > 0) {
@@ -674,8 +705,6 @@ export default function SignupPage() {
 
 	const logDocumentScanResult = (documentType, extracted = {}, identityCheck = null) => {
 		const label = `${documentType === "cog" ? "ROG" : documentType.toUpperCase()} document scan`
-		const gradeDebug = extracted?.gradeDebug || {}
-		const gwaDebug = extracted?.gwaDebug || {}
 
 		console.groupCollapsed(`[BulsuScholar] ${label}`)
 		console.log("Autofill fields gathered:", {
@@ -693,6 +722,8 @@ export default function SignupPage() {
 			gwa: extracted?.gwa || "",
 			academicYear: extracted?.academicYear || "",
 			semester: extracted?.semester || "",
+			hasAcademicConcern: Boolean(extracted?.hasAcademicConcern),
+			academicConcernTerms: extracted?.academicConcernTerms || [],
 		})
 		if (documentType === "cor") {
 			console.log("COR title validation:", {
@@ -712,41 +743,7 @@ export default function SignupPage() {
 				rule: extracted?.documentTitleRule || "ROG must contain Report of Grades.",
 			})
 		}
-		console.log("Raw OCR preview:", extracted?.rawTextPreview || "")
-		console.log(
-			"ROG reading rule:",
-			gradeDebug.explanation ||
-				"ROG scanning extracts only identity fields and the printed GWA.",
-		)
-		console.log(
-			"GWA extraction method:",
-			gradeDebug.extractionMethod || "header-anchored Final Grade column extraction",
-		)
-		if (documentType === "cog") {
-			console.log("[BulsuScholar] PYTHON ROG CHECK RESULT:", {
-				hasAcademicConcern: extracted?.hasAcademicConcern,
-				academicConcernTerms: extracted?.academicConcernTerms || [],
-				extractionMethod: gradeDebug.extractionMethod || "",
-				finalGradesChecked: gradeDebug.grades || [],
-				concernMatches: gradeDebug.concernMatches || [],
-				rowDebug: gradeDebug.rowDebug || [],
-			})
-			console.log("Collected ROG Final Grades:", gradeDebug.grades || [])
-			console.log("ROG Final Grade row debug:", gradeDebug.rowDebug || [])
-			if (gradeDebug.concernMatches?.length) {
-				console.warn("ROG Final Grade concerns detected:", gradeDebug.concernMatches)
-			} else {
-				console.info("No ROG Final Grade concerns detected.")
-			}
-		}
 		console.log("Printed GWA detected:", extracted?.gwa || "Not detected")
-		console.log("GWA extraction debug:", {
-			value: gwaDebug.value || extracted?.gwa || "",
-			matchedRule: gwaDebug.matchedRule || "No GWA rule matched",
-			matchedText: gwaDebug.matchedText || "",
-			nearbyText: gwaDebug.nearbyText || "",
-			attemptedRules: gwaDebug.attemptedRules || [],
-		})
 		if (identityCheck) {
 			console.log("Identity matching algorithm:", identityCheck.algorithm)
 			console.table([{
@@ -834,7 +831,6 @@ export default function SignupPage() {
 					academicYear: extracted?.academicYear || "",
 					semester: extracted?.semester || "",
 					semesterTag: scannedSemesterTag,
-					rawTextPreview: extracted?.rawTextPreview || "",
 				},
 				corScan: extracted,
 			})
@@ -995,7 +991,7 @@ export default function SignupPage() {
 		setDocumentScanState((current) => ({ ...current, [documentType]: "scanning" }))
 		clearDocumentUploadError(documentType)
 		try {
-			const result = await scanStudentDocument(file, documentType)
+			const result = await scanStudentDocument(file, documentType === "cog" ? "rog" : documentType)
 			const extracted = result?.extracted || null
 			const identityCheck = documentType === "cog" ? validateCogIdentity(extracted) : null
 			setDocumentScanResult((current) => ({ ...current, [documentType]: extracted }))
@@ -1042,14 +1038,13 @@ export default function SignupPage() {
 			}
 
 			if (identityCheck && !identityCheck.passed) {
-				const message = "ROG identity does not match your COR/student information. Upload the correct ROG."
-				setCogFile(null)
-				setGwa("")
-				setDocumentScanResult((current) => ({ ...current, cog: null }))
-				setDocumentUploadError("cog", message)
-				toast.error(message)
-				setDocumentScanState((current) => ({ ...current, [documentType]: "error" }))
-				return
+				console.warn("ROG identity mismatch allowed for now. This will be tightened later with similarity-based name matching.", {
+					expected: identityCheck.expected,
+					scanned: identityCheck.scanned,
+					score: identityCheck.score,
+					threshold: identityCheck.threshold,
+					failedRules: identityCheck.failedRules || [],
+				})
 			}
 
 			if (documentType === "cog" && extracted?.hasAcademicConcern) {
@@ -1296,7 +1291,7 @@ export default function SignupPage() {
 			!!barangay.trim() &&
 			!!postalCode.trim()
 		)
-	}, [fname, lname, cpNumber, street, city, province, barangay, postalCode])
+	}, [fname, lname, cpNumber, street, city, province, barangay, postalCode, isValidCpNumber])
 
 	const isDocumentStageComplete = useMemo(() => {
 		return Boolean(corFile && (isCogOptional || (cogFile && gwa.trim())))
@@ -1496,6 +1491,10 @@ export default function SignupPage() {
 			if (!uniqueFieldsAreValid) return
 
 			const corHash = await getFileSha256(corFile)
+			const validationDocumentScan = {
+				cor: buildStoredDocumentScan(documentScanResult.cor, null, "cor"),
+				rog: buildStoredDocumentScan(documentScanResult.cog, null, "rog"),
+			}
 			await validateStudentSignupWorkflow({
 				studentId,
 				auth: {
@@ -1511,7 +1510,7 @@ export default function SignupPage() {
 					email: normalizedSignupEmail,
 					cpNumber: normalizedSignupCpNumber,
 					year,
-					documentScan: documentScanResult,
+					documentScan: validationDocumentScan,
 				},
 			})
 
@@ -1542,14 +1541,14 @@ export default function SignupPage() {
 				}
 			}
 
-			let cogFilePayload = null
+			let rogFilePayload = null
 			if (cogFile) {
 				try {
 					console.log("SignupPage: Uploading ROG file...")
 					const imageData = await uploadToStorage(cogFile, { folder: "ROG" })
-					const cogFileId = `${cogFile.name.replace(/\.[^/.]+$/, "")}_${studentId}`
-					cogFilePayload = {
-						id: cogFileId,
+					const rogFileId = `${cogFile.name.replace(/\.[^/.]+$/, "")}_${studentId}`
+					rogFilePayload = {
+						id: rogFileId,
 						name: imageData.name,
 						type: imageData.type,
 						size: imageData.size,
@@ -1558,12 +1557,17 @@ export default function SignupPage() {
 						bucket: imageData.bucket || "",
 						semesterTag,
 					}
-					console.log("SignupPage: ROG upload SUCCESS:", cogFilePayload.url, "ID:", cogFileId)
+					console.log("SignupPage: ROG upload SUCCESS:", rogFilePayload.url, "ID:", rogFileId)
 				} catch (uploadErr) {
 					console.error("SignupPage: ROG upload ERROR:", uploadErr)
 					toast.error("Failed to upload ROG file: " + uploadErr.message)
 					return
 				}
+			}
+
+			const storedDocumentScan = {
+				cor: buildStoredDocumentScan(documentScanResult.cor, corFilePayload, "cor"),
+				rog: buildStoredDocumentScan(documentScanResult.cog, rogFilePayload, "rog"),
 			}
 
 			const registrationDraft = {
@@ -1586,8 +1590,8 @@ export default function SignupPage() {
 				section: section.trim(),
 				gwa: gwa.trim(),
 				corFile: corFilePayload,
-				cogFile: cogFilePayload,
-				documentScan: documentScanResult,
+				rogFile: rogFilePayload,
+				documentScan: storedDocumentScan,
 				academicStatus: {
 					hasAcademicConcern,
 					concernTerms: academicConcernTerms,
@@ -1743,60 +1747,6 @@ export default function SignupPage() {
 			setIsPending(true)
 			return
 
-			if (isAutoVerified) {
-				await upsertStudent(
-					studentId,
-					{
-						...baseData,
-						isValidated: true,
-						isPending: false,
-						validatedAt: serverTimestamp(),
-						createdAt: serverTimestamp(),
-					},
-					{ merge: true },
-				)
-				console.log("SignupPage: Student document saved successfully to database")
-
-				// Only send confirmation email after successful signup with no errors
-				sendEmailNotification(
-					email.trim(),
-					`${fname.trim()} ${lname.trim()}`,
-					"Welcome to BulsuScholar!",
-					getWelcomeEmailBody(`${fname.trim()} ${lname.trim()}`, {
-						isAutoVerified,
-						dashboardUrl: `${APP_URL}/student/dashboard`,
-					}),
-				).catch((err) => console.error("Welcome email failed:", err))
-
-				toast.success(
-					"🎉 Congratulations! Your account has been successfully created.",
-				)
-				if (matchedScholarships.length === 1) {
-					toast.info(
-						`Matched grantor found: ${matchedScholarships[0].name}. Upload the required documents first before requesting materials.`,
-					)
-				} else if (matchedScholarships.length >= 2) {
-					toast.info(
-						"Multiple grantor matches were found. Choose one matched grantor in the scholarship section before requesting materials.",
-					)
-				}
-			} else {
-				await upsertStudent(
-					studentId,
-					{
-						...baseData,
-						isValidated: false,
-						isPending: true,
-						validatedAt: null,
-						createdAt: serverTimestamp(),
-					},
-					{ pending: true },
-				)
-				toast.success("📋 Your application has been submitted for review.")
-			}
-
-			setVerificationStatus(isAutoVerified ? "auto-verified" : "pending-review")
-			setIsPending(true)
 		} catch (err) {
 			console.error("Error saving student:", err)
 			const message = getSignupWorkflowErrorMessage(err)

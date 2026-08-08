@@ -43,7 +43,7 @@ const COURSES_WITH_MAJORS = new Set([
 	"Bachelor in Industrial Technology",
 ])
 
-function checkValidated(userData) {
+function _checkValidated(userData) {
 	if (!userData) return false
 	return Boolean(
 		userData.isValidated === true ||
@@ -130,7 +130,7 @@ function buildScannedName(extracted = {}) {
 	).trim()
 }
 
-function validateApplicationFormIdentity({ student = {}, studentId = "", extracted = {} }) {
+function _validateApplicationFormIdentity({ student = {}, studentId = "", extracted = {} }) {
 	const expectedStudentNumber = normalizeStudentNumber(
 		student?.studentnumber || student?.studentId || studentId,
 	)
@@ -260,7 +260,7 @@ export default function StudentProfilePage() {
 		return first + last || "ST"
 	}
 
-	const openPhotoLightbox = () => {
+	const _openPhotoLightbox = () => {
 		if (!profileImageUrl) return
 		setIsLightboxOpen(true)
 	}

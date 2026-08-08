@@ -35,9 +35,10 @@ export default function CustomSelect({
 	const selectedOption = normalizedOptions.find((option) => option.value === selectedValue)
 	const displayLabel = selectedOption?.label || placeholder
 	const isDisabled = disabled || normalizedOptions.length === 0
+	const menuOpen = open && !isDisabled
 
 	useEffect(() => {
-		if (!open) return undefined
+		if (!menuOpen) return undefined
 		const handlePointerDown = (event) => {
 			if (!rootRef.current?.contains(event.target)) setOpen(false)
 		}
@@ -55,11 +56,7 @@ export default function CustomSelect({
 			document.removeEventListener("touchstart", handlePointerDown)
 			document.removeEventListener("keydown", handleKeyDown)
 		}
-	}, [open])
-
-	useEffect(() => {
-		if (isDisabled) setOpen(false)
-	}, [isDisabled])
+	}, [menuOpen])
 
 	const selectOption = (option) => {
 		if (option.disabled) return
@@ -91,7 +88,7 @@ export default function CustomSelect({
 	}
 
 	return (
-		<div ref={rootRef} className={`custom-select ${open ? "custom-select--open" : ""} ${className}`}>
+		<div ref={rootRef} className={`custom-select ${menuOpen ? "custom-select--open" : ""} ${className}`}>
 			<button
 				ref={buttonRef}
 				id={id}

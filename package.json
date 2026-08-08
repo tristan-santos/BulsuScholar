@@ -8,7 +8,7 @@
 		"gitgit": "powershell -NoProfile -Command \"git add .; git commit -m ('update ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')); git push origin main\"",
 		"tapos": "npm run build && npm run gitgit",
 		"build": "vite build",
-		"pyRun": "pip install -r requirements.txt uvicorn main:app --reload --port 8000",
+		"pyRun": "cd backend && pip install -r requirements.txt && uvicorn main:app --reload --port 8000",
 		"create:admin": "node scripts/create-admin.mjs",
 		"reset:grantor-passwords": "node scripts/reset-grantor-passwords.mjs",
 		"reset:grantor-password": "node scripts/reset-grantor-password.mjs",

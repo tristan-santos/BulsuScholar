@@ -72,6 +72,10 @@ export function flattenRecord(row = {}) {
 			normalized[key] = makeDateShim(value)
 		}
 	})
+	if (normalized.rogFile && !normalized.cogFile) normalized.cogFile = normalized.rogFile
+	if (normalized.documentScan?.rog && !normalized.documentScan?.cog) {
+		normalized.documentScan = { ...normalized.documentScan, cog: normalized.documentScan.rog }
+	}
 	return { id: row.id, ...normalized }
 }
 
@@ -424,9 +428,19 @@ export async function findStudentAccountByUniqueField(field, value) {
 	const normalizedValue = String(value || "").trim()
 	if (!normalizedValue) return null
 	const tables = [TABLES.students, TABLES.pendingStudent]
+	const lookupValues =
+		field === "cpNumber"
+			? Array.from(new Set([
+					normalizedValue,
+					normalizedValue.startsWith("0") ? normalizedValue.slice(1) : "",
+					/^9\d{9}$/.test(normalizedValue) ? `0${normalizedValue}` : "",
+				].filter(Boolean)))
+			: [normalizedValue]
 	for (const table of tables) {
-		const record = await findRecordByDataField(table, field, normalizedValue)
-		if (record) return { table, record }
+		for (const lookupValue of lookupValues) {
+			const record = await findRecordByDataField(table, field, lookupValue)
+			if (record) return { table, record }
+		}
 	}
 	return null
 }

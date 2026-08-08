@@ -47,7 +47,7 @@ export default function StudentRecommendedScholarshipsPage() {
 	const [user, setUser] = useState(null)
 	const [userLoaded, setUserLoaded] = useState(false)
 	const [recommendations, setRecommendations] = useState([])
-	const [algorithm, setAlgorithm] = useState("")
+	const [_algorithm, setAlgorithm] = useState("")
 	const [loading, setLoading] = useState(true)
 	const [applyingId, setApplyingId] = useState("")
 

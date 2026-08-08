@@ -88,7 +88,9 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 
 	useEffect(() => {
 		if (!studentId) return undefined
-		setReadAnnouncementIds(loadReadAnnouncementIds(studentId))
+		const syncReadIds = window.setTimeout(() => {
+			setReadAnnouncementIds(loadReadAnnouncementIds(studentId))
+		}, 0)
 		let notificationRows = []
 		let warningRows = []
 		const updateStudentNotificationRows = () => {
@@ -123,6 +125,7 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 			},
 		)
 		return () => {
+			window.clearTimeout(syncReadIds)
 			unsubscribeNotifications()
 			unsubscribeWarnings()
 		}

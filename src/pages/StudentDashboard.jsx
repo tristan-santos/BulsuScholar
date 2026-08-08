@@ -357,7 +357,7 @@ export default function StudentDashboard() {
 		() => announcements.filter((item) => !readAnnouncementIds.includes(String(item.id || ""))).length,
 		[announcements, readAnnouncementIds],
 	)
-	const inboxBadgeCount = studentNotifications.length > 0 ? unreadStudentNotifications.length : unreadAnnouncementCount
+	const _inboxBadgeCount = studentNotifications.length > 0 ? unreadStudentNotifications.length : unreadAnnouncementCount
 	const avatarUrl = user?.profileImageUrl || ""
 	const studentAccessState = useMemo(() => getStudentAccessState(user || {}), [user])
 	const hasComplianceWarning = user?.soeComplianceWarning === true
@@ -495,7 +495,7 @@ export default function StudentDashboard() {
 	const firstName = formatDisplayText(user?.fname)
 	const studentEmail = user?.email ? String(user.email).trim().toLowerCase() : "Not set"
 
-	const bentoItems = useMemo(
+	const _bentoItems = useMemo(
 		() => [
 			{
 				id: "workspace",
@@ -724,6 +724,7 @@ export default function StudentDashboard() {
 		[
 			announcements,
 			avatarUrl,
+			firstName,
 			fullName,
 			handleContactSupport,
 			handleAnnouncementRedirect,
@@ -734,7 +735,6 @@ export default function StudentDashboard() {
 			navigate,
 			scholarshipPreview,
 			theme,
-			user,
 			userInitials,
 		],
 	)

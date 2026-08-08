@@ -79,7 +79,6 @@ import {
 	filterStudentRows,
 	formatDate,
 	mapScholarshipRows,
-	mapStudents,
 } from "../services/adminService"
 import {
 	getMaterialEntry,
@@ -1020,7 +1019,6 @@ function AdminFilterSelect({ label, value, options, onChange }) {
 import {
 	sendEmailNotification,
 	getSoeApprovalEmailBody,
-	getSoeDisapprovalEmailBody,
 } from "../services/emailService"
 
 export default function AdminDashboard() {
@@ -1216,6 +1214,81 @@ export default function AdminDashboard() {
 	useEffect(() => {
 		if (grantorTab === "overview") setGrantorTab("grantors")
 	}, [grantorTab])
+
+	useEffect(() => {
+		const getAdminTableColumnWidth = (header = "", headerCell = null) => {
+			const text = String(header || "").replace(/\s+/g, " ").trim()
+			if (headerCell?.querySelector?.("input[type='checkbox']") || !text) return 48
+			const normalized = text.toLowerCase()
+			if (normalized.includes("action")) return 122
+			if (normalized.includes("status")) return 128
+			if (normalized === "gwa" || normalized.includes("year level") || normalized === "year") return 92
+			if (normalized.includes("date")) return 142
+			if (normalized.includes("application no")) return 142
+			if (normalized.includes("student id") || normalized.includes("grantor id")) return 132
+			const measured = Math.ceil(text.length * 8.5 + 46)
+			return Math.max(96, Math.min(measured, 190))
+		}
+
+		const applyAdminTableColumnWidths = () => {
+			document.querySelectorAll(".admin-portal table").forEach((table) => {
+				const headerRow = table.tHead?.rows?.[0]
+				if (!headerRow) return
+				const headers = Array.from(headerRow.cells).filter((cell) => Number(cell.colSpan || 1) === 1)
+				if (!headers.length) return
+				let totalWidth = 0
+				headers.forEach((headerCell, index) => {
+					const width = getAdminTableColumnWidth(headerCell.textContent, headerCell)
+					totalWidth += width
+					headerCell.style.width = `${width}px`
+					headerCell.style.minWidth = `${width}px`
+					headerCell.style.maxWidth = `${width}px`
+					Array.from(table.rows).forEach((row) => {
+						const cell = row.cells?.[index]
+						if (!cell || Number(cell.colSpan || 1) !== 1) return
+						cell.style.width = `${width}px`
+						cell.style.minWidth = `${width}px`
+						cell.style.maxWidth = `${width}px`
+					})
+				})
+				table.style.minWidth = `${Math.max(totalWidth, table.parentElement?.clientWidth || totalWidth)}px`
+			})
+		}
+
+		const applyAdminTableTooltips = () => {
+			applyAdminTableColumnWidths()
+			document
+				.querySelectorAll(
+					".admin-portal table th, .admin-portal table td",
+				)
+				.forEach((cell) => {
+					const text = String(cell.textContent || "").replace(/\s+/g, " ").trim()
+					if (!text || cell.querySelector("button, input, select, textarea")) {
+						if (cell.dataset.autoTooltip === "true") {
+							cell.removeAttribute("title")
+							delete cell.dataset.autoTooltip
+						}
+						return
+					}
+					const isClipped = cell.scrollWidth > cell.clientWidth || cell.scrollHeight > cell.clientHeight
+					if (isClipped) {
+						cell.setAttribute("title", text)
+						cell.dataset.autoTooltip = "true"
+					} else if (cell.dataset.autoTooltip === "true") {
+						cell.removeAttribute("title")
+						delete cell.dataset.autoTooltip
+					}
+				})
+		}
+		const frame = requestAnimationFrame(applyAdminTableTooltips)
+		const timeout = setTimeout(applyAdminTableTooltips, 120)
+		window.addEventListener("resize", applyAdminTableTooltips)
+		return () => {
+			cancelAnimationFrame(frame)
+			clearTimeout(timeout)
+			window.removeEventListener("resize", applyAdminTableTooltips)
+		}
+	})
 
 	useEffect(() => {
 		if (location.pathname === "/admin" || location.pathname === "/admin/") {
@@ -2529,30 +2602,33 @@ export default function AdminDashboard() {
 		return trackingByStudent
 	}, [allScholarshipTrackingRows])
 
-	const buildStudentReportRows = (rows = []) =>
-		rows.map((student) => {
-			const grantorMatch = studentGrantorMatches.find((entry) => entry.student?.id === student.id)
-			const grantorLabel =
-				grantorMatch?.distinctGrantors?.map((grantor) => grantor.label).filter(Boolean).join(", ") ||
-				studentGrantorLabelById.get(student.id) ||
-				student.grantorName ||
-				student.providerName ||
-				grantorLabelById.get(student.grantorId) ||
-				grantorLabelById.get(student.providerType) ||
-				(student.providerType ? toProviderLabel(student.providerType) : "") ||
-				"N/A"
-			return {
-				...toStudentReportRow(student),
-				id: toDisplayStudentId(student.studentId || student.id),
-				gwa: student.gwa || student.currentGwa || student.currentGWA || "-",
-				grantor: grantorLabel,
-				recordStatus: student.recordStatus || (student.archived === true ? "Archived" : "Active"),
-			}
-		})
+	const buildStudentReportRows = useCallback(
+		(rows = []) =>
+			rows.map((student) => {
+				const grantorMatch = studentGrantorMatches.find((entry) => entry.student?.id === student.id)
+				const grantorLabel =
+					grantorMatch?.distinctGrantors?.map((grantor) => grantor.label).filter(Boolean).join(", ") ||
+					studentGrantorLabelById.get(student.id) ||
+					student.grantorName ||
+					student.providerName ||
+					grantorLabelById.get(student.grantorId) ||
+					grantorLabelById.get(student.providerType) ||
+					(student.providerType ? toProviderLabel(student.providerType) : "") ||
+					"N/A"
+				return {
+					...toStudentReportRow(student),
+					id: toDisplayStudentId(student.studentId || student.id),
+					gwa: student.gwa || student.currentGwa || student.currentGWA || "-",
+					grantor: grantorLabel,
+					recordStatus: student.recordStatus || (student.archived === true ? "Archived" : "Active"),
+				}
+			}),
+		[grantorLabelById, studentGrantorLabelById, studentGrantorMatches],
+	)
 
 	const allStudentReportRows = useMemo(
 		() => buildStudentReportRows(studentProfiles),
-		[grantorLabelById, studentGrantorLabelById, studentGrantorMatches, studentProfiles],
+		[buildStudentReportRows, studentProfiles],
 	)
 
 	const selectedStudentTracking = selectedStudent?.id ? studentTrackingById.get(selectedStudent.id) || null : null
@@ -3719,13 +3795,6 @@ export default function AdminDashboard() {
 		[studentProfiles],
 	)
 
-	const currentAnnouncements = useMemo(() => {
-		return announcements.filter((announcement) => !isAnnouncementArchived(announcement))
-	}, [announcements])
-
-	const previousAnnouncements = useMemo(() => {
-		return announcements.filter((announcement) => isAnnouncementArchived(announcement))
-	}, [announcements])
 	const adminAnnouncementSourceOptions = useMemo(
 		() => [
 			{ value: "all", label: "All" },
@@ -5064,6 +5133,23 @@ export default function AdminDashboard() {
 							},
 						}],
 					})
+					await createStudentNotification({
+						studentId: student.id,
+						source: "personal",
+						type: "material_request_approved",
+						title: "Requirements Request Approved",
+						message: `Your ${primaryMaterialLabel.toLowerCase()} for ${row.scholarshipName || "your scholarship"} was approved. You can now proceed to the downloading materials stage.`,
+						studentName: student.fullName || studentFullName(student),
+						scholarshipName: row.scholarshipName || "",
+						applicationNumber: row.requestNumber || row.applicationNumber || row.id || "",
+						materialLabel: primaryMaterialLabel,
+						stageId: "request_materials",
+						stageLabel: "Requesting of Materials",
+						approvedBy: "BulsuScholar Admin",
+						authorName: "BulsuScholar Admin",
+						read: false,
+						createdAt: serverTimestamp(),
+					}).catch((error) => console.error("Student material approval notification failed.", error))
 					// Send SOE Approval Email
 					if (student.email) {
 						sendEmailNotification(
@@ -5122,98 +5208,6 @@ export default function AdminDashboard() {
 		closeSoeRejectModal()
 	}
 
-	const markSoeCheckingReview = async (row, action) => {
-		if (!row?.id) return
-		const student = studentProfiles.find((entry) => entry.id === row.studentId)
-
-		await runAction(async () => {
-			await materialRequestWorkflow({
-				updates: [{
-					table: "soe_downloads",
-					id: row.id,
-					data: {
-						status: action === "signed" ? "Signed" : "Non-Compliant",
-						reviewState: action,
-						checkedAt: serverTimestamp(),
-						updatedAt: serverTimestamp(),
-					},
-				}],
-			})
-
-			if (row.requestRecordId) {
-				await materialRequestWorkflow({
-					updates: [{
-						table: "soe_requests",
-						id: row.requestRecordId,
-						data: {
-							soeCheckingState: action,
-							soeCheckedAt: serverTimestamp(),
-							updatedAt: serverTimestamp(),
-						},
-					}],
-				}).catch(() => {})
-			}
-
-			if (!student) {
-				setSelectedSoeReviewId("")
-				return
-			}
-
-			const reviewedScholarships = student.scholarships.map((entry) => {
-				const matchesRequest =
-					entry.id === row.scholarshipId ||
-					entry.requestNumber === row.requestNumber ||
-					entry.requestNumber === row.scholarshipId
-				if (!matchesRequest) return entry
-				return {
-					...entry,
-					finalizedState: action === "signed" ? "Signed" : "Non-Compliant",
-				}
-			})
-
-			if (action === "signed") {
-				await materialRequestWorkflow({
-					updates: [{
-						table: "students",
-						id: student.id,
-						data: {
-							scholarships: reviewedScholarships,
-							updatedAt: serverTimestamp(),
-						},
-					}],
-				})
-			}
-
-			if (action === "non_compliant") {
-				const nextViolationCount = Number(student.complianceViolationCount || 0) + 1
-
-				await materialRequestWorkflow({
-					updates: [{
-						table: "students",
-						id: student.id,
-						data: {
-							scholarships: reviewedScholarships,
-							complianceViolationCount: nextViolationCount,
-							soeComplianceWarning: true,
-							lastComplianceReviewAt: serverTimestamp(),
-							updatedAt: serverTimestamp(),
-						},
-					}],
-				})
-
-				if (student.email) {
-					sendEmailNotification(
-						student.email,
-						student.fullName,
-						"SOE Request Non-Compliant",
-						getSoeDisapprovalEmailBody(student.fname || student.fullName, row.scholarshipName, "The downloaded SOE did not match the student record during admin checking."),
-					).catch((err) => console.error("SOE checking disapproval email failed:", err))
-				}
-			}
-
-			setSelectedSoeReviewId("")
-		}, action === "signed" ? "SOE marked as signed." : "SOE marked as non-compliant.")
-	}
 
 	const handleAnnouncementDatePick = (iso, disabled) => {
 		if (disabled) return
@@ -5413,31 +5407,6 @@ export default function AdminDashboard() {
 		} catch (error) {
 			console.error("Unable to approve password change request.", error)
 			toast.error("Unable to approve the password change request.")
-		}
-	}
-
-	const requestGrantorPasswordChangeFromAdmin = async (grantorId) => {
-		if (!grantorId) return
-		try {
-			await setDoc(doc(db, "providers", grantorId), {
-				passwordChangeRequested: true,
-				passwordChangeRequestStatus: "pending",
-				passwordChangeRequestedBy: "admin",
-				passwordChangeRequestedAt: serverTimestamp(),
-				updatedAt: serverTimestamp(),
-			}, { merge: true })
-			await createGrantorNotification({
-				grantorId,
-				type: "password_change_requested",
-				title: "Password Change Requested",
-				message: "BulsuScholar Admin requested a password change for your grantor account. Wait for approval status before changing your password.",
-				read: false,
-				createdAt: serverTimestamp(),
-			})
-			toast.success("Password change request sent to grantor.")
-		} catch (error) {
-			console.error("Unable to request grantor password change.", error)
-			toast.error("Unable to request a password change right now.")
 		}
 	}
 
