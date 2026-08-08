@@ -1016,11 +1016,6 @@ function AdminFilterSelect({ label, value, options, onChange }) {
 	)
 }
 
-import {
-	sendEmailNotification,
-	getSoeApprovalEmailBody,
-} from "../services/emailService"
-
 export default function AdminDashboard() {
 	const navigate = useNavigate()
 	const location = useLocation()
@@ -5150,15 +5145,6 @@ export default function AdminDashboard() {
 						read: false,
 						createdAt: serverTimestamp(),
 					}).catch((error) => console.error("Student material approval notification failed.", error))
-					// Send SOE Approval Email
-					if (student.email) {
-						sendEmailNotification(
-							student.email,
-							student.fullName,
-							"SOE Request Approved",
-							getSoeApprovalEmailBody(student.fname || student.fullName, row.scholarshipName),
-						).catch((err) => console.error("SOE approval email failed:", err))
-					}
 				}
 
 				if (action === "non_compliant") {
