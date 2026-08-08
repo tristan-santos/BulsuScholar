@@ -71,6 +71,7 @@ import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
 import { uploadToStorage } from "../services/storageService"
+import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
 import { convertPdfToImage } from "../utils/pdfConverter"
 import {
 	createAdminNotification,
@@ -902,7 +903,7 @@ export default function ProviderDashboard() {
 		if (!url) return
 		setPreviewDocument({
 			title,
-			url,
+			url: normalizeStoragePublicUrl(url),
 			name: title,
 			isPdf: isPreviewPdf({ url }),
 		})
@@ -911,9 +912,7 @@ export default function ProviderDashboard() {
 	const downloadPreviewDocument = async () => {
 		if (!previewDocument?.url) return
 		try {
-			const response = await fetch(previewDocument.url)
-			if (!response.ok) throw new Error(`download_failed_${response.status}`)
-			const blob = await response.blob()
+			const blob = await getStorageObjectBlob(previewDocument)
 			const url = URL.createObjectURL(blob)
 			const link = document.createElement("a")
 			link.href = url
@@ -1465,11 +1464,7 @@ export default function ProviderDashboard() {
 		setIsPreviewLoading(true)
 		setPreviewBlobUrl("")
 
-		fetch(previewDocument.url)
-			.then((response) => {
-				if (!response.ok) throw new Error(`preview_failed_${response.status}`)
-				return response.blob()
-			})
+		getStorageObjectBlob(previewDocument)
 			.then(async (blob) => {
 				if (cancelled) return
 				if (previewDocument.isPdf) {
@@ -3729,7 +3724,7 @@ export default function ProviderDashboard() {
 									{visibleScholars.length === 0 ? <EmptyRow colSpan={7} message="No results found matching your criteria." /> : visibleScholarsPage.rows.map((scholar) => (
 									<tr key={scholar.id} className={[selectedScholarId === scholar.id ? "grantor-row-selected" : "", scholar.scholarshipConflictWarning || scholar.duplicateScholarshipWarning || scholar.duplicateScholarshipDetected ? "grantor-row-warning" : ""].filter(Boolean).join(" ")} onClick={() => setSelectedScholarId(scholar.id)}>
 											<td className="grantor-checkbox-col" onClick={(event) => event.stopPropagation()}><input type="checkbox" checked={selectedScholarIds.includes(scholar.id)} onChange={() => setSelectedScholarIds((prev) => prev.includes(scholar.id) ? prev.filter((id) => id !== scholar.id) : [...prev, scholar.id])} /></td>
-											<td>{scholar.studentId || "-"}</td><td>{scholar.fullName}</td><td>{scholar.course || "-"}</td><td>{scholar.yearLevel || "-"}</td><td><span className={statusClass(scholar.status)}>{scholar.status}</span></td><td>{formatRelativeDate(scholar.updatedAt || scholar.createdAt)}</td>
+											<td>{scholar.studentId || "-"}</td><td><span className="grantor-scholar-name">{scholar.fullName}</span>{scholar.addedByAdmin || scholar.addedBy === "admin" ? <small className="grantor-roster-source">Added by admin</small> : null}</td><td>{scholar.course || "-"}</td><td>{scholar.yearLevel || "-"}</td><td><span className={statusClass(scholar.status)}>{scholar.status}</span></td><td>{formatRelativeDate(scholar.updatedAt || scholar.createdAt)}</td>
 										</tr>
 									))}
 								</tbody>

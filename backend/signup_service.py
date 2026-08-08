@@ -9,6 +9,7 @@ try:
         create_admin_notification,
         create_log,
         create_student_notification,
+        supabase_admin_create_user,
         supabase_document_get,
         supabase_document_insert,
         supabase_document_upsert,
@@ -21,6 +22,7 @@ except ImportError:  # pragma: no cover
         create_admin_notification,
         create_log,
         create_student_notification,
+        supabase_admin_create_user,
         supabase_document_get,
         supabase_document_insert,
         supabase_document_upsert,
@@ -266,6 +268,25 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     student = dict(payload.get("student") or {})
     auth = payload.get("auth") or {}
     is_auto_verified = payload.get("isAutoVerified", True)
+    auth_result = None
+
+    if auth.get("createUser") is True:
+        auth_result = supabase_admin_create_user(
+            validation["email"],
+            str(auth.get("password") or ""),
+            {
+                "user_id": student_id,
+                "user_type": "student",
+                "full_name": student.get("fullName") or " ".join(
+                    part for part in [student.get("fname"), student.get("lname")] if part
+                ).strip(),
+                "auto_verified_from_roster": bool(auth.get("emailConfirm")),
+            },
+            email_confirm=bool(auth.get("emailConfirm")),
+        )
+        if not auth_result.get("ok"):
+            return {"ok": False, "reason": auth_result.get("reason") or "auth_create_failed", "auth": auth_result}
+        auth["userId"] = (auth_result.get("user") or {}).get("id") or auth.get("userId") or ""
 
     student["email"] = validation["email"]
     student["cpNumber"] = validation["cpNumber"]
@@ -342,6 +363,7 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         "studentId": student_id,
         "table": target_table,
         "student": student_result,
+        "auth": auth_result,
         "notification": notification_result,
         "adminNotification": admin_notification_result,
         "log": log_result,

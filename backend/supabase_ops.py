@@ -156,6 +156,41 @@ def supabase_rest_insert(table: str, payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "status": error.code, "reason": reason, "table": table, "detail": detail}
 
 
+def supabase_admin_create_user(email: str, password: str, user_metadata: dict[str, Any] | None = None, email_confirm: bool = False) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not service_key:
+        return {"ok": False, "reason": "missing_supabase_server_config"}
+    if not email or not password:
+        return {"ok": False, "reason": "missing_auth_credentials"}
+
+    payload = {
+        "email": email,
+        "password": password,
+        "email_confirm": bool(email_confirm),
+        "user_metadata": user_metadata or {},
+    }
+    request = urllib.request.Request(
+        f"{supabase_url}/auth/v1/admin/users",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8") or "{}")
+            return {"ok": True, "user": data}
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8")
+        if error.code == 422 and ("already" in detail.lower() or "registered" in detail.lower()):
+            return {"ok": False, "reason": "auth_email_already_exists", "status": error.code, "detail": detail}
+        return {"ok": False, "reason": "supabase_auth_admin_error", "status": error.code, "detail": detail}
+
+
 def supabase_document_insert(table: str, payload: dict[str, Any], parent_id: str | None = None) -> dict[str, Any]:
     row = {
         "id": payload.get("id") or str(uuid4()),

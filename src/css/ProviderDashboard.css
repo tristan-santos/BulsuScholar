@@ -1563,6 +1563,24 @@
 	border-bottom: 1px solid #e2e8f0;
 }
 
+.grantor-scholar-name,
+.grantor-roster-source {
+	display: block;
+	max-width: 260px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.grantor-roster-source {
+	margin-top: 0.2rem;
+	color: #00633c;
+	font-size: 0.72rem;
+	font-weight: 650;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
 .grantor-scholars-panel .grantor-scholar-table .grantor-checkbox-col {
 	width: 42px;
 	padding-right: 0.45rem;
@@ -1708,6 +1726,10 @@
 	border-bottom-color: #334155;
 	background: #0f172a;
 	color: #e2e8f0;
+}
+
+.grantor-portal--dark .grantor-roster-source {
+	color: #86efac;
 }
 
 .grantor-portal--dark .grantor-scholars-panel .grantor-scholar-table tbody tr:hover td,

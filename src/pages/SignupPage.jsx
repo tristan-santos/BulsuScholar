@@ -1515,31 +1515,7 @@ export default function SignupPage() {
 				},
 			})
 
-			console.log(
-				"SignupPage: Starting Supabase Auth signUp for email:",
-				normalizedSignupEmail,
-			)
-			const { data: authData, error: authError } = await supabase.auth.signUp({
-				email: normalizedSignupEmail,
-				password,
-				options: {
-					emailRedirectTo: `${APP_URL}/confirm-email`,
-					data: {
-						user_id: studentId,
-						user_type: "student",
-						full_name: `${fname.trim()} ${lname.trim()}`.trim(),
-					},
-				},
-			})
-
-			if (authError) {
-				console.error("SignupPage: Supabase Auth signUp ERROR:", authError)
-				toast.error(
-					authError.message || "Failed to create Supabase Auth account.",
-				)
-				return
-			}
-			console.log("SignupPage: Supabase Auth signUp SUCCESS:", authData)
+			let authData = null
 
 			const semesterTag = getCurrentSemesterTag()
 			let corFilePayload = null
@@ -1554,6 +1530,8 @@ export default function SignupPage() {
 						type: imageData.type,
 						size: imageData.size,
 						url: imageData.url,
+						path: imageData.path || imageData.publicId || "",
+						bucket: imageData.bucket || "",
 						semesterTag,
 					}
 					console.log("SignupPage: COR upload SUCCESS:", corFilePayload.url, "ID:", corFileId)
@@ -1576,6 +1554,8 @@ export default function SignupPage() {
 						type: imageData.type,
 						size: imageData.size,
 						url: imageData.url,
+						path: imageData.path || imageData.publicId || "",
+						bucket: imageData.bucket || "",
 						semesterTag,
 					}
 					console.log("SignupPage: ROG upload SUCCESS:", cogFilePayload.url, "ID:", cogFileId)
@@ -1601,7 +1581,7 @@ export default function SignupPage() {
 				postalCode: postalCode.trim(),
 				studentnumber: studentId,
 				userType: "student",
-				authUserId: authData?.user?.id || "",
+				authUserId: "",
 				year,
 				section: section.trim(),
 				gwa: gwa.trim(),
@@ -1641,6 +1621,40 @@ export default function SignupPage() {
 				semesterTag,
 			)
 			const hasMultipleMatchedGrantors = matchedScholarships.length >= 2
+			const hasRosterMatchedGrantor = matchedScholarships.length > 0
+			if (hasRosterMatchedGrantor) {
+				console.info("SignupPage: roster match found. Backend will create an auto-confirmed Supabase Auth user.", {
+					studentId,
+					matchCount: matchedScholarships.length,
+				})
+			} else {
+				console.log(
+					"SignupPage: Starting Supabase Auth signUp for email:",
+					normalizedSignupEmail,
+				)
+				const { data: signupAuthData, error: authError } = await supabase.auth.signUp({
+					email: normalizedSignupEmail,
+					password,
+					options: {
+						emailRedirectTo: `${APP_URL}/confirm-email`,
+						data: {
+							user_id: studentId,
+							user_type: "student",
+							full_name: `${fname.trim()} ${lname.trim()}`.trim(),
+						},
+					},
+				})
+
+				if (authError) {
+					console.error("SignupPage: Supabase Auth signUp ERROR:", authError)
+					toast.error(
+						authError.message || "Failed to create Supabase Auth account.",
+					)
+					return
+				}
+				authData = signupAuthData
+				console.log("SignupPage: Supabase Auth signUp SUCCESS:", authData)
+			}
 			const grantorConflictMessage = hasMultipleMatchedGrantors
 				? "Multiple grantor matches were found based on your name and address. Choose one matched grantor first before requesting scholarship materials."
 				: ""
@@ -1671,7 +1685,7 @@ export default function SignupPage() {
 			// Given the previous logic, I'll set them to pending for safety, or auto-verify if that's the new standard.
 			// Let's stick to auto-verify for now as there are no "blocking" scholarship requirements anymore during signup.
 
-			const isAutoVerified = true
+			const isAutoVerified = hasRosterMatchedGrantor
 
 			const finalizeResult = await finalizeStudentSignupWorkflow({
 				studentId,
@@ -1679,6 +1693,9 @@ export default function SignupPage() {
 				auth: {
 					userId: authData?.user?.id || "",
 					email: authData?.user?.email || normalizedSignupEmail,
+					password: hasRosterMatchedGrantor ? password : "",
+					createUser: hasRosterMatchedGrantor,
+					emailConfirm: hasRosterMatchedGrantor,
 				},
 				cor: {
 					hash: corHash,

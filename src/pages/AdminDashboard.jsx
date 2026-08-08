@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
+import { read, utils } from "xlsx"
 import { addDoc, collection, collectionGroup, doc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from "../services/supabaseDataService"
 import {
 	Chart as ChartJS,
@@ -54,8 +55,9 @@ import TablePagination from "../components/TablePagination"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
+import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
 import { createAdminNotification, createGrantorNotification, createStudentNotification } from "../services/notificationService"
-import { materialRequestWorkflow } from "../services/workflowService"
+import { createGrantorScholarsWorkflow, materialRequestWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
 import {
 	buildApplicationDecisionConfirmation,
 	canUseGrantorConfirmationForStep,
@@ -63,6 +65,7 @@ import {
 import { checkAdminStudentDuplicates, matchAdminGrantorStudents } from "../services/adminMatchingService"
 import {
 	GRANTOR_SUBCOLLECTIONS,
+	findScholarDuplicate,
 	isAnnouncementArchived,
 	matchesGrantorScholarToStudent,
 	normalizeGrantorScholar,
@@ -85,6 +88,7 @@ import {
 } from "../services/materialRequestService"
 import {
 	getDocumentUrlsForStudent,
+	getCurrentSemesterTag,
 	normalizeScholarshipList,
 	validateScholarshipDocuments,
 } from "../services/scholarshipService"
@@ -109,8 +113,8 @@ const ADMIN_SECTIONS = [
 	{ id: "grantors", label: "Grantor Management", icon: HiOutlineUserGroup, path: "/admin/grantors" },
 	{ id: "scholarships", label: "Scholarship Programs", icon: HiOutlineDocumentText, path: "/admin/scholarships" },
 	{ id: "requirements", label: "Requirements", icon: HiOutlineCheckCircle, path: "/admin/requirements" },
-	{ id: "reports", label: "Report Generation", icon: HiOutlineChartBar, path: "/admin/reports" },
 	{ id: "announcements", label: "Announcements", icon: HiOutlineBell, path: "/admin/announcements" },
+	{ id: "reports", label: "Report Generation", icon: HiOutlineChartBar, path: "/admin/reports" },
 ]
 
 const TREND_RANGES = ["daily", "weekly", "monthly", "yearly"]
@@ -124,6 +128,66 @@ const APPLICATION_REJECTION_REASONS = [
 	"Duplicate Scholarship Application",
 	"Outside Application Window",
 	"Other",
+]
+
+const ADMIN_SCHOLAR_FORM = {
+	grantorId: "",
+	studentId: "",
+	fname: "",
+	mname: "",
+	lname: "",
+	email: "",
+	cpNumber: "",
+	street: "",
+	city: "",
+	province: "",
+	barangay: "",
+	postalCode: "",
+	course: "",
+	yearLevel: "1",
+	scholarshipTitle: "",
+	status: "Active",
+	notes: "",
+}
+
+const ADMIN_IMPORT_FIELD_ALIASES = {
+	studentId: ["student id", "student number", "student no", "student no.", "id"],
+	fullName: ["full name", "student name", "name", "scholar name"],
+	fname: ["first name", "fname"],
+	mname: ["middle name", "mname"],
+	lname: ["last name", "lname", "surname"],
+	email: ["email", "email address"],
+	cpNumber: ["contact number", "cp number", "phone", "mobile number"],
+	street: ["street", "street/subdivision", "street / subdivision", "address"],
+	barangay: ["barangay", "baranggay"],
+	city: ["city", "municipality", "city/municipality", "city / municipality"],
+	province: ["province"],
+	postalCode: ["postal code", "zip code"],
+	course: ["course", "program"],
+	yearLevel: ["year", "year level"],
+	scholarshipTitle: ["scholarship", "scholarship title", "program", "program name"],
+	status: ["status"],
+	notes: ["notes", "remarks"],
+}
+
+const ADMIN_IMPORT_MAPPABLE_FIELDS = [
+	{ value: "studentId", label: "Student ID" },
+	{ value: "fullName", label: "Full Name" },
+	{ value: "fname", label: "First Name" },
+	{ value: "mname", label: "Middle Name" },
+	{ value: "lname", label: "Last Name" },
+	{ value: "email", label: "Email Address" },
+	{ value: "cpNumber", label: "Contact Number" },
+	{ value: "course", label: "Course" },
+	{ value: "yearLevel", label: "Year Level" },
+	{ value: "scholarshipTitle", label: "Scholarship / Program" },
+	{ value: "street", label: "Street / Subdivision" },
+	{ value: "barangay", label: "Barangay" },
+	{ value: "city", label: "City / Municipality" },
+	{ value: "province", label: "Province" },
+	{ value: "postalCode", label: "Postal Code" },
+	{ value: "status", label: "Status" },
+	{ value: "notes", label: "Notes" },
 ]
 
 function toNumericValue(value, fallback = null) {
@@ -235,6 +299,163 @@ function buildGrantorScholarFullName(scholar = {}) {
 
 function getGrantorScholarProgramName(scholar = {}) {
 	return String(scholar.scholarshipTitle || scholar.scholarshipName || scholar.programName || "").trim()
+}
+
+function normalizeAdminImportHeader(value = "") {
+	return String(value || "")
+		.trim()
+		.toLowerCase()
+		.replace(/[_-]+/g, " ")
+		.replace(/\s+/g, " ")
+}
+
+function fieldFromAdminImportHeader(header = "") {
+	const normalized = normalizeAdminImportHeader(header)
+	return (
+		Object.entries(ADMIN_IMPORT_FIELD_ALIASES).find(([, aliases]) =>
+			aliases.some((alias) => normalizeAdminImportHeader(alias) === normalized),
+		)?.[0] || ""
+	)
+}
+
+function splitAdminScholarName(record = {}) {
+	const existingParts = [record.fname, record.mname, record.lname].filter(Boolean)
+	if (existingParts.length > 0) {
+		return {
+			fname: String(record.fname || "").trim(),
+			mname: String(record.mname || "").trim(),
+			lname: String(record.lname || "").trim(),
+		}
+	}
+	const parts = String(record.fullName || record.studentName || "")
+		.trim()
+		.split(/\s+/)
+		.filter(Boolean)
+	return {
+		fname: parts[0] || "",
+		mname: parts.length > 2 ? parts.slice(1, -1).join(" ") : "",
+		lname: parts.length > 1 ? parts[parts.length - 1] : "",
+	}
+}
+
+function normalizeStudentIdKey(value = "") {
+	return String(value || "")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "")
+}
+
+function buildAdminScholarPayloadFromStudentAccount(student = {}, fallback = {}) {
+	const nameParts = splitAdminScholarName(student)
+	const studentId = String(student.id || student.studentId || student.studentnumber || student.studentNumber || fallback.studentId || "").trim()
+	return {
+		...fallback,
+		studentId,
+		fname: nameParts.fname || fallback.fname || "",
+		mname: nameParts.mname || fallback.mname || "",
+		lname: nameParts.lname || fallback.lname || "",
+		fullName:
+			student.fullName ||
+			[nameParts.fname, nameParts.mname, nameParts.lname].filter(Boolean).join(" ").trim() ||
+			fallback.fullName ||
+			"Scholar",
+		email: student.email || fallback.email || "",
+		cpNumber: student.cpNumber || student.contactNumber || student.phoneNumber || fallback.cpNumber || "",
+		street: student.street || student.address || fallback.street || "",
+		city: student.city || fallback.city || "",
+		province: student.province || fallback.province || "",
+		barangay: student.barangay || fallback.barangay || "",
+		postalCode: student.postalCode || student.zipCode || fallback.postalCode || "",
+		course: student.course || student.program || fallback.course || "",
+		yearLevel: String(student.yearLevel || student.year || fallback.yearLevel || "1"),
+	}
+}
+
+function buildAdminCrossGrantorWarningPayload(duplicate = null) {
+	const matched = duplicate?.record || {}
+	return {
+		scholarshipConflictWarning: true,
+		duplicateScholarshipWarning: true,
+		duplicateScholarshipDetected: true,
+		duplicateWarningType: "cross_grantor_roster_match",
+		duplicateMatchedGrantorId: matched.grantorId || matched.parentId || "",
+		duplicateMatchedGrantorName: matched.grantorName || matched.providerName || matched.providerType || "Another grantor",
+		duplicateMatchedScholarId: matched.id || "",
+		duplicateMatchedStudentId: matched.studentId || matched.studentnumber || "",
+		duplicateMatchedStudentName: matched.fullName || [matched.fname, matched.mname, matched.lname].filter(Boolean).join(" ").trim(),
+		duplicateSimilarityScore: duplicate?.score ?? duplicate?.evaluation?.score ?? "",
+		duplicateReasons: duplicate?.reasons || duplicate?.evaluation?.reasons || [],
+		duplicateDetectedAt: new Date().toISOString(),
+	}
+}
+
+function buildAdminDuplicateScholarshipWarningRecord({ row = {}, payload = {}, duplicate = null } = {}) {
+	const matched = duplicate?.record || {}
+	const studentId = payload.studentId || row.studentId || matched.studentId || matched.studentnumber || ""
+	const studentName =
+		payload.fullName ||
+		row.fullName ||
+		[payload.fname, payload.mname, payload.lname].filter(Boolean).join(" ").trim() ||
+		matched.fullName ||
+		"Student"
+	const newGrantorName = payload.grantorName || payload.providerType || payload.grantorId || "Selected grantor"
+	const existingGrantorName = matched.grantorName || matched.providerName || matched.providerType || matched.grantorId || "another grantor"
+	return {
+		studentId,
+		title: "Duplicate Scholarship Warning",
+		message: `${studentName} was added by admin to ${newGrantorName}, but also matched an existing roster under ${existingGrantorName}.`,
+		type: "duplicate_scholarship_detected",
+		warningType: "duplicate_scholarship",
+		source: "admin_roster_add",
+		notificationFallbackTable: "student_warnings",
+		studentName,
+		newGrantorId: payload.grantorId || "",
+		newGrantorName,
+		matchedGrantorId: matched.grantorId || matched.parentId || "",
+		matchedGrantorName: existingGrantorName,
+		matchedScholarId: matched.id || "",
+		matchedStudentId: matched.studentId || matched.studentnumber || "",
+		matchedStudentName: matched.fullName || [matched.fname, matched.mname, matched.lname].filter(Boolean).join(" ").trim(),
+		similarityScore: duplicate?.score ?? duplicate?.evaluation?.score ?? "",
+		reasons: duplicate?.reasons || duplicate?.evaluation?.reasons || [],
+		rowNumber: row.rowNumber || "",
+		read: false,
+		archived: false,
+		createdAt: serverTimestamp(),
+		updatedAt: serverTimestamp(),
+	}
+}
+
+function buildAdminScholarPayload(form = {}, grantor = {}) {
+	const nameParts = splitAdminScholarName(form)
+	const grantorName = buildGrantorName(grantor) || form.grantorName || "Grantor"
+	const providerType = grantor.providerType || toProviderType(grantorName || grantor.id)
+	return {
+		studentId: String(form.studentId || "").trim(),
+		fname: String(nameParts.fname || "").trim(),
+		mname: String(nameParts.mname || "").trim(),
+		lname: String(nameParts.lname || "").trim(),
+		fullName: [nameParts.fname, nameParts.mname, nameParts.lname].filter(Boolean).join(" ").trim(),
+		email: String(form.email || "").trim(),
+		cpNumber: String(form.cpNumber || "").trim(),
+		street: String(form.street || "").trim(),
+		city: String(form.city || "").trim(),
+		province: String(form.province || "").trim(),
+		barangay: String(form.barangay || "").trim(),
+		postalCode: String(form.postalCode || "").trim(),
+		course: String(form.course || "").trim(),
+		yearLevel: String(form.yearLevel || "1").trim(),
+		scholarshipTitle: String(form.scholarshipTitle || grantorName || "Scholarship").trim(),
+		status: String(form.status || "Active").trim(),
+		notes: String(form.notes || "").trim(),
+		archived: false,
+		grantorId: grantor.id || form.grantorId || "",
+		grantorName,
+		providerType,
+		addedBy: "admin",
+		addedByRole: "admin",
+		addedByAdmin: true,
+		source: "admin_roster_add",
+	}
 }
 
 function buildGrantorScholarAddress(scholar = {}) {
@@ -406,7 +627,7 @@ function buildGrantorReportRow(grantor = {}) {
 function toReviewStateLabel(value = "") {
 	const normalized = String(value).toLowerCase()
 	if (normalized === "signed") return "Approved"
-	if (normalized === "non_compliant") return "Non-Compliant"
+	if (normalized === "non_compliant") return "Rejected"
 	if (normalized === "incoming") return "Pending Approval"
 	return value || "Pending Approval"
 }
@@ -414,7 +635,7 @@ function toReviewStateLabel(value = "") {
 function toMaterialStateLabel(status = "") {
 	const normalized = String(status).toLowerCase()
 	if (normalized === "approved") return "Approved"
-	if (normalized === "rejected") return "Non-Compliant"
+	if (normalized === "rejected") return "Rejected"
 	if (normalized === "pending") return "Pending Approval"
 	return "Not Requested"
 }
@@ -441,7 +662,7 @@ function toOverallMaterialStatus(request = {}) {
 		return "Partially Approved"
 	}
 	if (normalized.approvedMaterialKeys.length > 0) return "Approved"
-	if (normalized.rejectedMaterialKeys.length > 0) return "Non-Compliant"
+	if (normalized.rejectedMaterialKeys.length > 0) return "Rejected"
 	return "Pending"
 }
 
@@ -841,6 +1062,9 @@ export default function AdminDashboard() {
 	const [adminRejectModalOpen, setAdminRejectModalOpen] = useState(false)
 	const [adminRejectReason, setAdminRejectReason] = useState(APPLICATION_REJECTION_REASONS[0])
 	const [adminRejectNotes, setAdminRejectNotes] = useState("")
+	const [soeRejectModalRow, setSoeRejectModalRow] = useState(null)
+	const [soeRejectReason, setSoeRejectReason] = useState(APPLICATION_REJECTION_REASONS[0])
+	const [soeRejectNotes, setSoeRejectNotes] = useState("")
 	const [adminStudentDuplicateAudit, setAdminStudentDuplicateAudit] = useState({ duplicateIds: [], groups: [] })
 	const [previewDocument, setPreviewDocument] = useState(null)
 	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
@@ -864,9 +1088,20 @@ export default function AdminDashboard() {
 	const [scholarshipProvider, setScholarshipProvider] = useState("All")
 	const [scholarshipSearch, setScholarshipSearch] = useState("")
 	const [scholarshipTab, setScholarshipTab] = useState("scholars")
+	const [selectedScholarshipScholarKeys, setSelectedScholarshipScholarKeys] = useState([])
 	const [scholarshipGrantorHoverId, setScholarshipGrantorHoverId] = useState("")
 	const [grantorScholarTrendRange, setGrantorScholarTrendRange] = useState("monthly")
 	const [grantorDistributionHoverId, setGrantorDistributionHoverId] = useState("")
+	const [adminScholarModalOpen, setAdminScholarModalOpen] = useState(false)
+	const [adminScholarForm, setAdminScholarForm] = useState(ADMIN_SCHOLAR_FORM)
+	const [adminScholarImportRows, setAdminScholarImportRows] = useState([])
+	const [adminScholarImportHeaders, setAdminScholarImportHeaders] = useState([])
+	const [adminScholarColumnMapping, setAdminScholarColumnMapping] = useState([])
+	const [selectedAdminScholarImportRows, setSelectedAdminScholarImportRows] = useState([])
+	const [highlightedAdminScholarGrantorRows, setHighlightedAdminScholarGrantorRows] = useState([])
+	const [adminScholarImportGrantorAssignments, setAdminScholarImportGrantorAssignments] = useState({})
+	const [adminScholarImportFile, setAdminScholarImportFile] = useState(null)
+	const [adminScholarImportWarnings, setAdminScholarImportWarnings] = useState([])
 
 	const [applicantTrendRange, setApplicantTrendRange] = useState("monthly")
 	const [soeTrendRange, setSoeTrendRange] = useState("monthly")
@@ -877,7 +1112,7 @@ export default function AdminDashboard() {
 	const [soeResetByStudent, setSoeResetByStudent] = useState({})
 
 	const [soeCheckSearch, setSoeCheckSearch] = useState("")
-	const [soeCheckingTab, setSoeCheckingTab] = useState("incoming")
+	const [soeCheckingTab, setSoeCheckingTab] = useState("current")
 	const [selectedSoeReviewId, setSelectedSoeReviewId] = useState("")
 	const [adminConfirmDialog, setAdminConfirmDialog] = useState(null)
 	const [tablePages, setTablePages] = useState({})
@@ -896,6 +1131,11 @@ export default function AdminDashboard() {
 	const [announcementStartDate, setAnnouncementStartDate] = useState("")
 	const [announcementEndDate, setAnnouncementEndDate] = useState("")
 	const [showAnnouncementSchedule, setShowAnnouncementSchedule] = useState(false)
+	const [showCreateAdminAnnouncementModal, setShowCreateAdminAnnouncementModal] = useState(false)
+	const [selectedAdminAnnouncement, setSelectedAdminAnnouncement] = useState(null)
+	const [showAllAdminAnnouncements, setShowAllAdminAnnouncements] = useState(false)
+	const [adminAnnouncementTab, setAdminAnnouncementTab] = useState("announcements")
+	const [adminAnnouncementSourceFilter, setAdminAnnouncementSourceFilter] = useState("all")
 	const [announcementCalendarMonth, setAnnouncementCalendarMonth] = useState(() => {
 		const now = new Date()
 		return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -1490,6 +1730,39 @@ export default function AdminDashboard() {
 	const selectedGrantor = useMemo(
 		() => grantorRows.find((grantor) => grantor.id === selectedGrantorId) || null,
 		[grantorRows, selectedGrantorId],
+	)
+	const adminScholarGrantorOptions = useMemo(
+		() =>
+			activeGrantorRows.map((grantor) => ({
+				value: grantor.id,
+				label: buildGrantorName(grantor) || grantor.id,
+			})),
+		[activeGrantorRows],
+	)
+	const adminScholarImportColumnCount = useMemo(
+		() =>
+			Math.max(
+				adminScholarImportHeaders.length,
+				...adminScholarImportRows.map((row) => (row.raw?.length || 0) + 1),
+				0,
+			),
+		[adminScholarImportHeaders, adminScholarImportRows],
+	)
+	const adminScholarImportColumns = useMemo(
+		() =>
+			Array.from({ length: adminScholarImportColumnCount }, (_, index) => ({
+				index,
+				header: adminScholarImportHeaders[index] || `Column ${index + 1}`,
+			})),
+		[adminScholarImportColumnCount, adminScholarImportHeaders],
+	)
+	const selectedAdminScholarImportSet = useMemo(
+		() => new Set(selectedAdminScholarImportRows),
+		[selectedAdminScholarImportRows],
+	)
+	const allAdminScholarImportRowsSelected = Boolean(
+		adminScholarImportRows.length > 0 &&
+			selectedAdminScholarImportRows.length === adminScholarImportRows.length,
 	)
 	const selectedGrantorPasswordChangePending = Boolean(
 		selectedGrantor?.passwordChangeRequested === true ||
@@ -2284,6 +2557,10 @@ export default function AdminDashboard() {
 
 	const selectedStudentTracking = selectedStudent?.id ? studentTrackingById.get(selectedStudent.id) || null : null
 
+	function normalizeDocumentPreviewUrl(url = "") {
+		return normalizeStoragePublicUrl(url)
+	}
+
 	useEffect(() => {
 		if (!previewDocument?.url) {
 			setPreviewBlobUrl("")
@@ -2296,11 +2573,7 @@ export default function AdminDashboard() {
 		setIsPreviewLoading(true)
 		setPreviewBlobUrl("")
 
-		fetch(previewDocument.url)
-			.then((response) => {
-				if (!response.ok) throw new Error(`preview_failed_${response.status}`)
-				return response.blob()
-			})
+		getStorageObjectBlob(previewDocument)
 			.then(async (blob) => {
 				if (cancelled) return
 				if (previewDocument.isPdf) {
@@ -2341,6 +2614,7 @@ export default function AdminDashboard() {
 					) || ""
 				return {
 					trackingKey: `grantor_scholar::${scholar.grantorId || provider}::${scholar.id}`,
+					scholarArchiveKey: `${scholar.grantorId || provider}::${scholar.id}`,
 					studentId: scholar.studentId || "-",
 					fullName: buildGrantorScholarFullName(scholar),
 					scholarship: programName,
@@ -2350,6 +2624,7 @@ export default function AdminDashboard() {
 					contactNumber: scholar.cpNumber || "-",
 					street: buildGrantorScholarAddress(scholar) || "-",
 					status: scholar.status || "Active",
+					sourceLabel: scholar.addedByAdmin || scholar.addedBy === "admin" ? "Added by admin" : "Grantor roster",
 					updatedAtLabel: formatDate(scholar.updatedAt || scholar.createdAt),
 					studentRecordId,
 					rawScholar: scholar,
@@ -2393,6 +2668,7 @@ export default function AdminDashboard() {
 					grantorName: scholar.grantorName || toProviderLabel(provider),
 					yearLevel: scholar.yearLevel || "-",
 					status: scholar.status || "Archived",
+					sourceLabel: scholar.addedByAdmin || scholar.addedBy === "admin" ? "Added by admin" : "Grantor roster",
 					archivedAtLabel: formatDate(scholar.archivedAt || scholar.updatedAt || scholar.createdAt),
 					studentRecordId,
 					rawScholar: scholar,
@@ -2473,11 +2749,28 @@ export default function AdminDashboard() {
 		warningRows,
 	])
 
+	useEffect(() => {
+		if (scholarshipTab !== "scholars") {
+			setSelectedScholarshipScholarKeys([])
+			return
+		}
+		const visibleKeys = new Set(scholarshipStudentTableRows.map((row) => row.scholarArchiveKey || row.trackingKey))
+		setSelectedScholarshipScholarKeys((current) => current.filter((key) => visibleKeys.has(key)))
+	}, [scholarshipStudentTableRows, scholarshipTab])
+
 	const selectedScholarshipTrackingRow = useMemo(
 		() =>
 			allScholarshipTrackingRows.find((row) => row.trackingKey === selectedScholarshipTrackingKey) ||
 			null,
 		[allScholarshipTrackingRows, selectedScholarshipTrackingKey],
+	)
+
+	const selectedScholarshipScholarRows = useMemo(
+		() =>
+			scholarshipStudentRows.filter((row) =>
+				selectedScholarshipScholarKeys.includes(row.scholarArchiveKey || row.trackingKey),
+			),
+		[scholarshipStudentRows, selectedScholarshipScholarKeys],
 	)
 
 	const scholarshipSectionPreviewConfig = useMemo(() => {
@@ -3071,7 +3364,7 @@ export default function AdminDashboard() {
 		})
 	}, [soeMaterialFilter, soeProviderFilter, soeRows, soeSearch])
 
-	const requestedSoeRows = useMemo(() => {
+	const approvedSoeRows = useMemo(() => {
 		const keyword = soeSearch.trim().toLowerCase()
 		return soeRows.filter((row) => {
 			if (row.reviewState !== "signed") return false
@@ -3098,16 +3391,46 @@ export default function AdminDashboard() {
 		})
 	}, [soeMaterialFilter, soeProviderFilter, soeRows, soeSearch])
 
+	const rejectedSoeRows = useMemo(() => {
+		const keyword = soeSearch.trim().toLowerCase()
+		return soeRows.filter((row) => {
+			if (row.reviewState !== "non_compliant") return false
+			const providerType = toProviderType(row.providerType || row.scholarshipName || "")
+			const matchesProvider = soeProviderFilter === "All" || providerType === soeProviderFilter
+			const matchesMaterial =
+				soeMaterialFilter === "All" ||
+				(Array.isArray(row.requestedMaterialKeys) && row.requestedMaterialKeys.includes(soeMaterialFilter))
+			if (!matchesProvider || !matchesMaterial) return false
+			return (
+				!keyword ||
+				String(row.requestNumber || row.id || "").toLowerCase().includes(keyword) ||
+				String(row.studentId || "").toLowerCase().includes(keyword) ||
+				String(row.fullName || "").toLowerCase().includes(keyword) ||
+				String(row.scholarshipName || "").toLowerCase().includes(keyword) ||
+				String(row.providerType || "").toLowerCase().includes(keyword) ||
+				String(row.visibleMaterialsSummary || "").toLowerCase().includes(keyword) ||
+				String(row.requestedMaterialsSummary || "").toLowerCase().includes(keyword) ||
+				String(row.materialStatusSummary || "").toLowerCase().includes(keyword) ||
+				String(row.status || "").toLowerCase().includes(keyword) ||
+				String(row.reviewStateLabel || "").toLowerCase().includes(keyword) ||
+				String(row.downloadStatusLabel || "").toLowerCase().includes(keyword)
+			)
+		})
+	}, [soeMaterialFilter, soeProviderFilter, soeRows, soeSearch])
+
 	const soeRequestTabCounts = useMemo(
 		() => ({
 			requesting: soeRows.filter((row) => row.reviewState === "incoming").length,
-			requested: soeRows.filter((row) => row.reviewState === "signed").length,
+			approved: soeRows.filter((row) => row.reviewState === "signed").length,
+			rejected: soeRows.filter((row) => row.reviewState === "non_compliant").length,
 		}),
 		[soeRows],
 	)
 
 	const requestingSoeReportRows = useMemo(() => requestingSoeRows.map((row) => toSoeReportRow(row)), [requestingSoeRows])
-	const requestedSoeReportRows = useMemo(() => requestedSoeRows.map((row) => toSoeReportRow(row)), [requestedSoeRows])
+	const approvedSoeReportRows = useMemo(() => approvedSoeRows.map((row) => toSoeReportRow(row)), [approvedSoeRows])
+	const rejectedSoeReportRows = useMemo(() => rejectedSoeRows.map((row) => toSoeReportRow(row)), [rejectedSoeRows])
+	const currentSemesterTag = getCurrentSemesterTag()
 
 	const soeDownloadRows = useMemo(() => {
 		const studentMap = new Map(studentProfiles.map((student) => [student.id, student]))
@@ -3127,11 +3450,18 @@ export default function AdminDashboard() {
 					reviewState === "signed"
 						? "Signed"
 						: reviewState === "non_compliant"
-							? "Non-Compliant"
-							: "Pending"
+							? "Rejected"
+							: "Waiting for Signature"
+				const semesterTag =
+					download.semesterTag ||
+					download.soeSnapshot?.semesterTag ||
+					download.requestSnapshot?.semesterTag ||
+					snapshot.semesterTag ||
+					currentSemesterTag
 				return {
 					...download,
 					reviewSource: "download",
+					semesterTag,
 					fullName:
 						student?.fullName ||
 						download.studentName ||
@@ -3167,12 +3497,15 @@ export default function AdminDashboard() {
 				}
 			})
 			.sort((a, b) => (b.downloadedDate?.getTime() || 0) - (a.downloadedDate?.getTime() || 0))
-	}, [soeDownloads, studentProfiles])
+	}, [currentSemesterTag, soeDownloads, studentProfiles])
 
 	const soeCheckingRows = useMemo(() => {
 		const keyword = soeCheckSearch.trim().toLowerCase()
 		return soeDownloadRows.filter((row) => {
-			if (row.reviewState !== soeCheckingTab) return false
+			if (row.reviewState !== "incoming") return false
+			const isCurrentCycle = !row.semesterTag || row.semesterTag === currentSemesterTag
+			if (soeCheckingTab === "current" && !isCurrentCycle) return false
+			if (soeCheckingTab === "previous" && isCurrentCycle) return false
 			return (
 				!keyword ||
 				String(row.requestNumber || "").toLowerCase().includes(keyword) ||
@@ -3183,10 +3516,11 @@ export default function AdminDashboard() {
 				String(row.requestedMaterialsSummary || "").toLowerCase().includes(keyword) ||
 				String(row.materialStatusSummary || "").toLowerCase().includes(keyword) ||
 				String(row.status || "").toLowerCase().includes(keyword) ||
-				String(row.reviewStateLabel || "").toLowerCase().includes(keyword)
+				String(row.reviewStateLabel || "").toLowerCase().includes(keyword) ||
+				String(row.semesterTag || "").toLowerCase().includes(keyword)
 			)
 		})
-	}, [soeCheckSearch, soeCheckingTab, soeDownloadRows])
+	}, [currentSemesterTag, soeCheckSearch, soeCheckingTab, soeDownloadRows])
 
 	const studentsTablePage = useMemo(
 		() => paginateRows(filteredStudents, tablePages[`students_${studentViewTab}`] || 1, TABLE_PAGE_SIZE),
@@ -3203,9 +3537,14 @@ export default function AdminDashboard() {
 		[requestingSoeRows, tablePages],
 	)
 
-	const requestedSoeTablePage = useMemo(
-		() => paginateRows(requestedSoeRows, tablePages.requested_soe || 1, TABLE_PAGE_SIZE),
-		[requestedSoeRows, tablePages],
+	const approvedSoeTablePage = useMemo(
+		() => paginateRows(approvedSoeRows, tablePages.approved_soe || 1, TABLE_PAGE_SIZE),
+		[approvedSoeRows, tablePages],
+	)
+
+	const rejectedSoeTablePage = useMemo(
+		() => paginateRows(rejectedSoeRows, tablePages.rejected_soe || 1, TABLE_PAGE_SIZE),
+		[rejectedSoeRows, tablePages],
 	)
 
 	const soeCheckingTablePage = useMemo(
@@ -3225,11 +3564,10 @@ export default function AdminDashboard() {
 
 	const soeCheckingCounts = useMemo(
 		() => ({
-			incoming: soeDownloadRows.filter((row) => row.reviewState === "incoming").length,
-			signed: soeDownloadRows.filter((row) => row.reviewState === "signed").length,
-			non_compliant: soeDownloadRows.filter((row) => row.reviewState === "non_compliant").length,
+			current: soeDownloadRows.filter((row) => row.reviewState === "incoming" && (!row.semesterTag || row.semesterTag === currentSemesterTag)).length,
+			previous: soeDownloadRows.filter((row) => row.reviewState === "incoming" && row.semesterTag && row.semesterTag !== currentSemesterTag).length,
 		}),
-		[soeDownloadRows],
+		[currentSemesterTag, soeDownloadRows],
 	)
 
 	const selectedSoeRequestReviewRow = useMemo(
@@ -3241,13 +3579,123 @@ export default function AdminDashboard() {
 		[selectedSoeReviewId, soeDownloadRows],
 	)
 	const selectedSoeReviewRow = useMemo(
-		() =>
-			activeSection === "soe-checking"
-				? selectedSoeCheckingReviewRow
-				: selectedSoeRequestReviewRow,
-		[activeSection, selectedSoeCheckingReviewRow, selectedSoeRequestReviewRow],
+		() => selectedSoeRequestReviewRow || selectedSoeCheckingReviewRow,
+		[selectedSoeCheckingReviewRow, selectedSoeRequestReviewRow],
 	)
 	const isSelectedSoeDownloadReview = selectedSoeReviewRow?.reviewSource === "download"
+	const selectedSoeReviewStudent = useMemo(
+		() =>
+			selectedSoeReviewRow?.studentId
+				? studentProfiles.find((student) => student.id === selectedSoeReviewRow.studentId) || null
+				: null,
+		[selectedSoeReviewRow, studentProfiles],
+	)
+	const selectedSoeReviewScholarship = useMemo(() => {
+		if (!selectedSoeReviewStudent || !selectedSoeReviewRow) return null
+		const scholarships = Array.isArray(selectedSoeReviewStudent.scholarships)
+			? selectedSoeReviewStudent.scholarships
+			: []
+		const rowKeys = [
+			selectedSoeReviewRow.scholarshipId,
+			selectedSoeReviewRow.scholarshipName,
+			selectedSoeReviewRow.providerType,
+			selectedSoeReviewRow.requestNumber,
+			selectedSoeReviewRow.applicationNumber,
+		]
+			.filter(Boolean)
+			.map((value) => String(value).trim().toLowerCase())
+		return (
+			scholarships.find((scholarship) => {
+				const scholarshipKeys = [
+					scholarship.id,
+					scholarship.name,
+					scholarship.provider,
+					scholarship.providerType,
+					scholarship.requestNumber,
+					scholarship.applicationNumber,
+				]
+					.filter(Boolean)
+					.map((value) => String(value).trim().toLowerCase())
+				return scholarshipKeys.some((key) => rowKeys.includes(key))
+			}) || scholarships[0] || null
+		)
+	}, [selectedSoeReviewRow, selectedSoeReviewStudent])
+	const selectedSoeReviewDocuments = useMemo(() => {
+		const documentUrls = getDocumentUrlsForStudent(selectedSoeReviewStudent || {})
+		const student = selectedSoeReviewStudent || {}
+		return [
+			{
+				key: "cor",
+				label: "COR",
+				title: "Certificate of Registration",
+				url: documentUrls.cor,
+				name: student.corFile?.name || student.corDocument?.name || "COR",
+				...(student.corFile || student.corDocument || {}),
+			},
+			{
+				key: "cog",
+				label: "COG",
+				title: "Certificate of Grades",
+				url: documentUrls.cog,
+				name: student.cogFile?.name || student.cogDocument?.name || "COG",
+				...(student.cogFile || student.cogDocument || {}),
+			},
+			{
+				key: "school_id",
+				label: "School ID",
+				title: "School ID",
+				url: documentUrls.schoolId,
+				name:
+					student.schoolIdFile?.name ||
+					student.studentIdFile?.name ||
+					student.validIdFile?.name ||
+					"School ID",
+				...(student.schoolIdFile || student.studentIdFile || student.validIdFile || {}),
+			},
+			{
+				key: "application_form",
+				label: "Application Form",
+				title: "Application Form",
+				url: documentUrls.applicationForm,
+				name:
+					student.scholarshipApplicationFile?.name ||
+					student.applicationFormFile?.name ||
+					"Application Form",
+				...(student.scholarshipApplicationFile || student.applicationFormFile || {}),
+			},
+		]
+	}, [selectedSoeReviewStudent])
+	const selectedSoeReviewOtherDocuments = useMemo(
+		() => collectOtherRequirementDocuments(selectedSoeReviewScholarship || {}),
+		[selectedSoeReviewScholarship],
+	)
+	const selectedSoeReviewRejectionDetails = useMemo(() => {
+		if (!selectedSoeReviewRow || selectedSoeReviewRow.reviewState !== "non_compliant") return []
+		const normalizedRequest = normalizeMaterialRequest(selectedSoeReviewRow)
+		const rejectedKeys =
+			Array.isArray(normalizedRequest.rejectedMaterialKeys) && normalizedRequest.rejectedMaterialKeys.length > 0
+				? normalizedRequest.rejectedMaterialKeys
+				: Array.isArray(selectedSoeReviewRow.rejectedMaterialKeys)
+					? selectedSoeReviewRow.rejectedMaterialKeys
+					: []
+		return rejectedKeys.map((materialKey) => {
+			const material = getMaterialEntry(normalizedRequest, materialKey)
+			return {
+				key: materialKey,
+				label: toMaterialLabel(materialKey),
+				reason:
+					material.rejectionReason ||
+					selectedSoeReviewRow.rejectionReason ||
+					selectedSoeReviewRow.reason ||
+					"Reason not provided",
+				notes:
+					material.rejectionNotes ||
+					selectedSoeReviewRow.rejectionNotes ||
+					selectedSoeReviewRow.notes ||
+					"",
+			}
+		})
+	}, [selectedSoeReviewRow])
 
 	const complianceRows = useMemo(
 		() =>
@@ -3278,6 +3726,59 @@ export default function AdminDashboard() {
 	const previousAnnouncements = useMemo(() => {
 		return announcements.filter((announcement) => isAnnouncementArchived(announcement))
 	}, [announcements])
+	const adminAnnouncementSourceOptions = useMemo(
+		() => [
+			{ value: "all", label: "All" },
+			{ value: "admin", label: "Admin" },
+			...activeGrantorRows.map((grantor) => ({
+				value: `grantor:${grantor.id}`,
+				label: buildGrantorName(grantor) || grantor.id,
+			})),
+		],
+		[activeGrantorRows],
+	)
+	const allPortalAnnouncements = useMemo(() => {
+		const grantorLookup = new Map(activeGrantorRows.map((grantor) => [grantor.id, grantor]))
+		const adminRows = announcements.map((announcement) => ({
+			...announcement,
+			sourceType: "admin",
+			sourceKey: "admin",
+			sourceLabel: "Admin",
+		}))
+		const grantorRowsForAnnouncements = grantorAnnouncementsRaw.map((announcement) => {
+			const grantor = grantorLookup.get(announcement.grantorId)
+			const grantorLabel =
+				announcement.grantorName ||
+				announcement.providerLabel ||
+				announcement.sourceLabel ||
+				buildGrantorName(grantor || {}) ||
+				announcement.grantorId ||
+				"Grantor"
+			return {
+				...announcement,
+				sourceType: "grantor",
+				sourceKey: `grantor:${announcement.grantorId || toProviderType(grantorLabel)}`,
+				sourceLabel: grantorLabel,
+			}
+		})
+		return [...adminRows, ...grantorRowsForAnnouncements].sort(
+			(left, right) => (toJsDate(right.createdAt || right.updatedAt || right.date)?.getTime() || 0) - (toJsDate(left.createdAt || left.updatedAt || left.date)?.getTime() || 0),
+		)
+	}, [activeGrantorRows, announcements, grantorAnnouncementsRaw])
+	const filteredPortalAnnouncements = useMemo(() => {
+		if (adminAnnouncementSourceFilter === "all") return allPortalAnnouncements
+		return allPortalAnnouncements.filter((announcement) => announcement.sourceKey === adminAnnouncementSourceFilter)
+	}, [adminAnnouncementSourceFilter, allPortalAnnouncements])
+	const filteredCurrentAnnouncements = useMemo(
+		() => filteredPortalAnnouncements.filter((announcement) => !isAnnouncementArchived(announcement)),
+		[filteredPortalAnnouncements],
+	)
+	const filteredPreviousAnnouncements = useMemo(
+		() => filteredPortalAnnouncements.filter((announcement) => isAnnouncementArchived(announcement)),
+		[filteredPortalAnnouncements],
+	)
+	const compactAdminAnnouncements = useMemo(() => filteredCurrentAnnouncements.slice(0, 6), [filteredCurrentAnnouncements])
+	const adminAnnouncementRows = adminAnnouncementTab === "archived" ? filteredPreviousAnnouncements : filteredCurrentAnnouncements
 
 	const todayStart = useMemo(() => {
 		const today = new Date()
@@ -3453,8 +3954,9 @@ export default function AdminDashboard() {
 	const openDocumentPreview = (document) => {
 		if (!document?.url) return
 		setPreviewDocument({
+			...document,
 			title: document.title || document.label || "Document",
-			url: document.url,
+			url: normalizeDocumentPreviewUrl(document.url),
 			name: document.name || document.title || document.label || "document",
 			isPdf: isPreviewPdf(document),
 		})
@@ -3462,12 +3964,331 @@ export default function AdminDashboard() {
 
 	const closeDocumentPreview = () => setPreviewDocument(null)
 
+	const closeAdminScholarModal = () => {
+		setAdminScholarModalOpen(false)
+		setAdminScholarForm(ADMIN_SCHOLAR_FORM)
+		setAdminScholarImportRows([])
+		setAdminScholarImportHeaders([])
+		setAdminScholarColumnMapping([])
+		setSelectedAdminScholarImportRows([])
+		setHighlightedAdminScholarGrantorRows([])
+		setAdminScholarImportGrantorAssignments({})
+		setAdminScholarImportFile(null)
+		setAdminScholarImportWarnings([])
+	}
+
+	const resolveAdminScholarGrantor = useCallback(
+		(value = "") => {
+			const lookup = normalizeGrantorScholarLookupValue(value)
+			if (!lookup) return null
+			return activeGrantorRows.find((grantor) => {
+				const candidates = [
+					grantor.id,
+					buildGrantorName(grantor),
+					grantor.providerName,
+					grantor.grantorName,
+					grantor.organization,
+					grantor.email,
+					grantor.providerType,
+					toProviderLabel(grantor.providerType),
+				]
+				return candidates.some((candidate) => normalizeGrantorScholarLookupValue(candidate) === lookup)
+			}) || null
+		},
+		[activeGrantorRows],
+	)
+
+	const parseAdminScholarImportFile = async (file) => {
+		if (!file) return
+		try {
+			const buffer = await file.arrayBuffer()
+			const workbook = read(buffer, { type: "array" })
+			const sheet = workbook.Sheets[workbook.SheetNames[0]]
+			const rows = utils.sheet_to_json(sheet, { header: 1, defval: "" })
+				.map((row) => row.map((cell) => String(cell ?? "").trim()))
+				.filter((row) => row.some(Boolean))
+			if (rows.length < 2) {
+				toast.error("Import file must include a header row and at least one student row.")
+				return
+			}
+			const [headers, ...bodyRows] = rows
+			const displayHeaders = ["", ...headers]
+			const fieldMap = ["", ...headers.map((header) => fieldFromAdminImportHeader(header))]
+			const parsedRows = bodyRows.map((row, rowIndex) => ({
+				rowNumber: rowIndex + 2,
+				raw: row,
+			}))
+			setAdminScholarImportFile(file)
+			setAdminScholarImportHeaders(displayHeaders)
+			setAdminScholarColumnMapping(fieldMap)
+			setAdminScholarImportRows(parsedRows)
+			setSelectedAdminScholarImportRows([])
+			setHighlightedAdminScholarGrantorRows([])
+			setAdminScholarImportGrantorAssignments({})
+			setAdminScholarImportWarnings([])
+			toast.success(`${parsedRows.length} import row${parsedRows.length === 1 ? "" : "s"} loaded. Select a grantor before saving.`)
+		} catch (error) {
+			console.error("Unable to parse admin scholar import file.", error)
+			toast.error("Unable to read the selected spreadsheet.")
+		}
+	}
+
+	const clearAdminScholarImport = () => {
+		setAdminScholarImportFile(null)
+		setAdminScholarImportHeaders([])
+		setAdminScholarColumnMapping([])
+		setAdminScholarImportRows([])
+		setSelectedAdminScholarImportRows([])
+		setHighlightedAdminScholarGrantorRows([])
+		setAdminScholarImportGrantorAssignments({})
+		setAdminScholarImportWarnings([])
+	}
+
+	const removeSelectedAdminScholarImportRows = () => {
+		if (selectedAdminScholarImportRows.length === 0) return
+		const selected = new Set(selectedAdminScholarImportRows)
+		const removedRowNumbers = new Set(adminScholarImportRows.filter((_, index) => selected.has(index)).map((row) => row.rowNumber))
+		setAdminScholarImportRows((prev) => prev.filter((_, index) => !selected.has(index)))
+		setSelectedAdminScholarImportRows([])
+		setHighlightedAdminScholarGrantorRows((prev) => prev.filter((rowNumber) => !removedRowNumbers.has(rowNumber)))
+		setAdminScholarImportGrantorAssignments((prev) => {
+			const next = { ...prev }
+			removedRowNumbers.forEach((rowNumber) => delete next[rowNumber])
+			return next
+		})
+	}
+
+	const getAdminScholarImportGrantorLabel = (grantorId = "") =>
+		adminScholarGrantorOptions.find((grantor) => grantor.value === grantorId)?.label || ""
+
+	const applyAdminScholarImportGrantor = (grantorId = "") => {
+		setAdminScholarForm((prev) => ({ ...prev, grantorId }))
+		if (!adminScholarImportRows.length || !grantorId || highlightedAdminScholarGrantorRows.length === 0) return
+		setAdminScholarImportGrantorAssignments((prev) => {
+			const next = { ...prev }
+			highlightedAdminScholarGrantorRows.forEach((rowNumber) => {
+				next[rowNumber] = grantorId
+			})
+			return next
+		})
+		setHighlightedAdminScholarGrantorRows([])
+	}
+
+	const buildAdminScholarImportRecord = (rowRecord = {}) => {
+		const record = {
+			rowNumber: rowRecord.rowNumber,
+			raw: rowRecord.raw || [],
+			reservedGrantorColumn: "",
+		}
+		adminScholarColumnMapping.forEach((field, colIndex) => {
+			if (!field || colIndex === 0) return
+			record[field] = rowRecord.raw?.[colIndex - 1] || ""
+		})
+		if (!record.fullName) {
+			record.fullName = [record.fname, record.mname, record.lname].filter(Boolean).join(" ").trim()
+		}
+		return record
+	}
+
+	const submitAdminScholarRows = async (inputRows = []) => {
+		if (isBusy) return
+		setIsBusy(true)
+		try {
+			const existingStudents = studentProfiles
+			const acceptedByGrantor = new Map()
+			const acceptedScholars = []
+			const blockedRows = []
+			const warningRows = []
+			const groupedPayload = new Map()
+
+			for (const row of inputRows) {
+				const grantor = resolveAdminScholarGrantor(row.grantorId || row.grantorInput)
+				if (!grantor) {
+					blockedRows.push({ row, reason: "Grantor not found or inactive." })
+					continue
+				}
+
+				let payload = buildAdminScholarPayload(row, grantor)
+				if (!payload.studentId && !payload.fullName) {
+					blockedRows.push({ row, reason: "Missing student identity." })
+					continue
+				}
+
+				const accountDuplicate = await findScholarDuplicate(payload, existingStudents)
+				if (accountDuplicate?.record) {
+					payload = buildAdminScholarPayloadFromStudentAccount(accountDuplicate.record, payload)
+				}
+
+				const sameGrantorExisting = grantorScholarsRaw.find((scholar) => {
+					if (scholar.archived === true) return false
+					if (String(scholar.grantorId || "").trim() !== String(grantor.id || "").trim()) return false
+					const sameId =
+						normalizeStudentIdKey(scholar.studentId || scholar.studentnumber || scholar.studentNumber) &&
+						normalizeStudentIdKey(scholar.studentId || scholar.studentnumber || scholar.studentNumber) === normalizeStudentIdKey(payload.studentId)
+					const sameName =
+						normalizeGrantorScholarLookupValue(buildGrantorScholarFullName(scholar)) &&
+						normalizeGrantorScholarLookupValue(buildGrantorScholarFullName(scholar)) === normalizeGrantorScholarLookupValue(payload.fullName)
+					return sameId || sameName
+				})
+				if (sameGrantorExisting) {
+					blockedRows.push({ row, reason: "Student already exists in the same grantor roster." })
+					continue
+				}
+
+				const acceptedRowsForGrantor = acceptedByGrantor.get(grantor.id) || []
+				const sameBatchDuplicate = acceptedRowsForGrantor.find((scholar) => {
+					const sameId =
+						normalizeStudentIdKey(scholar.studentId) &&
+						normalizeStudentIdKey(scholar.studentId) === normalizeStudentIdKey(payload.studentId)
+					const sameName =
+						normalizeGrantorScholarLookupValue(scholar.fullName) &&
+						normalizeGrantorScholarLookupValue(scholar.fullName) === normalizeGrantorScholarLookupValue(payload.fullName)
+					return sameId || sameName
+				})
+				if (sameBatchDuplicate) {
+					blockedRows.push({ row, reason: "Duplicate row for the same grantor in this import." })
+					continue
+				}
+
+				const duplicate = await findScholarDuplicate(payload, [...grantorScholarsRaw, ...acceptedScholars])
+				if (duplicate?.record) {
+					const sameGrantor = String(duplicate.record.grantorId || "").trim() === String(grantor.id || "").trim()
+					if (sameGrantor) {
+						blockedRows.push({ row, reason: "Student already exists in the same grantor roster." })
+						continue
+					}
+					payload = {
+						...payload,
+						...buildAdminCrossGrantorWarningPayload(duplicate),
+					}
+					warningRows.push({ row, payload, duplicate })
+				}
+
+				acceptedScholars.push(payload)
+				acceptedByGrantor.set(grantor.id, [...acceptedRowsForGrantor, payload])
+				groupedPayload.set(grantor.id, [...(groupedPayload.get(grantor.id) || []), {
+					...payload,
+					createdAt: serverTimestamp(),
+					updatedAt: serverTimestamp(),
+				}])
+			}
+
+			if (warningRows.length > 0) {
+				const examples = warningRows.slice(0, 3).map(({ row, duplicate }) => {
+					const matchedName = duplicate.record?.fullName || buildGrantorScholarFullName(duplicate.record || {}) || "an existing student"
+					const owner = duplicate.record?.grantorName || duplicate.record?.grantorId || "another grantor"
+					return `row ${row.rowNumber || "-"} matches ${matchedName} under ${owner}`
+				}).join("; ")
+				setAdminScholarImportWarnings(
+					warningRows.map(({ row, duplicate }) => {
+						const matchedName = duplicate.record?.fullName || buildGrantorScholarFullName(duplicate.record || {}) || "an existing student"
+						const owner = duplicate.record?.grantorName || duplicate.record?.grantorId || "another grantor"
+						return `Before import: Row ${row.rowNumber || "-"} matches ${matchedName} under ${owner}. It can be added, but it will be flagged in Warning.`
+					}),
+				)
+				const confirmed = window.confirm(`${warningRows.length} student${warningRows.length === 1 ? "" : "s"} already appear in another grantor roster. Admin can still add them, but they will be flagged in Warning. Continue?\n\n${examples}`)
+				if (!confirmed) return
+			}
+
+			let insertedCount = 0
+			for (const [grantorId, scholars] of groupedPayload.entries()) {
+				if (!scholars.length) continue
+				await createGrantorScholarsWorkflow({ grantorId, scholars })
+				insertedCount += scholars.length
+			}
+
+			if (warningRows.length > 0) {
+				await createAdminNotification({
+					type: "duplicate_scholarship_detected",
+					title: "Duplicate Scholarship Detected",
+					message: `Admin added ${warningRows.length} student${warningRows.length === 1 ? "" : "s"} with cross-grantor scholarship warnings.`,
+					count: warningRows.length,
+					source: "admin_roster_add",
+					read: false,
+					createdAt: serverTimestamp(),
+				}).catch((error) => console.error("Admin duplicate warning notification failed.", error))
+
+				await Promise.all(
+					warningRows.map(({ row, payload, duplicate }, index) => {
+						const warningPayload = buildAdminDuplicateScholarshipWarningRecord({ row, payload, duplicate })
+						const warningId = [
+							"duplicate_scholarship",
+							warningPayload.studentId || "student",
+							warningPayload.newGrantorId || "grantor",
+							Date.now(),
+							index,
+						].join("_")
+						return setDoc(doc(db, "studentWarning", warningId), warningPayload).catch((error) => {
+							console.error("Admin duplicate scholarship warning save failed.", error)
+							return null
+						})
+					}),
+				)
+			}
+
+			setAdminScholarImportWarnings([
+				...warningRows.map(({ row }) => `Row ${row.rowNumber || "-"} added with cross-grantor warning.`),
+				...blockedRows.map(({ row, reason }) => `Row ${row.rowNumber || "-"} skipped: ${reason}`),
+			])
+			if (insertedCount > 0) {
+				toast.success(`${insertedCount} scholar${insertedCount === 1 ? "" : "s"} added by admin.`)
+				closeAdminScholarModal()
+			} else {
+				toast.warning("No scholars were added. Review the skipped rows.")
+			}
+		} catch (error) {
+			console.error("Unable to add admin scholars.", error)
+			toast.error("Unable to add scholars right now.")
+		} finally {
+			setIsBusy(false)
+		}
+	}
+
+	const submitAdminScholarManual = () => {
+		if (!adminScholarForm.grantorId) {
+			toast.error("Select an active grantor first.")
+			return
+		}
+		if (!adminScholarForm.studentId.trim() || !adminScholarForm.course.trim()) {
+			toast.error("Student ID and course are required.")
+			return
+		}
+		if (!adminScholarForm.fname.trim() && !adminScholarForm.fullName?.trim()) {
+			toast.error("Student name is required.")
+			return
+		}
+		submitAdminScholarRows([{ ...adminScholarForm, grantorInput: adminScholarForm.grantorId, rowNumber: "Manual" }])
+	}
+
+	const submitAdminScholarImport = () => {
+		if (!adminScholarImportRows.length) {
+			toast.error("Upload a spreadsheet first.")
+			return
+		}
+		const mappedRows = adminScholarImportRows.map((row) => buildAdminScholarImportRecord(row))
+		const rowsMissingGrantor = mappedRows.filter((row) => !(adminScholarImportGrantorAssignments[row.rowNumber] || adminScholarForm.grantorId))
+		if (rowsMissingGrantor.length > 0) {
+			toast.error("Assign a grantor to every imported row, or select one grantor as the fallback.")
+			return
+		}
+		const hasIdentityMapping = mappedRows.some((row) => row.studentId || row.fullName || row.fname || row.lname)
+		if (!hasIdentityMapping) {
+			toast.error("Map at least one identity column such as Student ID, Full Name, First Name, or Last Name.")
+			return
+		}
+		submitAdminScholarRows(
+			mappedRows.map((row) => ({
+				...row,
+				grantorId: adminScholarImportGrantorAssignments[row.rowNumber] || adminScholarForm.grantorId,
+				grantorInput: adminScholarImportGrantorAssignments[row.rowNumber] || adminScholarForm.grantorId,
+			})),
+		)
+	}
+
 	const downloadPreviewDocument = async () => {
 		if (!previewDocument?.url) return
 		try {
-			const response = await fetch(previewDocument.url)
-			if (!response.ok) throw new Error(`download_failed_${response.status}`)
-			const blob = await response.blob()
+			const blob = await getStorageObjectBlob(previewDocument)
 			const url = URL.createObjectURL(blob)
 			const link = document.createElement("a")
 			link.href = url
@@ -3943,6 +4764,16 @@ export default function AdminDashboard() {
 		})
 	}
 
+	const openScholarshipScholarArchiveConfirmation = () => {
+		setAdminConfirmDialog({
+			type: "batch_archive_scholarship_scholars",
+			title: "Archive Selected Scholars",
+			message: `Are you sure you want to archive ${selectedScholarshipScholarKeys.length} selected scholar records? This will move them out of the active scholarship roster.`,
+			confirmLabel: "Archive Selected",
+			tone: "danger",
+		})
+	}
+
 	const handleBatchArchive = async () => {
 		const targetIds = [...selectedStudentIds]
 		setAdminConfirmDialog(null)
@@ -4004,6 +4835,36 @@ export default function AdminDashboard() {
 		}, `Successfully archived ${targetIds.length} grantors.`)
 	}
 
+	const handleScholarshipScholarBatchArchive = async () => {
+		const targetRows = [...selectedScholarshipScholarRows].filter((row) => row.rawScholar?.id && row.rawScholar?.grantorId)
+		setAdminConfirmDialog(null)
+		if (!targetRows.length) {
+			toast.warning("No selected scholarship rows can be archived.")
+			return
+		}
+		await runAction(async () => {
+			const grouped = new Map()
+			targetRows.forEach((row) => {
+				const grantorId = row.rawScholar.grantorId
+				grouped.set(grantorId, [...(grouped.get(grantorId) || []), row.rawScholar.id])
+			})
+			for (const [grantorId, scholarIds] of grouped.entries()) {
+				await updateGrantorScholarsWorkflow({
+					grantorId,
+					scholarIds,
+					data: {
+						archived: true,
+						status: "Archived",
+						archivedAt: serverTimestamp(),
+						updatedAt: serverTimestamp(),
+						archivedBy: "admin",
+					},
+				})
+			}
+			setSelectedScholarshipScholarKeys([])
+		}, `Successfully archived ${targetRows.length} scholar${targetRows.length === 1 ? "" : "s"}.`)
+	}
+
 	const confirmAdminDialogAction = async () => {
 		if (!adminConfirmDialog || isBusy) return
 		const currentDialog = adminConfirmDialog
@@ -4016,6 +4877,11 @@ export default function AdminDashboard() {
 
 		if (currentDialog.type === "batch_archive_grantors") {
 			await handleGrantorBatchArchive()
+			return
+		}
+
+		if (currentDialog.type === "batch_archive_scholarship_scholars") {
+			await handleScholarshipScholarBatchArchive()
 			return
 		}
 
@@ -4091,7 +4957,7 @@ export default function AdminDashboard() {
 		return (toJsDate(requestDate)?.getTime() || 0) <= resetAt
 	}
 
-	const markSoeReview = async (row, action) => {
+	const markSoeReview = async (row, action, rejectionDetails = {}) => {
 		if (!row?.id) return
 		const student = studentProfiles.find((entry) => entry.id === row.studentId)
 		const pendingMaterialKeys =
@@ -4133,6 +4999,11 @@ export default function AdminDashboard() {
 			pendingMaterialKeys.length > 1
 				? "Requirement requests"
 				: `${toMaterialLabel(pendingMaterialKeys[0])} request`
+		const rejectionReason = String(rejectionDetails.reason || "").trim()
+		const rejectionNotes = String(rejectionDetails.notes || "").trim()
+		const rejectionMessage = rejectionReason
+			? `Your ${primaryMaterialLabel.toLowerCase()} was rejected. Reason: ${rejectionReason}${rejectionNotes ? ` - ${rejectionNotes}` : ""}`
+			: `Your ${primaryMaterialLabel.toLowerCase()} was rejected.`
 
 		await runAction(async () => {
 			const requestUpdate = {
@@ -4147,6 +5018,8 @@ export default function AdminDashboard() {
 				requestUpdate[`materials.${materialKey}.status`] = action === "signed" ? "approved" : "rejected"
 				requestUpdate[`materials.${materialKey}.approvedAt`] = action === "signed" ? serverTimestamp() : null
 				requestUpdate[`materials.${materialKey}.rejectedAt`] = action === "non_compliant" ? serverTimestamp() : null
+				requestUpdate[`materials.${materialKey}.rejectionReason`] = action === "non_compliant" ? rejectionReason : ""
+				requestUpdate[`materials.${materialKey}.rejectionNotes`] = action === "non_compliant" ? rejectionNotes : ""
 			})
 
 			await materialRequestWorkflow({
@@ -4201,10 +5074,52 @@ export default function AdminDashboard() {
 						).catch((err) => console.error("SOE approval email failed:", err))
 					}
 				}
+
+				if (action === "non_compliant") {
+					await createStudentNotification({
+						studentId: student.id,
+						type: "material_request_rejected",
+						title: "Requirements Request Rejected",
+						message: rejectionMessage,
+						studentName: student.fullName || studentFullName(student),
+						scholarshipName: row.scholarshipName || "",
+						applicationNumber: row.requestNumber || row.id || "",
+						reason: rejectionReason,
+						notes: rejectionNotes,
+						rejectedBy: "BulsuScholar Admin",
+						read: false,
+						createdAt: serverTimestamp(),
+					}).catch((error) => console.error("Student material rejection notification failed.", error))
+				}
 			}
 
 			setSelectedSoeReviewId("")
 		}, action === "signed" ? `${primaryMaterialLabel} approved.` : `${primaryMaterialLabel} rejected.`)
+	}
+
+	const openSoeRejectModal = (row) => {
+		setSoeRejectModalRow(row)
+		setSoeRejectReason(APPLICATION_REJECTION_REASONS[0])
+		setSoeRejectNotes("")
+	}
+
+	const closeSoeRejectModal = () => {
+		setSoeRejectModalRow(null)
+		setSoeRejectReason(APPLICATION_REJECTION_REASONS[0])
+		setSoeRejectNotes("")
+	}
+
+	const confirmSoeRejection = async () => {
+		if (!soeRejectModalRow) return
+		if (!soeRejectReason) {
+			toast.error("Select a rejection reason first.")
+			return
+		}
+		await markSoeReview(soeRejectModalRow, "non_compliant", {
+			reason: soeRejectReason,
+			notes: soeRejectNotes,
+		})
+		closeSoeRejectModal()
 	}
 
 	const markSoeCheckingReview = async (row, action) => {
@@ -4322,6 +5237,21 @@ export default function AdminDashboard() {
 		setAnnouncementImageFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
 	}
 
+	const resetAnnouncementDraft = () => {
+		setAnnouncementTitle("")
+		setAnnouncementDescription("")
+		setAnnouncementType("Update")
+		setAnnouncementImageFiles([])
+		setAnnouncementStartDate("")
+		setAnnouncementEndDate("")
+		setShowAnnouncementSchedule(false)
+	}
+
+	const closeCreateAdminAnnouncementModal = () => {
+		setShowCreateAdminAnnouncementModal(false)
+		resetAnnouncementDraft()
+	}
+
 	const postAnnouncement = async (event) => {
 		event.preventDefault()
 		if (!announcementTitle.trim() || !announcementDescription.trim()) {
@@ -4352,13 +5282,8 @@ export default function AdminDashboard() {
 				createdAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
 			})
-			setAnnouncementTitle("")
-			setAnnouncementDescription("")
-			setAnnouncementType("Update")
-			setAnnouncementImageFiles([])
-			setAnnouncementStartDate("")
-			setAnnouncementEndDate("")
-			setShowAnnouncementSchedule(false)
+			resetAnnouncementDraft()
+			setShowCreateAdminAnnouncementModal(false)
 			toast.success("Announcement posted.")
 		} catch (error) {
 			console.error(error)
@@ -5570,6 +6495,13 @@ export default function AdminDashboard() {
 						<div className="admin-head-actions">
 							<button
 								type="button"
+								className="admin-table-btn admin-table-btn--view"
+								onClick={() => setAdminScholarModalOpen(true)}
+							>
+								<HiOutlineCloudUpload /> Add / Import
+							</button>
+							<button
+								type="button"
 								className="admin-student-report-btn"
 								onClick={() => openReportPreview(scholarshipSectionPreviewConfig)}
 							>
@@ -5599,17 +6531,27 @@ export default function AdminDashboard() {
 							<strong>{scholarshipTabCounts.archived}</strong>
 						</article>
 					</div>
-					<SectionTabs
-						tabs={[
-							{ id: "scholars", label: "Scholars", count: scholarshipTabCounts.scholars, icon: HiOutlineUsers },
-							{ id: "tracking", label: "Tracking", count: scholarshipTabCounts.tracking, icon: HiOutlineClock },
-							{ id: "warning", label: "Warning", count: scholarshipTabCounts.warning, icon: HiOutlineExclamation },
-							{ id: "archived", label: "Archived", count: scholarshipTabCounts.archived, icon: HiOutlineTrash },
-						]}
-						value={scholarshipTab}
-						onChange={setScholarshipTab}
-						className="admin-section-tabs--compact admin-section-tabs--scholarships admin-scholarship-inline-tabs"
-					/>
+					<div className="admin-scholarship-tab-actions">
+						<SectionTabs
+							tabs={[
+								{ id: "scholars", label: "Scholars", count: scholarshipTabCounts.scholars, icon: HiOutlineUsers },
+								{ id: "tracking", label: "Tracking", count: scholarshipTabCounts.tracking, icon: HiOutlineClock },
+								{ id: "warning", label: "Warning", count: scholarshipTabCounts.warning, icon: HiOutlineExclamation },
+								{ id: "archived", label: "Archived", count: scholarshipTabCounts.archived, icon: HiOutlineTrash },
+							]}
+							value={scholarshipTab}
+							onChange={setScholarshipTab}
+							className="admin-section-tabs--compact admin-section-tabs--scholarships admin-scholarship-inline-tabs"
+						/>
+						<button
+							type="button"
+							className="admin-student-archive-btn admin-scholarship-archive-btn"
+							onClick={openScholarshipScholarArchiveConfirmation}
+							disabled={scholarshipTab !== "scholars" || selectedScholarshipScholarKeys.length === 0}
+						>
+							<HiOutlineTrash /> Archive {selectedScholarshipScholarKeys.length > 0 ? `(${selectedScholarshipScholarKeys.length})` : ""}
+						</button>
+					</div>
 					{scholarshipTab === "overview" ? (
 						<section className="admin-tab-panel">
 							<div className="admin-student-command-row admin-scholarship-command-row">
@@ -5832,6 +6774,26 @@ export default function AdminDashboard() {
 											</tr>
 										) : (
 											<tr>
+												<th className="admin-scholarship-checkbox-col">
+													<input
+														type="checkbox"
+														checked={
+															scholarshipTablePage.rows.length > 0 &&
+															scholarshipTablePage.rows.every((row) =>
+																selectedScholarshipScholarKeys.includes(row.scholarArchiveKey || row.trackingKey),
+															)
+														}
+														onChange={(event) => {
+															const pageKeys = scholarshipTablePage.rows.map((row) => row.scholarArchiveKey || row.trackingKey)
+															if (event.target.checked) {
+																setSelectedScholarshipScholarKeys((prev) => [...new Set([...prev, ...pageKeys])])
+															} else {
+																setSelectedScholarshipScholarKeys((prev) => prev.filter((key) => !pageKeys.includes(key)))
+															}
+														}}
+														aria-label="Select all visible scholars"
+													/>
+												</th>
 												<th>Student ID</th>
 												<th>Full Name</th>
 												<th>Scholarship</th>
@@ -5854,7 +6816,7 @@ export default function AdminDashboard() {
 																? 5
 																: scholarshipTab === "archived"
 																	? 7
-																	: 8
+																	: 9
 													}
 												>
 													<LoadingBars note="Loading scholarship table..." />
@@ -5869,13 +6831,13 @@ export default function AdminDashboard() {
 															? 5
 															: scholarshipTab === "archived"
 																? 7
-																: 8
+																: 9
 												}
 											/>
 										) : scholarshipTab === "warning" ? (
 											scholarshipTablePage.rows.map((row) => (
 												<tr key={row.trackingKey || row.studentId}>
-													<td>{row.studentId || "-"}</td>
+													<td>{toDisplayStudentId(row.studentId) || "-"}</td>
 													<td>{row.fullName || "-"}</td>
 													<td>{row.grantors || "-"}</td>
 													<td>
@@ -5894,7 +6856,7 @@ export default function AdminDashboard() {
 										) : scholarshipTab === "tracking" ? (
 											scholarshipTablePage.rows.map((row) => (
 												<tr key={row.trackingKey}>
-													<td>{row.studentId || "-"}</td>
+													<td>{toDisplayStudentId(row.studentId) || "-"}</td>
 													<td>{row.fullName || "-"}</td>
 													<td>{row.scholarship || "-"}</td>
 													<td>{row.currentStepLabel || "-"}</td>
@@ -5915,7 +6877,7 @@ export default function AdminDashboard() {
 										) : scholarshipTab === "archived" ? (
 											scholarshipTablePage.rows.map((row) => (
 												<tr key={row.trackingKey}>
-													<td>{row.studentId || "-"}</td>
+													<td>{toDisplayStudentId(row.studentId) || "-"}</td>
 													<td>{row.fullName || "-"}</td>
 													<td>{row.scholarship || "-"}</td>
 													<td>{row.yearLevel || "-"}</td>
@@ -5939,7 +6901,22 @@ export default function AdminDashboard() {
 										) : (
 											scholarshipTablePage.rows.map((row) => (
 												<tr key={row.trackingKey || `${scholarshipTab}_${row.studentId}_${row.scholarship}`}>
-													<td>{row.studentId || "-"}</td>
+													<td className="admin-scholarship-checkbox-col">
+														<input
+															type="checkbox"
+															checked={selectedScholarshipScholarKeys.includes(row.scholarArchiveKey || row.trackingKey)}
+															onChange={(event) => {
+																const key = row.scholarArchiveKey || row.trackingKey
+																if (event.target.checked) {
+																	setSelectedScholarshipScholarKeys((prev) => [...new Set([...prev, key])])
+																} else {
+																	setSelectedScholarshipScholarKeys((prev) => prev.filter((item) => item !== key))
+																}
+															}}
+															aria-label={`Select ${row.fullName || row.studentId || "scholar"}`}
+														/>
+													</td>
+													<td>{toDisplayStudentId(row.studentId) || "-"}</td>
 													<td>{row.fullName || "-"}</td>
 													<td>{row.scholarship || "-"}</td>
 													<td>{row.yearLevel || "-"}</td>
@@ -5977,7 +6954,14 @@ export default function AdminDashboard() {
 		}
 
 		if (activeSection === "requirements") {
-			const visibleRows = soeTab === "requesting" ? requestingSoeReportRows : requestedSoeReportRows
+			const visibleRows =
+				soeTab === "requesting"
+					? requestingSoeReportRows
+					: soeTab === "approved"
+						? approvedSoeReportRows
+						: soeTab === "rejected"
+							? rejectedSoeReportRows
+							: soeCheckingRows.map((row) => toSoeReportRow(row))
 			return (
 				<section className="admin-management-panel admin-requirements-management">
 					<div className="admin-panel-head">
@@ -6009,24 +6993,20 @@ export default function AdminDashboard() {
 						<article>
 							<HiOutlineCheckCircle />
 							<span>Approved Requests</span>
-							<strong>{soeRequestTabCounts.requested}</strong>
+							<strong>{soeRequestTabCounts.approved}</strong>
 						</article>
 						<article>
 							<HiOutlineEye />
 							<span>Checking</span>
-							<strong>{soeCheckingRows.length}</strong>
-						</article>
-						<article>
-							<HiOutlineExclamation />
-							<span>Non-Compliant</span>
-							<strong>{soeCheckingCounts.non_compliant}</strong>
+							<strong>{soeCheckingCounts.current}</strong>
 						</article>
 					</div>
 					<SectionTabs
 						tabs={[
 							{ id: "requesting", label: "Requesting", count: soeRequestTabCounts.requesting, icon: HiOutlineClock },
-							{ id: "requested", label: "Requested", count: soeRequestTabCounts.requested, icon: HiOutlineCheckCircle },
-							{ id: "checking", label: "Checking", count: soeCheckingRows.length, icon: HiOutlineEye },
+							{ id: "approved", label: "Approved", count: soeRequestTabCounts.approved, icon: HiOutlineCheckCircle },
+							{ id: "rejected", label: "Rejected", count: soeRequestTabCounts.rejected, icon: HiOutlineBan },
+							{ id: "checking", label: "Checking", count: soeCheckingCounts.current, icon: HiOutlineEye },
 						]}
 						value={soeTab}
 						onChange={setSoeTab}
@@ -6035,9 +7015,8 @@ export default function AdminDashboard() {
 					{soeTab === "checking" ? (
 						<SectionTabs
 							tabs={[
-								{ id: "incoming", label: "Pending", count: soeCheckingCounts.incoming, icon: HiOutlineClock },
-								{ id: "signed", label: "Signed", count: soeCheckingCounts.signed, icon: HiOutlineCheckCircle },
-								{ id: "non_compliant", label: "Non-Compliant", count: soeCheckingCounts.non_compliant, icon: HiOutlineExclamation },
+								{ id: "current", label: "Current", count: soeCheckingCounts.current, icon: HiOutlineClock },
+								{ id: "previous", label: "Previous", count: soeCheckingCounts.previous, icon: HiOutlineArchive },
 							]}
 							value={soeCheckingTab}
 							onChange={setSoeCheckingTab}
@@ -6060,7 +7039,7 @@ export default function AdminDashboard() {
 										placeholder={
 											soeTab === "requesting"
 												? "Search approval requests by application number, student, scholarship, or material"
-												: "Search approved requests by application number, student, scholarship, material, or SOE download status"
+												: "Search reviewed requests by application number, student, scholarship, material, or status"
 										}
 										value={soeSearch}
 										onChange={(event) => setSoeSearch(event.target.value)}
@@ -6099,7 +7078,6 @@ export default function AdminDashboard() {
 											<th>Student ID</th>
 											<th>Student Name</th>
 											<th>Scholarship</th>
-											<th>Requested Requirements</th>
 											<th>Status</th>
 											<th>Date Requested</th>
 											<th>Action</th>
@@ -6107,7 +7085,7 @@ export default function AdminDashboard() {
 									</thead>
 									<tbody>
 										{requestingSoeRows.length === 0 ? (
-											<EmptyStateRow colSpan={8} />
+											<EmptyStateRow colSpan={7} />
 										) : (
 											requestingSoeTablePage.rows.map((row) => (
 												<tr key={row.id}>
@@ -6115,7 +7093,6 @@ export default function AdminDashboard() {
 													<td>{row.studentId || "-"}</td>
 													<td>{row.fullName || "-"}</td>
 													<td>{row.scholarshipName || "-"}</td>
-													<td>{row.visibleMaterialsSummary || "-"}</td>
 													<td><span className={toStatusClass(row.status)}>{row.status || "-"}</span></td>
 													<td>{formatDate(row.requestDate)}</td>
 													<td>
@@ -6142,7 +7119,7 @@ export default function AdminDashboard() {
 								onPageChange={(page) => setTablePage("requesting_soe", page)}
 							/>
 						</>
-					) : soeTab === "requested" ? (
+					) : soeTab === "approved" || soeTab === "rejected" ? (
 						<>
 							<div className="admin-table-wrap admin-table-wrap--requirements">
 								<table className="admin-management-table admin-management-table--roomy admin-requirements-table">
@@ -6152,22 +7129,20 @@ export default function AdminDashboard() {
 											<th>Student ID</th>
 											<th>Student Name</th>
 											<th>Scholarship</th>
-											<th>Requested Requirements</th>
 											<th>Approval Status</th>
 											<th>Action</th>
 										</tr>
 									</thead>
 									<tbody>
-										{requestedSoeRows.length === 0 ? (
-											<EmptyStateRow colSpan={7} />
+										{(soeTab === "approved" ? approvedSoeRows : rejectedSoeRows).length === 0 ? (
+											<EmptyStateRow colSpan={6} />
 										) : (
-											requestedSoeTablePage.rows.map((row) => (
+											(soeTab === "approved" ? approvedSoeTablePage.rows : rejectedSoeTablePage.rows).map((row) => (
 												<tr key={row.id}>
 													<td>{row.requestNumber || row.id || "-"}</td>
 													<td>{row.studentId || "-"}</td>
 													<td>{row.fullName || "-"}</td>
 													<td>{row.scholarshipName || "-"}</td>
-													<td>{row.visibleMaterialsSummary || "-"}</td>
 													<td><span className={toStatusClass(row.reviewStateLabel)}>{row.reviewStateLabel}</span></td>
 													<td>
 														<button
@@ -6186,9 +7161,9 @@ export default function AdminDashboard() {
 								</table>
 							</div>
 							<TablePagination
-								currentPage={requestedSoeTablePage.currentPage}
-								totalItems={requestedSoeRows.length}
-								onPageChange={(page) => setTablePage("requested_soe", page)}
+								currentPage={soeTab === "approved" ? approvedSoeTablePage.currentPage : rejectedSoeTablePage.currentPage}
+								totalItems={soeTab === "approved" ? approvedSoeRows.length : rejectedSoeRows.length}
+								onPageChange={(page) => setTablePage(soeTab === "approved" ? "approved_soe" : "rejected_soe", page)}
 							/>
 						</>
 					) : (
@@ -6202,7 +7177,7 @@ export default function AdminDashboard() {
 											<th>Student Name</th>
 											<th>Scholarship</th>
 											<th>Downloaded At</th>
-											<th>Status</th>
+											<th>Cycle</th>
 											<th>Action</th>
 										</tr>
 									</thead>
@@ -6217,7 +7192,7 @@ export default function AdminDashboard() {
 													<td>{row.fullName || "-"}</td>
 													<td>{row.scholarshipName || "-"}</td>
 													<td>{formatDate(row.downloadedDate)}</td>
-													<td><span className={toStatusClass(row.reviewStateLabel)}>{row.reviewStateLabel}</span></td>
+													<td>{row.semesterTag || currentSemesterTag}</td>
 													<td>
 														<button
 															type="button"
@@ -6256,9 +7231,8 @@ export default function AdminDashboard() {
 					</div>
 					<SectionTabs
 						tabs={[
-							{ id: "incoming", label: "Pending", count: soeCheckingCounts.incoming, icon: HiOutlineClock },
-							{ id: "signed", label: "Signed", count: soeCheckingCounts.signed, icon: HiOutlineCheckCircle },
-							{ id: "non_compliant", label: "Non-Compliant", count: soeCheckingCounts.non_compliant, icon: HiOutlineExclamation },
+							{ id: "current", label: "Current", count: soeCheckingCounts.current, icon: HiOutlineClock },
+							{ id: "previous", label: "Previous", count: soeCheckingCounts.previous, icon: HiOutlineArchive },
 						]}
 						value={soeCheckingTab}
 						onChange={setSoeCheckingTab}
@@ -6275,7 +7249,7 @@ export default function AdminDashboard() {
 									<th>Student Name</th>
 									<th>Scholarship</th>
 									<th>Downloaded At</th>
-									<th>Status</th>
+									<th>Cycle</th>
 									<th>Action</th>
 								</tr>
 							</thead>
@@ -6290,7 +7264,7 @@ export default function AdminDashboard() {
 											<td>{row.fullName || "-"}</td>
 											<td>{row.scholarshipName || "-"}</td>
 											<td>{formatDate(row.downloadedDate)}</td>
-											<td><span className={toStatusClass(row.reviewStateLabel)}>{row.reviewStateLabel}</span></td>
+											<td>{row.semesterTag || currentSemesterTag}</td>
 											<td>
 												<button
 													type="button"
@@ -6557,157 +7531,166 @@ export default function AdminDashboard() {
 
 		return (
 			<section className="admin-announcement-modern">
-				<div className="admin-panel-head">
+				<div className="admin-panel-head admin-announcement-head">
+					<span className="admin-panel-icon"><HiOutlineBell /></span>
 					<div>
 						<h2>Announcements</h2>
-						<p className="admin-panel-copy">Communicate updates, deadlines, and events to the student body.</p>
+						<p className="admin-panel-copy">Publish campus-wide notices, deadlines, and scholarship updates.</p>
 					</div>
+					<button type="button" className="admin-announcement-create-btn" onClick={() => setShowCreateAdminAnnouncementModal(true)}>
+						<HiOutlineCloudUpload />
+						Create Announcement
+					</button>
 				</div>
 
-				<form className="announcement-builder-modern" onSubmit={postAnnouncement}>
-					<div className="announcement-grid-modern">
-						<div className="input-group-modern">
-							<div className="modern-field">
-								<label htmlFor="announcement-title">Announcement Title</label>
-								<input 
-									id="announcement-title" 
-									type="text" 
-									placeholder="Enter a descriptive title..." 
-									value={announcementTitle} 
-									onChange={(event) => setAnnouncementTitle(event.target.value)} 
-								/>
+				<div className="admin-announcement-summary">
+					<article><HiOutlineBell /><span>Active Announcements</span><strong>{filteredCurrentAnnouncements.length}</strong></article>
+					<article><HiOutlineArchive /><span>Previous Announcements</span><strong>{filteredPreviousAnnouncements.length}</strong></article>
+					<article><HiOutlineClock /><span>Latest Posted</span><strong>{filteredPortalAnnouncements[0] ? formatDate(filteredPortalAnnouncements[0].createdAt || filteredPortalAnnouncements[0].updatedAt || filteredPortalAnnouncements[0].date) : "None"}</strong></article>
+				</div>
+
+				{showAllAdminAnnouncements ? (
+					<section className="admin-announcement-section admin-announcement-section--cards">
+						<header className="admin-announcement-section-head admin-announcement-all-head">
+							<div>
+								<h3>All Announcements</h3>
+								<p>Review active and archived announcements separately.</p>
 							</div>
-							<div className="modern-field">
-								<label htmlFor="announcement-type">Category</label>
-								<select id="announcement-type" value={announcementType} onChange={(event) => setAnnouncementType(event.target.value)}>
-									<option value="Update">Update</option>
-									<option value="Deadline">Deadline</option>
-									<option value="Event">Event</option>
-								</select>
+							<div className="admin-announcement-history-actions">
+								<span>{filteredPortalAnnouncements.length} total</span>
+								<button type="button" onClick={() => setShowAllAdminAnnouncements(false)}>
+									<HiOutlineRefresh />
+									Back
+								</button>
 							</div>
-							<div className="modern-field">
-								<label htmlFor="announcement-description">Message Content</label>
-								<textarea 
-									id="announcement-description" 
-									placeholder="Write your announcement details here..." 
-									value={announcementDescription} 
-									onChange={(event) => setAnnouncementDescription(event.target.value)} 
-								/>
-							</div>
+						</header>
+						<div className="admin-announcement-filter-row">
+							<AdminFilterSelect
+								label="Filter announcements by source"
+								value={adminAnnouncementSourceFilter}
+								options={adminAnnouncementSourceOptions}
+								onChange={setAdminAnnouncementSourceFilter}
+							/>
 						</div>
-
-						<div className="input-group-modern">
-							<div className="modern-field">
-								<label>Visual Media</label>
-								<input 
-									id="announcement-images" 
-									className="admin-file-input-hidden" 
-									type="file" 
-									accept="image/*" 
-									multiple 
-									onChange={handleAnnouncementFiles} 
-								/>
-								<label htmlFor="announcement-images" className="upload-zone-modern">
-									<HiOutlineCloudUpload />
-									<span>Click or Drag to Upload Images</span>
-									<p>PNG, JPG up to 10MB</p>
-								</label>
-								
-								{announcementDraftPreviews.length > 0 && (
-									<div className="preview-scroll-modern">
-										{announcementDraftPreviews.map((item, index) => (
-											<article key={`${item.name}_${index}`} className="preview-card-modern">
-												<img src={item.url} alt={item.name} />
-												<button type="button" className="remove-btn" onClick={() => removeAnnouncementImage(index)}>
-													<HiX />
-												</button>
-											</article>
-										))}
-									</div>
-								)}
-							</div>
+						<div className="admin-announcement-tabs">
+							<button type="button" className={adminAnnouncementTab === "announcements" ? "active" : ""} onClick={() => setAdminAnnouncementTab("announcements")}>
+								Announcements <span>{filteredCurrentAnnouncements.length}</span>
+							</button>
+							<button type="button" className={adminAnnouncementTab === "archived" ? "active" : ""} onClick={() => setAdminAnnouncementTab("archived")}>
+								Archived <span>{filteredPreviousAnnouncements.length}</span>
+							</button>
 						</div>
-					</div>
-
-					<div className="action-row-modern">
-						<button type="button" className="schedule-btn-modern" onClick={() => setShowAnnouncementSchedule(true)}>
-							<HiOutlineClock />
-							{announcementStartDate && announcementEndDate ? `${announcementStartDate} to ${announcementEndDate}` : "Add Schedule"}
-						</button>
-						<button type="submit" className="post-btn-modern" disabled={isPostingAnnouncement}>
-							{isPostingAnnouncement ? "Publishing..." : "Publish Announcement"}
-						</button>
-					</div>
-				</form>
-
-				<section className="admin-announcement-section">
-					<h3>Current Announcements</h3>
-					<div className="admin-announcement-list">
-						{!dataLoadState.announcements ? (
-							<div className="admin-empty-state-card"><LoadingBars note="Loading announcement board..." /></div>
-						) : currentAnnouncements.length === 0 ? (
-							<div className="admin-empty-state-card">{EMPTY_STATE_TEXT}</div>
-						) : (
-							currentAnnouncements.map((item) => (
-								<article key={item.id} className="announcement-card-modern">
-									<div className="card-header">
-										<h4>{item.title || "Announcement"}</h4>
-										<span className={`type-badge-modern type-${item.type || "Update"}`}>{item.type || "Update"}</span>
-									</div>
-									<p>{item.content || item.description || "-"}</p>
-									
-									{buildAnnouncementImageList(item).length > 0 && (
-										<div className="admin-thumbnail-gallery">
-											{buildAnnouncementImageList(item).map((url) => (
-												<button key={`${item.id}_${url}`} type="button" className="admin-thumbnail-frame" onClick={() => setAnnouncementImagePreview(url)}>
-													<img src={url} alt={item.title || "Announcement"} className="admin-announcement-image" />
+						<div className="admin-announcement-card-grid">
+							{!dataLoadState.announcements ? (
+								<div className="admin-announcement-empty"><LoadingBars note="Loading announcement board..." /></div>
+							) : adminAnnouncementRows.length === 0 ? (
+								<div className="admin-announcement-empty">
+									<HiOutlineBell />
+									<strong>No {adminAnnouncementTab === "archived" ? "archived" : "active"} announcements yet.</strong>
+									<p>Announcements in this tab will appear here.</p>
+								</div>
+							) : (
+								adminAnnouncementRows.map((item) => (
+									<article key={item.id} className={`admin-announcement-card-modern ${isAnnouncementArchived(item) ? "is-archived" : ""}`}>
+										<div className="admin-announcement-card-media">
+											{buildAnnouncementImageList(item)[0] ? <img src={buildAnnouncementImageList(item)[0]} alt={item.title || "Announcement"} /> : <span>{isAnnouncementArchived(item) ? <HiOutlineArchive /> : <HiOutlineBell />}</span>}
+										</div>
+										<div className="admin-announcement-card-body">
+											<div className="admin-announcement-card-top">
+												<span className={`type-badge-modern ${isAnnouncementArchived(item) ? "type-Archived" : `type-${item.type || "Update"}`}`}>{isAnnouncementArchived(item) ? "Archived" : item.type || "Update"}</span>
+												<time>{formatDate(item.createdAt || item.date)}</time>
+											</div>
+											<span className="admin-announcement-source-label">{item.sourceLabel || "Admin"}</span>
+											<h4>{item.title || "Announcement"}</h4>
+											<p>{item.content || item.description || "-"}</p>
+											<div className="admin-announcement-card-window">
+												<HiOutlineClock />
+												<span>{item.startDate || item.endDate ? `${toDateString(item.startDate)} - ${toDateString(item.endDate)}` : "No schedule set"}</span>
+											</div>
+										</div>
+										<div className="admin-announcement-card-actions">
+											<button type="button" onClick={() => setSelectedAdminAnnouncement(item)}><HiOutlineEye /> View</button>
+											{isAnnouncementArchived(item) || item.sourceType !== "admin" ? (
+												<span className="admin-announcement-archived-note">{isAnnouncementArchived(item) ? "Archived" : "Grantor Post"}</span>
+											) : (
+												<button type="button" className="is-danger" onClick={() => archiveAnnouncement(item.id)}>
+													<HiOutlineTrash />
+													Archive
 												</button>
-											))}
+											)}
 										</div>
-									)}
-
-									<div className="card-footer-modern">
-										<div className="date-text-modern">
-											<span>{formatDate(item.createdAt || item.date)}</span>
-											{item.startDate || item.endDate ? (
-												<span style={{ marginLeft: "1rem" }}>
-													{toDateString(item.startDate)} - {toDateString(item.endDate)}
-												</span>
-											) : null}
+									</article>
+								))
+							)}
+						</div>
+					</section>
+				) : (
+					<section className="admin-announcement-section admin-announcement-section--cards">
+						<header className="admin-announcement-section-head">
+							<div>
+								<h3>Published Announcements</h3>
+								<p>Showing the latest 6 published announcements.</p>
+							</div>
+							<div className="admin-announcement-history-actions">
+								<span>{filteredCurrentAnnouncements.length} total</span>
+								<button type="button" onClick={() => { setAdminAnnouncementTab("announcements"); setShowAllAdminAnnouncements(true) }}>
+									See all Announcements
+								</button>
+							</div>
+						</header>
+						<div className="admin-announcement-filter-row">
+							<AdminFilterSelect
+								label="Filter announcements by source"
+								value={adminAnnouncementSourceFilter}
+								options={adminAnnouncementSourceOptions}
+								onChange={setAdminAnnouncementSourceFilter}
+							/>
+						</div>
+						<div className="admin-announcement-card-grid">
+							{!dataLoadState.announcements ? (
+								<div className="admin-announcement-empty"><LoadingBars note="Loading announcement board..." /></div>
+							) : compactAdminAnnouncements.length === 0 ? (
+								<div className="admin-announcement-empty">
+									<HiOutlineBell />
+									<strong>No announcements published yet.</strong>
+									<p>Your published notices will appear here.</p>
+								</div>
+							) : (
+								compactAdminAnnouncements.map((item) => (
+									<article key={item.id} className="admin-announcement-card-modern">
+										<div className="admin-announcement-card-media">
+											{buildAnnouncementImageList(item)[0] ? <img src={buildAnnouncementImageList(item)[0]} alt={item.title || "Announcement"} /> : <span><HiOutlineBell /></span>}
 										</div>
-										<button type="button" className="archive-btn-modern" onClick={() => archiveAnnouncement(item.id)}>
-											Archive
-										</button>
-									</div>
-								</article>
-							))
-						)}
-					</div>
-				</section>
-
-				<section className="admin-announcement-section">
-					<h3>Previous Announcements</h3>
-					<div className="admin-announcement-list">
-						{previousAnnouncements.length === 0 ? (
-							<div className="admin-empty-state-card">{EMPTY_STATE_TEXT}</div>
-						) : (
-							previousAnnouncements.map((item) => (
-								<article key={item.id} className="announcement-card-modern" style={{ opacity: 0.7 }}>
-									<div className="card-header">
-										<h4>{item.title || "Announcement"}</h4>
-										<span className="type-badge-modern" style={{ background: "#edf2f7", color: "#4a5568" }}>
-											Archived
-										</span>
-									</div>
-									<p>{item.content || item.description || "-"}</p>
-									<div className="card-footer-modern">
-										<span className="date-text-modern">{formatDate(item.createdAt || item.date)}</span>
-									</div>
-								</article>
-							))
-						)}
-					</div>
-				</section>
+										<div className="admin-announcement-card-body">
+											<div className="admin-announcement-card-top">
+												<span className={`type-badge-modern type-${item.type || "Update"}`}>{item.type || "Update"}</span>
+												<time>{formatDate(item.createdAt || item.date)}</time>
+											</div>
+											<span className="admin-announcement-source-label">{item.sourceLabel || "Admin"}</span>
+											<h4>{item.title || "Announcement"}</h4>
+											<p>{item.content || item.description || "-"}</p>
+											<div className="admin-announcement-card-window">
+												<HiOutlineClock />
+												<span>{item.startDate || item.endDate ? `${toDateString(item.startDate)} - ${toDateString(item.endDate)}` : "No schedule set"}</span>
+											</div>
+										</div>
+										<div className="admin-announcement-card-actions">
+											<button type="button" onClick={() => setSelectedAdminAnnouncement(item)}><HiOutlineEye /> View</button>
+											{item.sourceType === "admin" ? (
+												<button type="button" className="is-danger" onClick={() => archiveAnnouncement(item.id)}>
+													<HiOutlineTrash />
+													Archive
+												</button>
+											) : (
+												<span className="admin-announcement-archived-note">Grantor Post</span>
+											)}
+										</div>
+									</article>
+								))
+							)}
+						</div>
+					</section>
+				)}
 			</section>
 		)
 	}
@@ -6771,8 +7754,140 @@ export default function AdminDashboard() {
 				</nav>
 			</aside>
 			<main className="admin-workspace">{renderSection()}</main>
+			{showCreateAdminAnnouncementModal ? (
+				<div className="admin-detail-backdrop admin-announcement-modal-backdrop" role="presentation" onClick={closeCreateAdminAnnouncementModal}>
+					<section className="admin-announcement-create-modal" role="dialog" aria-modal="true" aria-label="Create announcement" onClick={(event) => event.stopPropagation()}>
+						<header>
+							<div className="admin-scholar-import-head-icon" aria-hidden="true"><HiOutlineCloudUpload /></div>
+							<div>
+								<h3>Create Announcement</h3>
+								<p>Share deadlines, reminders, and student-facing notices.</p>
+							</div>
+							<button type="button" onClick={closeCreateAdminAnnouncementModal} aria-label="Close create announcement modal"><HiX /></button>
+						</header>
+						<form className="admin-announcement-compose-form" onSubmit={postAnnouncement}>
+							<div className="admin-announcement-compose-grid">
+								<label>
+									<span>Announcement Title</span>
+									<input
+										id="announcement-title"
+										type="text"
+										placeholder="Enter announcement title"
+										value={announcementTitle}
+										onChange={(event) => setAnnouncementTitle(event.target.value)}
+									/>
+								</label>
+								<div className="admin-announcement-category-field">
+									<span>Category</span>
+									<AdminFilterSelect
+										label="Announcement category"
+										value={announcementType}
+										options={[
+											{ value: "Update", label: "Update" },
+											{ value: "Deadline", label: "Deadline" },
+											{ value: "Event", label: "Event" },
+										]}
+										onChange={setAnnouncementType}
+									/>
+								</div>
+								<label>
+									<span>Schedule</span>
+									<button type="button" className={`admin-announcement-calendar-btn ${announcementStartDate ? "has-value" : ""}`} onClick={() => setShowAnnouncementSchedule(true)}>
+										<HiOutlineClock />
+										<span>{announcementStartDate && announcementEndDate ? `${announcementStartDate} to ${announcementEndDate}` : "Add schedule"}</span>
+									</button>
+								</label>
+							</div>
+							<label className="admin-announcement-message-field">
+								<span>Message</span>
+								<textarea
+									id="announcement-description"
+									placeholder="Write the complete announcement details."
+									value={announcementDescription}
+									onChange={(event) => setAnnouncementDescription(event.target.value)}
+								/>
+							</label>
+							<div className="admin-announcement-images-field">
+								<input
+									id="announcement-images"
+									type="file"
+									accept="image/*"
+									multiple
+									onChange={handleAnnouncementFiles}
+								/>
+								<label htmlFor="announcement-images">
+									<HiOutlineCloudUpload />
+									<span>Add Images</span>
+									<small>{announcementImageFiles.length} selected</small>
+								</label>
+								{announcementDraftPreviews.length > 0 ? (
+									<div className="admin-announcement-preview-grid-modern">
+										{announcementDraftPreviews.map((item, index) => (
+											<article key={`${item.name}_${index}`}>
+												<img src={item.url} alt={item.name} />
+												<button type="button" onClick={() => removeAnnouncementImage(index)} aria-label={`Remove ${item.name || "image"}`}>
+													<HiX />
+												</button>
+											</article>
+										))}
+									</div>
+								) : null}
+							</div>
+							<footer>
+								<button type="button" className="admin-announcement-cancel-btn" onClick={closeCreateAdminAnnouncementModal} disabled={isPostingAnnouncement}>
+									<HiX />
+									Cancel
+								</button>
+								<button type="submit" className="admin-announcement-publish-btn" disabled={isPostingAnnouncement}>
+									<HiOutlineCloudUpload />
+									{isPostingAnnouncement ? "Publishing..." : "Publish Announcement"}
+								</button>
+							</footer>
+						</form>
+					</section>
+				</div>
+			) : null}
+
+			{selectedAdminAnnouncement ? (
+				<div className="admin-detail-backdrop" role="presentation" onClick={() => setSelectedAdminAnnouncement(null)}>
+					<section className="admin-announcement-view-modal" role="dialog" aria-modal="true" aria-label="Announcement details" onClick={(event) => event.stopPropagation()}>
+						<header>
+							<div>
+								<span className={`admin-announcement-status ${isAnnouncementArchived(selectedAdminAnnouncement) ? "is-archived" : ""}`}>
+									{isAnnouncementArchived(selectedAdminAnnouncement) ? "Archived" : selectedAdminAnnouncement.type || "Open"}
+								</span>
+								<h3>{selectedAdminAnnouncement.title || "Announcement"}</h3>
+								<p>{selectedAdminAnnouncement.sourceLabel || "Admin"} announcement</p>
+							</div>
+							<button type="button" onClick={() => setSelectedAdminAnnouncement(null)} aria-label="Close announcement details"><HiX /></button>
+						</header>
+						{buildAnnouncementImageList(selectedAdminAnnouncement).length > 0 ? (
+							<div className="admin-announcement-view-gallery">
+								{buildAnnouncementImageList(selectedAdminAnnouncement).map((url) => (
+									<button key={`${selectedAdminAnnouncement.id}_${url}`} type="button" onClick={() => setAnnouncementImagePreview(url)}>
+										<img src={url} alt={selectedAdminAnnouncement.title || "Announcement"} />
+									</button>
+								))}
+							</div>
+						) : null}
+						<p className="admin-announcement-view-message">{selectedAdminAnnouncement.description || selectedAdminAnnouncement.content || "-"}</p>
+						<footer>
+							<span><HiOutlineClock /> {selectedAdminAnnouncement.startDate || selectedAdminAnnouncement.endDate ? `${toDateString(selectedAdminAnnouncement.startDate)} - ${toDateString(selectedAdminAnnouncement.endDate)}` : "No schedule set"}</span>
+							{isAnnouncementArchived(selectedAdminAnnouncement) || selectedAdminAnnouncement.sourceType !== "admin" ? (
+								<i>{isAnnouncementArchived(selectedAdminAnnouncement) ? "Archived" : "Grantor Post"}</i>
+							) : (
+								<button type="button" onClick={() => archiveAnnouncement(selectedAdminAnnouncement.id)}>
+									<HiOutlineTrash />
+									Archive
+								</button>
+							)}
+						</footer>
+					</section>
+				</div>
+			) : null}
+
 			{showAnnouncementSchedule ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={() => setShowAnnouncementSchedule(false)}>
+				<div className="admin-detail-backdrop admin-announcement-schedule-backdrop" role="presentation" onClick={() => setShowAnnouncementSchedule(false)}>
 					<div className="admin-detail-modal admin-detail-modal--calendar" role="dialog" aria-modal="true" aria-label="Schedule announcement" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="admin-detail-close" onClick={() => setShowAnnouncementSchedule(false)}>
 							<HiX />
@@ -7070,10 +8185,11 @@ export default function AdminDashboard() {
 						<div className="admin-detail-docs">
 							<strong>Documents</strong>
 							{[
-								{ label: "View COR", title: "Certificate of Registration", url: selectedStudent.corFile?.url, name: selectedStudent.corFile?.name || "COR" },
-								{ label: "View COG", title: "Certificate of Grades", url: selectedStudent.cogFile?.url, name: selectedStudent.cogFile?.name || "COG" },
-								{ label: "View School ID", title: "School ID", url: selectedStudent.schoolIdFile?.url || selectedStudent.studentIdFile?.url, name: selectedStudent.schoolIdFile?.name || selectedStudent.studentIdFile?.name || "School ID" },
+								{ ...(selectedStudent.corFile || {}), label: "View COR", title: "Certificate of Registration", url: selectedStudent.corFile?.url, name: selectedStudent.corFile?.name || "COR" },
+								{ ...(selectedStudent.cogFile || {}), label: "View COG", title: "Certificate of Grades", url: selectedStudent.cogFile?.url, name: selectedStudent.cogFile?.name || "COG" },
+								{ ...(selectedStudent.schoolIdFile || selectedStudent.studentIdFile || {}), label: "View School ID", title: "School ID", url: selectedStudent.schoolIdFile?.url || selectedStudent.studentIdFile?.url, name: selectedStudent.schoolIdFile?.name || selectedStudent.studentIdFile?.name || "School ID" },
 								{
+									...(selectedStudent.scholarshipApplicationFile || selectedStudent.applicationFormFile || {}),
 									label: "View Application Form",
 									title: "Scholarship Application Form",
 									url:
@@ -7214,6 +8330,222 @@ export default function AdminDashboard() {
 							)}
 						</div>
 					</div>
+					</div>
+				</div>
+			) : null}
+
+			{adminScholarModalOpen ? (
+				<div className="admin-detail-backdrop admin-detail-backdrop--admin-scholar-import" role="presentation" onClick={closeAdminScholarModal}>
+					<div className="admin-detail-shell admin-detail-shell--review admin-detail-shell--admin-scholar-import" onClick={(event) => event.stopPropagation()}>
+						<button type="button" className="admin-detail-close" onClick={closeAdminScholarModal} aria-label="Close add scholar modal">
+							<HiX />
+						</button>
+						<div className="admin-detail-modal admin-detail-modal--review admin-detail-modal--admin-scholar-import" role="dialog" aria-modal="true" aria-label="Add scholars">
+							<header className="admin-scholar-import-head">
+								<span className="admin-scholar-import-head-icon" aria-hidden="true">
+									<HiOutlineCloudUpload />
+								</span>
+								<div>
+									<h3>{adminScholarImportRows.length > 0 ? "Import Scholars" : "Add Scholars"}</h3>
+									<p>{adminScholarImportRows.length > 0 ? "Review the mapped records before importing them into the grantor roster." : "Upload a spreadsheet or enter scholar information manually."}</p>
+								</div>
+								{adminScholarImportRows.length > 0 ? (
+									<span className="admin-scholar-import-count">{adminScholarImportRows.length} Rows</span>
+								) : null}
+							</header>
+							<div className="admin-scholar-import-body">
+								{adminScholarImportRows.length > 0 ? (
+									<>
+										<div className="admin-scholar-import-info">
+											<div>
+												<strong>{adminScholarImportRows.length} rows detected from <em>{adminScholarImportFile?.name || "selected file"}</em></strong>
+												<span>Select the corresponding system field for each column below.</span>
+											</div>
+											<div className="admin-scholar-import-info-actions">
+												<button
+													type="button"
+													className="admin-danger-btn"
+													disabled={selectedAdminScholarImportRows.length === 0}
+													onClick={removeSelectedAdminScholarImportRows}
+												>
+													<HiOutlineTrash /> Remove Selected
+												</button>
+												<button type="button" className="admin-import-clear-btn" onClick={clearAdminScholarImport}>
+													<HiOutlineRefresh /> Clear & Restart
+												</button>
+											</div>
+										</div>
+										<label className="admin-scholar-import-grantor-select">
+											<span>{highlightedAdminScholarGrantorRows.length > 0 ? `Apply Grantor To ${highlightedAdminScholarGrantorRows.length} Highlighted Cell${highlightedAdminScholarGrantorRows.length === 1 ? "" : "s"}` : "Fallback Grantor"}</span>
+											<select value={highlightedAdminScholarGrantorRows.length > 0 ? "" : adminScholarForm.grantorId} onChange={(event) => applyAdminScholarImportGrantor(event.target.value)}>
+												<option value="">Select active grantor</option>
+												{adminScholarGrantorOptions.map((grantor) => (
+													<option key={grantor.value} value={grantor.value}>{grantor.label}</option>
+												))}
+											</select>
+										</label>
+										<div className="admin-scholar-duplicate-policy-note">
+											<HiOutlineExclamation />
+											<span>Duplicate protection is active. Same-grantor duplicates are blocked; cross-grantor matches can be added with warning highlights.</span>
+										</div>
+										<div className="admin-scholar-import-table-wrap">
+											<table className="admin-scholar-import-table">
+												<thead>
+													<tr>
+														<th className="admin-scholar-import-checkbox-col">
+															<input
+																type="checkbox"
+																checked={allAdminScholarImportRowsSelected}
+																onChange={(event) => {
+																	setSelectedAdminScholarImportRows(event.target.checked ? adminScholarImportRows.map((_, index) => index) : [])
+																}}
+																aria-label="Select all imported rows"
+															/>
+														</th>
+														{adminScholarImportColumns.map((column) => (
+															<th
+																key={`admin_import_column_${column.index}`}
+																className={column.index === 0 ? "admin-scholar-import-grantor-col" : undefined}
+															>
+																<select
+																	className="admin-scholar-import-select"
+																	value={adminScholarColumnMapping[column.index] || ""}
+																	disabled={column.index === 0}
+																	onChange={(event) => {
+																		setAdminScholarColumnMapping((prev) => {
+																			const next = [...prev]
+																			next[column.index] = event.target.value
+																			return next
+																		})
+																	}}
+																	aria-label={`Map ${column.header}`}
+																>
+																	{column.index === 0 ? <option value="">Grantor</option> : <option value="">Ignore Column</option>}
+																	{column.index === 0 ? null : ADMIN_IMPORT_MAPPABLE_FIELDS.map((field) => (
+																		<option key={field.value} value={field.value}>{field.label}</option>
+																	))}
+																</select>
+															</th>
+														))}
+													</tr>
+												</thead>
+												<tbody>
+													{adminScholarImportRows.map((row, rowIndex) => (
+														<tr key={`admin_import_${row.rowNumber}_${rowIndex}`}>
+															<td className="admin-scholar-import-checkbox-col">
+																<input
+																	type="checkbox"
+																	checked={selectedAdminScholarImportSet.has(rowIndex)}
+																	onChange={(event) => {
+																		setSelectedAdminScholarImportRows((prev) => {
+																			const selected = new Set(prev)
+																			if (event.target.checked) selected.add(rowIndex)
+																			else selected.delete(rowIndex)
+																			return [...selected].sort((left, right) => left - right)
+																		})
+																	}}
+																	aria-label={`Select row ${row.rowNumber}`}
+																/>
+															</td>
+															{adminScholarImportColumns.map((column) => (
+																<td
+																	key={`admin_import_${row.rowNumber}_${column.index}`}
+																	className={[
+																		column.index === 0 ? "admin-scholar-import-grantor-col admin-scholar-import-grantor-cell" : "",
+																		column.index === 0 && adminScholarImportGrantorAssignments[row.rowNumber] ? "has-grantor" : "",
+																		column.index === 0 && highlightedAdminScholarGrantorRows.includes(row.rowNumber) ? "is-highlighted" : "",
+																	].filter(Boolean).join(" ")}
+																	onClick={column.index === 0 ? () => {
+																		setHighlightedAdminScholarGrantorRows((prev) =>
+																			prev.includes(row.rowNumber)
+																				? prev.filter((rowNumber) => rowNumber !== row.rowNumber)
+																				: [...prev, row.rowNumber],
+																		)
+																	} : undefined}
+																>
+																	{column.index === 0
+																		? getAdminScholarImportGrantorLabel(adminScholarImportGrantorAssignments[row.rowNumber])
+																		: row.raw?.[column.index - 1] || "-"}
+																</td>
+															))}
+														</tr>
+													))}
+												</tbody>
+											</table>
+										</div>
+									</>
+								) : (
+									<>
+										<label
+											className="admin-scholar-dropzone"
+											onDragOver={(event) => event.preventDefault()}
+											onDrop={(event) => {
+												event.preventDefault()
+												parseAdminScholarImportFile(event.dataTransfer.files?.[0])
+											}}
+										>
+											<span className="admin-scholar-dropzone-icon" aria-hidden="true">
+												<HiOutlineCloudUpload />
+											</span>
+											<strong>Drag and drop a scholar file here</strong>
+											<small>Supported formats: .csv, .xls, .xlsx, .xlsb, .xlsc, .xlsm</small>
+											<em>{adminScholarImportFile?.name || "Choose File"}</em>
+											<input
+												type="file"
+												accept=".xlsx,.xls,.csv,.xlsb,.xlsm"
+												onChange={(event) => parseAdminScholarImportFile(event.target.files?.[0])}
+											/>
+										</label>
+										<div className="admin-scholar-import-grid">
+											<select value={adminScholarForm.grantorId} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, grantorId: event.target.value }))}>
+												<option value="">Scholarship / Grantor</option>
+												{adminScholarGrantorOptions.map((grantor) => (
+													<option key={grantor.value} value={grantor.value}>{grantor.label}</option>
+												))}
+											</select>
+											<input placeholder="Student ID" value={adminScholarForm.studentId} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, studentId: event.target.value }))} />
+											<input placeholder="Email" value={adminScholarForm.email} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, email: event.target.value }))} />
+											<input placeholder="Contact Number" value={adminScholarForm.cpNumber} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, cpNumber: event.target.value }))} />
+											<input placeholder="First Name" value={adminScholarForm.fname} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, fname: event.target.value }))} />
+											<input placeholder="Middle Name" value={adminScholarForm.mname} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, mname: event.target.value }))} />
+											<input placeholder="Last Name" value={adminScholarForm.lname} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, lname: event.target.value }))} />
+											<input placeholder="Street" value={adminScholarForm.street} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, street: event.target.value }))} />
+											<input placeholder="Barangay" value={adminScholarForm.barangay} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, barangay: event.target.value }))} />
+											<input placeholder="City" value={adminScholarForm.city} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, city: event.target.value }))} />
+											<input placeholder="Province" value={adminScholarForm.province} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, province: event.target.value }))} />
+											<input placeholder="Postal Code" value={adminScholarForm.postalCode} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, postalCode: event.target.value }))} />
+											<input placeholder="Course" value={adminScholarForm.course} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, course: event.target.value }))} />
+											<select value={adminScholarForm.yearLevel} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, yearLevel: event.target.value }))}>
+												{["1", "2", "3", "4"].map((level) => <option key={level} value={level}>Year {level}</option>)}
+											</select>
+											<input placeholder="Scholarship / Program" value={adminScholarForm.scholarshipTitle} onChange={(event) => setAdminScholarForm((prev) => ({ ...prev, scholarshipTitle: event.target.value }))} />
+										</div>
+									</>
+								)}
+								{adminScholarImportWarnings.length > 0 ? (
+									<div className="admin-student-alert">
+										<div className="admin-student-warning-copy">
+											<strong>Import notes</strong>
+											<span>{adminScholarImportWarnings.slice(0, 4).join(" ")}</span>
+										</div>
+										<HiOutlineExclamation />
+									</div>
+								) : null}
+								<div className="admin-scholar-import-actions">
+									<button type="button" className="admin-danger-btn" onClick={closeAdminScholarModal}>
+										<HiX /> Cancel
+									</button>
+									<button
+										type="button"
+										className="admin-safe-btn"
+										disabled={isBusy}
+										onClick={adminScholarImportRows.length > 0 ? submitAdminScholarImport : submitAdminScholarManual}
+									>
+										<HiOutlineCheckCircle /> {isBusy ? "Saving..." : adminScholarImportRows.length > 0 ? `Import ${adminScholarImportRows.length} Scholars` : "Save Scholar"}
+									</button>
+								</div>
+							</div>
+						</div>
 					</div>
 				</div>
 			) : null}
@@ -7532,12 +8864,24 @@ export default function AdminDashboard() {
 							aria-modal="true"
 							aria-label={adminConfirmDialog.title}
 						>
-							<div className="admin-detail-confirm-copy">
-								<h3>{adminConfirmDialog.title}</h3>
-								<p className="admin-detail-meta">{adminConfirmDialog.message}</p>
+							<div className="admin-detail-confirm-head">
+								<span
+									className={`admin-detail-confirm-icon ${
+										adminConfirmDialog.tone === "danger" ? "admin-detail-confirm-icon--danger" : ""
+									}`}
+									aria-hidden="true"
+								>
+									{adminConfirmDialog.tone === "danger" ? <HiOutlineArchive /> : <HiOutlineCheckCircle />}
+								</span>
+								<div className="admin-detail-confirm-copy">
+									<p className="admin-detail-confirm-kicker">Confirmation Required</p>
+									<h3>{adminConfirmDialog.title}</h3>
+									<p className="admin-detail-meta">{adminConfirmDialog.message}</p>
+								</div>
 							</div>
 							<div className="admin-detail-actions admin-detail-actions--confirm">
 								<button type="button" className="admin-table-btn" onClick={closeAdminConfirmDialog} disabled={isBusy}>
+									<HiX />
 									Keep Current State
 								</button>
 								<button
@@ -7546,6 +8890,7 @@ export default function AdminDashboard() {
 									onClick={confirmAdminDialogAction}
 									disabled={isBusy}
 								>
+									{adminConfirmDialog.tone === "danger" ? <HiOutlineArchive /> : <HiOutlineCheckCircle />}
 									{adminConfirmDialog.confirmLabel}
 								</button>
 							</div>
@@ -7590,24 +8935,20 @@ export default function AdminDashboard() {
 										</div>
 										<div className="admin-soe-review-list">
 											<div className="admin-soe-review-row">
-												<span>Student</span>
+												<span>Student Name</span>
 												<strong>{selectedSoeReviewRow.fullName || "-"}</strong>
-												<small>{selectedSoeReviewRow.studentId || "-"}</small>
+											</div>
+											<div className="admin-soe-review-row">
+												<span>Student Number</span>
+												<strong>{selectedSoeReviewRow.studentId || "-"}</strong>
 											</div>
 											<div className="admin-soe-review-row">
 												<span>Scholarship</span>
 												<strong>{selectedSoeReviewRow.scholarshipName || "-"}</strong>
-												<small>{selectedSoeReviewRow.providerType || "Provider not set"}</small>
 											</div>
 											<div className="admin-soe-review-row">
-												<span>{isSelectedSoeDownloadReview ? "SOE Request Number" : "Application Number"}</span>
+												<span>Application Number</span>
 												<strong>{selectedSoeReviewRow.requestNumber || selectedSoeReviewRow.id || "-"}</strong>
-												<small>{isSelectedSoeDownloadReview ? "Downloaded SOE record" : "Materials request record"}</small>
-											</div>
-											<div className="admin-soe-review-row">
-												<span>{isSelectedSoeDownloadReview ? "Downloaded" : "Requested"}</span>
-												<strong>{formatDate(isSelectedSoeDownloadReview ? selectedSoeReviewRow.downloadedDate : selectedSoeReviewRow.requestDate)}</strong>
-												<small>{selectedSoeReviewRow.status || "-"}</small>
 											</div>
 										</div>
 									</section>
@@ -7643,72 +8984,122 @@ export default function AdminDashboard() {
 											<section className="admin-soe-review-section">
 												<div className="admin-soe-review-section-head">
 													<h4>Material Request</h4>
-													<p>Requested items and the current release state.</p>
+													<p>Requested documents that need approval before release.</p>
 												</div>
 												<div className="admin-soe-review-list">
 													<div className="admin-soe-review-row">
-														<span>Requested Requirements</span>
+														<span>Requested Documents</span>
 														<strong>{selectedSoeReviewRow.visibleMaterialsSummary || "-"}</strong>
-														<small>
-															{selectedSoeReviewRow.pendingMaterialLabels?.length > 0
-																? `Pending: ${selectedSoeReviewRow.pendingMaterialLabels.join(", ")}`
-																: "No pending materials"}
-														</small>
 													</div>
-													<div className="admin-soe-review-row">
-														<span>Material Status</span>
-														<strong>{selectedSoeReviewRow.materialStatusSummary || "-"}</strong>
-														<small>SOE Download: {selectedSoeReviewRow.downloadStatusLabel || "-"}</small>
-													</div>
-												</div>
-											</section>
-											<section className="admin-soe-review-section">
-												<div className="admin-soe-review-section-head">
-													<h4>Release Timeline</h4>
-													<p>Request timing, download activity, and next SOE eligibility.</p>
-												</div>
-												<div className="admin-soe-review-list">
 													<div className="admin-soe-review-row">
 														<span>Date Requested</span>
 														<strong>{formatDate(selectedSoeReviewRow.requestDate)}</strong>
-														<small>Request record created for material release.</small>
-													</div>
-													<div className="admin-soe-review-row">
-														<span>SOE Downloaded At</span>
-														<strong>{formatDate(selectedSoeReviewRow.downloadedDate)}</strong>
-														<small>
-															Application Form Downloaded:{" "}
-															{formatDate(selectedSoeReviewRow.applicationFormDownloadedDate)}
-														</small>
-													</div>
-													<div className="admin-soe-review-row admin-soe-review-row--full">
-														<span>Next Eligibility Date</span>
-														<strong>{selectedSoeReviewRow.nextEligibleLabel || "Not applicable"}</strong>
-														<small>Timer status: {selectedSoeReviewRow.timerEndLabel || "Not applicable"}</small>
 													</div>
 												</div>
 											</section>
 										</>
 									)}
+									<section className="admin-soe-review-section admin-soe-review-documents">
+										<div className="admin-soe-review-section-head admin-soe-review-documents-head">
+											<div className="admin-soe-review-documents-icon" aria-hidden="true">
+												<HiOutlineDocumentText />
+											</div>
+											<div>
+												<h4>Documents</h4>
+												<p>Preview uploaded student files before completing this review.</p>
+											</div>
+										</div>
+										<div className="admin-soe-review-doc-grid">
+											{selectedSoeReviewDocuments.map((document) =>
+												document.url ? (
+													<button
+														key={document.key}
+														type="button"
+														className="admin-soe-review-doc-btn"
+														onClick={() => openDocumentPreview(document)}
+													>
+														<HiOutlineEye />
+														<span>View {document.label}</span>
+													</button>
+												) : (
+													<span key={document.key} className="admin-soe-review-doc-empty">
+														<HiOutlineDocumentText />
+														<span>{document.label} unavailable</span>
+													</span>
+												),
+											)}
+										</div>
+										<div className="admin-soe-review-other-docs">
+											<div className="admin-soe-review-other-docs-title">
+												<strong>Other Requirements</strong>
+												<span>{selectedSoeReviewOtherDocuments.length || "None"}</span>
+											</div>
+											{selectedSoeReviewOtherDocuments.length === 0 ? (
+												<p>No other requirement documents uploaded.</p>
+											) : (
+												<div className="admin-soe-review-other-docs-list">
+													{selectedSoeReviewOtherDocuments.map((document, index) => (
+														<button
+															key={`${document.requirementId}_${document.url}_${index}`}
+															type="button"
+															onClick={() => openDocumentPreview(document)}
+														>
+															<HiOutlineEye />
+															<span>{document.requirementName}</span>
+															<small>{document.name}</small>
+														</button>
+													))}
+												</div>
+											)}
+										</div>
+									</section>
+									{selectedSoeReviewRejectionDetails.length > 0 ? (
+										<section className="admin-soe-review-section admin-soe-review-rejection">
+											<div className="admin-soe-review-section-head">
+												<h4>Rejection Details</h4>
+												<p>This reason is shown to the student in their inbox.</p>
+											</div>
+											<div className="admin-soe-review-rejection-list">
+												{selectedSoeReviewRejectionDetails.map((detail) => (
+													<div key={detail.key} className="admin-soe-review-rejection-item">
+														<span>{detail.label}</span>
+														<strong>{detail.reason}</strong>
+														{detail.notes ? <small>{detail.notes}</small> : null}
+													</div>
+												))}
+											</div>
+										</section>
+									) : null}
 								</div>
 							</div>
 							{selectedSoeReviewRow.reviewState === "incoming" ? (
 								<div className="admin-soe-review-actions admin-soe-review-actions--split">
 									{isSelectedSoeDownloadReview ? (
 										<>
-											<button type="button" className="admin-safe-btn" disabled={isBusy} onClick={() => markSoeCheckingReview(selectedSoeReviewRow, "signed")}>
-												Sign SOE
+											<button
+												type="button"
+												className="admin-table-btn"
+												onClick={() => {
+													setSelectedSoeReviewId("")
+													setSelectedStudentId(selectedSoeReviewRow.studentId)
+												}}
+											>
+												<HiOutlineEye />
+												View Student
 											</button>
-											<button type="button" className="admin-danger-btn" disabled={isBusy} onClick={() => markSoeCheckingReview(selectedSoeReviewRow, "non_compliant")}>
-												Mark Non-Compliant
+											<button type="button" className="admin-table-btn" onClick={() => setSelectedSoeReviewId("")}>
+												<HiX />
+												Close
 											</button>
 										</>
 									) : (
 										<>
 											<button type="button" className="admin-safe-btn" disabled={isBusy} onClick={() => markSoeReview(selectedSoeReviewRow, "signed")}>
+												<HiOutlineCheckCircle />
 												{selectedSoeReviewRow.pendingMaterialKeys?.length > 1 ? "Approve Both Requests" : "Approve Request"}
 											</button>
-											<button type="button" className="admin-danger-btn" disabled={isBusy} onClick={() => markSoeReview(selectedSoeReviewRow, "non_compliant")}>
+											<button type="button" className="admin-danger-btn" disabled={isBusy} onClick={() => openSoeRejectModal(selectedSoeReviewRow)}>
+												<HiOutlineBan />
 												{selectedSoeReviewRow.pendingMaterialKeys?.length > 1 ? "Reject Both Requests" : "Reject Request"}
 											</button>
 										</>
@@ -7742,6 +9133,7 @@ export default function AdminDashboard() {
 												}
 												onClick={() => resetSoeTimer(selectedSoeReviewRow)}
 											>
+												<HiOutlineRefresh />
 												{!selectedSoeReviewRow.hasSoeRequest
 													? "SOE Only"
 													: !selectedSoeReviewRow.downloadedDate
@@ -7762,12 +9154,78 @@ export default function AdminDashboard() {
 												setSelectedStudentId(selectedSoeReviewRow.studentId)
 											}}
 										>
+											<HiOutlineEye />
 											View Student
 										</button>
 									</div>
 								</>
 							)}
 						</div>
+					</div>
+				</div>
+			) : null}
+
+			{soeRejectModalRow ? (
+				<div
+					className="admin-reject-modal-backdrop admin-reject-modal-backdrop--soe"
+					role="presentation"
+					onClick={closeSoeRejectModal}
+				>
+					<div
+						className="admin-reject-modal admin-reject-modal--soe"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Reject requirements request"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<header className="admin-reject-modal-head">
+							<div className="admin-reject-modal-icon" aria-hidden="true">
+								<HiOutlineBan />
+							</div>
+							<div>
+								<span>Requirements Decision</span>
+								<h3>Reject Request</h3>
+								<p>
+									This rejects the requested documents and sends the reason to the student's inbox.
+								</p>
+							</div>
+							<button type="button" onClick={closeSoeRejectModal} aria-label="Close rejection modal">
+								<HiX />
+							</button>
+						</header>
+						<div className="admin-reject-modal-body">
+							<div className="admin-reject-summary-grid">
+								<p><span>Student</span><strong>{soeRejectModalRow.fullName || "-"}</strong></p>
+								<p><span>Student Number</span><strong>{soeRejectModalRow.studentId || "-"}</strong></p>
+								<p><span>Requested Documents</span><strong>{soeRejectModalRow.visibleMaterialsSummary || "-"}</strong></p>
+								<p><span>Application No.</span><strong>{soeRejectModalRow.requestNumber || soeRejectModalRow.id || "-"}</strong></p>
+							</div>
+							<label>
+								Reason
+								<select value={soeRejectReason} onChange={(event) => setSoeRejectReason(event.target.value)}>
+									{APPLICATION_REJECTION_REASONS.map((reason) => (
+										<option key={reason} value={reason}>{reason}</option>
+									))}
+								</select>
+							</label>
+							<label>
+								Message / Notes
+								<textarea
+									value={soeRejectNotes}
+									onChange={(event) => setSoeRejectNotes(event.target.value)}
+									placeholder="Tell the student what must be corrected before requesting again."
+									rows={4}
+								/>
+							</label>
+						</div>
+						<footer className="admin-reject-modal-actions">
+							<button type="button" className="admin-reject-cancel-btn" onClick={closeSoeRejectModal} disabled={isBusy}>
+								Cancel
+							</button>
+							<button type="button" className="admin-reject-confirm-btn" onClick={confirmSoeRejection} disabled={isBusy}>
+								<HiOutlineBan /> {isBusy ? "Rejecting..." : "Confirm Rejection"}
+							</button>
+						</footer>
 					</div>
 				</div>
 			) : null}

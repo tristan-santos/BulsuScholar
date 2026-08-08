@@ -530,6 +530,8 @@ export default function StudentProfilePage() {
 				name: uploadResult.name || fileToUpload.name,
 				type: uploadResult.type || fileToUpload.type,
 				size: uploadResult.size || fileToUpload.size,
+				path: uploadResult.path || uploadResult.publicId || "",
+				bucket: uploadResult.bucket || "",
 				uploadedAt: new Date().toISOString(),
 				semesterTag: currentSemesterTag,
 			}

@@ -2,6 +2,61 @@ import { supabase } from "./supabaseClient"
 
 const DEFAULT_BUCKET = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || "bulsuscholar"
 
+export function parseSupabaseStorageLocation(file = {}) {
+	const bucket = file.bucket || DEFAULT_BUCKET
+	const directPath = file.path || file.publicId || file.storagePath || ""
+	if (directPath) return { bucket, path: directPath }
+
+	const url = file.url || file.publicUrl || ""
+	if (!url) return { bucket, path: "" }
+
+	try {
+		const parsedUrl = new URL(url)
+		const marker = "/storage/v1/object/public/"
+		const markerIndex = parsedUrl.pathname.indexOf(marker)
+		if (markerIndex === -1) return { bucket, path: "" }
+
+		const storagePath = parsedUrl.pathname.slice(markerIndex + marker.length)
+		const [urlBucket, ...objectPathParts] = storagePath.split("/")
+		return {
+			bucket: decodeURIComponent(urlBucket || bucket),
+			path: objectPathParts.map((segment) => decodeURIComponent(segment)).join("/"),
+		}
+	} catch {
+		return { bucket, path: "" }
+	}
+}
+
+export async function getStorageObjectBlob(file = {}) {
+	const url = file.url || file.publicUrl || ""
+	const normalizedUrl = normalizeStoragePublicUrl(url)
+	if (normalizedUrl) {
+		const response = await fetch(normalizedUrl)
+		if (response.ok) return response.blob()
+	}
+
+	const { bucket, path } = parseSupabaseStorageLocation(file)
+	if (!path) throw new Error("storage_path_missing")
+
+	const { data, error } = await supabase.storage.from(bucket).download(path)
+	if (error) throw error
+	return data
+}
+
+export function normalizeStoragePublicUrl(url = "") {
+	if (!url) return ""
+	try {
+		const parsedUrl = new URL(url)
+		parsedUrl.pathname = parsedUrl.pathname
+			.split("/")
+			.map((segment) => encodeURIComponent(decodeURIComponent(segment)))
+			.join("/")
+		return parsedUrl.toString()
+	} catch {
+		return encodeURI(url)
+	}
+}
+
 export async function uploadToSupabaseStorage(file, options = {}) {
 	if (!file) throw new Error("No file provided for upload.")
 	const bucket = options.bucket || DEFAULT_BUCKET
