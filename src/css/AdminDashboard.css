@@ -3224,8 +3224,10 @@
 
 .admin-detail-shell--review {
 	position: relative;
-	width: min(820px, calc(100vw - 2rem));
-	margin: auto;
+	width: min(779px, calc(100vw - 2rem));
+	margin: 0 auto;
+	transform: scale(0.95);
+	transform-origin: center;
 }
 
 .admin-detail-shell--report {
@@ -3244,16 +3246,21 @@
 
 .admin-detail-modal--review {
 	width: 100%;
-	max-height: min(86vh, 780px);
+	max-height: min(82vh, 740px);
 	overflow: auto;
 	border-radius: 10px;
 }
 
 .admin-detail-backdrop--review {
+	position: fixed;
+	inset: 0;
+	display: grid;
+	place-items: center;
 	align-items: center;
 	justify-content: center;
 	overflow-y: auto;
-	padding: 1.25rem;
+	padding: 4rem 1.25rem 1.25rem;
+	z-index: 250;
 }
 
 .admin-detail-modal--confirm {
@@ -4368,11 +4375,13 @@
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 0.65rem 0.7rem;
+	width: 100%;
 }
 
 .admin-detail-docs-grid--review button,
 .admin-detail-docs-grid--review .admin-detail-docs-empty {
-	min-height: 44px;
+	width: 100%;
+	min-height: 52px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;

@@ -17,6 +17,7 @@ import { Bar, Doughnut, Line } from "react-chartjs-2"
 import {
 	HiOutlineAcademicCap,
 	HiOutlineArchive,
+	HiOutlineBan,
 	HiOutlineBell,
 	HiOutlineChartBar,
 	HiOutlineChartPie,
@@ -7396,6 +7397,7 @@ export default function AdminDashboard() {
 										}
 										onClick={completeScholarshipTrackingCurrentStep}
 									>
+										<HiOutlineCheckCircle aria-hidden />
 										Confirm Approval
 									</button>
 									<button
@@ -7404,6 +7406,7 @@ export default function AdminDashboard() {
 										disabled={isBusy}
 										onClick={openRejectScholarshipApplicationModal}
 									>
+										<HiOutlineBan aria-hidden />
 										Reject Application
 									</button>
 								</div>
