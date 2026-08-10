@@ -6678,11 +6678,26 @@
 	background: #fff;
 }
 
-.student-announcement-detail-carousel > img {
+.student-announcement-detail-carousel > img,
+.student-announcement-detail-image-open {
 	display: block;
 	width: 100%;
 	height: 100%;
 	min-height: 0;
+}
+
+.student-announcement-detail-image-open {
+	padding: 0;
+	border: 0;
+	background: #fff;
+	cursor: zoom-in;
+}
+
+.student-announcement-detail-carousel > img,
+.student-announcement-detail-image-open img {
+	display: block;
+	width: 100%;
+	height: 100%;
 	object-fit: contain;
 	padding: 1rem 5.25rem 1rem 1rem;
 	background: #fff;
@@ -6794,7 +6809,9 @@
 }
 
 .student-dashboard--dark .student-announcement-detail-carousel,
-.student-dashboard--dark .student-announcement-detail-carousel > img {
+.student-dashboard--dark .student-announcement-detail-carousel > img,
+.student-dashboard--dark .student-announcement-detail-image-open,
+.student-dashboard--dark .student-announcement-detail-image-open img {
 	background: #1e293b;
 }
 
@@ -7324,12 +7341,71 @@
 	background: #f8fffb;
 }
 
+.student-document-preview-body > .zoomable-preview {
+	width: 100%;
+	height: 100%;
+	min-height: 420px;
+	padding: 1rem;
+}
+
 .student-document-preview-image {
 	width: 100%;
 	max-width: 920px;
 	max-height: min(68vh, 680px);
 	object-fit: contain;
 	padding: 1rem;
+}
+
+.student-announcement-image-lightbox {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	width: min(940px, calc(100vw - 2rem));
+	max-height: min(90vh, 820px);
+	padding: 1rem;
+	border: 1px solid #d6e2dc;
+	border-radius: 8px;
+	background: #ffffff;
+	box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.student-announcement-image-lightbox-close {
+	position: absolute;
+	top: 0.8rem;
+	right: 0.8rem;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	padding: 0;
+	border: 1px solid #d6e2dc;
+	border-radius: 50%;
+	background: #ffffff;
+	color: #52675f;
+	cursor: pointer;
+}
+
+.student-announcement-image-zoom-preview {
+	min-height: 0;
+}
+
+.student-announcement-image-lightbox-stage {
+	min-height: 360px;
+}
+
+@media (max-width: 720px) {
+	.student-announcement-image-lightbox {
+		width: min(100%, calc(100vw - 1rem));
+		max-height: calc(100dvh - 1rem);
+		padding: 0.75rem;
+	}
+
+	.student-announcement-image-lightbox-stage {
+		min-height: 280px;
+		max-height: 62vh;
+	}
 }
 
 .student-document-preview-state {
@@ -7452,6 +7528,12 @@
 
 .student-dashboard--dark .student-document-preview-body {
 	background: #0f172a;
+}
+
+.student-dashboard--dark .student-announcement-image-lightbox,
+.student-dashboard--dark .student-announcement-image-lightbox-close {
+	border-color: #334155;
+	background: #101a16;
 }
 
 .student-dashboard--dark .student-profile-input {

@@ -33,6 +33,7 @@ import { isPdf, convertPdfToImage, convertPdfToImageFile } from "../utils/pdfCon
 import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
 import StudentTopbar from "../components/StudentTopbar"
 import CustomSelect from "../components/CustomSelect"
+import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import { exportApplicationFormPdfDocument } from "../services/applicationFormService"
 import "../css/StudentDashboard.css"
 import useThemeMode from "../hooks/useThemeMode"
@@ -1313,10 +1314,12 @@ export default function StudentProfilePage() {
 											<span>Preview is unavailable.</span>
 										</div>
 									) : (
-										<img
+										<ZoomableImagePreview
 											src={previewBlobUrl}
 											alt={`${previewDocument.title} preview`}
-											className="student-document-preview-image"
+											className="student-document-zoom-preview"
+											stageClassName="student-document-preview-body-stage"
+											imageClassName="student-document-preview-image"
 										/>
 									)}
 								</div>

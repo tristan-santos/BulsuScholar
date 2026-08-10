@@ -34,6 +34,7 @@ import { finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "..
 import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
 import { isPdf, convertPdfToImage } from "../utils/pdfConverter"
 import CustomSelect from "../components/CustomSelect"
+import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -2925,10 +2926,12 @@ export default function SignupPage() {
 						>
 							✕
 						</button>
-						<img
+						<ZoomableImagePreview
 							src={getPreviewUrlForFile(previewFile)}
-							alt="Document Preview"
-							className="signup-preview-image"
+							alt="Document preview"
+							className="signup-document-zoom-preview"
+							stageClassName="signup-preview-stage"
+							imageClassName="signup-preview-image"
 						/>
 					</div>
 				</div>

@@ -10,6 +10,7 @@ import {
 	HiOutlineInbox,
 	HiChevronLeft,
 	HiChevronRight,
+	HiX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import {
@@ -23,6 +24,7 @@ import { db } from "../services/supabaseDataService"
 import "../css/StudentDashboard.css"
 import useThemeMode from "../hooks/useThemeMode"
 import StudentTopbar from "../components/StudentTopbar"
+import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import {
 	isPreviousStudentAnnouncement,
 	normalizeStudentAnnouncement,
@@ -155,6 +157,7 @@ export default function StudentAnnouncementDetailPage() {
 	const [announcements, setAnnouncements] = useState([])
 	const [grantorProfiles, setGrantorProfiles] = useState({})
 	const [activeImageIndex, setActiveImageIndex] = useState(0)
+	const [announcementImagePreview, setAnnouncementImagePreview] = useState("")
 	const [isApplying, setIsApplying] = useState(false)
 	const { theme, setTheme } = useThemeMode()
 	const forcedLogoutRef = useRef(false)
@@ -405,6 +408,7 @@ export default function StudentAnnouncementDetailPage() {
 
 	useEffect(() => {
 		setActiveImageIndex(0)
+		setAnnouncementImagePreview("")
 	}, [announcement?.id, imageUrls.length])
 
 	const moveCarousel = useCallback(
@@ -419,6 +423,15 @@ export default function StudentAnnouncementDetailPage() {
 		},
 		[imageUrls.length],
 	)
+
+	const openAnnouncementImagePreview = (url) => {
+		if (!url) return
+		setAnnouncementImagePreview(url)
+	}
+
+	const closeAnnouncementImagePreview = () => {
+		setAnnouncementImagePreview("")
+	}
 
 	const applyFromAnnouncement = useCallback(async () => {
 		if (!announcement || !user || !sessionState.storedUserId || isApplying) return
@@ -686,7 +699,14 @@ export default function StudentAnnouncementDetailPage() {
 							<div className="student-announcement-detail-hero">
 								<div className="student-announcement-detail-media student-announcement-detail-carousel">
 									{activeImageUrl ? (
-										<img src={activeImageUrl} alt={announcement.title || "Announcement"} />
+										<button
+											type="button"
+											className="student-announcement-detail-image-open"
+											onClick={() => openAnnouncementImagePreview(activeImageUrl)}
+											aria-label={`Preview ${announcement.title || "announcement"} image`}
+										>
+											<img src={activeImageUrl} alt={announcement.title || "Announcement"} />
+										</button>
 									) : (
 										<HiOutlineInbox />
 									)}
@@ -869,6 +889,32 @@ export default function StudentAnnouncementDetailPage() {
 							</button>
 						</div>
 					)}
+					{announcementImagePreview ? (
+						<div className="student-document-preview-backdrop" role="presentation" onClick={closeAnnouncementImagePreview}>
+							<div
+								className="student-announcement-image-lightbox"
+								role="dialog"
+								aria-modal="true"
+								aria-label="Announcement image preview"
+								onClick={(event) => event.stopPropagation()}
+							>
+								<button
+									type="button"
+									className="student-announcement-image-lightbox-close"
+									onClick={closeAnnouncementImagePreview}
+									aria-label="Close image preview"
+								>
+									<HiX aria-hidden />
+								</button>
+								<ZoomableImagePreview
+									src={announcementImagePreview}
+									alt="Announcement preview"
+									className="student-announcement-image-zoom-preview"
+									stageClassName="student-announcement-image-lightbox-stage"
+								/>
+							</div>
+						</div>
+					) : null}
 				</div>
 			</main>
 		</div>

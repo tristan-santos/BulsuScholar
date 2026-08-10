@@ -52,6 +52,7 @@ import logo2 from "../assets/logo2.png"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
 import TablePagination from "../components/TablePagination"
+import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
@@ -1104,7 +1105,6 @@ export default function AdminDashboard() {
 	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
 	const [announcementDraftPreviews, setAnnouncementDraftPreviews] = useState([])
 	const [announcementImagePreview, setAnnouncementImagePreview] = useState("")
-	const [announcementImageZoom, setAnnouncementImageZoom] = useState(1)
 	const [announcementStartDate, setAnnouncementStartDate] = useState("")
 	const [announcementEndDate, setAnnouncementEndDate] = useState("")
 	const [showAnnouncementSchedule, setShowAnnouncementSchedule] = useState(false)
@@ -5462,22 +5462,10 @@ export default function AdminDashboard() {
 
 	const openAnnouncementImagePreview = (url) => {
 		setAnnouncementImagePreview(url)
-		setAnnouncementImageZoom(1)
 	}
 
 	const closeAnnouncementImagePreview = () => {
 		setAnnouncementImagePreview("")
-		setAnnouncementImageZoom(1)
-	}
-
-	const adjustAnnouncementImageZoom = (amount) => {
-		setAnnouncementImageZoom((prev) => Math.min(3, Math.max(0.5, Number((prev + amount).toFixed(2)))))
-	}
-
-	const handleAnnouncementImageZoom = (event) => {
-		event.preventDefault()
-		event.stopPropagation()
-		adjustAnnouncementImageZoom(event.deltaY < 0 ? 0.12 : -0.12)
 	}
 
 	const resetAnnouncementDraft = () => {
@@ -8157,16 +8145,13 @@ export default function AdminDashboard() {
 						<button type="button" className="admin-detail-close" onClick={closeAnnouncementImagePreview}>
 							<HiX />
 						</button>
-						<div className="admin-zoom-lightbox-toolbar" aria-label="Image zoom controls">
-							<button type="button" onClick={() => adjustAnnouncementImageZoom(-0.2)} disabled={announcementImageZoom <= 0.5}>-</button>
-							<span>{Math.round(announcementImageZoom * 100)}%</span>
-							<button type="button" onClick={() => adjustAnnouncementImageZoom(0.2)} disabled={announcementImageZoom >= 3}>+</button>
-							<button type="button" onClick={() => setAnnouncementImageZoom(1)}>Reset</button>
-						</div>
-						<div className="admin-zoom-lightbox-stage" onWheel={handleAnnouncementImageZoom}>
-							<img src={announcementImagePreview} alt="Announcement preview" className="admin-lightbox-image admin-zoom-lightbox-image" style={{ width: `${Math.round(announcementImageZoom * 100)}%` }} />
-						</div>
-						<p className="admin-zoom-lightbox-hint">Scroll or use the touchpad over the image to zoom.</p>
+						<ZoomableImagePreview
+							src={announcementImagePreview}
+							alt="Announcement preview"
+							className="admin-zoom-lightbox-preview"
+							stageClassName="admin-zoom-lightbox-stage"
+							imageClassName="admin-lightbox-image admin-zoom-lightbox-image"
+						/>
 					</div>
 				</div>
 			) : null}
@@ -8815,7 +8800,13 @@ export default function AdminDashboard() {
 									<span>Preview is unavailable.</span>
 								</div>
 							) : (
-								<img src={previewBlobUrl} alt={`${previewDocument.title} preview`} className="admin-document-preview-image" />
+								<ZoomableImagePreview
+									src={previewBlobUrl}
+									alt={`${previewDocument.title} preview`}
+									className="admin-document-zoom-preview"
+									stageClassName="admin-document-preview-body-stage"
+									imageClassName="admin-document-preview-image"
+								/>
 							)}
 						</div>
 					</div>

@@ -1,0 +1,158 @@
+.zoomable-preview {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.zoomable-preview__toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.45rem;
+	padding-right: 2.4rem;
+}
+
+.zoomable-preview__toolbar button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 34px;
+	min-height: 32px;
+	padding: 0 0.65rem;
+	border: 1px solid #00633c;
+	border-radius: 5px;
+	background: #ffffff;
+	color: #00633c;
+	font: inherit;
+	font-size: 0.76rem;
+	font-weight: 650;
+	cursor: pointer;
+}
+
+.zoomable-preview__toolbar button:disabled {
+	border-color: #cbd5e1;
+	color: #94a3b8;
+	cursor: not-allowed;
+}
+
+.zoomable-preview__toolbar span {
+	min-width: 48px;
+	color: #17342a;
+	font-size: 0.76rem;
+	font-weight: 700;
+	text-align: center;
+}
+
+.zoomable-preview__stage {
+	position: relative;
+	display: grid;
+	place-items: center;
+	min-height: 360px;
+	max-height: 70vh;
+	overflow: hidden;
+	border: 1px solid #dce7e1;
+	border-radius: 7px;
+	background: #ffffff;
+	touch-action: none;
+	user-select: none;
+}
+
+.zoomable-preview__stage.is-dragging {
+	cursor: grabbing;
+}
+
+.zoomable-preview__image {
+	display: block;
+	max-width: calc(100% - 2rem);
+	max-height: calc(100% - 2rem);
+	width: auto;
+	height: auto;
+	object-fit: contain;
+	border-radius: 5px;
+	transform-origin: center center;
+	transition: transform 0.08s ease;
+	will-change: transform;
+	pointer-events: none;
+	user-select: none;
+}
+
+.zoomable-preview__stage .admin-zoom-lightbox-image,
+.zoomable-preview__stage .admin-document-preview-image,
+.zoomable-preview__stage .grantor-document-preview-image,
+.zoomable-preview__stage .student-document-preview-image {
+	width: auto;
+	max-width: calc(100% - 2rem);
+	max-height: calc(100% - 2rem);
+	padding: 0;
+	object-fit: contain;
+}
+
+.zoomable-preview__stage.admin-zoom-lightbox-stage,
+.zoomable-preview__stage.grantor-image-lightbox-stage,
+.zoomable-preview__stage.admin-document-preview-body-stage,
+.zoomable-preview__stage.grantor-document-preview-body-stage,
+.zoomable-preview__stage.student-document-preview-body-stage,
+.zoomable-preview__stage.student-announcement-image-lightbox-stage {
+	overflow: hidden;
+	cursor: zoom-in;
+}
+
+.zoomable-preview__stage.is-dragging .zoomable-preview__image {
+	transition: none;
+}
+
+.zoomable-preview__hint {
+	margin: 0;
+	color: #64748b;
+	font-size: 0.72rem;
+	text-align: center;
+}
+
+.admin-portal--dark .zoomable-preview__stage,
+.grantor-portal--dark .zoomable-preview__stage,
+.student-dashboard--dark .zoomable-preview__stage {
+	border-color: #334155;
+	background: #0f172a;
+}
+
+.admin-portal--dark .zoomable-preview__toolbar button,
+.grantor-portal--dark .zoomable-preview__toolbar button,
+.student-dashboard--dark .zoomable-preview__toolbar button {
+	border-color: #475569;
+	background: #0f172a;
+	color: #6ee7b7;
+}
+
+.admin-portal--dark .zoomable-preview__toolbar button:disabled,
+.grantor-portal--dark .zoomable-preview__toolbar button:disabled,
+.student-dashboard--dark .zoomable-preview__toolbar button:disabled {
+	border-color: #334155;
+	color: #64748b;
+}
+
+.admin-portal--dark .zoomable-preview__toolbar span,
+.grantor-portal--dark .zoomable-preview__toolbar span,
+.student-dashboard--dark .zoomable-preview__toolbar span {
+	color: #f8fafc;
+}
+
+.admin-portal--dark .zoomable-preview__hint,
+.grantor-portal--dark .zoomable-preview__hint,
+.student-dashboard--dark .zoomable-preview__hint {
+	color: #94a3b8;
+}
+
+@media (max-width: 720px) {
+	.zoomable-preview__toolbar {
+		justify-content: center;
+		flex-wrap: wrap;
+		padding-right: 0;
+	}
+
+	.zoomable-preview__stage {
+		min-height: 280px;
+		max-height: 62vh;
+	}
+}

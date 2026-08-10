@@ -1224,6 +1224,10 @@
 	box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
 }
 
+.grantor-image-lightbox-preview {
+	min-height: 0;
+}
+
 .grantor-image-lightbox-close {
 	position: absolute;
 	top: 0.8rem;
@@ -4243,6 +4247,13 @@
 	place-items: center;
 	overflow: auto;
 	background: #f8fffb;
+}
+
+.grantor-document-preview-body > .zoomable-preview {
+	width: 100%;
+	height: 100%;
+	min-height: 420px;
+	padding: 1rem;
 }
 
 .grantor-document-preview-image {

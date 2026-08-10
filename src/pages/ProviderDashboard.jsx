@@ -67,6 +67,7 @@ import logo2 from "../assets/logo2.png"
 import "../css/AdminDashboard.css"
 import "../css/ProviderDashboard.css"
 import TablePagination from "../components/TablePagination"
+import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import useThemeMode from "../hooks/useThemeMode"
 import { PROVINCES, getCitiesByProvince } from "../data/philippineLocations"
@@ -813,7 +814,6 @@ export default function ProviderDashboard() {
 	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
 	const [announcementImagePreviews, setAnnouncementImagePreviews] = useState([])
 	const [announcementImagePreview, setAnnouncementImagePreview] = useState("")
-	const [announcementImageZoom, setAnnouncementImageZoom] = useState(1)
 	const [selectedAnnouncement, setSelectedAnnouncement] = useState(null)
 	const [showAllAnnouncements, setShowAllAnnouncements] = useState(false)
 	const [showCreateAnnouncementModal, setShowCreateAnnouncementModal] = useState(false)
@@ -2848,22 +2848,10 @@ export default function ProviderDashboard() {
 
 	const openAnnouncementImagePreview = (url) => {
 		setAnnouncementImagePreview(url)
-		setAnnouncementImageZoom(1)
 	}
 
 	const closeAnnouncementImagePreview = () => {
 		setAnnouncementImagePreview("")
-		setAnnouncementImageZoom(1)
-	}
-
-	const adjustAnnouncementImageZoom = (amount) => {
-		setAnnouncementImageZoom((prev) => Math.min(3, Math.max(0.5, Number((prev + amount).toFixed(2)))))
-	}
-
-	const handleAnnouncementImageZoom = (event) => {
-		event.preventDefault()
-		event.stopPropagation()
-		adjustAnnouncementImageZoom(event.deltaY < 0 ? 0.12 : -0.12)
 	}
 
 	const addAnnouncementRequirement = () => {
@@ -4072,16 +4060,12 @@ export default function ProviderDashboard() {
 						<button type="button" className="grantor-image-lightbox-close" onClick={closeAnnouncementImagePreview} aria-label="Close image preview">
 							<HiX />
 						</button>
-						<div className="grantor-image-lightbox-toolbar" aria-label="Image zoom controls">
-							<button type="button" onClick={() => adjustAnnouncementImageZoom(-0.2)} disabled={announcementImageZoom <= 0.5}>-</button>
-							<span>{Math.round(announcementImageZoom * 100)}%</span>
-							<button type="button" onClick={() => adjustAnnouncementImageZoom(0.2)} disabled={announcementImageZoom >= 3}>+</button>
-							<button type="button" onClick={() => setAnnouncementImageZoom(1)}>Reset</button>
-						</div>
-						<div className="grantor-image-lightbox-stage" onWheel={handleAnnouncementImageZoom}>
-							<img src={announcementImagePreview} alt="Announcement preview" style={{ width: `${Math.round(announcementImageZoom * 100)}%` }} />
-						</div>
-						<p className="grantor-image-lightbox-hint">Scroll or use the touchpad over the image to zoom.</p>
+						<ZoomableImagePreview
+							src={announcementImagePreview}
+							alt="Announcement preview"
+							className="grantor-image-lightbox-preview"
+							stageClassName="grantor-image-lightbox-stage"
+						/>
 					</div>
 				</div>
 			) : null}
@@ -4359,10 +4343,12 @@ export default function ProviderDashboard() {
 									<span>Preview is unavailable.</span>
 								</div>
 							) : (
-								<img
+								<ZoomableImagePreview
 									src={previewBlobUrl}
 									alt={`${previewDocument.title} preview`}
-									className="grantor-document-preview-image"
+									className="grantor-document-zoom-preview"
+									stageClassName="grantor-document-preview-body-stage"
+									imageClassName="grantor-document-preview-image"
 								/>
 							)}
 						</div>
