@@ -369,24 +369,6 @@ function buildAdminScholarPayloadFromStudentAccount(student = {}, fallback = {})
 	}
 }
 
-function buildAdminCrossGrantorWarningPayload(duplicate = null) {
-	const matched = duplicate?.record || {}
-	return {
-		scholarshipConflictWarning: true,
-		duplicateScholarshipWarning: true,
-		duplicateScholarshipDetected: true,
-		duplicateWarningType: "cross_grantor_roster_match",
-		duplicateMatchedGrantorId: matched.grantorId || matched.parentId || "",
-		duplicateMatchedGrantorName: matched.grantorName || matched.providerName || matched.providerType || "Another grantor",
-		duplicateMatchedScholarId: matched.id || "",
-		duplicateMatchedStudentId: matched.studentId || matched.studentnumber || "",
-		duplicateMatchedStudentName: matched.fullName || [matched.fname, matched.mname, matched.lname].filter(Boolean).join(" ").trim(),
-		duplicateSimilarityScore: duplicate?.score ?? duplicate?.evaluation?.score ?? "",
-		duplicateReasons: duplicate?.reasons || duplicate?.evaluation?.reasons || [],
-		duplicateDetectedAt: new Date().toISOString(),
-	}
-}
-
 function buildAdminDuplicateScholarshipWarningRecord({ row = {}, payload = {}, duplicate = null } = {}) {
 	const matched = duplicate?.record || {}
 	const studentId = payload.studentId || row.studentId || matched.studentId || matched.studentnumber || ""
@@ -401,10 +383,10 @@ function buildAdminDuplicateScholarshipWarningRecord({ row = {}, payload = {}, d
 	return {
 		studentId,
 		title: "Duplicate Scholarship Warning",
-		message: `${studentName} was added by admin to ${newGrantorName}, but also matched an existing roster under ${existingGrantorName}.`,
+		message: `${studentName} was blocked from being added to ${newGrantorName} because the student already appears under ${existingGrantorName}.`,
 		type: "duplicate_scholarship_detected",
 		warningType: "duplicate_scholarship",
-		source: "admin_roster_add",
+		source: "admin_roster_add_prevention",
 		notificationFallbackTable: "student_warnings",
 		studentName,
 		newGrantorId: payload.grantorId || "",
@@ -1082,6 +1064,7 @@ export default function AdminDashboard() {
 	const [scholarshipSearch, setScholarshipSearch] = useState("")
 	const [scholarshipTab, setScholarshipTab] = useState("scholars")
 	const [selectedScholarshipScholarKeys, setSelectedScholarshipScholarKeys] = useState([])
+	const [selectedScholarshipWarningKey, setSelectedScholarshipWarningKey] = useState("")
 	const [scholarshipGrantorHoverId, setScholarshipGrantorHoverId] = useState("")
 	const [grantorScholarTrendRange, setGrantorScholarTrendRange] = useState("monthly")
 	const [grantorDistributionHoverId, setGrantorDistributionHoverId] = useState("")
@@ -2343,6 +2326,43 @@ export default function AdminDashboard() {
 			)
 			.map((entry) => {
 				const grantorLabels = entry.distinctGrantors.map((grantor) => grantor.label)
+				const studentIdKey = normalizeGrantorScholarLookupValue(entry.student?.id || entry.student?.studentId || entry.student?.studentnumber)
+				const studentNameKey = normalizeGrantorScholarLookupValue(entry.student?.fullName || studentFullName(entry.student || {}))
+				const conflictMatches = activeGrantorScholars.filter((scholar) => {
+					const scholarIdKey = normalizeGrantorScholarLookupValue(scholar.studentId || scholar.studentnumber || scholar.studentNumber || scholar.id)
+					const scholarNameKey = normalizeGrantorScholarLookupValue(buildGrantorScholarFullName(scholar))
+					return (
+						(studentIdKey && scholarIdKey && studentIdKey === scholarIdKey) ||
+						(studentNameKey && scholarNameKey && studentNameKey === scholarNameKey) ||
+						matchesGrantorScholarToStudent(entry.student, scholar)
+					)
+				})
+				const conflictOptions = [
+					...new Map(
+						conflictMatches.map((scholar) => {
+							const grantorId = scholar.grantorId || scholar.parentId || scholar.providerType || ""
+							const scholarId = scholar.id || scholar.studentId || scholar.studentnumber || ""
+							const key = `${grantorId}::${scholarId}`
+							return [
+								key,
+								{
+									key,
+									grantorId,
+									scholarId,
+									grantorName:
+										scholar.grantorName ||
+										grantorLabelById.get(grantorId) ||
+										toProviderLabel(scholar.providerType || grantorId),
+									scholarshipName: getGrantorScholarProgramName(scholar) || "Scholarship",
+									providerType: scholar.providerType || toProviderType(scholar.grantorName || scholar.scholarshipTitle || grantorId),
+									studentId: scholar.studentId || scholar.studentnumber || entry.student?.id || "",
+									fullName: buildGrantorScholarFullName(scholar) || entry.student?.fullName || studentFullName(entry.student || {}),
+									status: scholar.status || "Active",
+								},
+							]
+						}),
+					).values(),
+				]
 				return {
 					trackingKey: `warning::${entry.student.id || entry.student.studentId || entry.student.fullName}`,
 					studentId: String(entry.student.id || entry.student.studentId || "-"),
@@ -2350,6 +2370,7 @@ export default function AdminDashboard() {
 					details: `Grantors: ${grantorLabels.join(", ") || "-"} | Scholarships: ${entry.scholarshipTitles.join(", ") || "-"}`,
 					grantors: grantorLabels.join(", "),
 					studentRecordId: entry.student.id || "",
+					conflictOptions,
 				}
 			})
 			.filter(
@@ -2361,6 +2382,11 @@ export default function AdminDashboard() {
 					row.grantors.toLowerCase().includes(keyword),
 			)
 	}, [activeGrantorScholars, grantorLabelById, scholarshipProvider, scholarshipSearch, studentGrantorMatches, studentProfiles])
+
+	const selectedScholarshipWarningRow = useMemo(
+		() => warningRows.find((row) => row.trackingKey === selectedScholarshipWarningKey) || null,
+		[warningRows, selectedScholarshipWarningKey],
+	)
 
 	useEffect(() => {
 		if (!warningRows.length) return
@@ -2409,6 +2435,7 @@ export default function AdminDashboard() {
 				const conflictEntry = conflictLookup.get(student.id)
 				const currentReason = student.scholarshipRestrictionReason || null
 				const scholarships = Array.isArray(student.scholarships) ? student.scholarships : []
+				const restrictions = student.restrictions && typeof student.restrictions === "object" ? student.restrictions : {}
 				const scholarshipNames = scholarships
 					.map((entry) => entry?.name || entry?.provider || "Scholarship")
 					.filter(Boolean)
@@ -2423,6 +2450,39 @@ export default function AdminDashboard() {
 						: `Multiple scholarships detected: ${scholarshipNames.join(", ")}. Choose one scholarship only to comply with the one scholarship per student policy.`
 					: ""
 
+				const nextRestrictions = hasConflict
+					? {
+							...restrictions,
+							scholarshipEligibility: true,
+							complianceHold: true,
+						}
+					: currentReason === "multiple_scholarships"
+						? {
+								...restrictions,
+								scholarshipEligibility: false,
+								complianceHold: false,
+							}
+						: restrictions
+				const nextScholarships = hasConflict
+					? scholarships.map((scholarship) => ({
+							...scholarship,
+							frozen: true,
+							freezeReason: "Multiple scholarship records detected. Visit the Office of the Scholarship to choose one scholarship.",
+							frozenBy: "admin",
+							frozenByName: "Office of the Scholarship",
+							frozenAt: scholarship?.frozenAt || new Date().toISOString(),
+						}))
+					: currentReason === "multiple_scholarships"
+						? scholarships.map((scholarship) => ({
+								...scholarship,
+								frozen: false,
+								freezeReason: "",
+								frozenBy: "",
+								frozenByName: "",
+								frozenAt: null,
+							}))
+						: scholarships
+
 				const nextPayload = {
 					scholarshipConflictWarning: hasConflict,
 					scholarshipConflictMessage:
@@ -2431,11 +2491,15 @@ export default function AdminDashboard() {
 							: student?.scholarshipConflictMessage || "",
 					scholarshipRestrictionReason:
 						hasConflict ? "multiple_scholarships" : currentReason === "multiple_scholarships" ? null : currentReason,
+					restrictions: nextRestrictions,
+					scholarships: nextScholarships,
 				}
 				const didChange =
 					student?.scholarshipConflictWarning !== nextPayload.scholarshipConflictWarning ||
 					(student?.scholarshipConflictMessage || "") !== nextPayload.scholarshipConflictMessage ||
-					(student?.scholarshipRestrictionReason || null) !== nextPayload.scholarshipRestrictionReason
+					(student?.scholarshipRestrictionReason || null) !== nextPayload.scholarshipRestrictionReason ||
+					JSON.stringify(restrictions) !== JSON.stringify(nextRestrictions) ||
+					JSON.stringify(scholarships) !== JSON.stringify(nextScholarships)
 				if (!didChange) return null
 				return { studentId: student.id, payload: nextPayload }
 			})
@@ -2452,6 +2516,186 @@ export default function AdminDashboard() {
 			console.error("Failed to sync grantor scholarship conflicts.", error)
 		})
 	}, [dataLoadState.grantorScholars, dataLoadState.students, grantorConflictSyncPayloads])
+
+	const resolveDuplicateScholarshipWarning = async (warningRow, selectedOption) => {
+		if (!warningRow?.studentRecordId || !selectedOption?.grantorId) {
+			toast.error("Select a valid scholarship record first.")
+			return
+		}
+		const confirmed = window.confirm(`Choose ${selectedOption.scholarshipName || "this scholarship"} under ${selectedOption.grantorName || "the selected grantor"} for ${warningRow.fullName}? Other duplicate scholarship roster records will be archived.`)
+		if (!confirmed) return
+
+		setIsBusy(true)
+		try {
+			const student = studentsRaw.find((row) => row.id === warningRow.studentRecordId) || null
+			const conflictOptions = Array.isArray(warningRow.conflictOptions) ? warningRow.conflictOptions : []
+			const selectedGrantorId = String(selectedOption.grantorId || "").trim()
+			const selectedScholarId = String(selectedOption.scholarId || "").trim()
+			const selectedGrantorName = selectedOption.grantorName || grantorLabelById.get(selectedGrantorId) || selectedGrantorId
+			const selectedGrantorProvider = selectedOption.providerType || toProviderType(selectedGrantorName || selectedGrantorId)
+			const selectedGrantorAliases = new Set(
+				[selectedGrantorId, selectedGrantorName, selectedGrantorProvider]
+					.map((value) => String(value || "").trim().toLowerCase())
+					.filter(Boolean),
+			)
+			const now = serverTimestamp()
+
+			const rosterUpdates = conflictOptions
+				.filter((option) => option.grantorId && option.scholarId)
+				.map((option) => {
+					const isSelected =
+						String(option.grantorId || "") === selectedGrantorId &&
+						String(option.scholarId || "") === selectedScholarId
+					const payload = isSelected
+						? {
+								archived: false,
+								status: option.status === "Archived" ? "Active" : option.status || "Active",
+								scholarshipConflictWarning: false,
+								duplicateScholarshipWarning: false,
+								duplicateScholarshipDetected: false,
+								duplicateMatchedGrantorId: "",
+								duplicateMatchedGrantorName: "",
+								duplicateResolvedAt: now,
+								duplicateResolution: "selected_by_admin",
+								updatedAt: now,
+							}
+						: {
+								archived: true,
+								status: "Archived",
+								archivedAt: now,
+								archivedBy: "admin",
+								archivedReason: "Duplicate scholarship resolved by admin",
+								scholarshipConflictWarning: false,
+								duplicateScholarshipWarning: false,
+								duplicateScholarshipDetected: false,
+								duplicateResolvedAt: now,
+								duplicateResolution: "archived_by_admin_resolution",
+								updatedAt: now,
+							}
+					return setDoc(doc(db, "grantorPortals", option.grantorId, "scholars", option.scholarId), payload, { merge: true })
+				})
+
+			const studentScholarships = Array.isArray(student?.scholarships) ? student.scholarships : []
+			const selectedProvider = toProviderType(selectedOption.scholarshipName || selectedGrantorName)
+			const selectedScholarships = studentScholarships
+				.filter((scholarship) => {
+					const scholarshipGrantorId = String(scholarship.grantorId || scholarship.providerId || scholarship.grantor_id || "").trim()
+					const scholarshipGrantorName = String(scholarship.grantorName || scholarship.providerName || scholarship.provider || "").trim().toLowerCase()
+					const scholarshipProvider = toProviderType(scholarship.providerType || scholarship.provider || scholarship.name)
+					return (
+						(scholarshipGrantorId && scholarshipGrantorId === selectedGrantorId) ||
+						(scholarshipGrantorName && selectedGrantorAliases.has(scholarshipGrantorName)) ||
+						(scholarshipProvider && (scholarshipProvider === selectedProvider || selectedGrantorAliases.has(scholarshipProvider)))
+					)
+				})
+				.map((scholarship) => ({
+					...scholarship,
+					frozen: false,
+					freezeReason: "",
+					frozenBy: "",
+					frozenByName: "",
+					frozenAt: null,
+				}))
+			const fallbackScholarship = {
+				id: selectedScholarId || selectedOption.key || `${selectedGrantorId}_${warningRow.studentId}`,
+				name: selectedOption.scholarshipName || selectedGrantorName,
+				provider: selectedGrantorName,
+				providerType: selectedProvider,
+				grantorId: selectedGrantorId,
+				grantorName: selectedGrantorName,
+				status: "Active",
+				frozen: false,
+				assignedBy: "admin",
+				updatedAt: now,
+			}
+
+			const nextRestrictions = {
+				...(student?.restrictions && typeof student.restrictions === "object" ? student.restrictions : {}),
+				scholarshipEligibility: false,
+				complianceHold: false,
+			}
+			await Promise.all([
+				...rosterUpdates,
+				setDoc(doc(db, "students", warningRow.studentRecordId), {
+					scholarships: selectedScholarships.length > 0 ? selectedScholarships : [fallbackScholarship],
+					restrictions: nextRestrictions,
+					scholarshipConflictWarning: false,
+					scholarshipConflictMessage: "",
+					scholarshipRestrictionReason: null,
+					duplicateScholarshipWarning: false,
+					duplicateScholarshipDetected: false,
+					duplicateResolvedAt: now,
+					duplicateResolutionGrantorId: selectedGrantorId,
+					duplicateResolutionGrantorName: selectedGrantorName,
+					updatedAt: now,
+				}, { merge: true }),
+				...applicationsRaw
+					.filter((application) => {
+						const appStudentId = normalizeStudentIdKey(application.studentId || application.studentnumber || application.studentNumber || application.applicantId)
+						const targetStudentId = normalizeStudentIdKey(warningRow.studentId)
+						if (!appStudentId || appStudentId !== targetStudentId) return false
+						const appGrantorAliases = [
+							application.grantorId,
+							application.providerId,
+							application.providerType,
+							application.grantorName,
+							application.providerName,
+							application.scholarship,
+							application.scholarshipName,
+						].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)
+						return appGrantorAliases.length > 0 && !appGrantorAliases.some((alias) => selectedGrantorAliases.has(alias) || toProviderType(alias) === selectedGrantorProvider)
+					})
+					.map((application) =>
+						setDoc(doc(db, "scholarshipApplications", application.id), {
+							archived: true,
+							status: "Rejected",
+							approvalStatus: "Rejected",
+							rejectionReason: "Duplicate scholarship resolved by admin",
+							rejectedBy: "admin",
+							rejectedByName: "Office of the Scholarship",
+							rejectedAt: now,
+							updatedAt: now,
+						}, { merge: true }),
+					),
+				createStudentNotification({
+					studentId: warningRow.studentRecordId,
+					type: "duplicate_scholarship_resolved",
+					title: "Scholarship Selection Confirmed",
+					message: `The Office of the Scholarship resolved your duplicate scholarship record. Your active scholarship is now ${selectedOption.scholarshipName || selectedGrantorName} under ${selectedGrantorName}.`,
+					studentName: warningRow.fullName,
+					grantorId: selectedGrantorId,
+					grantorName: selectedGrantorName,
+					read: false,
+					createdAt: now,
+				}).catch((error) => {
+					console.error("Student duplicate resolution notification failed.", error)
+					return null
+				}),
+				createAdminNotification({
+					type: "duplicate_scholarship_resolved",
+					title: "Duplicate Scholarship Resolved",
+					message: `${warningRow.fullName} was assigned to ${selectedGrantorName}. Other duplicate roster records were archived.`,
+					studentId: warningRow.studentId,
+					studentName: warningRow.fullName,
+					grantorId: selectedGrantorId,
+					grantorName: selectedGrantorName,
+					source: "admin_warning_resolution",
+					read: false,
+					createdAt: now,
+				}).catch((error) => {
+					console.error("Admin duplicate resolution notification failed.", error)
+					return null
+				}),
+			])
+			setSelectedScholarshipWarningKey("")
+			toast.success("Duplicate scholarship warning resolved.")
+		} catch (error) {
+			console.error("Unable to resolve duplicate scholarship warning.", error)
+			toast.error("Unable to resolve the duplicate scholarship right now.")
+		} finally {
+			setIsBusy(false)
+		}
+	}
 
 	const latestScholarshipMaterialRequests = useMemo(() => {
 		const latestRequests = new Map()
@@ -4221,11 +4465,9 @@ export default function AdminDashboard() {
 						blockedRows.push({ row, reason: "Student already exists in the same grantor roster." })
 						continue
 					}
-					payload = {
-						...payload,
-						...buildAdminCrossGrantorWarningPayload(duplicate),
-					}
 					warningRows.push({ row, payload, duplicate })
+					blockedRows.push({ row, reason: "Student already exists in another grantor roster." })
+					continue
 				}
 
 				acceptedScholars.push(payload)
@@ -4247,10 +4489,10 @@ export default function AdminDashboard() {
 					warningRows.map(({ row, duplicate }) => {
 						const matchedName = duplicate.record?.fullName || buildGrantorScholarFullName(duplicate.record || {}) || "an existing student"
 						const owner = duplicate.record?.grantorName || duplicate.record?.grantorId || "another grantor"
-						return `Before import: Row ${row.rowNumber || "-"} matches ${matchedName} under ${owner}. It can be added, but it will be flagged in Warning.`
+						return `Before import: Row ${row.rowNumber || "-"} matches ${matchedName} under ${owner}. This row will not be added.`
 					}),
 				)
-				const confirmed = window.confirm(`${warningRows.length} student${warningRows.length === 1 ? "" : "s"} already appear in another grantor roster. Admin can still add them, but they will be flagged in Warning. Continue?\n\n${examples}`)
+				const confirmed = window.confirm(`${warningRows.length} student${warningRows.length === 1 ? "" : "s"} already appear in another grantor roster. Highlighted rows will not be added. Continue importing only the valid rows?\n\n${examples}`)
 				if (!confirmed) return
 			}
 
@@ -4263,11 +4505,11 @@ export default function AdminDashboard() {
 
 			if (warningRows.length > 0) {
 				await createAdminNotification({
-					type: "duplicate_scholarship_detected",
-					title: "Duplicate Scholarship Detected",
-					message: `Admin added ${warningRows.length} student${warningRows.length === 1 ? "" : "s"} with cross-grantor scholarship warnings.`,
+					type: "duplicate_scholarship_prevented",
+					title: "Duplicate Scholarship Prevented",
+					message: `Admin blocked ${warningRows.length} student${warningRows.length === 1 ? "" : "s"} from being added to another grantor roster.`,
 					count: warningRows.length,
-					source: "admin_roster_add",
+					source: "admin_roster_add_prevention",
 					read: false,
 					createdAt: serverTimestamp(),
 				}).catch((error) => console.error("Admin duplicate warning notification failed.", error))
@@ -4291,7 +4533,7 @@ export default function AdminDashboard() {
 			}
 
 			setAdminScholarImportWarnings([
-				...warningRows.map(({ row }) => `Row ${row.rowNumber || "-"} added with cross-grantor warning.`),
+				...warningRows.map(({ row }) => `Row ${row.rowNumber || "-"} blocked because the student already has another grantor roster.`),
 				...blockedRows.map(({ row, reason }) => `Row ${row.rowNumber || "-"} skipped: ${reason}`),
 			])
 			if (insertedCount > 0) {
@@ -6799,11 +7041,11 @@ export default function AdminDashboard() {
 														<button
 															type="button"
 															className="admin-table-btn admin-table-btn--mini admin-table-btn--view"
-															onClick={() => row.studentRecordId && setSelectedStudentId(row.studentRecordId)}
-															disabled={!row.studentRecordId}
+															onClick={() => setSelectedScholarshipWarningKey(row.trackingKey)}
+															disabled={!row.conflictOptions?.length}
 														>
 															<HiOutlineEye />
-															{row.studentRecordId ? "View" : "Unavailable"}
+															{row.conflictOptions?.length ? "View" : "Unavailable"}
 														</button>
 													</td>
 												</tr>
@@ -8341,7 +8583,7 @@ export default function AdminDashboard() {
 										</label>
 										<div className="admin-scholar-duplicate-policy-note">
 											<HiOutlineExclamation />
-											<span>Duplicate protection is active. Same-grantor duplicates are blocked; cross-grantor matches can be added with warning highlights.</span>
+											<span>Duplicate prevention is active. Same-grantor and cross-grantor duplicate scholarships are blocked before import.</span>
 										</div>
 										<div className="admin-scholar-import-table-wrap">
 											<table className="admin-scholar-import-table">
@@ -8803,6 +9045,64 @@ export default function AdminDashboard() {
 								<HiOutlineExclamation /> {isBusy ? "Confirming..." : "Confirm Rejection"}
 							</button>
 						</footer>
+					</div>
+				</div>
+			) : null}
+
+			{selectedScholarshipWarningRow ? (
+				<div className="admin-detail-backdrop" role="presentation" onClick={() => setSelectedScholarshipWarningKey("")}>
+					<div className="admin-detail-shell admin-detail-shell--review" onClick={(event) => event.stopPropagation()}>
+						<button type="button" className="admin-detail-close" onClick={() => setSelectedScholarshipWarningKey("")}>
+							<HiX />
+						</button>
+						<div
+							className="admin-detail-modal admin-detail-modal--review admin-duplicate-resolution-modal"
+							role="dialog"
+							aria-modal="true"
+							aria-label="Resolve duplicate scholarship"
+						>
+							<div className="admin-detail-info">
+								<div className="admin-soe-review-head">
+									<span className="admin-review-modal-icon admin-review-modal-icon--warning" aria-hidden="true">
+										<HiOutlineExclamation />
+									</span>
+									<div>
+										<span>Duplicate Scholarship Warning</span>
+										<h3>{selectedScholarshipWarningRow.fullName}</h3>
+										<p className="admin-detail-meta">
+											Student ID: {toDisplayStudentId(selectedScholarshipWarningRow.studentId) || "-"}.
+											Choose one scholarship to keep. The other grantor roster records will be archived.
+										</p>
+									</div>
+								</div>
+								<section className="admin-soe-review-section">
+									<div className="admin-soe-review-section-head">
+										<h4>Detected Scholarships</h4>
+										<p>Only one scholarship can remain active for this student.</p>
+									</div>
+									<div className="admin-duplicate-choice-grid">
+										{selectedScholarshipWarningRow.conflictOptions?.map((option) => (
+											<article key={option.key} className="admin-duplicate-choice-card">
+												<div>
+													<span>{option.grantorName || "Grantor"}</span>
+													<strong>{option.scholarshipName || "Scholarship"}</strong>
+													<p>{option.status || "Active"} roster record</p>
+												</div>
+												<button
+													type="button"
+													className="admin-safe-btn"
+													onClick={() => resolveDuplicateScholarshipWarning(selectedScholarshipWarningRow, option)}
+													disabled={isBusy}
+												>
+													<HiOutlineCheckCircle />
+													Choose this Scholar
+												</button>
+											</article>
+										))}
+									</div>
+								</section>
+							</div>
+						</div>
 					</div>
 				</div>
 			) : null}

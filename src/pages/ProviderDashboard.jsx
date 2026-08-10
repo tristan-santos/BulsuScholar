@@ -338,24 +338,6 @@ function buildScholarPayloadFromStudentAccount(student = {}, fallback = {}) {
 	}
 }
 
-function buildCrossGrantorWarningPayload(duplicate = null) {
-	const matched = duplicate?.record || {}
-	return {
-		scholarshipConflictWarning: true,
-		duplicateScholarshipWarning: true,
-		duplicateScholarshipDetected: true,
-		duplicateWarningType: "cross_grantor_roster_match",
-		duplicateMatchedGrantorId: matched.grantorId || matched.parentId || "",
-		duplicateMatchedGrantorName: matched.grantorName || matched.providerName || matched.providerType || "Another grantor",
-		duplicateMatchedScholarId: matched.id || "",
-		duplicateMatchedStudentId: matched.studentId || matched.studentnumber || "",
-		duplicateMatchedStudentName: matched.fullName || [matched.fname, matched.mname, matched.lname].filter(Boolean).join(" ").trim(),
-		duplicateSimilarityScore: duplicate?.score ?? duplicate?.evaluation?.score ?? "",
-		duplicateReasons: duplicate?.reasons || duplicate?.evaluation?.reasons || [],
-		duplicateDetectedAt: serverTimestamp(),
-	}
-}
-
 function buildExactStudentIdConflict(record = {}, kind = "roster") {
 	return {
 		record,
@@ -2398,7 +2380,6 @@ export default function ProviderDashboard() {
 				const existingStudents = studentsSnapshot.docs.map((row) => ({ id: row.id, ...(row.data() || {}) }))
 				const acceptedScholars = []
 				const blockedRows = []
-				const warningRows = []
 
 				for (const [rowIndex, row] of importData.entries()) {
 					let scholarObj = {
@@ -2447,23 +2428,10 @@ export default function ProviderDashboard() {
 							blockedRows.push({ rowNumber: rowIndex + 1, scholar: scholarObj, duplicate })
 							continue
 						}
-						scholarObj = {
-							...scholarObj,
-							...buildCrossGrantorWarningPayload(duplicate),
-						}
-						warningRows.push({ rowNumber: rowIndex + 1, scholar: scholarObj, duplicate })
+						blockedRows.push({ rowNumber: rowIndex + 1, scholar: scholarObj, duplicate, crossGrantor: true })
+						continue
 					}
 					acceptedScholars.push(scholarObj)
-				}
-
-				if (warningRows.length > 0) {
-					const examples = warningRows.slice(0, 3).map(({ rowNumber, scholar, duplicate }) => {
-						const matchedName = duplicate.record.fullName || "an existing student"
-						const owner = duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"
-						return `row ${rowNumber} (${scholar.fullName || "Student"}) matches ${matchedName} under ${owner}`
-					}).join("; ")
-					const confirmed = window.confirm(`${warningRows.length} student${warningRows.length === 1 ? "" : "s"} already appear in another grantor roster. They will be added with warning highlights. Continue?\n\n${examples}`)
-					if (!confirmed) return
 				}
 
 				if (acceptedScholars.length > 0) {
@@ -2477,24 +2445,23 @@ export default function ProviderDashboard() {
 				if (blockedRows.length > 0) {
 					const examples = blockedRows.slice(0, 2).map(({ rowNumber, scholar, duplicate }) => {
 						const matchedName = duplicate.record.fullName || "an existing student"
-						return `row ${rowNumber} (${scholar.fullName || "Student"}) matches ${matchedName}`
+						const owner = duplicate.record.grantorName || duplicate.record.grantorId || "this grantor"
+						return `row ${rowNumber} (${scholar.fullName || "Student"}) matches ${matchedName} under ${owner}`
 					}).join("; ")
-					toast.warning(`${blockedRows.length} row${blockedRows.length === 1 ? " was" : "s were"} already in this grantor roster and were not imported. ${examples}`)
-				}
-
-				if (warningRows.length > 0) {
-					toast.warning(`${warningRows.length} imported scholar${warningRows.length === 1 ? " has" : "s have"} a multiple-scholarship warning.`)
-					await createAdminNotification({
-						type: "duplicate_scholarship_detected",
-						title: "Duplicate Scholarship Detected",
-						message: `${grantorName} imported ${warningRows.length} student${warningRows.length === 1 ? "" : "s"} already listed under another grantor.`,
-						grantorId,
-						grantorName,
-						count: warningRows.length,
-						source: "grantor_import",
-						read: false,
-						createdAt: serverTimestamp(),
-					}).catch((error) => console.error("Admin duplicate warning notification failed.", error))
+					toast.warning(`${blockedRows.length} duplicate row${blockedRows.length === 1 ? " was" : "s were"} blocked and not imported. ${examples}`)
+					if (blockedRows.some((row) => row.crossGrantor)) {
+						await createAdminNotification({
+							type: "duplicate_scholarship_prevented",
+							title: "Duplicate Scholarship Prevented",
+							message: `${grantorName} attempted to import ${blockedRows.filter((row) => row.crossGrantor).length} student${blockedRows.filter((row) => row.crossGrantor).length === 1 ? "" : "s"} already listed under another grantor. The rows were blocked.`,
+							grantorId,
+							grantorName,
+							count: blockedRows.filter((row) => row.crossGrantor).length,
+							source: "grantor_import_prevention",
+							read: false,
+							createdAt: serverTimestamp(),
+						}).catch((error) => console.error("Admin duplicate prevention notification failed.", error))
+					}
 				}
 
 				if (acceptedScholars.length > 0) closeCreateModal()
@@ -2540,12 +2507,21 @@ export default function ProviderDashboard() {
 				if (!isDuplicateOwnedByGrantor(duplicate, grantorId, grantorProviderType)) {
 					const matchedName = duplicate.record.fullName || "an existing student"
 					const owner = duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"
-					const confirmed = window.confirm(`This student already appears under ${owner} (${matchedName}). Add them to this grantor roster with a warning highlight?`)
-					if (!confirmed) return
-					payload = {
-						...payload,
-						...buildCrossGrantorWarningPayload(duplicate),
-					}
+					toast.warning(`Student not added. This student already appears under ${owner} as ${matchedName}.`)
+					await createAdminNotification({
+						type: "duplicate_scholarship_prevented",
+						title: "Duplicate Scholarship Prevented",
+						message: `${grantorName} attempted to add ${payload.fullName || "a student"} who already appears under ${owner}. The add was blocked.`,
+						grantorId,
+						grantorName,
+						studentId: payload.studentId,
+						studentName: payload.fullName,
+						matchedGrantorName: owner,
+						source: "grantor_manual_add_prevention",
+						read: false,
+						createdAt: serverTimestamp(),
+					}).catch((error) => console.error("Admin duplicate prevention notification failed.", error))
+					return
 				} else {
 					const matchedName = duplicate.record.fullName || "an existing student"
 					const reason = duplicate.reasons.length > 0 ? ` Matching fields: ${duplicate.reasons.join(", ")}.` : ""
@@ -2562,23 +2538,7 @@ export default function ProviderDashboard() {
 				}],
 			})
 			closeCreateModal()
-			if (payload.scholarshipConflictWarning) {
-				toast.warning("Scholar added with a multiple-scholarship warning.")
-				await createAdminNotification({
-					type: "duplicate_scholarship_detected",
-					title: "Duplicate Scholarship Detected",
-					message: `${grantorName} added ${payload.fullName || "a student"} who already appears under another grantor.`,
-					grantorId,
-					grantorName,
-					studentId: payload.studentId,
-					studentName: payload.fullName,
-					source: "grantor_manual_add",
-					read: false,
-					createdAt: serverTimestamp(),
-				}).catch((error) => console.error("Admin duplicate warning notification failed.", error))
-			} else {
-				toast.success("Scholar added to the grantor roster.")
-			}
+			toast.success("Scholar added to the grantor roster.")
 		} catch (error) {
 			console.error(error)
 			toast.error("Unable to add scholar right now.")
@@ -4455,7 +4415,7 @@ export default function ProviderDashboard() {
 										</div>
 										<div className={`grantor-duplicate-policy-note ${importDuplicateCount > 0 ? "is-warning" : ""}`} role="note">
 											<HiOutlineExclamationCircle aria-hidden="true" />
-											<span>{checkingImportDuplicates ? "Checking mapped rows for duplicates..." : importDuplicateCount > 0 ? `${importBlockedDuplicateCount} same-roster duplicate${importBlockedDuplicateCount === 1 ? "" : "s"} will not be imported. ${importWarningDuplicateCount} cross-grantor match${importWarningDuplicateCount === 1 ? "" : "es"} can proceed with warning highlights.` : "Duplicate protection is active. Same-roster duplicates are blocked; cross-grantor matches can be added with warning highlights."}</span>
+											<span>{checkingImportDuplicates ? "Checking mapped rows for duplicates..." : importDuplicateCount > 0 ? `${importBlockedDuplicateCount} same-roster duplicate${importBlockedDuplicateCount === 1 ? "" : "s"} and ${importWarningDuplicateCount} cross-grantor match${importWarningDuplicateCount === 1 ? "" : "es"} will not be imported.` : "Duplicate prevention is active. Same-roster and cross-grantor duplicate scholarships are blocked."}</span>
 										</div>
 										<div className="grantor-import-table-wrap">
 											<table className="grantor-import-table">
