@@ -458,6 +458,34 @@ export async function upsertStudent(studentId, fields = {}, options = {}) {
 	if (error) throw error
 }
 
+export async function promotePendingStudentToActive(studentId, fields = {}) {
+	const id = String(studentId || "").trim()
+	if (!id) throw new Error("student_id_required")
+
+	const pendingRecord = await getRecord(TABLES.pendingStudent, id)
+	if (!pendingRecord) {
+		const activeRecord = await getRecord(TABLES.students, id)
+		return activeRecord ? { promoted: false, alreadyActive: true, record: activeRecord } : null
+	}
+
+	const promotedData = {
+		...pendingRecord,
+		...serializeData(fields),
+		isPending: false,
+		isValidated: true,
+		validatedAt: fields.validatedAt || new Date().toISOString(),
+		updatedAt: new Date().toISOString(),
+	}
+	delete promotedData.id
+
+	await upsertStudent(id, promotedData, { pending: false, merge: false })
+	const { error } = await supabase.from(TABLES.pendingStudent).delete().eq("id", id)
+	if (error) {
+		console.warn("Pending student was promoted, but the pending row could not be removed.", error)
+	}
+	return { promoted: true, alreadyActive: false, record: { id, ...promotedData } }
+}
+
 export async function upsertProvider(providerId, fields = {}, options = {}) {
 	let data = serializeData(fields)
 	if (options.merge) {
@@ -484,6 +512,7 @@ export async function upsertAdmin(adminId, fields = {}, options = {}) {
 
 const ACCOUNT_TABLES = [
 	{ type: "student", table: TABLES.students, label: "Student" },
+	{ type: "student", table: TABLES.pendingStudent, label: "Student Pending Review", isPending: true },
 	{ type: "admin", table: TABLES.admins, label: "Admin" },
 	{ type: "provider", table: TABLES.providers, label: "Grantor" },
 ]

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { HiOutlineCheckCircle, HiOutlineMail, HiOutlineXCircle } from "react-icons/hi"
 import { supabase } from "../services/supabaseClient"
+import { findStudentAccountByUniqueField, promotePendingStudentToActive, TABLES } from "../services/supabaseDataService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
@@ -45,8 +46,32 @@ export default function ConfirmEmailPage() {
 
 			if (data?.session?.user) {
 				console.log("ConfirmEmailPage: Session found for user:", data.session.user.email);
-				const userEmailAddr = data.session.user.email || ""
+				const user = data.session.user
+				const userEmailAddr = user.email || ""
 				setEmail(userEmailAddr)
+				const studentIdFromMetadata = String(user.user_metadata?.user_id || user.user_metadata?.studentId || "").trim()
+				try {
+					const lookup = studentIdFromMetadata
+						? { table: TABLES.pendingStudent, record: { id: studentIdFromMetadata } }
+						: await findStudentAccountByUniqueField("email", userEmailAddr)
+					const pendingStudentId =
+						lookup?.table === TABLES.pendingStudent
+							? lookup.record?.id || studentIdFromMetadata
+							: studentIdFromMetadata
+					if (pendingStudentId) {
+						const promoted = await promotePendingStudentToActive(pendingStudentId, {
+							authUserId: user.id,
+							email: userEmailAddr,
+						})
+						console.log("ConfirmEmailPage: Pending student promotion result.", {
+							studentId: pendingStudentId,
+							promoted: promoted?.promoted === true,
+							alreadyActive: promoted?.alreadyActive === true,
+						})
+					}
+				} catch (promotionError) {
+					console.error("ConfirmEmailPage: Email confirmed but pending student promotion failed.", promotionError)
+				}
 				setStatus("confirmed")
 				
 				// Sign out so they have to log in manually with Student ID

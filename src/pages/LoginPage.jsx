@@ -8,7 +8,7 @@ import {
 	HiX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { findAccountById, getRecord, upsertProvider } from "../services/supabaseDataService"
+import { findAccountById, getRecord, promotePendingStudentToActive, TABLES, upsertProvider } from "../services/supabaseDataService"
 import { supabase } from "../services/supabaseClient"
 import { verifyPassword } from "../services/authService"
 import { grantorMustChangePassword, GRANTOR_PASSWORD_CHANGE_ID_KEY } from "../constants/grantorAuth"
@@ -209,12 +209,13 @@ export default function LoginPage() {
 
 		setIsLoading(true)
 		try {
-			const found = await findAccountById(id)
+			let found = await findAccountById(id)
 			if (!found) {
 				toast.error("User ID not found. Please check your credentials.")
 				return
 			}
 
+			const isPendingStudent = found.type === "student" && found.table === TABLES.pendingStudent
 			const hasEncryptedPassword = Boolean(found.data?.password)
 			const shouldUseSupabaseAuth =
 				found.type === "student" &&
@@ -230,13 +231,38 @@ export default function LoginPage() {
 
 				if (!error) {
 					authUser = data?.user || null
+					if (isPendingStudent) {
+						const promoted = await promotePendingStudentToActive(id, {
+							authUserId: authUser?.id || found.data.authUserId || "",
+							email: found.data.email,
+						})
+						if (promoted?.record) {
+							found = {
+								...found,
+								table: TABLES.students,
+								isPending: false,
+								data: promoted.record,
+							}
+						}
+					}
 				} else if (!hasEncryptedPassword) {
-					toast.error(error.message || "Invalid password. Please try again.")
+					if (isPendingStudent) {
+						const message = String(error.message || "").toLowerCase().includes("email not confirmed")
+							? "Please confirm your email before logging in."
+							: "Your student account is still under review. Please check your email or wait for approval."
+						toast.error(message)
+					} else {
+						toast.error(error.message || "Invalid password. Please try again.")
+					}
 					return
 				}
 			}
 
 			if (!authUser) {
+				if (isPendingStudent) {
+					toast.error("Your student account is still under review. Please wait for approval before logging in.")
+					return
+				}
 				if (!hasEncryptedPassword) {
 					toast.error("Account is not linked to Supabase Auth yet. Please contact support.")
 					return
