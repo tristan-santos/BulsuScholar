@@ -1104,6 +1104,7 @@ export default function AdminDashboard() {
 	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
 	const [announcementDraftPreviews, setAnnouncementDraftPreviews] = useState([])
 	const [announcementImagePreview, setAnnouncementImagePreview] = useState("")
+	const [announcementImageZoom, setAnnouncementImageZoom] = useState(1)
 	const [announcementStartDate, setAnnouncementStartDate] = useState("")
 	const [announcementEndDate, setAnnouncementEndDate] = useState("")
 	const [showAnnouncementSchedule, setShowAnnouncementSchedule] = useState(false)
@@ -5459,6 +5460,26 @@ export default function AdminDashboard() {
 		setAnnouncementImageFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
 	}
 
+	const openAnnouncementImagePreview = (url) => {
+		setAnnouncementImagePreview(url)
+		setAnnouncementImageZoom(1)
+	}
+
+	const closeAnnouncementImagePreview = () => {
+		setAnnouncementImagePreview("")
+		setAnnouncementImageZoom(1)
+	}
+
+	const adjustAnnouncementImageZoom = (amount) => {
+		setAnnouncementImageZoom((prev) => Math.min(3, Math.max(0.5, Number((prev + amount).toFixed(2)))))
+	}
+
+	const handleAnnouncementImageZoom = (event) => {
+		event.preventDefault()
+		event.stopPropagation()
+		adjustAnnouncementImageZoom(event.deltaY < 0 ? 0.12 : -0.12)
+	}
+
 	const resetAnnouncementDraft = () => {
 		setAnnouncementTitle("")
 		setAnnouncementDescription("")
@@ -8021,8 +8042,10 @@ export default function AdminDashboard() {
 									<div className="admin-announcement-preview-grid-modern">
 										{announcementDraftPreviews.map((item, index) => (
 											<article key={`${item.name}_${index}`}>
-												<img src={item.url} alt={item.name} />
-												<button type="button" onClick={() => removeAnnouncementImage(index)} aria-label={`Remove ${item.name || "image"}`}>
+												<button type="button" className="admin-announcement-preview-open" onClick={() => openAnnouncementImagePreview(item.url)} aria-label={`Preview ${item.name || "announcement image"}`}>
+													<img src={item.url} alt={item.name} />
+												</button>
+												<button type="button" className="admin-announcement-preview-remove" onClick={() => removeAnnouncementImage(index)} aria-label={`Remove ${item.name || "image"}`}>
 													<HiX />
 												</button>
 											</article>
@@ -8061,7 +8084,7 @@ export default function AdminDashboard() {
 						{buildAnnouncementImageList(selectedAdminAnnouncement).length > 0 ? (
 							<div className="admin-announcement-view-gallery">
 								{buildAnnouncementImageList(selectedAdminAnnouncement).map((url) => (
-									<button key={`${selectedAdminAnnouncement.id}_${url}`} type="button" onClick={() => setAnnouncementImagePreview(url)}>
+									<button key={`${selectedAdminAnnouncement.id}_${url}`} type="button" onClick={() => openAnnouncementImagePreview(url)}>
 										<img src={url} alt={selectedAdminAnnouncement.title || "Announcement"} />
 									</button>
 								))}
@@ -8129,12 +8152,21 @@ export default function AdminDashboard() {
 			) : null}
 
 			{announcementImagePreview ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={() => setAnnouncementImagePreview("")}>
-					<div className="admin-lightbox" role="dialog" aria-modal="true" aria-label="Announcement image preview" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={() => setAnnouncementImagePreview("")}>
+				<div className="admin-detail-backdrop" role="presentation" onClick={closeAnnouncementImagePreview}>
+					<div className="admin-lightbox admin-zoom-lightbox" role="dialog" aria-modal="true" aria-label="Announcement image preview" onClick={(event) => event.stopPropagation()}>
+						<button type="button" className="admin-detail-close" onClick={closeAnnouncementImagePreview}>
 							<HiX />
 						</button>
-						<img src={announcementImagePreview} alt="Announcement preview" className="admin-lightbox-image" />
+						<div className="admin-zoom-lightbox-toolbar" aria-label="Image zoom controls">
+							<button type="button" onClick={() => adjustAnnouncementImageZoom(-0.2)} disabled={announcementImageZoom <= 0.5}>-</button>
+							<span>{Math.round(announcementImageZoom * 100)}%</span>
+							<button type="button" onClick={() => adjustAnnouncementImageZoom(0.2)} disabled={announcementImageZoom >= 3}>+</button>
+							<button type="button" onClick={() => setAnnouncementImageZoom(1)}>Reset</button>
+						</div>
+						<div className="admin-zoom-lightbox-stage" onWheel={handleAnnouncementImageZoom}>
+							<img src={announcementImagePreview} alt="Announcement preview" className="admin-lightbox-image admin-zoom-lightbox-image" style={{ width: `${Math.round(announcementImageZoom * 100)}%` }} />
+						</div>
+						<p className="admin-zoom-lightbox-hint">Scroll or use the touchpad over the image to zoom.</p>
 					</div>
 				</div>
 			) : null}

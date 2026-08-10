@@ -1141,7 +1141,8 @@
 .grantor-announcement-preview-grid { display: grid; grid-template-columns: repeat(5, minmax(72px, 1fr)); gap: 0.55rem; }
 .grantor-announcement-preview-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid #dce7e1; border-radius: 5px; aspect-ratio: 1.25; background: #edf7f2; }
 .grantor-announcement-preview-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.grantor-announcement-preview-card button { position: absolute; top: 0.35rem; right: 0.35rem; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid rgba(220, 38, 38, 0.28); border-radius: 50%; background: rgba(255, 255, 255, 0.92); color: #dc2626; cursor: pointer; }
+.grantor-announcement-preview-open { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.grantor-announcement-preview-remove { position: absolute; top: 0.35rem; right: 0.35rem; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid rgba(220, 38, 38, 0.28); border-radius: 50%; background: rgba(255, 255, 255, 0.92); color: #dc2626; cursor: pointer; }
 .grantor-announcement-compose-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .grantor-announcement-compose-actions small { color: #789087; font-size: 0.68rem; }
 .grantor-announcement-compose-actions button { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 36px; padding: 0 0.75rem; border: 1px solid #00633c; border-radius: 4px; background: #00633c; color: #fff; font: inherit; font-size: 0.74rem; font-weight: 600; cursor: pointer; }
@@ -1198,7 +1199,8 @@
 .grantor-announcement-view-modal header p { margin: 0.2rem 0 0; color: #64748b; font-size: 0.76rem; }
 .grantor-announcement-view-modal header button { display: grid; flex: 0 0 32px; place-items: center; width: 32px; height: 32px; min-width: 32px; min-height: 32px; padding: 0; aspect-ratio: 1 / 1; border: 1px solid #d6e2dc; border-radius: 50%; background: #fff; color: #52675f; line-height: 1; cursor: pointer; }
 .grantor-announcement-view-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.55rem; padding: 1rem 1rem 0; }
-.grantor-announcement-view-gallery img { width: 100%; max-height: 240px; aspect-ratio: 1.25; border: 1px solid #dce7e1; border-radius: 5px; object-fit: cover; background: #edf7f2; }
+.grantor-announcement-view-gallery button { width: 100%; padding: 0; overflow: hidden; border: 1px solid #dce7e1; border-radius: 5px; background: #edf7f2; cursor: zoom-in; }
+.grantor-announcement-view-gallery img { display: block; width: 100%; max-height: 240px; aspect-ratio: 1.25; object-fit: cover; }
 .grantor-announcement-view-message { margin: 0; padding: 1rem; color: #52675f; font-size: 0.78rem; line-height: 1.7; }
 .grantor-announcement-view-modal > header,
 .grantor-announcement-view-modal > footer { flex: 0 0 auto; }
@@ -1207,6 +1209,104 @@
 .grantor-announcement-view-modal { overflow-y: auto; }
 .grantor-announcement-view-modal > footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.8rem 1rem 1rem; border-top: 1px solid #e1e9e5; }
 .grantor-announcement-view-modal > footer span { display: inline-flex; align-items: center; gap: 0.4rem; color: #00633c; font-size: 0.72rem; font-weight: 500; }
+
+.grantor-image-lightbox {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	width: min(940px, calc(100vw - 2rem));
+	max-height: min(90vh, 820px);
+	padding: 1rem;
+	border: 1px solid #d6e2dc;
+	border-radius: 8px;
+	background: #ffffff;
+	box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.grantor-image-lightbox-close {
+	position: absolute;
+	top: 0.8rem;
+	right: 0.8rem;
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	padding: 0;
+	border: 1px solid #d6e2dc;
+	border-radius: 50%;
+	background: #ffffff;
+	color: #52675f;
+	cursor: pointer;
+}
+
+.grantor-image-lightbox-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.45rem;
+	padding-right: 2.65rem;
+}
+
+.grantor-image-lightbox-toolbar button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 34px;
+	min-height: 32px;
+	padding: 0 0.65rem;
+	border: 1px solid #00633c;
+	border-radius: 5px;
+	background: #ffffff;
+	color: #00633c;
+	font: inherit;
+	font-size: 0.76rem;
+	font-weight: 650;
+	cursor: pointer;
+}
+
+.grantor-image-lightbox-toolbar button:disabled {
+	border-color: #cbd5e1;
+	color: #94a3b8;
+	cursor: not-allowed;
+}
+
+.grantor-image-lightbox-toolbar span {
+	min-width: 48px;
+	color: #17342a;
+	font-size: 0.76rem;
+	font-weight: 700;
+	text-align: center;
+}
+
+.grantor-image-lightbox-stage {
+	display: grid;
+	place-items: center;
+	min-height: 360px;
+	max-height: 70vh;
+	overflow: auto;
+	border: 1px solid #dce7e1;
+	border-radius: 7px;
+	background: #ffffff;
+	cursor: zoom-in;
+}
+
+.grantor-image-lightbox-stage img {
+	display: block;
+	max-width: none;
+	max-height: none;
+	height: auto;
+	border-radius: 5px;
+	object-fit: contain;
+	transition: width 0.12s ease;
+}
+
+.grantor-image-lightbox-hint {
+	margin: 0;
+	color: #64748b;
+	font-size: 0.72rem;
+	text-align: center;
+}
 
 .grantor-calendar-modal { width: min(430px, calc(100vw - 2rem)); padding: 1rem; border: 1px solid #cddbd4; border-radius: 7px; background: #fff; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22); }
 .grantor-calendar-backdrop { z-index: 160; }
@@ -1257,6 +1357,19 @@
 	.grantor-announcement-card-grid { grid-template-columns: 1fr; }
 	.grantor-announcement-tabs { gap: 0.8rem; overflow-x: auto; }
 	.grantor-announcement-view-modal > footer { align-items: stretch; flex-direction: column; }
+	.grantor-image-lightbox {
+		width: calc(100vw - 1rem);
+		padding: 0.8rem;
+	}
+	.grantor-image-lightbox-toolbar {
+		justify-content: flex-start;
+		padding-right: 2.2rem;
+		overflow-x: auto;
+	}
+	.grantor-image-lightbox-stage {
+		min-height: 260px;
+		max-height: 62vh;
+	}
 	.grantor-announcement-compose-actions,
 	.grantor-announcement-entry-head,
 	.grantor-announcement-entry footer { align-items: flex-start; flex-direction: column; }
@@ -3239,7 +3352,10 @@
 .grantor-portal--dark .grantor-announcement-view-modal > header,
 .grantor-portal--dark .grantor-announcement-view-modal > footer,
 .grantor-portal--dark .grantor-announcement-view-modal header button,
-.grantor-portal--dark .grantor-announcement-view-gallery img { border-color: #334155; }
+.grantor-portal--dark .grantor-announcement-view-gallery button,
+.grantor-portal--dark .grantor-image-lightbox,
+.grantor-portal--dark .grantor-image-lightbox-close,
+.grantor-portal--dark .grantor-image-lightbox-stage { border-color: #334155; }
 .grantor-portal--dark .grantor-announcements-title h2,
 .grantor-portal--dark .grantor-announcements-summary strong,
 .grantor-portal--dark .grantor-announcement-composer h3,
@@ -3306,7 +3422,14 @@
 .grantor-portal--dark .grantor-announcement-tabs button.active::after { background: #6ee7b7; }
 .grantor-portal--dark .grantor-announcement-tabs span { background: rgba(0, 99, 60, 0.24); color: #6ee7b7; }
 .grantor-portal--dark .grantor-announcement-preview-card,
-.grantor-portal--dark .grantor-announcement-view-gallery img { background: #0f172a; }
+.grantor-portal--dark .grantor-announcement-view-gallery button,
+.grantor-portal--dark .grantor-image-lightbox,
+.grantor-portal--dark .grantor-image-lightbox-close,
+.grantor-portal--dark .grantor-image-lightbox-stage { background: #0f172a; }
+.grantor-portal--dark .grantor-image-lightbox-toolbar button { border-color: #475569; background: #0f172a; color: #6ee7b7; }
+.grantor-portal--dark .grantor-image-lightbox-toolbar button:disabled { border-color: #334155; color: #64748b; }
+.grantor-portal--dark .grantor-image-lightbox-toolbar span { color: #f8fafc; }
+.grantor-portal--dark .grantor-image-lightbox-hint { color: #94a3b8; }
 .grantor-portal--dark .grantor-calendar-modal,
 .grantor-portal--dark .grantor-calendar-modal > header button,
 .grantor-portal--dark .grantor-calendar-nav button,

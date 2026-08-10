@@ -9041,7 +9041,21 @@
 	object-fit: cover;
 }
 
-.admin-announcement-preview-grid-modern button {
+.admin-announcement-preview-open {
+	display: block;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: zoom-in;
+}
+
+.admin-announcement-preview-open img {
+	display: block;
+}
+
+.admin-announcement-preview-remove {
 	position: absolute;
 	top: 0.35rem;
 	right: 0.35rem;
@@ -9137,6 +9151,85 @@
 	object-fit: cover;
 }
 
+.admin-zoom-lightbox {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	width: min(940px, calc(100vw - 2rem));
+	max-height: min(90vh, 820px);
+	border: 1px solid #d6e2dc;
+	border-radius: 8px;
+	padding: 1rem;
+}
+
+.admin-zoom-lightbox-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.45rem;
+	padding-right: 2.4rem;
+}
+
+.admin-zoom-lightbox-toolbar button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 34px;
+	min-height: 32px;
+	padding: 0 0.65rem;
+	border: 1px solid #00633c;
+	border-radius: 5px;
+	background: #ffffff;
+	color: #00633c;
+	font: inherit;
+	font-size: 0.76rem;
+	font-weight: 650;
+	cursor: pointer;
+}
+
+.admin-zoom-lightbox-toolbar button:disabled {
+	border-color: #cbd5e1;
+	color: #94a3b8;
+	cursor: not-allowed;
+}
+
+.admin-zoom-lightbox-toolbar span {
+	min-width: 48px;
+	color: #17342a;
+	font-size: 0.76rem;
+	font-weight: 700;
+	text-align: center;
+}
+
+.admin-zoom-lightbox-stage {
+	display: grid;
+	place-items: center;
+	min-height: 360px;
+	max-height: 70vh;
+	overflow: auto;
+	border: 1px solid #dce7e1;
+	border-radius: 7px;
+	background: #ffffff;
+	cursor: zoom-in;
+}
+
+.admin-zoom-lightbox-image {
+	display: block;
+	max-width: none;
+	max-height: none;
+	height: auto;
+	border-radius: 5px;
+	object-fit: contain;
+	transition: width 0.12s ease;
+}
+
+.admin-zoom-lightbox-hint {
+	margin: 0;
+	color: #64748b;
+	font-size: 0.72rem;
+	text-align: center;
+}
+
 .admin-announcement-view-message {
 	margin: 0;
 	padding: 1rem;
@@ -9217,17 +9310,33 @@
 
 .admin-portal--dark .admin-announcement-card-media,
 .admin-portal--dark .admin-announcement-preview-grid-modern article,
-.admin-portal--dark .admin-announcement-view-gallery button {
+.admin-portal--dark .admin-announcement-view-gallery button,
+.admin-portal--dark .admin-zoom-lightbox-stage {
 	background: #0f172a;
 }
 
 .admin-portal--dark .admin-announcement-card-actions button,
 .admin-portal--dark .admin-announcement-history-actions button,
 .admin-portal--dark .admin-announcement-create-modal > header button,
-.admin-portal--dark .admin-announcement-view-modal > header button {
+.admin-portal--dark .admin-announcement-view-modal > header button,
+.admin-portal--dark .admin-zoom-lightbox-toolbar button {
 	border-color: #475569;
 	background: #0f172a;
 	color: #6ee7b7;
+}
+
+.admin-portal--dark .admin-zoom-lightbox,
+.admin-portal--dark .admin-zoom-lightbox-stage {
+	border-color: #334155;
+	background: #111827;
+}
+
+.admin-portal--dark .admin-zoom-lightbox-toolbar span {
+	color: #f8fafc;
+}
+
+.admin-portal--dark .admin-zoom-lightbox-hint {
+	color: #94a3b8;
 }
 
 .admin-portal--dark .admin-announcement-history-actions span,
@@ -9293,6 +9402,22 @@
 		grid-template-columns: 1fr;
 		align-items: stretch;
 		flex-direction: column;
+	}
+
+	.admin-zoom-lightbox {
+		width: calc(100vw - 1rem);
+		padding: 0.8rem;
+	}
+
+	.admin-zoom-lightbox-toolbar {
+		justify-content: flex-start;
+		padding-right: 2.2rem;
+		overflow-x: auto;
+	}
+
+	.admin-zoom-lightbox-stage {
+		min-height: 260px;
+		max-height: 62vh;
 	}
 }
 

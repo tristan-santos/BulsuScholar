@@ -812,6 +812,8 @@ export default function ProviderDashboard() {
 	const [announcementSubmitAttempted, setAnnouncementSubmitAttempted] = useState(false)
 	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
 	const [announcementImagePreviews, setAnnouncementImagePreviews] = useState([])
+	const [announcementImagePreview, setAnnouncementImagePreview] = useState("")
+	const [announcementImageZoom, setAnnouncementImageZoom] = useState(1)
 	const [selectedAnnouncement, setSelectedAnnouncement] = useState(null)
 	const [showAllAnnouncements, setShowAllAnnouncements] = useState(false)
 	const [showCreateAnnouncementModal, setShowCreateAnnouncementModal] = useState(false)
@@ -2844,6 +2846,26 @@ export default function ProviderDashboard() {
 		setAnnouncementImageFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
 	}
 
+	const openAnnouncementImagePreview = (url) => {
+		setAnnouncementImagePreview(url)
+		setAnnouncementImageZoom(1)
+	}
+
+	const closeAnnouncementImagePreview = () => {
+		setAnnouncementImagePreview("")
+		setAnnouncementImageZoom(1)
+	}
+
+	const adjustAnnouncementImageZoom = (amount) => {
+		setAnnouncementImageZoom((prev) => Math.min(3, Math.max(0.5, Number((prev + amount).toFixed(2)))))
+	}
+
+	const handleAnnouncementImageZoom = (event) => {
+		event.preventDefault()
+		event.stopPropagation()
+		adjustAnnouncementImageZoom(event.deltaY < 0 ? 0.12 : -0.12)
+	}
+
 	const addAnnouncementRequirement = () => {
 		setAnnouncementForm((prev) => {
 			const requirements = Array.isArray(prev.otherRequirements) ? prev.otherRequirements : []
@@ -3884,8 +3906,10 @@ export default function ProviderDashboard() {
 												<div className="grantor-announcement-preview-grid">
 													{announcementImagePreviews.map((item, index) => (
 														<article key={`${item.name}_${index}`} className="grantor-announcement-preview-card">
-															<img src={item.url} alt={item.name || "Announcement preview"} />
-															<button type="button" onClick={() => removeAnnouncementImage(index)} aria-label={`Remove ${item.name || "image"}`}>
+															<button type="button" className="grantor-announcement-preview-open" onClick={() => openAnnouncementImagePreview(item.url)} aria-label={`Preview ${item.name || "announcement image"}`}>
+																<img src={item.url} alt={item.name || "Announcement preview"} />
+															</button>
+															<button type="button" className="grantor-announcement-preview-remove" onClick={() => removeAnnouncementImage(index)} aria-label={`Remove ${item.name || "image"}`}>
 																<HiX />
 															</button>
 														</article>
@@ -4023,7 +4047,11 @@ export default function ProviderDashboard() {
 						</header>
 						{buildAnnouncementImageList(selectedAnnouncement).length > 0 ? (
 							<div className="grantor-announcement-view-gallery">
-								{buildAnnouncementImageList(selectedAnnouncement).map((url) => <img key={`${selectedAnnouncement.id}_${url}`} src={url} alt={selectedAnnouncement.title || "Announcement"} />)}
+								{buildAnnouncementImageList(selectedAnnouncement).map((url) => (
+									<button key={`${selectedAnnouncement.id}_${url}`} type="button" onClick={() => openAnnouncementImagePreview(url)} aria-label={`Preview ${selectedAnnouncement.title || "announcement"} image`}>
+										<img src={url} alt={selectedAnnouncement.title || "Announcement"} />
+									</button>
+								))}
 							</div>
 						) : null}
 						<p className="grantor-announcement-view-message">{selectedAnnouncement.description || selectedAnnouncement.content || "-"}</p>
@@ -4036,6 +4064,25 @@ export default function ProviderDashboard() {
 							)}
 						</footer>
 					</section>
+				</div>
+			) : null}
+			{announcementImagePreview ? (
+				<div className="admin-detail-backdrop" role="presentation" onClick={closeAnnouncementImagePreview}>
+					<div className="grantor-image-lightbox" role="dialog" aria-modal="true" aria-label="Announcement image preview" onClick={(event) => event.stopPropagation()}>
+						<button type="button" className="grantor-image-lightbox-close" onClick={closeAnnouncementImagePreview} aria-label="Close image preview">
+							<HiX />
+						</button>
+						<div className="grantor-image-lightbox-toolbar" aria-label="Image zoom controls">
+							<button type="button" onClick={() => adjustAnnouncementImageZoom(-0.2)} disabled={announcementImageZoom <= 0.5}>-</button>
+							<span>{Math.round(announcementImageZoom * 100)}%</span>
+							<button type="button" onClick={() => adjustAnnouncementImageZoom(0.2)} disabled={announcementImageZoom >= 3}>+</button>
+							<button type="button" onClick={() => setAnnouncementImageZoom(1)}>Reset</button>
+						</div>
+						<div className="grantor-image-lightbox-stage" onWheel={handleAnnouncementImageZoom}>
+							<img src={announcementImagePreview} alt="Announcement preview" style={{ width: `${Math.round(announcementImageZoom * 100)}%` }} />
+						</div>
+						<p className="grantor-image-lightbox-hint">Scroll or use the touchpad over the image to zoom.</p>
+					</div>
 				</div>
 			) : null}
 			{showApplicationWindowCalendar ? (
