@@ -166,7 +166,7 @@ export const getWelcomeEmailBody = (studentName = "Student", options = {}) => {
           </td>
           <td style="padding:0 0 0 4px;vertical-align:top;">
             <strong style="display:block;color:#052f20;font-size:14px;">Review your document vault</strong>
-            <span style="display:block;margin-top:3px;color:#53667b;font-size:13px;line-height:1.5;">Check your COR, ROG, Student ID, and application form records after signing in.</span>
+            <span style="display:block;margin-top:3px;color:#53667b;font-size:13px;line-height:1.5;">Check your COR, ROG, Student ID, and Student Application Profile records after signing in.</span>
           </td>
         </tr>
         <tr>

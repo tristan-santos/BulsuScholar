@@ -1,3 +1,5 @@
+import { postPortalJson } from "./portalApi"
+
 const BACKEND_API_URL = (
 	import.meta.env.VITE_BACKEND_API_URL ||
 	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
@@ -5,25 +7,7 @@ const BACKEND_API_URL = (
 ).replace(/\/$/, "")
 
 async function postWorkflow(path, payload = {}) {
-	let response
-	try {
-		response = await fetch(`${BACKEND_API_URL}${path}`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-		})
-	} catch (error) {
-		throw new Error(
-			`Backend is unavailable at ${BACKEND_API_URL}. Check Render deployment, CORS, and VITE_BACKEND_API_URL. ${error?.message || ""}`.trim(),
-		)
-	}
-	const data = await response.json().catch(() => ({}))
-	if (!response.ok || data?.ok === false) {
-		const detail = data?.message || data?.detail || data?.reason || data?.error || data?.result || data?.results || data
-		const message = typeof detail === "string" ? detail : JSON.stringify(detail)
-		throw new Error(message || `Workflow request failed: ${response.status}`)
-	}
-	return data
+	return postPortalJson(BACKEND_API_URL, path, payload, "Workflow")
 }
 
 export function applyScholarshipWorkflow(payload = {}) {

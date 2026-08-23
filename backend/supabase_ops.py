@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import urllib.parse
 import urllib.error
@@ -146,6 +147,38 @@ def supabase_rest_insert(table: str, payload: dict[str, Any]) -> dict[str, Any]:
     )
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8") or "[]")
+            return {"ok": True, "data": data}
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8")
+        reason = "supabase_http_error"
+        if error.code == 404 and "PGRST205" in detail:
+            reason = "missing_or_unloaded_supabase_table"
+        return {"ok": False, "status": error.code, "reason": reason, "table": table, "detail": detail}
+
+
+def supabase_rest_upsert_many(table: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return {"ok": True, "data": []}
+
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not service_key:
+        return {"ok": False, "reason": "missing_supabase_server_config", "table": table}
+
+    request = urllib.request.Request(
+        f"{supabase_url}/rest/v1/{table}?on_conflict=id",
+        data=json.dumps(rows).encode("utf-8"),
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=representation",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
             data = json.loads(response.read().decode("utf-8") or "[]")
             return {"ok": True, "data": data}
     except urllib.error.HTTPError as error:
@@ -434,6 +467,87 @@ def create_student_notification(payload: dict[str, Any]) -> dict[str, Any]:
             "originalError": result,
         }
     return result
+
+
+def broadcast_student_notification(payload: dict[str, Any]) -> dict[str, Any]:
+    announcement_id = str(payload.get("announcementId") or "").strip()
+    if not announcement_id:
+        return {"ok": False, "reason": "missing_announcement_id"}
+
+    students_result = supabase_select("students", limit=0)
+    if not students_result.get("ok"):
+        return {
+            "ok": False,
+            "reason": students_result.get("reason") or "student_list_failed",
+            "detail": students_result.get("detail"),
+        }
+
+    recipients: list[str] = []
+    for row in students_result.get("rows") or []:
+        row_id = str(row.get("id") or "").strip()
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        student_id = str(data.get("studentnumber") or data.get("studentId") or row_id).strip()
+        if not student_id or row_id.lower().startswith("roster_"):
+            continue
+        if data.get("archived") is True or str(data.get("status") or "").strip().lower() == "archived":
+            continue
+        recipients.append(student_id)
+
+    recipients = list(dict.fromkeys(recipients))
+    created_at = payload.get("createdAt") if isinstance(payload.get("createdAt"), str) else utc_now_iso()
+    base_payload = {
+        **payload,
+        "source": payload.get("source") or "personal",
+        "type": payload.get("type") or "admin_announcement",
+        "announcementSource": "admin",
+        "read": False,
+        "createdAt": created_at,
+    }
+    base_payload.pop("studentId", None)
+    base_payload.pop("id", None)
+
+    rows = []
+    for student_id in recipients:
+        notification = {**base_payload, "studentId": student_id}
+        notification_key = hashlib.sha256(f"{announcement_id}:{student_id}".encode("utf-8")).hexdigest()[:32]
+        rows.append({
+            "id": f"admin_announcement_{notification_key}",
+            "data": notification,
+            "updated_at": utc_now_iso(),
+        })
+
+    result = supabase_rest_upsert_many("studentNotifications", rows)
+    table = "studentNotifications"
+    fallback = False
+    if result.get("reason") == "missing_or_unloaded_supabase_table":
+        fallback = True
+        table = "student_warnings"
+        fallback_rows = [
+            {
+                **row,
+                "data": {
+                    **row["data"],
+                    "notificationFallbackTable": "student_warnings",
+                },
+            }
+            for row in rows
+        ]
+        result = supabase_rest_upsert_many(table, fallback_rows)
+
+    if not result.get("ok"):
+        return {
+            **result,
+            "recipients": len(recipients),
+            "delivered": 0,
+            "fallback": fallback,
+        }
+    return {
+        "ok": True,
+        "recipients": len(recipients),
+        "delivered": len(result.get("data") or rows),
+        "table": table,
+        "fallback": fallback,
+    }
 
 
 def create_grantor_notification(payload: dict[str, Any]) -> dict[str, Any]:

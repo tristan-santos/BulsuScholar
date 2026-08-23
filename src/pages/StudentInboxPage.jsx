@@ -22,6 +22,7 @@ import {
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import useThemeMode from "../hooks/useThemeMode"
+import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import {
 	isPreviousStudentAnnouncement,
 	normalizeStudentAnnouncement,
@@ -38,6 +39,7 @@ import {
 } from "../services/notificationService"
 import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
+import "../css/StudentPortalRefresh.css"
 
 function formatRelativeDate(value) {
 	const date = value?.toDate ? value.toDate() : new Date(value)
@@ -97,7 +99,9 @@ function normalizeStudentNotification(row = {}, id = "", sourceTable = "studentN
 		id,
 		sourceTable,
 		notificationFallbackTable: row.notificationFallbackTable || "",
-		source: row.source || "personal",
+		// Older account notifications can contain a stale `source: announcement`
+		// value. Only announcement-typed records may use announcement navigation.
+		source: isAnnouncement ? (row.source || "personal") : "personal",
 		type,
 		title: isAnnouncement && authorName
 			? `New announcement from ${authorName}`
@@ -112,10 +116,16 @@ function normalizeStudentNotification(row = {}, id = "", sourceTable = "studentN
 		applicationNumber: row.applicationNumber || row.requestNumber || "",
 		scholarshipName: row.scholarshipName || row.providerLabel || row.provider || "",
 		grantorName: row.grantorName || row.authorName || row.senderName || "",
+		grantorId: String(row.grantorId || row.providerId || ""),
 		reason: row.reason || row.rejectionReason || "",
 		notes: row.notes || row.rejectionNotes || "",
 		readAt: row.readAt || row.read_at || null,
 	}
+}
+
+function hasRoutableAnnouncementId(notification = {}) {
+	const value = String(notification.announcementId || "").trim().toLowerCase()
+	return Boolean(value && !["undefined", "null", "none"].includes(value))
 }
 
 function getReadAnnouncementStorageKey(studentId = "") {
@@ -174,6 +184,7 @@ function isSystemInboxItem(notification = {}) {
 }
 
 export default function StudentInboxPage() {
+	const archivedGrantorIds = useArchivedGrantorIds()
 	const navigate = useNavigate()
 	const [sessionState] = useState(() => {
 		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
@@ -238,7 +249,12 @@ export default function StudentInboxPage() {
 		let warningRows = []
 		const updateInboxNotifications = () => {
 			setNotifications(
-				[...notificationRows, ...warningRows].sort(
+				[...notificationRows, ...warningRows]
+					.filter((item) => {
+						const isGrantorAnnouncement = String(item.type || "").toLowerCase().includes("announcement")
+						return !(isGrantorAnnouncement && archivedGrantorIds.has(String(item.grantorId || item.providerId || "")))
+					})
+					.sort(
 					(a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
 				),
 			)
@@ -274,7 +290,7 @@ export default function StudentInboxPage() {
 			unsubscribeNotifications()
 			unsubscribeWarnings()
 		}
-	}, [sessionState.storedUserId])
+	}, [archivedGrantorIds, sessionState.storedUserId])
 
 	useEffect(() => {
 		let adminRows = []
@@ -283,6 +299,7 @@ export default function StudentInboxPage() {
 		const updateAnnouncements = () => {
 			setAnnouncements(
 				sortStudentAnnouncements([...adminRows, ...grantorRows])
+					.filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds))
 					.filter((item) => !isPreviousStudentAnnouncement(item))
 					.slice(0, 8),
 			)
@@ -305,9 +322,13 @@ export default function StudentInboxPage() {
 		const unsubscribeGrantorAnnouncements = onSnapshot(
 			collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements),
 			(snap) => {
-				grantorRows = snap.docs.map((item) =>
-					normalizeStudentAnnouncement(item.data() || {}, item.id, "grantor"),
-				)
+				grantorRows = snap.docs.map((item) => {
+					const raw = item.data() || {}
+					return normalizeStudentAnnouncement({
+						...raw,
+						grantorId: raw.grantorId || item.ref?.parent?.parent?.id || "",
+					}, item.id, "grantor")
+				})
 				updateAnnouncements()
 			},
 			() => {
@@ -320,7 +341,7 @@ export default function StudentInboxPage() {
 			unsubscribeAdminAnnouncements()
 			unsubscribeGrantorAnnouncements()
 		}
-	}, [])
+	}, [archivedGrantorIds])
 
 	useEffect(() => {
 		if (!profileMenuOpen) return undefined
@@ -331,12 +352,19 @@ export default function StudentInboxPage() {
 		return () => document.removeEventListener("mousedown", handlePointerDown)
 	}, [profileMenuOpen])
 
-	const inboxItems = useMemo(
-		() => notifications.length > 0
-			? notifications
-			: announcements.map((announcement) => announcementToInboxItem(announcement, readAnnouncementIds)),
-		[announcements, notifications, readAnnouncementIds],
-	)
+	const inboxItems = useMemo(() => {
+		const notifiedAnnouncementIds = new Set(
+			notifications
+				.filter((item) => item.announcementId)
+				.map((item) => String(item.announcementId)),
+		)
+		const announcementItems = announcements
+			.filter((announcement) => !notifiedAnnouncementIds.has(String(announcement.id || "")))
+			.map((announcement) => announcementToInboxItem(announcement, readAnnouncementIds))
+		return [...notifications, ...announcementItems].sort(
+			(a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+		)
+	}, [announcements, notifications, readAnnouncementIds])
 	const unreadItems = useMemo(() => inboxItems.filter((item) => item.read !== true), [inboxItems])
 	const groupedInboxItems = useMemo(() => {
 		const groups = new Map()
@@ -431,13 +459,17 @@ export default function StudentInboxPage() {
 		const isAnnouncement = String(notification.type || "").toLowerCase().includes("announcement")
 		if (notification.source === "personal") {
 			await markNotificationRead(notification)
-			if (isAnnouncement && notification.announcementId) {
+			if (isAnnouncement && hasRoutableAnnouncementId(notification)) {
 				const source = encodeURIComponent(notification.announcementSource || "grantor")
 				const announcementId = encodeURIComponent(notification.announcementId)
 				navigate(`/student-dashboard/announcements/${source}/${announcementId}`)
 				return
 			}
 			setSelectedNotification({ ...notification, read: true, readAt: notification.readAt || new Date().toISOString() })
+			return
+		}
+		if (!isAnnouncement || !hasRoutableAnnouncementId(notification)) {
+			setSelectedNotification({ ...notification, source: "personal", read: true, readAt: notification.readAt || new Date().toISOString() })
 			return
 		}
 		const nextIds = [...readAnnouncementIds, notification.announcementId]
@@ -456,7 +488,7 @@ export default function StudentInboxPage() {
 
 	if (!userLoaded) {
 		return (
-			<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+			<div className={`student-portal student-dashboard student-portal-view student-portal-view--inbox ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 				<main className="student-shell">
 					<div className="student-shell-content student-dashboard-surface">
 						<div className="student-loading-panel">
@@ -469,7 +501,7 @@ export default function StudentInboxPage() {
 	}
 
 	return (
-		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+		<div className={`student-portal student-dashboard student-portal-view student-portal-view--inbox ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 
 			<main className="student-shell">

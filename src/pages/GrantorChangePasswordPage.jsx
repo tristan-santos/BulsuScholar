@@ -12,7 +12,7 @@ import {
 	GRANTOR_DEFAULT_PASSWORD,
 	GRANTOR_PASSWORD_CHANGE_ID_KEY,
 } from "../constants/grantorAuth"
-import { encryptPasswordAES256, verifyPassword } from "../services/authService"
+import { encryptPasswordAES256 } from "../services/authService"
 import { getRecord, serverTimestamp, upsertProvider } from "../services/supabaseDataService"
 import { isPasswordStrong } from "../utils/passwordValidation"
 import "../css/LoginPage.css"
@@ -23,7 +23,6 @@ import logo2 from "../assets/logo2.png"
 export default function GrantorChangePasswordPage() {
 	const navigate = useNavigate()
 	const [grantorId, setGrantorId] = useState("")
-	const [currentPassword, setCurrentPassword] = useState("")
 	const [password, setPassword] = useState("")
 	const [confirmPassword, setConfirmPassword] = useState("")
 	const [showPassword, setShowPassword] = useState(false)
@@ -74,11 +73,6 @@ export default function GrantorChangePasswordPage() {
 
 		if (!grantorId) return
 
-		if (!currentPassword.trim()) {
-			toast.error("Enter your current password.")
-			return
-		}
-
 		if (!isPasswordStrong(password)) {
 			toast.error("Password must include a capital letter, number, special character, and at least 6 characters.")
 			return
@@ -97,14 +91,8 @@ export default function GrantorChangePasswordPage() {
 		setIsSubmitting(true)
 		try {
 			const provider = await getRecord("providers", grantorId)
-			if (!provider?.password) {
-				toast.error("Grantor account is missing a password record.")
-				return
-			}
-
-			const isCurrentPasswordValid = await verifyPassword(currentPassword.trim(), provider.password)
-			if (!isCurrentPasswordValid) {
-				toast.error("Current password is incorrect.")
+			if (!provider) {
+				toast.error("Grantor account not found.")
 				return
 			}
 
@@ -145,7 +133,7 @@ export default function GrantorChangePasswordPage() {
 					</div>
 					<h1 className="login-info-title">Grantor Account Security</h1>
 					<p className="login-info-desc">
-						Verify your current password and choose a secure new password for your grantor account.
+						Your password change request has been approved. Choose a secure new password for your grantor account.
 					</p>
 				</div>
 			</div>
@@ -166,21 +154,6 @@ export default function GrantorChangePasswordPage() {
 							<div className="login-input-wrap">
 								<HiOutlineMail className="login-input-icon" aria-hidden />
 								<input id="grantor-user-id" type="text" className="login-input" value={grantorId} readOnly />
-							</div>
-
-							<label className="login-label" htmlFor="grantor-current-password">
-								Current Password
-							</label>
-							<div className="login-input-wrap">
-								<HiOutlineLockClosed className="login-input-icon" aria-hidden />
-								<input
-									id="grantor-current-password"
-									type={showPassword ? "text" : "password"}
-									className="login-input"
-									value={currentPassword}
-									onChange={(event) => setCurrentPassword(event.target.value)}
-									autoComplete="current-password"
-								/>
 							</div>
 
 							<label className="login-label" htmlFor="grantor-new-password">New Password</label>

@@ -213,6 +213,8 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 	return {
 		id: raw.id || id,
 		title: raw.title || "Announcement",
+		scholarshipTitle: raw.scholarshipTitle || (raw.applicationEnabled === true ? raw.title || "" : ""),
+		scholarshipKey: raw.scholarshipKey || "",
 		subtitle: raw.subtitle || "",
 		description: raw.description || "",
 		content: raw.content || raw.description || "",
@@ -227,7 +229,9 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 		otherRequirements: Array.isArray(raw.otherRequirements)
 			? raw.otherRequirements.map((item) => ({
 					name: String(item?.name || "").trim(),
-					fileType: String(item?.fileType || "pdf").toLowerCase() === "png" ? "png" : "pdf",
+					fileType: ["png", "both"].includes(String(item?.fileType || "pdf").toLowerCase())
+						? String(item?.fileType || "pdf").toLowerCase()
+						: "pdf",
 					uploadCount: Math.max(1, Number.parseInt(item?.uploadCount, 10) || 1),
 				})).filter((item) => item.name)
 			: [],
@@ -244,6 +248,8 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 					? Number(raw.minimumGrade)
 					: null,
 		grantorId: raw.grantorId || "",
+		grantorAccountArchived: raw.grantorAccountArchived === true,
+		hiddenFromStudents: raw.hiddenFromStudents === true,
 		grantorName: raw.grantorName || raw.providerLabel || "",
 		providerType: raw.providerType || policy.providerType,
 		providerLabel: raw.providerLabel || raw.grantorName || "",

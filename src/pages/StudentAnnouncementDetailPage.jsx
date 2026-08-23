@@ -22,7 +22,9 @@ import {
 } from "../services/supabaseDataService"
 import { db } from "../services/supabaseDataService"
 import "../css/StudentDashboard.css"
+import "../css/StudentPortalRefresh.css"
 import useThemeMode from "../hooks/useThemeMode"
+import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import StudentTopbar from "../components/StudentTopbar"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import {
@@ -46,6 +48,11 @@ import {
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
 import { applyScholarshipWorkflow } from "../services/workflowService"
+import {
+	formatCooldownDuration,
+	getLatestRejectedScholarship,
+	getRejectionCooldown,
+} from "../services/rejectionCooldownService"
 
 function buildAnnouncementImageList(item = {}) {
 	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
@@ -135,13 +142,14 @@ function getMissingAnnouncementDocuments(student = {}, announcement = {}) {
 	const required = announcement?.requiredDocuments || {}
 	const urls = getDocumentUrlsForStudent(student)
 	return [
-		required.cog === true && !urls.cog ? "COG" : "",
+		required.cog === true && !urls.cog ? "ROG" : "",
 		required.cor === true && !urls.cor ? "COR" : "",
-		required.applicationForm === true && !urls.applicationForm ? "Application Form" : "",
+		required.applicationForm === true && !urls.applicationForm ? "Student Application Profile" : "",
 	].filter(Boolean)
 }
 
 export default function StudentAnnouncementDetailPage() {
+	const archivedGrantorIds = useArchivedGrantorIds()
 	const navigate = useNavigate()
 	const { source = "admin", announcementId = "" } = useParams()
 	const [sessionState] = useState(() => {
@@ -202,11 +210,10 @@ export default function StudentAnnouncementDetailPage() {
 		let grantorRows = []
 
 		const updateAnnouncements = () => {
-			setAnnouncements((currentRows) => {
-				const liveRows = sortStudentAnnouncements([...adminRows, ...grantorRows])
-				if (liveRows.length > 0) return liveRows
-				return currentRows
-			})
+			setAnnouncements(
+				sortStudentAnnouncements([...adminRows, ...grantorRows])
+					.filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds)),
+			)
 		}
 
 		const unsubscribeAdminAnnouncements = onSnapshot(
@@ -226,9 +233,13 @@ export default function StudentAnnouncementDetailPage() {
 		const unsubscribeGrantorAnnouncements = onSnapshot(
 			collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements),
 			(snap) => {
-				grantorRows = snap.docs.map((item) =>
-					normalizeStudentAnnouncement(item.data() || {}, item.id, "grantor"),
-				)
+				grantorRows = snap.docs.map((item) => {
+					const raw = item.data() || {}
+					return normalizeStudentAnnouncement({
+						...raw,
+						grantorId: raw.grantorId || item.ref?.parent?.parent?.id || "",
+					}, item.id, "grantor")
+				})
 				updateAnnouncements()
 			},
 			() => {
@@ -241,7 +252,7 @@ export default function StudentAnnouncementDetailPage() {
 			unsubscribeAdminAnnouncements()
 			unsubscribeGrantorAnnouncements()
 		}
-	}, [])
+	}, [archivedGrantorIds])
 
 	useEffect(() => {
 		return onSnapshot(
@@ -297,9 +308,9 @@ export default function StudentAnnouncementDetailPage() {
 		grantorProfile.minGwa,
 	)
 	const requiredDocumentLabels = [
-		announcement?.requiredDocuments?.cog === true ? "COG" : "",
+		announcement?.requiredDocuments?.cog === true ? "ROG" : "",
 		announcement?.requiredDocuments?.cor === true ? "COR" : "",
-		announcement?.requiredDocuments?.applicationForm === true ? "Application Form" : "",
+		announcement?.requiredDocuments?.applicationForm === true ? "Student Application Profile" : "",
 		...(Array.isArray(announcement?.otherRequirements)
 			? announcement.otherRequirements.map((item) => {
 					const name = String(item?.name || "").trim()
@@ -359,9 +370,17 @@ export default function StudentAnnouncementDetailPage() {
 		const hasActiveOrPendingScholarship = scholarships.some(
 			(item) => !item.isLocked && isScholarshipActiveOrPending(item.status),
 		)
+		const latestRejected = getLatestRejectedScholarship(scholarships)
+		const latestRejectedCooldown = latestRejected ? getRejectionCooldown(latestRejected) : null
 
 		if (studentAccessState.isScholarshipActionBlocked) {
 			return { canApply: false, reason: getScholarshipActionBlockMessage(user || {}) }
+		}
+		if (latestRejectedCooldown?.active) {
+			return {
+				canApply: false,
+				reason: `You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}. Your previous application was rejected and is still under the 24-hour cooldown.`,
+			}
 		}
 		if (isPosterApplicationsClosed) {
 			return { canApply: false, reason: `Applications for ${announcement.sourceLabel || grantorDisplayName || "this grantor"} are currently closed.` }
@@ -501,10 +520,11 @@ export default function StudentAnnouncementDetailPage() {
 		setIsApplying(true)
 		try {
 			const scholarshipName =
+				announcement.scholarshipTitle ||
+				announcement.title ||
 				announcement.providerLabel ||
 				announcement.sourceLabel ||
 				announcement.grantorName ||
-				announcement.title ||
 				"Scholarship"
 			const nextRecord = {
 				...buildScholarshipRecord({
@@ -525,6 +545,7 @@ export default function StudentAnnouncementDetailPage() {
 				minimumGrade: announcementMinimumGrade,
 				requiredDocuments: announcement.requiredDocuments || {},
 				otherRequirements: announcement.otherRequirements || [],
+				customApplicationProfile: announcement.customApplicationProfile || null,
 			}
 			const nextScholarships = [...scholarships, nextRecord]
 
@@ -551,6 +572,7 @@ export default function StudentAnnouncementDetailPage() {
 				minimumGrade: announcementMinimumGrade,
 				requiredDocuments: announcement.requiredDocuments || {},
 				otherRequirements: announcement.otherRequirements || [],
+				customApplicationProfile: announcement.customApplicationProfile || null,
 				status: nextRecord.status,
 				tracking: nextRecord.tracking,
 				applicationDate: serverTimestamp(),
@@ -609,7 +631,11 @@ export default function StudentAnnouncementDetailPage() {
 			navigate("/student-dashboard/scholarships")
 		} catch (error) {
 			console.error("Failed to apply from announcement:", error)
-			toast.error("Failed to apply scholarship. Please try again.")
+			toast.error(
+				String(error?.message || "").toLowerCase().includes("grantor is archived")
+					? error.message
+					: "Failed to apply scholarship. Please try again.",
+			)
 		} finally {
 			setIsApplying(false)
 		}
@@ -632,7 +658,7 @@ export default function StudentAnnouncementDetailPage() {
 
 	if (!userLoaded) {
 		return (
-			<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+			<div className={`student-portal student-dashboard student-portal-view student-portal-view--announcement-detail ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 				<main className="student-shell">
 					<div className="student-shell-content student-dashboard-surface">
 						<div className="student-loading-panel">
@@ -645,7 +671,7 @@ export default function StudentAnnouncementDetailPage() {
 	}
 
 	return (
-		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+		<div className={`student-portal student-dashboard student-portal-view student-portal-view--announcement-detail ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 
 			<main className="student-shell">

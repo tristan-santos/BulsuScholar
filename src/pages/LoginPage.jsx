@@ -287,6 +287,17 @@ export default function LoginPage() {
 				}
 			}
 
+			if (found.type === "provider") {
+				const isArchivedGrantor =
+					found.data?.archived === true ||
+					String(found.data?.status || found.data?.accountStatus || "").toLowerCase() === "archived"
+				if (isArchivedGrantor) {
+					await supabase.auth.signOut()
+					toast.error("This grantor account is archived. Please contact the admin.")
+					return
+				}
+			}
+
 			if (found.type === "provider" && grantorMustChangePassword(found.data)) {
 				sessionStorage.setItem(GRANTOR_PASSWORD_CHANGE_ID_KEY, id)
 				sessionStorage.removeItem("bulsuscholar_userId")

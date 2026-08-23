@@ -7,9 +7,11 @@ import {
 	collection,
 	collectionGroup,
 	doc,
+	getDocs,
 	onSnapshot,
 	query,
 	serverTimestamp,
+	setDoc,
 	where,
 } from "../services/supabaseDataService"
 import {
@@ -24,12 +26,14 @@ import {
 	HiOutlineMail,
 	HiOutlineMenu,
 	HiOutlineMoon,
+	HiOutlineRefresh,
 	HiOutlineSun,
 	HiOutlineUser,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import useThemeMode from "../hooks/useThemeMode"
+import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import { getCurrentSemesterTag, normalizeScholarshipList } from "../services/scholarshipService"
 import {
 	isPreviousStudentAnnouncement,
@@ -47,8 +51,9 @@ import {
 	buildRecommendationApplyPayload,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
-import { getAnnouncementApplyAvailability } from "../services/announcementApplyEligibilityService"
+import { getAnnouncementApplyAvailability, isScholarshipActiveOrPending } from "../services/announcementApplyEligibilityService"
 import { applyScholarshipWorkflow } from "../services/workflowService"
+import { formatCooldownDuration, getLatestRejectedScholarship, getRejectionCooldown, splitExpiredRejectedScholarships } from "../services/rejectionCooldownService"
 import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
 
@@ -141,6 +146,7 @@ function formatDisplayText(value, fallback = "") {
 }
 
 export default function StudentDashboard() {
+	const archivedGrantorIds = useArchivedGrantorIds()
 	const navigate = useNavigate()
 	const [sessionState] = useState(() => {
 		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
@@ -167,6 +173,7 @@ export default function StudentDashboard() {
 	const forcedLogoutRef = useRef(false)
 	const profileMenuRef = useRef(null)
 	const rosterSyncRef = useRef("")
+	const recommendationRequestKeyRef = useRef("")
 
 	useEffect(() => {
 		if (!sessionState.isStudent || !sessionState.storedUserId) {
@@ -232,7 +239,7 @@ export default function StudentDashboard() {
 			const merged = sortStudentAnnouncements([
 				...adminRows,
 				...grantorRows,
-			])
+			]).filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds))
 			setAllAnnouncements(merged)
 			setAnnouncements(merged.filter((item) => !isPreviousStudentAnnouncement(item)))
 		}
@@ -254,9 +261,13 @@ export default function StudentDashboard() {
 		const unsubscribeGrantorAnnouncements = onSnapshot(
 			collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements),
 			(snap) => {
-				grantorRows = snap.docs.map((item) =>
-					normalizeStudentAnnouncement(item.data() || {}, item.id, "grantor"),
-				)
+				grantorRows = snap.docs.map((item) => {
+					const raw = item.data() || {}
+					return normalizeStudentAnnouncement({
+						...raw,
+						grantorId: raw.grantorId || item.ref?.parent?.parent?.id || "",
+					}, item.id, "grantor")
+				})
 				updateAnnouncements()
 			},
 			() => {
@@ -269,7 +280,7 @@ export default function StudentDashboard() {
 			unsubscribeAdminAnnouncements()
 			unsubscribeGrantorAnnouncements()
 		}
-	}, [])
+	}, [archivedGrantorIds])
 
 	useEffect(() => {
 		if (!sessionState.storedUserId) return undefined
@@ -339,15 +350,136 @@ export default function StudentDashboard() {
 		() => normalizeScholarshipList(user?.scholarships || []),
 		[user?.scholarships],
 	)
-	const scholarshipPreview = scholarships.slice(0, 6)
+	const activeOrPendingScholarships = useMemo(
+		() => scholarships.filter((item) => !item.isLocked && isScholarshipActiveOrPending(item.status)),
+		[scholarships],
+	)
+	const latestRejectedScholarship = useMemo(() => getLatestRejectedScholarship(scholarships), [scholarships])
+	const latestRejectedCooldown = useMemo(
+		() => latestRejectedScholarship ? getRejectionCooldown(latestRejectedScholarship) : null,
+		[latestRejectedScholarship],
+	)
+	useEffect(() => {
+		if (!user || !sessionState.storedUserId || scholarships.length === 0) return
+		const { active, expiredRejected } = splitExpiredRejectedScholarships(scholarships)
+		if (expiredRejected.length === 0) return
+
+		let cancelled = false
+		const moveExpiredRejectionsToPrevious = async () => {
+			try {
+				const previousEntries = expiredRejected.map((entry) => ({
+					...entry,
+					status: "Previous Scholar",
+					previousScholar: true,
+					movedToPreviousAt: serverTimestamp(),
+				}))
+				await setDoc(
+					doc(db, "students", sessionState.storedUserId),
+					{
+						scholarships: active,
+						previousScholars: [...(Array.isArray(user.previousScholars) ? user.previousScholars : []), ...previousEntries],
+						updatedAt: serverTimestamp(),
+					},
+					{ merge: true },
+				)
+				await Promise.all(expiredRejected.map(async (entry) => {
+					const grantorId = entry.grantorId || entry.providerId
+					if (!grantorId) return
+					const scholarSnap = await getDocs(collection(doc(db, "grantorPortals", grantorId), GRANTOR_SUBCOLLECTIONS.scholars))
+					const matchingRows = scholarSnap.docs
+						.map((item) => ({ id: item.id, ...(item.data() || {}) }))
+						.filter((row) => String(row.studentId || row.studentID || row.studentNumber || row.studentnumber || "") === String(sessionState.storedUserId))
+					await Promise.all(matchingRows.map((row) =>
+						setDoc(
+							doc(collection(doc(db, "grantorPortals", grantorId), GRANTOR_SUBCOLLECTIONS.scholars), row.id),
+							{
+								archived: true,
+								status: "Archived",
+								archivedAt: serverTimestamp(),
+								archivedBy: "system",
+								archivedByName: "BulsuScholar",
+								archiveReason: entry.rejectionReason || "Rejected application cooldown completed",
+								archiveNotes: entry.rejectionNotes || "Moved from rejected application to previous scholar history after the 24-hour cooldown.",
+								rejectionReason: entry.rejectionReason || "",
+								rejectionNotes: entry.rejectionNotes || "",
+								updatedAt: serverTimestamp(),
+							},
+							{ merge: true },
+						),
+					))
+				}))
+				if (!cancelled) {
+					setUser((prev) => ({
+						...(prev || {}),
+						scholarships: active,
+						previousScholars: [...(Array.isArray(prev?.previousScholars) ? prev.previousScholars : []), ...previousEntries],
+					}))
+				}
+			} catch (error) {
+				console.error("StudentDashboard: failed to move expired rejected scholarship to previous history.", error)
+			}
+		}
+		void moveExpiredRejectionsToPrevious()
+		return () => {
+			cancelled = true
+		}
+	}, [scholarships, sessionState.storedUserId, user])
+	const scholarshipPreview = activeOrPendingScholarships.slice(0, 6)
 	const latestAnnouncements = useMemo(() => announcements.slice(0, 3), [announcements])
 	const previousAnnouncementCount = useMemo(
 		() => allAnnouncements.filter((item) => isPreviousStudentAnnouncement(item)).length,
 		[allAnnouncements],
 	)
+	const availableRecommendedScholarships = useMemo(() => {
+		const byTarget = new Map()
+		const targetKey = (item = {}) => [
+			item.grantorId || item.providerId || item.id || "",
+			item.announcementId || item.scholarshipName || item.announcementTitle || item.providerLabel || "",
+		].map((value) => String(value).trim().toLowerCase()).join("::")
+		const addRecommendation = (item = {}) => {
+			if (archivedGrantorIds.has(String(item.grantorId || item.providerId || ""))) return
+			const key = targetKey(item)
+			if (!key || key === "::" || byTarget.has(key)) return
+			byTarget.set(key, item)
+		}
+
+		;(Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : [])
+			.filter((item) => String(item.status || "pending").toLowerCase() === "pending")
+			.forEach((invitation) => addRecommendation({
+				...invitation,
+				recommendationSource: "grantor_invitation",
+				label: "Apply again",
+				announcementTitle: invitation.scholarshipName || invitation.announcementTitle || "Scholarship Invitation",
+				reasons: [
+					`Invitation from ${invitation.grantorName || "your previous grantor"}.`,
+					"Review this scholarship and choose whether to apply again.",
+				],
+			}))
+
+		studentNotifications
+			.filter((item) => String(item.type || "").toLowerCase() === "admin_scholarship_recommendation")
+			.forEach((notice) => {
+				const match = recommendedScholarships.find((item) =>
+					(notice.announcementId && item.announcementId === notice.announcementId) ||
+					(notice.grantorId && item.grantorId === notice.grantorId),
+				)
+				addRecommendation({
+					...(match || {}),
+					...notice,
+					providerLabel: notice.scholarshipName || match?.providerLabel || "Recommended Scholarship",
+					announcementTitle: notice.scholarshipName || match?.announcementTitle || "Recommended Scholarship",
+					recommendationSource: "admin_recommendation",
+					label: "Recommended by the Admin",
+					reasons: notice.reasons || [notice.message || "Recommended by the scholarship office."],
+				})
+			})
+
+		recommendedScholarships.forEach(addRecommendation)
+		return [...byTarget.values()]
+	}, [archivedGrantorIds, recommendedScholarships, studentNotifications, user?.scholarshipInvitations])
 	const recommendationPreview = useMemo(
-		() => recommendedScholarships.slice(0, 3),
-		[recommendedScholarships],
+		() => availableRecommendedScholarships.slice(0, 3),
+		[availableRecommendedScholarships],
 	)
 	const unreadStudentNotifications = useMemo(
 		() => studentNotifications.filter((item) => item.read !== true),
@@ -371,29 +503,41 @@ export default function StudentDashboard() {
 	const blockedScholarshipBannerCopy = getStudentBlockedBannerMessage(user || {})
 	const currentSemesterTag = getCurrentSemesterTag()
 	const needsDocumentRenewal = useMemo(() => {
-		if (scholarships.length === 0) return false
+	if (activeOrPendingScholarships.length === 0) return false
 		const watchedFiles = [user?.corFile, user?.cogFile, user?.schoolIdFile, user?.scholarshipApplicationFile]
 		return watchedFiles.some((file) => !file?.url || (file?.semesterTag && file.semesterTag !== currentSemesterTag))
-	}, [currentSemesterTag, scholarships.length, user?.cogFile, user?.corFile, user?.schoolIdFile, user?.scholarshipApplicationFile])
+	}, [activeOrPendingScholarships.length, currentSemesterTag, user?.cogFile, user?.corFile, user?.schoolIdFile, user?.scholarshipApplicationFile])
 	const studentContactNumber = user?.cpNumber || user?.contactNumber || user?.phoneNumber || "Not set"
 	const studentIdNumber = user?.studentId || user?.studentNumber || sessionState.storedUserId || "Not set"
 	const currentGwa = user?.gwa || user?.currentGwa || user?.generalWeightedAverage || "Not set"
 	const activeScholarshipName =
-		scholarships.find((item) => String(item?.status || "").toLowerCase() !== "saved")?.name ||
-		scholarships[0]?.name ||
-		scholarships[0]?.providerLabel ||
-		scholarships[0]?.provider ||
+		activeOrPendingScholarships.find((item) => String(item?.status || "").toLowerCase() !== "saved")?.name ||
+		activeOrPendingScholarships[0]?.name ||
+		activeOrPendingScholarships[0]?.providerLabel ||
+		activeOrPendingScholarships[0]?.provider ||
 		""
 
 	useEffect(() => {
 		if (!userLoaded || !user) return
-		if (scholarships.length > 0) {
+		if (activeOrPendingScholarships.length > 0 || latestRejectedCooldown?.active) {
+			recommendationRequestKeyRef.current = ""
 			setRecommendedScholarships([])
 			setRecommendationAlgorithm("")
 			return
 		}
+		const recommendationRequestKey = JSON.stringify([
+			sessionState.storedUserId,
+			user.gwa || user.currentGwa || user.generalWeightedAverage || "",
+			user.course || "",
+			user.year || user.yearLevel || "",
+			user.province || "",
+			user.city || user.municipality || "",
+			user.barangay || "",
+			[...archivedGrantorIds].sort(),
+		])
+		if (recommendationRequestKeyRef.current === recommendationRequestKey) return
+		recommendationRequestKeyRef.current = recommendationRequestKey
 
-		let cancelled = false
 		setRecommendationsLoading(true)
 		loadRecommendedScholarships({
 			...user,
@@ -401,24 +545,24 @@ export default function StudentDashboard() {
 			studentId: user.studentId || user.studentnumber || sessionState.storedUserId,
 		})
 			.then((result) => {
-				if (cancelled) return
-				setRecommendedScholarships(result.recommendations || [])
+				if (recommendationRequestKeyRef.current !== recommendationRequestKey) return
+				setRecommendedScholarships(
+					(result.recommendations || []).filter(
+						(item) => !archivedGrantorIds.has(String(item.grantorId || item.providerId || "")),
+					),
+				)
 				setRecommendationAlgorithm(result.algorithm || "")
 			})
 			.catch((error) => {
-				if (cancelled) return
+				if (recommendationRequestKeyRef.current !== recommendationRequestKey) return
 				console.error("StudentDashboard: recommendation loading failed:", error)
 				setRecommendedScholarships([])
 				setRecommendationAlgorithm("")
 			})
 			.finally(() => {
-				if (!cancelled) setRecommendationsLoading(false)
+				if (recommendationRequestKeyRef.current === recommendationRequestKey) setRecommendationsLoading(false)
 			})
-
-		return () => {
-			cancelled = true
-		}
-	}, [scholarships.length, sessionState.storedUserId, user, userLoaded])
+	}, [activeOrPendingScholarships.length, archivedGrantorIds, latestRejectedCooldown, sessionState.storedUserId, user, userLoaded])
 
 	const userInitials = `${user?.fname?.[0]?.toUpperCase() || ""}${user?.lname?.[0]?.toUpperCase() || ""}` || "ST"
 
@@ -447,11 +591,19 @@ export default function StudentDashboard() {
 	const applyRecommendedScholarship = useCallback(
 		async (recommendation) => {
 			if (!user || !sessionState.storedUserId || applyingRecommendationId) return
+			if (archivedGrantorIds.has(String(recommendation.grantorId || recommendation.providerId || ""))) {
+				toast.error("This grantor is archived and is not accepting scholarship applications.")
+				return
+			}
 			if (studentAccessState.isScholarshipActionBlocked) {
 				toast.error(getStudentBlockedBannerMessage(user || {}))
 				return
 			}
-			if (scholarships.length > 0) {
+			if (latestRejectedCooldown?.active) {
+				toast.info(`You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}.`)
+				return
+			}
+			if (activeOrPendingScholarships.length > 0) {
 				toast.info("You already have an existing scholarship application.")
 				return
 			}
@@ -473,15 +625,21 @@ export default function StudentDashboard() {
 				navigate("/student-dashboard/scholarships")
 			} catch (error) {
 				console.error("StudentDashboard: recommended scholarship apply failed:", error)
-				toast.error("Failed to apply for this recommendation. Please try again.")
+				toast.error(
+					String(error?.message || "").toLowerCase().includes("grantor is archived")
+						? error.message
+						: "Failed to apply for this recommendation. Please try again.",
+				)
 			} finally {
 				setApplyingRecommendationId("")
 			}
 		},
 		[
 			applyingRecommendationId,
+			activeOrPendingScholarships.length,
+			archivedGrantorIds,
+			latestRejectedCooldown,
 			navigate,
-			scholarships.length,
 			sessionState.storedUserId,
 			studentAccessState.isScholarshipActionBlocked,
 			user,
@@ -793,33 +951,37 @@ export default function StudentDashboard() {
 							</button>
 						</div>
 					) : null}
-					<section className="student-dashboard-modern" aria-label="Student dashboard overview">
+					<section className="student-dashboard-modern student-dashboard-home" aria-label="Student dashboard overview">
 						<section className="student-modern-welcome">
 							<header className="student-detail-head">
 								<h2>Student Details</h2>
 								<span>{currentSemesterTag}</span>
 							</header>
 							<div className="student-detail-profile">
-								<span className="student-detail-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : userInitials}</span>
-								<div className="student-detail-name">
-									<h3>Welcome Back!!</h3>
-									<p>Welcome back{firstName ? `, ${firstName}` : ""}. Keep your scholarship profile and documents updated.</p>
+								<div className="student-detail-identity">
+									<span className="student-detail-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : userInitials}</span>
+									<div className="student-detail-name">
+										<h3>Welcome Back!!</h3>
+										<p>Welcome back{firstName ? `, ${firstName}` : ""}. Keep your scholarship profile and documents updated.</p>
+									</div>
 								</div>
-								<div className="student-detail-field"><span>Name</span><strong className="student-detail-name-value">{fullName}{isValidated ? <HiOutlineCheckCircle className="student-detail-verified-icon" aria-label="Verified student" /> : null}</strong></div>
-								<div className="student-detail-field"><span>ID</span><strong>{studentIdNumber}</strong></div>
-								<div className="student-detail-field"><span>Number</span><strong>{studentContactNumber}</strong></div>
-								<div className="student-detail-field"><span>Email</span><strong>{studentEmail}</strong></div>
+								<div className="student-detail-facts">
+									<div className="student-detail-field"><span>Name</span><strong className="student-detail-name-value">{fullName}{isValidated ? <HiOutlineCheckCircle className="student-detail-verified-icon" aria-label="Verified student" /> : null}</strong></div>
+									<div className="student-detail-field"><span>ID</span><strong>{studentIdNumber}</strong></div>
+									<div className="student-detail-field"><span>Number</span><strong>{studentContactNumber}</strong></div>
+									<div className="student-detail-field"><span>Email</span><strong>{studentEmail}</strong></div>
+								</div>
 							</div>
 							<div className="student-detail-metrics">
-								<article><span><HiOutlineAcademicCap /></span><div><strong className={scholarships.length > 0 ? "student-detail-scholarship-value" : ""}>{scholarships.length > 0 ? activeScholarshipName : recommendedScholarships.length}</strong><p>{scholarships.length > 0 ? "Active Scholar" : "Recommended Scholarships"}</p></div></article>
+								<article><span><HiOutlineAcademicCap /></span><div><strong className={activeOrPendingScholarships.length > 0 ? "student-detail-scholarship-value" : ""}>{activeOrPendingScholarships.length > 0 ? activeScholarshipName : availableRecommendedScholarships.length}</strong><p>{activeOrPendingScholarships.length > 0 ? "Active Scholar" : "Recommended Scholarships"}</p></div></article>
 								<article><span><HiOutlineCheckCircle /></span><div><strong>{currentGwa}</strong><p>Current GWA</p></div></article>
 								<article><span><HiOutlineDocumentText /></span><div><strong>{needsDocumentRenewal ? "Not Complied Yet" : "Complied"}</strong><p>Document Status</p></div></article>
 							</div>
 						</section>
 
-						<section className="student-modern-section">
+						<section className="student-modern-section student-modern-section--announcements">
 							<header className="student-modern-section-head">
-								<div><h3>Announcements</h3><p>Available and latest scholarship announcements.</p></div>
+								<div className="student-modern-section-title"><span aria-hidden="true"><HiOutlineBell /></span><div><h3>Announcements</h3><p>Available and latest scholarship announcements.</p></div></div>
 								<div className="student-modern-announcement-head-actions">
 									<div className="student-modern-announcement-counts" aria-label="Announcement summary">
 										<span><strong>{announcements.length}</strong> active announcement{announcements.length === 1 ? "" : "s"}</span>
@@ -869,19 +1031,28 @@ export default function StudentDashboard() {
 							</div>
 						</section>
 
-						<section className="student-modern-section">
+						<section className="student-modern-section student-modern-section--recommendations">
 							<header className="student-modern-section-head">
-								<div>
+								<div className="student-modern-section-title"><span aria-hidden="true"><HiOutlineAcademicCap /></span><div>
 									<h3>Recommended Scholarships</h3>
 									<p>{recommendationAlgorithm || "Ranked by GWA, roster strength, and location fit."}</p>
-								</div>
-								{recommendedScholarships.length > 3 ? (
+								</div></div>
+								{availableRecommendedScholarships.length > 3 ? (
 									<button type="button" onClick={() => navigate("/student-dashboard/recommended-scholarships")}>
 										Show all recommended scholarships <HiOutlineExternalLink />
 									</button>
 								) : null}
 							</header>
-							{scholarships.length > 0 ? (
+							{latestRejectedCooldown?.active ? (
+								<div className="student-modern-recommended-empty">
+									<HiOutlineExclamation />
+									<strong>Re-application cooldown active.</strong>
+									<p>
+										You can apply again after {formatCooldownDuration(latestRejectedCooldown.remainingMs)}.
+										Your previous application was rejected and is still under the 24-hour cooldown.
+									</p>
+								</div>
+							) : activeOrPendingScholarships.length > 0 ? (
 								<div className="student-modern-recommended-empty">
 									<HiOutlineAcademicCap />
 									<strong>You already have a scholarship application.</strong>
@@ -906,6 +1077,11 @@ export default function StudentDashboard() {
 										const applyingId = recommendation.grantorId || recommendation.id
 										return (
 											<article key={applyingId} className="student-modern-recommendation-card">
+												<div className="student-modern-recommendation-media">
+													{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
+														<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt={`${recommendation.grantorName || "Grantor"} profile`} />
+													) : <span>{grantorInitials}</span>}
+												</div>
 												<div className="student-modern-recommendation-top">
 													<span className="student-modern-recommendation-avatar">
 														{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
@@ -937,15 +1113,16 @@ export default function StudentDashboard() {
 							)}
 						</section>
 
-						<section className="student-modern-section">
+						<div className="student-dashboard-utility-grid">
+						<section className="student-modern-section student-modern-section--scholarship">
 							<header className="student-modern-section-head">
-								<div><h3>Scholarship Preview</h3><p>Your current scholarship records and renewal reminders.</p></div>
+								<div className="student-modern-section-title"><span aria-hidden="true"><HiOutlineDocumentText /></span><div><h3>Scholarship Preview</h3><p>Your current scholarship records and renewal reminders.</p></div></div>
 								<button type="button" onClick={() => navigate("/student-dashboard/scholarships")}>Open Scholarships <HiOutlineExternalLink /></button>
 							</header>
 							{needsDocumentRenewal ? (
 								<div className="student-modern-renewal">
 									<HiOutlineDocumentText />
-									<div><strong>Document renewal reminder</strong><p>The current cycle is active. Review your COR, COG, ID, and application documents for {currentSemesterTag}.</p></div>
+									<div><strong>Document renewal reminder</strong><p>The current cycle is active. Review your COR, ROG, ID, and Student Application Profile for {currentSemesterTag}.</p></div>
 								</div>
 							) : null}
 							{scholarshipPreview.length === 0 ? (
@@ -955,7 +1132,7 @@ export default function StudentDashboard() {
 									{scholarshipPreview.map((entry) => (
 										<article key={entry.id} className={`student-modern-scholarship-item ${entry.adminBlocked === true || hasBlockedScholarshipBanner ? "is-blocked" : ""}`}>
 											<span><HiOutlineAcademicCap /></span>
-											<div><h4>{formatDisplayText(entry.name, "Scholarship")}</h4><p>{formatDisplayText(entry.status, "Applied")} · Application No. {entry.applicationNumber || entry.requestNumber || entry.id}</p></div>
+											<div><h4>{formatDisplayText(entry.name, "Scholarship")}</h4><p>{formatDisplayText(entry.status, "Applied")} - Application No. {entry.applicationNumber || entry.requestNumber || entry.id}</p></div>
 											<small>{formatDisplayText(entry.semesterTag, "Current Semester")}</small>
 										</article>
 									))}
@@ -963,17 +1140,19 @@ export default function StudentDashboard() {
 							)}
 						</section>
 
-						<section className="student-modern-section">
+						<section className="student-modern-section student-modern-section--actions">
 							<header className="student-modern-section-head">
-								<div><h3>Quick Actions</h3><p>Common student tasks and shortcuts.</p></div>
+								<div className="student-modern-section-title"><span aria-hidden="true"><HiOutlineMenu /></span><div><h3>Quick Actions</h3><p>Common student tasks and shortcuts.</p></div></div>
 							</header>
 							<div className="student-modern-action-grid">
 								<button type="button" onClick={() => navigate("/student-dashboard/scholarships")}><HiOutlineAcademicCap /><span>Scholarships</span><small>View records and applications</small></button>
 								<button type="button" onClick={() => navigate("/student-dashboard/profile")}><HiOutlineUser /><span>My Profile</span><small>Update personal details</small></button>
 								<button type="button" onClick={() => navigate("/student-dashboard/announcements")}><HiOutlineBell /><span>Announcements</span><small>Read latest notices</small></button>
+								<button type="button" onClick={() => navigate("/student-dashboard/leave")}><HiOutlineRefresh /><span>Leave & Return</span><small>Request LOA or return to study</small></button>
 								<button type="button" onClick={handleContactSupport}><HiOutlineMail /><span>Support</span><small>Contact scholarship office</small></button>
 							</div>
 						</section>
+						</div>
 					</section>
 
 					<footer className="student-footer">

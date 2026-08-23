@@ -35,7 +35,7 @@ export function buildMatchedGrantorScholarships(matches = [], student = {}, stud
 			matchedGrantorId: match.grantorId || "",
 			matchedGrantorName: match.grantorName || "",
 			matchedScholarId: match.id || "",
-			documentRequirementLabel: "Requires COR and COG",
+			documentRequirementLabel: "Requires COR and ROG",
 		}
 	})
 }
@@ -48,7 +48,7 @@ export function buildGrantorMatchMetadata(matches = []) {
 		providerType: match.providerType || "",
 		scholarshipName: match.scholarshipName || match.scholarshipTitle || match.grantorName || "Scholarship",
 		matchReason: match.matchReason || "",
-		documentRequirementLabel: "Requires COR and COG",
+		documentRequirementLabel: "Requires COR and ROG",
 	}))
 }
 
@@ -64,12 +64,12 @@ export async function syncStudentGrantorRosterMatches(student = {}, studentId = 
 		studentId,
 		studentnumber: student.studentnumber || studentId,
 	})
-	const matchedScholarships = buildMatchedGrantorScholarships(matches, student, studentId)
-	if (matchedScholarships.length === 0) {
+	if (matches.length === 0) {
 		return { synced: false, matches, scholarships: normalizedExisting }
 	}
 
-	const hasMultipleMatches = matchedScholarships.length >= 2
+	const hasMultipleMatches = matches.length >= 2
+	const matchedScholarships = hasMultipleMatches ? buildMatchedGrantorScholarships(matches, student, studentId) : []
 	const studentUpdate = {
 		scholarships: matchedScholarships,
 		grantorMatches: buildGrantorMatchMetadata(matches),

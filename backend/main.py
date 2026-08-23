@@ -7,7 +7,7 @@ try:
 except ImportError:  # pragma: no cover - dependency is installed from requirements.txt
     load_dotenv = None
 
-from fastapi import Body, FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -19,6 +19,7 @@ if load_dotenv:
 
 try:
     from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
+    from .access_control import enforce_material_update_scope, enforce_portal_scope
     from .email_service import send_email_notification
     from .grantor_algorithms import (
         check_student_table_duplicates,
@@ -30,6 +31,7 @@ try:
     from .report_service import (
         build_csv_bytes,
         build_report_pdf_bytes,
+        build_excel_bytes,
         build_student_report,
         build_student_report_excel_bytes,
         build_student_report_pdf_bytes,
@@ -41,11 +43,20 @@ try:
         validate_scholarship_documents,
     )
     from .signup_service import finalize_student_signup, validate_student_signup
+    from .support_service import ask_support_assistant
+    from .priority_one_service import (
+        create_leave_request,
+        import_unifast_records,
+        list_priority_records,
+        review_leave_request,
+        save_support_feedback,
+    )
     from .supabase_ops import (
         build_grantor_notification_payload,
         build_admin_notification_payload,
         build_log_payload,
         build_student_notification_payload,
+        broadcast_student_notification,
         create_grantor_notification,
         create_admin_notification,
         create_log,
@@ -72,6 +83,7 @@ try:
     )
 except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backend/
     from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
+    from access_control import enforce_material_update_scope, enforce_portal_scope
     from email_service import send_email_notification
     from grantor_algorithms import (
         check_student_table_duplicates,
@@ -83,6 +95,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from report_service import (
         build_csv_bytes,
         build_report_pdf_bytes,
+        build_excel_bytes,
         build_student_report,
         build_student_report_excel_bytes,
         build_student_report_pdf_bytes,
@@ -94,11 +107,20 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         validate_scholarship_documents,
     )
     from signup_service import finalize_student_signup, validate_student_signup
+    from support_service import ask_support_assistant
+    from priority_one_service import (
+        create_leave_request,
+        import_unifast_records,
+        list_priority_records,
+        review_leave_request,
+        save_support_feedback,
+    )
     from supabase_ops import (
         build_grantor_notification_payload,
         build_admin_notification_payload,
         build_log_payload,
         build_student_notification_payload,
+        broadcast_student_notification,
         create_grantor_notification,
         create_admin_notification,
         create_log,
@@ -371,7 +393,8 @@ def build_log_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
 
 
 @app.post("/logs/create")
-def create_log_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def create_log_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "grantor", "admin"})
     return create_log(payload)
 
 
@@ -397,32 +420,46 @@ def build_admin_notification_endpoint(payload: dict[str, Any] = Body(...)) -> di
 
 
 @app.post("/notifications/admin/create")
-def create_admin_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def create_admin_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "grantor", "admin"})
     return create_admin_notification(payload)
 
 
 @app.post("/notifications/admin/update")
-def update_admin_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def update_admin_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin"})
     return update_admin_notification(payload.get("id") or "", payload.get("data") or {})
 
 
 @app.post("/notifications/admin/delete")
-def delete_admin_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def delete_admin_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin"})
     return delete_admin_notification(payload.get("id") or "")
 
 
 @app.post("/notifications/student/create")
-def create_student_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def create_student_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "grantor", "admin"})
+    if payload.get("actorType") == "student" and str(payload.get("studentId") or "").strip() != str(payload.get("actorId") or "").strip():
+        raise HTTPException(status_code=403, detail="student_notification_owner_mismatch")
     return create_student_notification(payload)
 
 
+@app.post("/notifications/student/broadcast")
+def broadcast_student_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin"})
+    return broadcast_student_notification(payload)
+
+
 @app.post("/notifications/student/update")
-def update_student_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def update_student_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "admin"})
     return update_student_notification(payload.get("id") or "", payload.get("data") or {})
 
 
 @app.post("/notifications/student/delete")
-def delete_student_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def delete_student_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "admin"})
     return delete_student_notification(payload.get("id") or "")
 
 
@@ -438,17 +475,20 @@ def build_grantor_notification_endpoint(payload: dict[str, Any] = Body(...)) -> 
 
 
 @app.post("/notifications/grantor/create")
-def create_grantor_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def create_grantor_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor", "admin"})
     return create_grantor_notification(payload)
 
 
 @app.post("/notifications/grantor/update")
-def update_grantor_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def update_grantor_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor", "admin"})
     return update_grantor_notification(payload.get("id") or "", payload.get("data") or {})
 
 
 @app.post("/notifications/grantor/delete")
-def delete_grantor_notification_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def delete_grantor_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor", "admin"})
     return delete_grantor_notification(payload.get("id") or "")
 
 
@@ -483,53 +523,126 @@ def finalize_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dic
 
 
 @app.post("/workflows/scholarship/apply")
-def apply_scholarship_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def apply_scholarship_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "admin"}, owner_key="studentId")
     return apply_scholarship(payload)
 
 
 @app.post("/workflows/admin/review")
-def admin_review_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def admin_review_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin", "grantor"}, owner_key="grantorId")
     return update_admin_review(payload)
 
 
 @app.post("/workflows/materials/update")
-def material_request_update_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def material_request_update_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "admin", "grantor"})
+    enforce_material_update_scope(payload)
     return update_material_request(payload)
 
 
 @app.post("/workflows/grantor/scholars/create")
-def create_grantor_scholars_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def create_grantor_scholars_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin", "grantor"}, owner_key="grantorId")
     return create_grantor_scholars(payload)
 
 
 @app.post("/workflows/grantor/scholars/update")
-def update_grantor_scholar_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def update_grantor_scholar_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin", "grantor"}, owner_key="grantorId")
     return update_grantor_scholar(payload)
 
 
 @app.post("/workflows/grantor/scholars/update-many")
-def update_many_grantor_scholars_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def update_many_grantor_scholars_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin", "grantor"}, owner_key="grantorId")
     return update_grantor_scholars(payload)
 
 
 @app.post("/workflows/grantor/announcements/create")
-def create_grantor_announcement_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def create_grantor_announcement_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return create_grantor_announcement(payload)
 
 
 @app.post("/workflows/grantor/announcements/update")
-def update_grantor_announcement_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def update_grantor_announcement_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return update_grantor_announcement(payload)
 
 
 @app.post("/workflows/grantor/password/request")
-def request_grantor_password_change_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def request_grantor_password_change_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return request_grantor_password_change(payload)
 
 
 @app.post("/workflows/grantor/profile/update")
-def update_grantor_profile_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def update_grantor_profile_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return update_grantor_profile(payload)
+
+
+@app.post("/support/chat")
+def support_chat_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return ask_support_assistant(payload)
+
+
+@app.post("/support/feedback")
+def support_feedback_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return save_support_feedback(payload)
+
+
+@app.post("/workflows/leave/create")
+def leave_request_create_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return create_leave_request(payload)
+
+
+@app.post("/workflows/leave/review")
+def leave_request_review_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return review_leave_request(payload)
+
+
+@app.post("/priority-one/records")
+def priority_one_records_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return list_priority_records(payload)
+
+
+@app.get("/priority-one/records")
+def priority_one_records_get_endpoint(
+    table: str,
+    studentId: str | None = None,
+    grantorId: str | None = None,
+    requestType: str | None = None,
+    status: str | None = None,
+    userId: str | None = None,
+    userType: str | None = None,
+    category: str | None = None,
+    academicCycle: str | None = None,
+    eligible: str | None = None,
+    limit: int = 5000,
+) -> dict[str, Any]:
+    filters = {
+        "studentId": studentId,
+        "grantorId": grantorId,
+        "requestType": requestType,
+        "status": status,
+        "userId": userId,
+        "userType": userType,
+        "category": category,
+        "academicCycle": academicCycle,
+        "eligible": eligible,
+    }
+    return list_priority_records({
+        "table": table,
+        "filters": {key: value for key, value in filters.items() if value not in (None, "")},
+        "limit": limit,
+    })
+
+
+@app.post("/unifast/import")
+def unifast_import_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return import_unifast_records(payload)
 
 
 @app.post("/reports/csv")
@@ -549,6 +662,22 @@ def generate_pdf_report_endpoint(payload: dict[str, Any] = Body(...)) -> Respons
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={payload.get('filename') or 'report.pdf'}"},
+    )
+
+
+@app.post("/reports/excel")
+def generate_excel_report_endpoint(payload: dict[str, Any] = Body(...)) -> Response:
+    try:
+        excel_bytes = build_excel_bytes(payload)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    filename = payload.get("filename") or "report.xlsx"
+    if not str(filename).lower().endswith(".xlsx"):
+        filename = f"{filename}.xlsx"
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -590,6 +719,24 @@ async def scan_document(
     file_bytes = await file.read()
     content_type = (file.content_type or "").lower()
     filename = (file.filename or "").lower()
+    max_scan_bytes = 10 * 1024 * 1024
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail={"error": "empty_file", "message": "The uploaded document is empty."})
+    if len(file_bytes) > max_scan_bytes:
+        raise HTTPException(status_code=413, detail={"error": "file_too_large", "message": "Document scans are limited to 10 MB."})
+
+    normalized_document_type = str(document_type or "cor").strip().lower()
+    if normalized_document_type in {"cor", "cog", "rog"} and content_type != "application/pdf" and not filename.endswith(".pdf"):
+        raise HTTPException(
+            status_code=415,
+            detail={"error": "pdf_required", "message": "COR and ROG document scans accept PDF files only."},
+        )
+    allowed_content_types = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
+    if content_type and content_type not in allowed_content_types:
+        raise HTTPException(
+            status_code=415,
+            detail={"error": "unsupported_file_type", "message": f"Unsupported document type: {content_type}."},
+        )
 
     try:
         if content_type == "application/pdf" or filename.endswith(".pdf"):

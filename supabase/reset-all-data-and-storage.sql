@@ -14,6 +14,7 @@
 	-- Clear app data tables.
 	-- CASCADE is used so dependent records are removed cleanly if constraints exist.
 	truncate table
+		public.admin_settings,
 		public."studentNotifications",
 		public."grantorNotifications",
 		public."systemLogs",
@@ -68,10 +69,36 @@
 		data = excluded.data,
 		updated_at = now();
 
+	-- Restore the shared profile and maintenance settings used by every portal.
+	insert into public.admin_settings (id, data, updated_at)
+	values (
+		'profile',
+		jsonb_build_object(
+			'displayName', 'Administrator',
+			'email', 'admin@bulsuscholar.local',
+			'officeName', 'Office of the Scholarship',
+			'contactNumber', '',
+			'supportEmail', 'scholarships@bulsu.edu.ph',
+			'systemMode', 'Operational',
+			'accountVerification', 'Manual and list-based',
+			'maintenanceMode', false,
+			'allowStudentSignup', true,
+			'allowGrantorAnnouncements', true,
+			'reportExportEnabled', true
+		),
+		now()
+	)
+	on conflict (id) do update
+	set
+		data = excluded.data,
+		updated_at = now();
+
 	commit;
 
-	-- Verification counts. These should all return 0 after reset.
-	select 'studentNotifications' as table_name, count(*) from public."studentNotifications"
+	-- Verification counts. Application data should be 0; admin_settings and
+	-- admins each retain one seeded record required by the portal.
+	select 'admin_settings' as table_name, count(*) from public.admin_settings
+	union all select 'studentNotifications', count(*) from public."studentNotifications"
 	union all select 'grantorNotifications', count(*) from public."grantorNotifications"
 	union all select 'systemLogs', count(*) from public."systemLogs"
 	union all select 'student_document_usage', count(*) from public.student_document_usage

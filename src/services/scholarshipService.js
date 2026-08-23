@@ -261,9 +261,9 @@ export function validateScholarshipDocuments(student = {}) {
 	}
 
 	if (!cog?.url) {
-		missing.push("COG")
+		missing.push("ROG")
 	} else if (cog.semesterTag && cog.semesterTag !== semesterTag) {
-		expired.push("COG")
+		expired.push("ROG")
 	}
 
 	return {

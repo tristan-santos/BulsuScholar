@@ -26,3 +26,16 @@ Add this to `.env`:
 VITE_DOCUMENT_SCAN_API_URL=https://bulsuscholar.onrender.com
 VITE_BACKEND_API_URL=https://bulsuscholar.onrender.com
 ```
+
+## Priority 1 Services
+
+Run `supabase/priority-one.sql` once in the Supabase SQL editor before using Help requests, LOA/return requests, or UNIFAST imports.
+
+The Help Assistant works without an AI key by using its controlled FAQ fallback. To enable OpenAI answers, add these backend-only environment variables to Render or Railway:
+
+```env
+OPENAI_API_KEY=your-server-side-key
+OPENAI_HELP_MODEL=gpt-5-mini
+```
+
+Do not add `OPENAI_API_KEY` to Vercel as a `VITE_` variable. Restart or redeploy the backend after changing server environment variables.

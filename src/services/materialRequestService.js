@@ -11,13 +11,13 @@ export const MATERIAL_REQUEST_TYPES = {
 	},
 	application_form: {
 		key: "application_form",
-		label: "Application Form",
-		requestLabel: "Request Application Form",
-		requestAgainLabel: "Request Application Form Again",
-		requestedLabel: "Application Form Requested",
-		approvedLabel: "Application Form Approved",
-		downloadLabel: "Download Application Form",
-		downloadedLabel: "Application Form Downloaded",
+		label: "Student Application Profile",
+		requestLabel: "Request Student Application Profile",
+		requestAgainLabel: "Request Student Application Profile Again",
+		requestedLabel: "Student Application Profile Requested",
+		approvedLabel: "Student Application Profile Approved",
+		downloadLabel: "Download Student Application Profile",
+		downloadedLabel: "Student Application Profile Downloaded",
 	},
 }
 

@@ -6,6 +6,7 @@ import {
 	HiOutlineHome,
 	HiOutlineInbox,
 	HiOutlineLogout,
+	HiOutlineRefresh,
 	HiOutlineMenu,
 	HiOutlineMoon,
 	HiOutlineSun,
@@ -25,6 +26,7 @@ import {
 	sortStudentAnnouncements,
 } from "../services/announcementService"
 import { GRANTOR_SUBCOLLECTIONS } from "../services/grantorService"
+import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import logo2 from "../assets/logo2.png"
 
 function getReadAnnouncementStorageKey(studentId = "") {
@@ -57,6 +59,7 @@ function getStudentInitials(user = {}) {
 }
 
 export default function StudentTopbar({ user, theme, setTheme }) {
+	const archivedGrantorIds = useArchivedGrantorIds()
 	const navigate = useNavigate()
 	const location = useLocation()
 	const currentPath = location.pathname.replace(/\/+$/, "") || "/"
@@ -137,7 +140,9 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 
 		const updateAnnouncements = () => {
 			setAnnouncements(
-				sortStudentAnnouncements([...adminRows, ...grantorRows]).filter(
+				sortStudentAnnouncements([...adminRows, ...grantorRows])
+					.filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds))
+					.filter(
 					(item) => !isPreviousStudentAnnouncement(item),
 				),
 			)
@@ -160,9 +165,13 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 		const unsubscribeGrantorAnnouncements = onSnapshot(
 			collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements),
 			(snap) => {
-				grantorRows = snap.docs.map((item) =>
-					normalizeStudentAnnouncement(item.data() || {}, item.id, "grantor"),
-				)
+				grantorRows = snap.docs.map((item) => {
+					const raw = item.data() || {}
+					return normalizeStudentAnnouncement({
+						...raw,
+						grantorId: raw.grantorId || item.ref?.parent?.parent?.id || "",
+					}, item.id, "grantor")
+				})
 				updateAnnouncements()
 			},
 			() => {
@@ -175,7 +184,7 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 			unsubscribeAdminAnnouncements()
 			unsubscribeGrantorAnnouncements()
 		}
-	}, [])
+	}, [archivedGrantorIds])
 
 	useEffect(() => {
 		const handleStorage = (event) => {
@@ -188,14 +197,29 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 	}, [studentId])
 
 	const unreadStudentNotifications = useMemo(
-		() => studentNotifications.filter((item) => item.read !== true),
-		[studentNotifications],
+		() => studentNotifications.filter((item) => {
+			if (item.read === true) return false
+			const isGrantorAnnouncement = String(item.type || "").toLowerCase().includes("announcement")
+			const grantorId = String(item.grantorId || item.providerId || "")
+			return !(isGrantorAnnouncement && archivedGrantorIds.has(grantorId))
+		}),
+		[archivedGrantorIds, studentNotifications],
 	)
 	const unreadAnnouncementCount = useMemo(
-		() => announcements.filter((item) => !readAnnouncementIds.includes(String(item.id || ""))).length,
-		[announcements, readAnnouncementIds],
+		() => {
+			const notifiedAnnouncementIds = new Set(
+				studentNotifications
+					.filter((item) => item.announcementId)
+					.map((item) => String(item.announcementId)),
+			)
+			return announcements.filter((item) => {
+				const announcementId = String(item.id || "")
+				return !notifiedAnnouncementIds.has(announcementId) && !readAnnouncementIds.includes(announcementId)
+			}).length
+		},
+		[announcements, readAnnouncementIds, studentNotifications],
 	)
-	const inboxBadgeCount = studentNotifications.length > 0 ? unreadStudentNotifications.length : unreadAnnouncementCount
+	const inboxBadgeCount = unreadStudentNotifications.length + unreadAnnouncementCount
 	const avatarUrl = user?.profileImageUrl || ""
 	const userInitials = getStudentInitials(user || {})
 	const fullName = getStudentName(user || {})
@@ -279,6 +303,10 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/scholarships") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/scholarships") ? "page" : undefined} onClick={() => goTo("/student-dashboard/scholarships")}>
 										<HiOutlineAcademicCap className="student-verified-dropdown-item-icon" />
 										Scholarships
+									</button>
+									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/leave") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/leave") ? "page" : undefined} onClick={() => goTo("/student-dashboard/leave")}>
+										<HiOutlineRefresh className="student-verified-dropdown-item-icon" />
+										Leave & Return
 									</button>
 								</nav>
 								<div className="student-verified-dropdown-theme">

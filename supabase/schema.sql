@@ -17,6 +17,13 @@ create table if not exists admins (
         updated_at timestamptz not null default now()
 );
 
+create table if not exists admin_settings (
+	id text primary key,
+	data jsonb not null default '{}'::jsonb,
+	created_at timestamptz not null default now(),
+	updated_at timestamptz not null default now()
+);
+
 create table if not exists providers (
         id text primary key,
         data jsonb not null default '{}'::jsonb,
@@ -46,6 +53,7 @@ create table if not exists grantor_portal_applications (like grantor_portal_scho
 create table if not exists grantor_portal_announcements (like grantor_portal_scholars including all);
 
 create index if not exists admins_data_gin on admins using gin (data);
+create index if not exists admin_settings_data_gin on admin_settings using gin (data);
 create index if not exists students_data_gin on students using gin (data);
 create index if not exists pending_students_data_gin on pending_students using gin (data);
 create index if not exists soe_requests_data_gin on soe_requests using gin (data);
@@ -65,6 +73,7 @@ declare
 begin
 	foreach table_name in array array[
 		'admins',
+		'admin_settings',
 		'students',
 		'pending_students',
 		'soe_requests',
@@ -93,6 +102,7 @@ declare
 begin
 	foreach table_name in array array[
 		'admins',
+		'admin_settings',
 		'students',
 		'pending_students',
 		'soe_requests',

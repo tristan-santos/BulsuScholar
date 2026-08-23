@@ -2259,6 +2259,10 @@
 	margin: 0;
 }
 
+.student-kwsp-tracker-title strong {
+	font-weight: 800;
+}
+
 .student-kwsp-tracker-copy {
 	margin: 0.35rem 0 0;
 	font-size: 0.88rem;
@@ -4639,7 +4643,10 @@
 .student-modern-announcement-body > button { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; margin-top: 0.2rem; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
 .student-modern-announcement-body > button.student-modern-announcement-apply--blocked { border-color: #cbd5e1; background: #f8fafc; color: #94a3b8; box-shadow: none; }
 .student-modern-recommendation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; }
-.student-modern-recommendation-card { display: grid; grid-template-rows: auto 1fr auto; gap: 0.7rem; min-width: 0; padding: 0.85rem; border: 1px solid rgba(0, 99, 60, 0.16); border-radius: 7px; background: #fff; box-shadow: 0 10px 22px rgba(0, 99, 60, 0.055); }
+.student-modern-recommendation-card { display: grid; grid-template-rows: auto auto 1fr auto; gap: 0.7rem; min-width: 0; padding: 0.85rem; border: 1px solid rgba(0, 99, 60, 0.16); border-radius: 7px; background: #fff; box-shadow: 0 10px 22px rgba(0, 99, 60, 0.055); }
+.student-modern-recommendation-media { display: grid; place-items: center; height: 124px; margin: -0.85rem -0.85rem 0; overflow: hidden; border-bottom: 1px solid rgba(0, 99, 60, 0.14); border-radius: 7px 7px 0 0; background: #eef8f3; }
+.student-modern-recommendation-media img { width: 100%; height: 100%; object-fit: cover; }
+.student-modern-recommendation-media > span { display: grid; place-items: center; width: 72px; height: 72px; border: 1px solid rgba(0, 99, 60, 0.18); border-radius: 50%; background: #fff; color: #00633c; font-size: 1rem; font-weight: 700; }
 .student-modern-recommendation-top { display: flex; align-items: center; gap: 0.65rem; min-width: 0; }
 .student-modern-recommendation-avatar { display: grid; flex: 0 0 auto; place-items: center; width: 44px; height: 44px; overflow: hidden; border-radius: 50%; background: #eef8f3; color: #00633c; font-size: 0.78rem; font-weight: 700; }
 .student-modern-recommendation-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -4655,8 +4662,22 @@
 .student-modern-recommendation-body .student-modern-recommendation-warning { display: block; min-height: 0; margin: 0.25rem 0 0; color: #b91c1c; font-size: 0.7rem; font-weight: 700; line-height: 1.35; }
 .student-modern-recommendation-card > button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
 .student-modern-recommendation-card > button:disabled { border-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
+.student-modern-recommendation-card--grantor_invitation { border-color: rgba(0, 99, 60, 0.28); background: linear-gradient(180deg, #ffffff 0%, #f6fffa 100%); }
+.student-modern-recommendation-card--admin_recommendation { border-color: rgba(0, 99, 60, 0.24); box-shadow: 0 12px 24px rgba(0, 99, 60, 0.075); }
+.student-modern-recommendation-link { min-height: 28px !important; border: 0 !important; background: transparent !important; color: #b91c1c !important; font-size: 0.68rem !important; box-shadow: none !important; }
+.student-modern-recommendation-link:hover:not(:disabled) { color: #991b1b !important; text-decoration: underline; }
+.student-invitation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.55rem; }
+.student-invitation-actions .student-mini-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
+.student-invitation-reject-form { display: grid; gap: 0.85rem; margin-top: 0.9rem; }
+.student-invitation-reject-form label { display: grid; gap: 0.35rem; color: #17342a; font-size: 0.72rem; font-weight: 700; }
+.student-invitation-reject-form select,
+.student-invitation-reject-form textarea { width: 100%; border: 1px solid rgba(0, 99, 60, 0.22); border-radius: 6px; background: #fff; color: #10231d; font: inherit; font-size: 0.82rem; }
+.student-invitation-reject-form select { min-height: 42px; padding: 0 0.8rem; }
+.student-invitation-reject-form textarea { min-height: 96px; padding: 0.75rem 0.8rem; resize: vertical; }
 .student-modern-recommended-empty,
 .student-modern-empty { display: grid; place-items: center; min-height: 126px; border: 1px dashed rgba(0, 99, 60, 0.24); border-radius: 7px; background: #fbfdfc; text-align: center; box-shadow: 0 8px 18px rgba(0, 99, 60, 0.045); }
+.student-modern-recommended-empty--warning { border-color: rgba(194, 65, 12, 0.32); background: #fff7ed; }
+.student-modern-recommended-empty--warning svg { color: #c2410c; }
 .student-modern-recommended-empty svg,
 .student-modern-empty svg { width: 1.4rem; height: 1.4rem; color: #00633c; }
 .student-modern-recommended-empty strong,
@@ -4727,7 +4748,10 @@
 .student-recommendation-reasons span { padding: 0.22rem 0.48rem; border-radius: 999px; background: #eef8f3; color: #00633c; font-size: 0.66rem; font-weight: 700; }
 
 .student-inbox-panel {
-	display: grid;
+	display: flex;
+	flex-direction: column;
+	max-height: calc(100vh - var(--student-topbar-height, 72px) - 2.4rem);
+	max-height: calc(100dvh - var(--student-topbar-height, 72px) - 2.4rem);
 	overflow: hidden;
 	border: 1px solid #dce7e1;
 	border-radius: 8px;
@@ -4820,6 +4844,11 @@
 
 .student-inbox-list {
 	display: grid;
+	flex: 1 1 auto;
+	min-height: 0;
+	max-height: min(68vh, 720px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
 }
 
 .student-inbox-group + .student-inbox-group {
@@ -4985,6 +5014,24 @@
 	width: 0.9rem;
 	height: 0.9rem;
 	color: #94a3b8;
+}
+
+.student-inbox-list::-webkit-scrollbar,
+.student-inbox-detail-grid::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.student-inbox-list::-webkit-scrollbar-track,
+.student-inbox-detail-grid::-webkit-scrollbar-track {
+	background: #f3f7f5;
+	border-radius: 999px;
+}
+
+.student-inbox-list::-webkit-scrollbar-thumb,
+.student-inbox-detail-grid::-webkit-scrollbar-thumb {
+	background: rgba(0, 99, 60, 0.28);
+	border-radius: 999px;
 }
 
 .student-inbox-detail-backdrop {
@@ -5318,12 +5365,17 @@
 .student-dashboard--dark .student-modern-announcement-media,
 .student-dashboard--dark .student-modern-recommendation-avatar,
 .student-dashboard--dark .student-modern-scholarship-item > span { border-color: #334155; background: #0f172a; }
+.student-dashboard--dark .student-modern-recommended-empty--warning { border-color: rgba(251, 146, 60, 0.45); background: rgba(124, 45, 18, 0.24); }
+.student-dashboard--dark .student-modern-recommended-empty--warning svg { color: #fdba74; }
 .student-dashboard--dark .student-modern-announcement-author > span { background: rgba(0, 99, 60, 0.24); color: #6ee7b7; }
 .student-dashboard--dark .student-modern-announcement-counts { border-color: rgba(52, 211, 153, 0.2); background: rgba(0, 99, 60, 0.18); color: #94a3b8; }
 .student-dashboard--dark .student-modern-announcement-counts strong { color: #6ee7b7; }
 .student-dashboard--dark .student-modern-announcement-counts i { background: rgba(52, 211, 153, 0.24); }
 .student-dashboard--dark .student-modern-announcement-body > button,
 .student-dashboard--dark .student-modern-recommendation-card > button { border-color: #34d399; background: #111827; color: #6ee7b7; }
+.student-dashboard--dark .student-modern-recommendation-media { border-color: rgba(110, 231, 183, 0.2); background: #172a22; }
+.student-dashboard--dark .student-modern-recommendation-media > span { border-color: rgba(110, 231, 183, 0.28); background: #111827; color: #6ee7b7; }
+.student-dashboard--dark .student-modern-recommendation-link { border: 0; background: transparent; color: #fca5a5 !important; }
 .student-dashboard--dark .student-modern-announcement-body > button.student-modern-announcement-apply--blocked { border-color: #475569; background: #1f2937; color: #94a3b8; box-shadow: none; }
 .student-dashboard--dark .student-modern-recommendation-body > span,
 .student-dashboard--dark .student-recommendation-algorithm,
@@ -8541,5 +8593,906 @@
 	.student-profile-photo-shell {
 		width: 92px;
 		height: 92px;
+	}
+}
+
+/* Final student responsive layer.
+ * Student pages are mobile-first in practice, so shared surfaces must remain
+ * usable from narrow phones through wide desktop displays. */
+.student-portal {
+	width: 100%;
+	min-width: 0;
+	overflow-x: hidden;
+	overflow-x: clip;
+}
+
+.student-portal *,
+.student-portal *::before,
+.student-portal *::after {
+	box-sizing: border-box;
+}
+
+.student-portal img,
+.student-portal iframe,
+.student-portal object,
+.student-portal embed {
+	max-width: 100%;
+}
+
+.student-shell-content,
+.student-dashboard-modern,
+.student-modern-section,
+.student-profile-modern-wrap,
+.student-scholarship-control,
+.student-announcement-page,
+.student-announcement-detail,
+.student-inbox-panel {
+	min-width: 0;
+}
+
+.student-portal :where(h1, h2, h3, h4, p, strong, small, span, a, button, label, td, th) {
+	overflow-wrap: anywhere;
+}
+
+.student-portal :where(button, a, input, select, textarea) {
+	touch-action: manipulation;
+}
+
+.student-portal :where(button, a, input, select, textarea):focus-visible {
+	outline: 2px solid #00633c;
+	outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+	.student-dashboard .student-shell,
+	.student-shell {
+		width: 100%;
+		max-width: 100%;
+		padding-inline: clamp(0.9rem, 2.8vw, 1.5rem);
+	}
+
+	.student-modern-announcement-grid,
+	.student-modern-recommendation-grid,
+	.student-recommendation-page-grid,
+	.student-announcement-page-grid,
+	.student-announcement-related-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.student-detail-metrics,
+	.student-announcement-insights,
+	.student-announcement-detail-summary-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 820px) {
+	.student-header {
+		min-width: 0;
+	}
+
+	.student-header-content {
+		width: 100%;
+		max-width: none;
+	}
+
+	.student-header-right {
+		flex: 0 0 auto;
+	}
+
+	.student-header-notification-btn,
+	.student-header-user-btn,
+	.student-header-verified-btn {
+		min-width: 44px;
+		min-height: 44px;
+	}
+
+	.student-header-profile-menu,
+	.student-verified-dropdown {
+		scrollbar-gutter: stable;
+		overscroll-behavior: contain;
+	}
+
+	.student-modern-section,
+	.student-modern-welcome,
+	.student-profile-cover,
+	.student-profile-section-card,
+	.student-scholarship-board,
+	.student-scholarship-control-hero,
+	.student-announcement-page-card,
+	.student-announcement-detail-panel,
+	.student-inbox-panel {
+		width: 100%;
+		max-width: 100%;
+	}
+
+	.student-modern-section-head,
+	.student-announcement-page-hero,
+	.student-announcement-page-section__head,
+	.student-scholarship-board-head,
+	.student-profile-page-title {
+		gap: 0.75rem;
+	}
+
+	.student-modern-section-head > div,
+	.student-announcement-page-hero > div,
+	.student-announcement-page-section__head > div,
+	.student-scholarship-board-head > div,
+	.student-profile-page-title > div {
+		width: 100%;
+		min-width: 0;
+	}
+
+	.student-portal :where(.student-mini-btn, .student-profile-save-btn, .student-profile-cancel-btn, .student-vault-link, .student-vault-upload-btn) {
+		min-height: 44px;
+	}
+
+	.student-modern-announcement-grid,
+	.student-modern-recommendation-grid,
+	.student-recommendation-page-grid,
+	.student-announcement-page-grid,
+	.student-announcement-related-grid,
+	.student-detail-metrics,
+	.student-announcement-insights,
+	.student-announcement-detail-summary-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.student-modern-announcement-card,
+	.student-modern-recommendation-card,
+	.student-announcement-page-card,
+	.student-announcement-related-card {
+		width: 100%;
+		min-width: 0;
+	}
+
+	.student-inbox-item {
+		min-width: 0;
+	}
+
+	.student-inbox-item-copy,
+	.student-inbox-item-copy > div {
+		min-width: 0;
+	}
+
+	.student-inbox-item-copy :where(strong, small, p) {
+		white-space: normal;
+	}
+
+	.student-soe-modal-backdrop,
+	.student-document-preview-backdrop,
+	.student-announcement-image-lightbox {
+		padding: max(0.65rem, env(safe-area-inset-top)) max(0.65rem, env(safe-area-inset-right)) max(0.65rem, env(safe-area-inset-bottom)) max(0.65rem, env(safe-area-inset-left));
+	}
+
+	.student-soe-modal,
+	.student-soe-expense-modal,
+	.student-soe-preview-modal,
+	.student-document-preview-modal {
+		max-height: calc(100vh - 1.3rem);
+		max-height: calc(100dvh - 1.3rem);
+		overscroll-behavior: contain;
+		scrollbar-gutter: stable;
+	}
+}
+
+@media (max-width: 560px) {
+	.student-dashboard .student-shell,
+	.student-shell {
+		padding-inline: 0.7rem;
+		padding-bottom: max(1rem, env(safe-area-inset-bottom));
+	}
+
+	.student-header-brand {
+		font-size: 0.95rem;
+	}
+
+	.student-modern-section,
+	.student-modern-welcome,
+	.student-profile-section-card,
+	.student-scholarship-board,
+	.student-announcement-page-card,
+	.student-announcement-detail-panel,
+	.student-inbox-panel {
+		padding: 0.85rem;
+	}
+
+	.student-profile-summary-chips,
+	.student-announcement-detail-actions,
+	.student-announcement-page-actions {
+		display: grid;
+		grid-template-columns: 1fr;
+		width: 100%;
+	}
+
+	.student-profile-summary-chips > *,
+	.student-announcement-detail-actions > *,
+	.student-announcement-page-actions > * {
+		width: 100%;
+	}
+
+	.student-announcement-detail-carousel {
+		min-height: 170px;
+		max-height: 230px;
+	}
+
+	.student-kwsp-step {
+		padding: 0.75rem;
+	}
+
+	.student-kwsp-step-state {
+		grid-column: 2;
+	}
+
+	.student-footer {
+		padding-bottom: max(1rem, env(safe-area-inset-bottom));
+	}
+}
+
+/* Student dashboard hierarchy refresh.
+ * Scoped to the home dashboard so the student profile, inbox, and scholarship
+ * workflows retain their established layouts. */
+.student-dashboard {
+	--dashboard-primary: #00633c;
+	--dashboard-primary-strong: #004f30;
+	--dashboard-primary-soft: #edf7f2;
+	--dashboard-ink: #132b23;
+	--dashboard-muted: #60756d;
+	--dashboard-line: #d9e6df;
+	--dashboard-surface: #ffffff;
+	--dashboard-canvas: #f8fbf9;
+	background: var(--dashboard-canvas);
+	font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+
+.student-dashboard .student-shell {
+	width: min(100%, 1280px);
+	max-width: 1280px;
+	padding-inline: clamp(1rem, 3vw, 2rem);
+}
+
+.student-dashboard-home {
+	display: grid;
+	gap: 0;
+	color: var(--dashboard-ink);
+}
+
+.student-dashboard-home .student-modern-welcome {
+	display: grid;
+	gap: 1.25rem;
+	margin-bottom: 0.4rem;
+	padding: 1.5rem;
+	border: 0;
+	border-left: 4px solid var(--dashboard-primary);
+	border-radius: 8px;
+	background: var(--dashboard-primary-soft);
+	box-shadow: none;
+}
+
+.student-dashboard-home .student-detail-head {
+	padding-bottom: 0.85rem;
+	border-bottom: 1px solid rgba(0, 99, 60, 0.14);
+}
+
+.student-dashboard-home .student-detail-head h2 {
+	color: var(--dashboard-ink);
+	font-size: 1.08rem;
+	font-weight: 700;
+	letter-spacing: 0;
+}
+
+.student-dashboard-home .student-detail-head > span {
+	display: inline-flex;
+	align-items: center;
+	min-height: 32px;
+	padding: 0.35rem 0.7rem;
+	border: 1px solid rgba(0, 99, 60, 0.18);
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.78);
+	color: var(--dashboard-primary-strong);
+	font-size: 0.72rem;
+	font-weight: 650;
+}
+
+.student-dashboard-home .student-detail-profile {
+	display: grid;
+	grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.6fr);
+	align-items: center;
+	gap: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+.student-dashboard-home .student-detail-identity {
+	display: grid;
+	grid-template-columns: 76px minmax(0, 1fr);
+	align-items: center;
+	gap: 1rem;
+	min-width: 0;
+}
+
+.student-dashboard-home .student-detail-avatar {
+	width: 76px;
+	height: 76px;
+	border: 1px solid rgba(0, 99, 60, 0.18);
+	background: #ffffff;
+	color: var(--dashboard-primary);
+	font-size: 1.1rem;
+	font-weight: 750;
+}
+
+.student-dashboard-home .student-detail-name h3 {
+	color: var(--dashboard-ink);
+	font-size: 1.12rem;
+	font-weight: 700;
+	letter-spacing: 0;
+}
+
+.student-dashboard-home .student-detail-name p {
+	max-width: 32rem;
+	margin-top: 0.35rem;
+	color: var(--dashboard-muted);
+	font-size: 0.78rem;
+	font-weight: 450;
+	line-height: 1.55;
+}
+
+.student-dashboard-home .student-detail-facts {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.85rem 1.5rem;
+	min-width: 0;
+}
+
+.student-dashboard-home .student-detail-field {
+	gap: 0.28rem;
+	min-width: 0;
+	padding-bottom: 0.55rem;
+	border-bottom: 1px solid rgba(0, 99, 60, 0.12);
+}
+
+.student-dashboard-home .student-detail-field > span {
+	color: #70867d;
+	font-size: 0.68rem;
+	font-weight: 600;
+	text-transform: uppercase;
+}
+
+.student-dashboard-home .student-detail-field > strong {
+	color: var(--dashboard-ink);
+	font-size: 0.8rem;
+	font-weight: 600;
+}
+
+.student-dashboard-home .student-detail-metrics {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.75rem;
+}
+
+.student-dashboard-home .student-detail-metrics article {
+	min-height: 76px;
+	padding: 0.85rem 1rem;
+	border: 1px solid rgba(0, 99, 60, 0.13);
+	border-radius: 8px;
+	background: #ffffff;
+	box-shadow: 0 8px 20px rgba(0, 77, 46, 0.05);
+}
+
+.student-dashboard-home .student-detail-metrics article > span {
+	flex: 0 0 auto;
+	width: 38px;
+	height: 38px;
+	border-radius: 7px;
+	background: #e8f6ef;
+	color: var(--dashboard-primary);
+}
+
+.student-dashboard-home .student-detail-metrics article:nth-child(2) > span {
+	background: #e9f7f4;
+	color: #0f766e;
+}
+
+.student-dashboard-home .student-detail-metrics article:nth-child(3) > span {
+	background: #fff6df;
+	color: #b76e00;
+}
+
+.student-dashboard-home .student-detail-metrics strong {
+	color: var(--dashboard-ink);
+	font-size: 1rem;
+	font-weight: 700;
+}
+
+.student-dashboard-home .student-detail-metrics p {
+	color: var(--dashboard-muted);
+	font-size: 0.72rem;
+	font-weight: 500;
+}
+
+.student-dashboard-home .student-modern-section {
+	padding: 2rem 0;
+	border: 0;
+	border-top: 1px solid var(--dashboard-line);
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.student-dashboard-home .student-modern-section-head {
+	margin-bottom: 1rem;
+}
+
+.student-dashboard-home .student-modern-section-title {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-width: 0;
+}
+
+.student-dashboard-home .student-modern-section-title > span {
+	display: grid;
+	flex: 0 0 auto;
+	place-items: center;
+	width: 42px;
+	height: 42px;
+	border: 1px solid rgba(0, 99, 60, 0.15);
+	border-radius: 8px;
+	background: var(--dashboard-primary-soft);
+	color: var(--dashboard-primary);
+}
+
+.student-dashboard-home .student-modern-section-title > span svg {
+	width: 1.25rem;
+	height: 1.25rem;
+}
+
+.student-dashboard-home .student-modern-section-title > div {
+	min-width: 0;
+}
+
+.student-dashboard-home .student-modern-section-head h3 {
+	color: var(--dashboard-ink);
+	font-size: 1rem;
+	font-weight: 700;
+	letter-spacing: 0;
+}
+
+.student-dashboard-home .student-modern-section-head p {
+	margin-top: 0.2rem;
+	color: var(--dashboard-muted);
+	font-size: 0.75rem;
+	font-weight: 450;
+	line-height: 1.45;
+}
+
+.student-dashboard-home .student-modern-section-head button {
+	min-height: 40px;
+	padding: 0 0.85rem;
+	border-color: rgba(0, 99, 60, 0.42);
+	border-radius: 6px;
+	background: transparent;
+	font-size: 0.74rem;
+	font-weight: 600;
+}
+
+.student-dashboard-home .student-modern-announcement-counts {
+	min-height: 40px;
+	border-radius: 6px;
+	background: #f6faf8;
+}
+
+.student-dashboard-home .student-modern-announcement-grid,
+.student-dashboard-home .student-modern-recommendation-grid {
+	gap: 1rem;
+}
+
+.student-dashboard-home .student-modern-announcement-card,
+.student-dashboard-home .student-modern-recommendation-card {
+	border-color: var(--dashboard-line);
+	border-radius: 8px;
+	background: var(--dashboard-surface);
+	box-shadow: 0 8px 20px rgba(15, 45, 34, 0.055);
+	transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.student-dashboard-home .student-modern-announcement-card {
+	grid-template-rows: 168px minmax(0, 1fr);
+}
+
+.student-dashboard-home .student-modern-announcement-media {
+	height: 168px;
+	background: #eef5f1;
+}
+
+.student-dashboard-home .student-modern-announcement-body,
+.student-dashboard-home .student-modern-recommendation-card {
+	padding: 0.95rem;
+}
+
+.student-dashboard-home .student-modern-announcement-author > span,
+.student-dashboard-home .student-modern-recommendation-avatar {
+	background: var(--dashboard-primary-soft);
+	color: var(--dashboard-primary);
+}
+
+.student-dashboard-home .student-modern-announcement-author strong,
+.student-dashboard-home .student-modern-recommendation-top strong,
+.student-dashboard-home .student-modern-announcement-body h4,
+.student-dashboard-home .student-modern-recommendation-body h4 {
+	color: var(--dashboard-ink);
+	font-weight: 650;
+}
+
+.student-dashboard-home .student-modern-announcement-body p,
+.student-dashboard-home .student-modern-recommendation-body p,
+.student-dashboard-home .student-modern-recommendation-top small {
+	color: var(--dashboard-muted);
+}
+
+.student-dashboard-home .student-modern-announcement-body > button,
+.student-dashboard-home .student-modern-recommendation-card > button {
+	min-height: 40px;
+	border-radius: 6px;
+	font-size: 0.75rem;
+	font-weight: 650;
+}
+
+.student-dashboard-home .student-modern-recommendation-card > button {
+	border-color: var(--dashboard-primary);
+	background: var(--dashboard-primary);
+	color: #ffffff;
+}
+
+.student-dashboard-home .student-modern-recommendation-body > span {
+	border-radius: 4px;
+	background: var(--dashboard-primary-soft);
+	font-weight: 650;
+}
+
+.student-dashboard-home .student-modern-recommended-empty,
+.student-dashboard-home .student-modern-empty {
+	min-height: 140px;
+	padding: 1.25rem;
+	border-color: rgba(0, 99, 60, 0.24);
+	border-radius: 8px;
+	background: #fbfdfc;
+	box-shadow: none;
+}
+
+.student-dashboard-home .student-dashboard-utility-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.75fr);
+	gap: 2rem;
+	border-top: 1px solid var(--dashboard-line);
+}
+
+.student-dashboard-home .student-dashboard-utility-grid .student-modern-section {
+	border-top: 0;
+}
+
+.student-dashboard-home .student-modern-section--actions {
+	padding-left: 2rem;
+	border-left: 1px solid var(--dashboard-line);
+}
+
+.student-dashboard-home .student-modern-scholarship-item {
+	grid-template-columns: 40px minmax(0, 1fr) auto;
+	min-height: 72px;
+	padding: 0.85rem;
+	border-color: var(--dashboard-line);
+	border-radius: 8px;
+	box-shadow: 0 6px 16px rgba(15, 45, 34, 0.045);
+}
+
+.student-dashboard-home .student-modern-scholarship-item > span {
+	width: 40px;
+	height: 40px;
+	border-radius: 7px;
+}
+
+.student-dashboard-home .student-modern-action-grid {
+	grid-template-columns: 1fr;
+	gap: 0.55rem;
+}
+
+.student-dashboard-home .student-modern-action-grid button {
+	display: grid;
+	grid-template-columns: 34px minmax(0, 1fr);
+	grid-template-rows: auto auto;
+	align-items: center;
+	gap: 0.08rem 0.7rem;
+	min-height: 62px;
+	padding: 0.65rem 0.75rem;
+	border-color: var(--dashboard-line);
+	border-radius: 7px;
+	box-shadow: none;
+}
+
+.student-dashboard-home .student-modern-action-grid svg {
+	grid-row: 1 / 3;
+	width: 34px;
+	height: 34px;
+	padding: 0.48rem;
+	border-radius: 7px;
+	background: var(--dashboard-primary-soft);
+}
+
+.student-dashboard-home .student-modern-action-grid span {
+	color: var(--dashboard-ink);
+	font-size: 0.78rem;
+	font-weight: 650;
+}
+
+.student-dashboard-home .student-modern-action-grid small {
+	color: var(--dashboard-muted);
+	font-size: 0.68rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.student-dashboard-home .student-modern-announcement-card:hover,
+	.student-dashboard-home .student-modern-recommendation-card:hover {
+		transform: translateY(-3px);
+		border-color: rgba(0, 99, 60, 0.35);
+		box-shadow: 0 14px 28px rgba(15, 45, 34, 0.09);
+	}
+
+	.student-dashboard-home .student-modern-action-grid button:hover {
+		transform: translateX(3px);
+		border-color: rgba(0, 99, 60, 0.35);
+		background: #f7fbf9;
+		box-shadow: none;
+	}
+
+	.student-dashboard-home .student-modern-recommendation-card > button:hover {
+		border-color: var(--dashboard-primary-strong);
+		background: var(--dashboard-primary-strong);
+		color: #ffffff;
+	}
+}
+
+.student-dashboard-home > .student-modern-welcome,
+.student-dashboard-home > .student-modern-section,
+.student-dashboard-home > .student-dashboard-utility-grid {
+	animation: studentDashboardReveal 360ms ease both;
+}
+
+.student-dashboard-home > .student-modern-section:nth-child(2) { animation-delay: 45ms; }
+.student-dashboard-home > .student-modern-section:nth-child(3) { animation-delay: 90ms; }
+.student-dashboard-home > .student-dashboard-utility-grid { animation-delay: 135ms; }
+
+@keyframes studentDashboardReveal {
+	from { opacity: 0; transform: translateY(8px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+.student-dashboard--dark {
+	--dashboard-ink: #ecfdf5;
+	--dashboard-muted: #a8bbb3;
+	--dashboard-line: #31453d;
+	--dashboard-surface: #111c18;
+	--dashboard-canvas: #0b1411;
+	--dashboard-primary-soft: rgba(16, 185, 129, 0.11);
+}
+
+.student-dashboard--dark .student-dashboard-home .student-modern-welcome {
+	border-left-color: #34d399;
+	background: #101d18;
+	box-shadow: none;
+}
+
+.student-dashboard--dark .student-dashboard-home .student-detail-head,
+.student-dashboard--dark .student-dashboard-home .student-detail-field {
+	border-color: #2d4138;
+}
+
+.student-dashboard--dark .student-dashboard-home .student-detail-head > span,
+.student-dashboard--dark .student-dashboard-home .student-detail-avatar,
+.student-dashboard--dark .student-dashboard-home .student-detail-metrics article,
+.student-dashboard--dark .student-dashboard-home .student-modern-announcement-card,
+.student-dashboard--dark .student-dashboard-home .student-modern-recommendation-card,
+.student-dashboard--dark .student-dashboard-home .student-modern-scholarship-item,
+.student-dashboard--dark .student-dashboard-home .student-modern-action-grid button {
+	border-color: var(--dashboard-line);
+	background: var(--dashboard-surface);
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+}
+
+.student-dashboard--dark .student-dashboard-home .student-detail-head > span,
+.student-dashboard--dark .student-dashboard-home .student-detail-field > span,
+.student-dashboard--dark .student-dashboard-home .student-detail-name p,
+.student-dashboard--dark .student-dashboard-home .student-detail-metrics p,
+.student-dashboard--dark .student-dashboard-home .student-modern-section-head p,
+.student-dashboard--dark .student-dashboard-home .student-modern-announcement-body p,
+.student-dashboard--dark .student-dashboard-home .student-modern-recommendation-body p,
+.student-dashboard--dark .student-dashboard-home .student-modern-recommendation-top small,
+.student-dashboard--dark .student-dashboard-home .student-modern-scholarship-item p,
+.student-dashboard--dark .student-dashboard-home .student-modern-action-grid small {
+	color: var(--dashboard-muted);
+}
+
+.student-dashboard--dark .student-dashboard-home .student-detail-head h2,
+.student-dashboard--dark .student-dashboard-home .student-detail-name h3,
+.student-dashboard--dark .student-dashboard-home .student-detail-field > strong,
+.student-dashboard--dark .student-dashboard-home .student-detail-metrics strong,
+.student-dashboard--dark .student-dashboard-home .student-modern-section-head h3,
+.student-dashboard--dark .student-dashboard-home .student-modern-announcement-author strong,
+.student-dashboard--dark .student-dashboard-home .student-modern-announcement-body h4,
+.student-dashboard--dark .student-dashboard-home .student-modern-recommendation-top strong,
+.student-dashboard--dark .student-dashboard-home .student-modern-recommendation-body h4,
+.student-dashboard--dark .student-dashboard-home .student-modern-scholarship-item h4,
+.student-dashboard--dark .student-dashboard-home .student-modern-action-grid span {
+	color: var(--dashboard-ink);
+}
+
+.student-dashboard--dark .student-dashboard-home .student-modern-announcement-media,
+.student-dashboard--dark .student-dashboard-home .student-modern-recommended-empty,
+.student-dashboard--dark .student-dashboard-home .student-modern-empty {
+	border-color: var(--dashboard-line);
+	background: #0e1814;
+}
+
+.student-dashboard--dark .student-dashboard-home .student-modern-announcement-counts {
+	border-color: var(--dashboard-line);
+	background: #101d18;
+}
+
+.student-dashboard--dark .student-dashboard-home .student-modern-section-head button,
+.student-dashboard--dark .student-dashboard-home .student-modern-announcement-body > button {
+	border-color: #34d399;
+	background: transparent;
+	color: #6ee7b7;
+}
+
+.student-dashboard--dark .student-dashboard-home .student-modern-recommendation-card > button {
+	border-color: #34d399;
+	background: #08734d;
+	color: #ffffff;
+}
+
+@media (max-width: 1050px) {
+	.student-dashboard-home .student-detail-profile {
+		grid-template-columns: 1fr;
+	}
+
+	.student-dashboard-home .student-dashboard-utility-grid {
+		grid-template-columns: 1fr;
+		gap: 0;
+	}
+
+	.student-dashboard-home .student-modern-section--actions {
+		padding-left: 0;
+		border-top: 1px solid var(--dashboard-line);
+		border-left: 0;
+	}
+
+	.student-dashboard-home .student-modern-action-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (min-width: 701px) and (max-width: 1100px) {
+	.student-dashboard-home .student-modern-announcement-grid,
+	.student-dashboard-home .student-modern-recommendation-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 700px) {
+	.student-dashboard .student-shell {
+		padding-inline: 0.8rem;
+	}
+
+	.student-dashboard-home .student-modern-welcome {
+		gap: 1rem;
+		padding: 1rem;
+	}
+
+	.student-dashboard-home .student-detail-head,
+	.student-dashboard-home .student-modern-section-head {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.student-dashboard-home .student-detail-head > span {
+		align-self: flex-start;
+	}
+
+	.student-dashboard-home .student-detail-identity {
+		grid-template-columns: 62px minmax(0, 1fr);
+	}
+
+	.student-dashboard-home .student-detail-avatar {
+		width: 62px;
+		height: 62px;
+	}
+
+	.student-dashboard-home .student-detail-facts,
+	.student-dashboard-home .student-detail-metrics,
+	.student-dashboard-home .student-modern-announcement-grid,
+	.student-dashboard-home .student-modern-recommendation-grid,
+	.student-dashboard-home .student-modern-action-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.student-dashboard-home .student-detail-metrics article {
+		min-height: 68px;
+	}
+
+	.student-dashboard-home .student-modern-section {
+		padding: 1.5rem 0;
+	}
+
+	.student-dashboard-home .student-modern-section-title > span {
+		width: 38px;
+		height: 38px;
+	}
+
+	.student-dashboard-home .student-modern-announcement-head-actions {
+		width: 100%;
+	}
+
+	.student-dashboard-home .student-modern-announcement-counts {
+		width: 100%;
+	}
+
+	.student-dashboard-home .student-modern-section-head button {
+		width: 100%;
+		min-height: 44px;
+	}
+
+	.student-dashboard-home .student-modern-announcement-card {
+		grid-template-rows: 150px minmax(0, 1fr);
+	}
+
+	.student-dashboard-home .student-modern-announcement-media {
+		height: 150px;
+	}
+
+	.student-dashboard-home .student-modern-announcement-body > button,
+	.student-dashboard-home .student-modern-recommendation-card > button,
+	.student-dashboard-home .student-modern-action-grid button {
+		min-height: 44px;
+	}
+
+	.student-dashboard-home .student-modern-scholarship-item {
+		grid-template-columns: 40px minmax(0, 1fr);
+	}
+
+	.student-dashboard-home .student-modern-scholarship-item small {
+		grid-column: 2;
+		white-space: normal;
+	}
+}
+
+@media (max-width: 430px) {
+	.student-dashboard-home .student-detail-identity {
+		grid-template-columns: 1fr;
+	}
+
+	.student-dashboard-home .student-detail-name h3 {
+		font-size: 1rem;
+	}
+
+	.student-dashboard-home .student-modern-announcement-counts {
+		align-items: flex-start;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding-block: 0.55rem;
+	}
+
+	.student-dashboard-home .student-modern-announcement-counts i {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.student-dashboard-home > .student-modern-welcome,
+	.student-dashboard-home > .student-modern-section,
+	.student-dashboard-home > .student-dashboard-utility-grid {
+		animation: none;
+	}
+
+	.student-dashboard-home .student-modern-announcement-card,
+	.student-dashboard-home .student-modern-recommendation-card,
+	.student-dashboard-home .student-modern-action-grid button {
+		transition: none;
 	}
 }

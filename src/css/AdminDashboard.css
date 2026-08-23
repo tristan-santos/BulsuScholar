@@ -1965,9 +1965,19 @@
 }
 
 .admin-report-preview-modal-shell {
-	width: min(52vw, 760px);
+	width: min(72vw, 1080px);
 	height: min(86vh, 900px);
 	margin: 0 auto;
+}
+
+.admin-report-dataset-title {
+	display: block;
+	margin-top: 0.45rem;
+	color: #00633c;
+	font-size: 0.78rem;
+	font-weight: 700;
+	letter-spacing: 0;
+	text-transform: uppercase;
 }
 
 .admin-detail-modal {
@@ -2528,15 +2538,17 @@
 }
 
 .admin-status-badge--ok {
-	background: #dcfce7;
 	color: #166534;
-	border-color: #16a34a;
+	background: transparent;
+	border-color: transparent;
+	border-radius: 0;
 }
 
 .admin-status-badge--pending {
-	background: #fef3c7;
 	color: #92400e;
-	border-color: #d97706;
+	background: transparent;
+	border-color: transparent;
+	border-radius: 0;
 }
 
 .admin-status-badge--danger {
@@ -3411,8 +3423,103 @@
 	gap: 0.9rem 1rem;
 }
 
+.admin-scholar-manual-sections {
+	grid-template-columns: 1fr;
+	gap: 1rem;
+}
+
+.admin-scholar-manual-section {
+	min-width: 0;
+	padding: 1rem;
+	border: 1px solid #d8e6df;
+	border-radius: 8px;
+	background: #ffffff;
+}
+
+.admin-scholar-manual-section-head {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	margin-bottom: 0.95rem;
+	padding-bottom: 0.8rem;
+	border-bottom: 1px solid #e2ece7;
+}
+
+.admin-scholar-manual-section-head > span {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	flex: 0 0 40px;
+	border: 1px solid #b9d7c9;
+	border-radius: 7px;
+	background: #eef8f2;
+	color: #00633c;
+}
+
+.admin-scholar-manual-section-head > span svg {
+	width: 20px;
+	height: 20px;
+}
+
+.admin-scholar-manual-section-head > div {
+	min-width: 0;
+}
+
+.admin-scholar-manual-section-head h4 {
+	margin: 0;
+	color: #0b2b1d;
+	font-size: 1rem;
+	font-weight: 750;
+	line-height: 1.25;
+}
+
+.admin-scholar-manual-section-head p {
+	margin: 0.2rem 0 0;
+	color: #64748b;
+	font-size: 0.8rem;
+	font-weight: 500;
+	line-height: 1.4;
+}
+
+.admin-scholar-manual-section-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.85rem 1rem;
+}
+
+.admin-scholar-manual-section--notes textarea {
+	min-height: 105px;
+}
+
+.admin-scholar-manual-field {
+	display: grid;
+	gap: 0.35rem;
+	min-width: 0;
+}
+
+.admin-scholar-manual-field--wide {
+	grid-column: 1 / -1;
+}
+
+.admin-scholar-manual-field > span {
+	color: #334155;
+	font-size: 0.82rem;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+
+.admin-scholar-manual-field > small {
+	color: #64748b;
+	font-size: 0.78rem;
+	line-height: 1.35;
+}
+
 .admin-scholar-import-grid input,
-.admin-scholar-import-grid select {
+.admin-scholar-import-grid select,
+.admin-scholar-import-grid textarea,
+.admin-scholar-manual-select {
 	width: 100%;
 	min-height: 58px;
 	border: 1px solid #c7d5e5;
@@ -3427,14 +3534,73 @@
 	transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
+.admin-scholar-import-grid textarea {
+	min-height: 96px;
+	resize: vertical;
+}
+
+.admin-scholar-manual-select {
+	text-align: left;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.admin-scholar-import-grid .custom-select {
+	width: 100%;
+}
+
+.admin-scholar-import-grid .custom-select__menu {
+	z-index: 12000;
+	border-color: #b7d7c8;
+	border-radius: 10px;
+	box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
+}
+
+.admin-scholar-import-grid .custom-select__option {
+	font-weight: 650;
+}
+
+.admin-scholar-import-grid .custom-select__option.is-selected,
+.admin-scholar-import-grid .custom-select__option:hover {
+	background: rgba(0, 99, 60, 0.1);
+	color: #00633c;
+}
+
 .admin-scholar-import-grid input::placeholder {
 	color: #64748b;
 }
 
 .admin-scholar-import-grid input:focus,
-.admin-scholar-import-grid select:focus {
+.admin-scholar-import-grid select:focus,
+.admin-scholar-import-grid textarea:focus,
+.admin-scholar-manual-select:focus {
 	border-color: #00633c;
 	box-shadow: 0 0 0 3px rgba(0, 99, 60, 0.12);
+}
+
+.admin-scholar-id-status {
+	padding: 0.5rem 0.65rem;
+	border: 1px solid #dbe7dd;
+	border-radius: 8px;
+	background: #f8fbf9;
+	color: #475569;
+}
+
+.admin-scholar-id-status strong {
+	color: #0b2b1d;
+	margin-right: 0.25rem;
+}
+
+.admin-scholar-id-status--available {
+	border-color: #bbf7d0;
+	background: #f0fdf4;
+}
+
+.admin-scholar-id-status--account,
+.admin-scholar-id-status--roster {
+	border-color: #fde68a;
+	background: #fffbeb;
 }
 
 .admin-scholar-import-actions {
@@ -4483,6 +4649,47 @@
 	margin-top: 0.75rem;
 }
 
+.admin-calendar-modal-actions {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem;
+	margin-top: 1rem;
+	padding-top: 0.85rem;
+	border-top: 1px solid rgba(0, 99, 60, 0.14);
+}
+
+.admin-calendar-modal-actions button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	min-height: 40px;
+	border-radius: 5px;
+	font: inherit;
+	font-size: 0.78rem;
+	font-weight: 650;
+	cursor: pointer;
+}
+
+.admin-calendar-cancel-btn {
+	border: 1px solid #bfd1c8;
+	background: #ffffff;
+	color: #315549;
+}
+
+.admin-calendar-confirm-btn {
+	border: 1px solid #00633c;
+	background: #00633c;
+	color: #ffffff;
+}
+
+.admin-calendar-confirm-btn:disabled {
+	border-color: #cbd5e1;
+	background: #e2e8f0;
+	color: #94a3b8;
+	cursor: not-allowed;
+}
+
 .admin-portal--dark .admin-section-tab,
 .admin-portal--dark .admin-summary-card,
 .admin-portal--dark .admin-report-card,
@@ -4676,6 +4883,7 @@
 	color: #166534;
 	font-size: 0.76rem;
 	font-weight: 800;
+	white-space: nowrap;
 }
 
 .admin-detail-chip--blocked,
@@ -4700,9 +4908,11 @@
 }
 
 .admin-detail-chip--current {
-	border-color: #cbd5e1;
-	background: #f8fafc;
-	color: #334155;
+	border-color: transparent;
+	border-radius: 0;
+	background: transparent;
+	color: #c76a00;
+	white-space: nowrap;
 }
 
 .admin-detail-chip--pending {
@@ -5688,7 +5898,12 @@
 	color: #bbf7d0;
 }
 
-.admin-portal--dark .admin-detail-chip--current,
+.admin-portal--dark .admin-detail-chip--current {
+	background: transparent;
+	border-color: transparent;
+	color: #f59e0b;
+}
+
 .admin-portal--dark .admin-detail-chip--pending {
 	background: rgba(51, 65, 85, 0.34);
 	border-color: rgba(148, 163, 184, 0.42);
@@ -8463,6 +8678,39 @@
 	white-space: nowrap;
 }
 
+.admin-announcement-counts {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.65rem;
+	width: max-content;
+	min-height: 38px;
+	padding: 0 0.85rem;
+	border: 1px solid rgba(0, 99, 60, 0.2);
+	border-radius: 5px;
+	background: rgba(0, 99, 60, 0.045);
+	color: #315549;
+	font-size: 0.74rem;
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.admin-announcement-counts span {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.admin-announcement-counts strong {
+	color: #00633c;
+	font-weight: 700;
+}
+
+.admin-announcement-counts i {
+	width: 1px;
+	height: 18px;
+	background: rgba(0, 99, 60, 0.28);
+}
+
 .admin-announcement-section--cards {
 	display: grid;
 	gap: 0.85rem;
@@ -9371,6 +9619,17 @@
 	color: #6ee7b7;
 }
 
+.admin-portal--dark .admin-announcement-counts {
+	border-color: rgba(52, 211, 153, 0.24);
+	background: rgba(0, 99, 60, 0.18);
+	color: #cbd5e1;
+}
+
+.admin-portal--dark .admin-announcement-counts strong { color: #6ee7b7; }
+.admin-portal--dark .admin-announcement-counts i { background: rgba(52, 211, 153, 0.3); }
+.admin-portal--dark .admin-calendar-modal-actions { border-color: #334155; }
+.admin-portal--dark .admin-calendar-cancel-btn { border-color: #475569; background: #111827; color: #cbd5e1; }
+
 .admin-portal--dark .admin-announcement-empty p {
 	color: #94a3b8;
 }
@@ -9399,6 +9658,9 @@
 	.admin-announcement-view-modal > footer {
 		width: 100%;
 	}
+
+	.admin-announcement-counts { width: 100%; justify-content: center; white-space: normal; }
+	.admin-calendar-modal-actions { grid-template-columns: 1fr; }
 
 	.admin-announcement-card-actions,
 	.admin-announcement-compose-form footer,
@@ -10510,10 +10772,350 @@
 	background: #fff1f2;
 }
 
+.admin-profile-page {
+	width: 100%;
+	max-height: calc(100vh - var(--admin-topbar-height, 64px) - 2.4rem);
+	max-height: calc(100dvh - var(--admin-topbar-height, 64px) - 2.4rem);
+	overflow-y: auto;
+	padding-right: 0.35rem;
+	scrollbar-gutter: stable;
+	overscroll-behavior: contain;
+}
+
+.admin-profile-page::-webkit-scrollbar {
+	width: 8px;
+}
+
+.admin-profile-page::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.admin-profile-page::-webkit-scrollbar-thumb {
+	border-radius: 999px;
+	background: rgba(0, 99, 60, 0.22);
+}
+
+.admin-profile-head {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1.05rem;
+	min-height: 132px;
+	margin-bottom: 1rem;
+	padding: 1.25rem;
+	border: 1px solid #d6e2dc;
+	border-radius: 8px;
+	border-bottom: 1px solid #dce7e1;
+	background:
+		linear-gradient(90deg, rgba(0, 99, 60, 0.08), rgba(255, 255, 255, 0.92) 46%, rgba(0, 99, 60, 0.12)),
+		#ffffff;
+	box-shadow: 0 14px 36px rgba(0, 99, 60, 0.07);
+	overflow: hidden;
+}
+
+.admin-profile-head::before {
+	content: "";
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 5px;
+	background: #00633c;
+}
+
+.admin-profile-title {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	min-width: 0;
+}
+
+.admin-profile-title .admin-panel-icon {
+	display: inline-grid;
+	place-items: center;
+	width: 58px;
+	height: 58px;
+	flex: 0 0 58px;
+	border-radius: 8px;
+	background: #e9f7ef;
+	color: #00633c;
+	box-shadow: inset 0 0 0 1px #b8dec8;
+}
+
+.admin-profile-title .admin-panel-icon svg {
+	width: 24px;
+	height: 24px;
+	stroke-width: 2;
+}
+
+.admin-profile-title h2 {
+	margin: 0.15rem 0 0.25rem;
+	font-size: clamp(1.45rem, 2vw, 1.9rem);
+	line-height: 1.1;
+}
+
+.admin-profile-title p {
+	max-width: 680px;
+	margin: 0;
+	color: #526783;
+	font-size: 0.92rem;
+}
+
+.admin-profile-section-head > svg {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	flex: 0 0 auto;
+	border-radius: 50%;
+	background: transparent;
+	color: #00633c;
+}
+
+.admin-profile-layout {
+	display: grid;
+	grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+	gap: 1rem;
+	align-items: start;
+}
+
+.admin-profile-card,
+.admin-profile-section {
+	border: 1px solid rgba(0, 99, 60, 0.16);
+	border-radius: 8px;
+	background: #ffffff;
+	box-shadow: 0 14px 34px rgba(0, 99, 60, 0.055);
+}
+
+.admin-profile-card {
+	position: sticky;
+	top: calc(var(--admin-topbar-height, 64px) + 1rem);
+	padding: 1.15rem;
+	text-align: center;
+}
+
+.admin-profile-avatar {
+	display: grid;
+	place-items: center;
+	width: 84px;
+	height: 84px;
+	margin: 0 auto 0.85rem;
+	border: 1px solid #c4e3d2;
+	border-radius: 50%;
+	background: linear-gradient(135deg, #00633c, #15803d);
+	color: #ffffff;
+	font-size: 1.35rem;
+	font-weight: 800;
+}
+
+.admin-profile-card h3 {
+	margin: 0;
+	color: #052e1f;
+	font-size: 1.1rem;
+}
+
+.admin-profile-card > p {
+	margin: 0.25rem 0 1rem;
+	color: #4b5f79;
+	font-size: 0.83rem;
+}
+
+.admin-profile-meta-list {
+	display: grid;
+	gap: 0.55rem;
+	padding-top: 0.9rem;
+	border-top: 1px solid #dce7e1;
+	text-align: left;
+}
+
+.admin-profile-meta-list div {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+
+.admin-profile-meta-list span,
+.admin-profile-form-grid label > span {
+	color: #63758e;
+	font-size: 0.72rem;
+	font-weight: 700;
+	text-transform: uppercase;
+}
+
+.admin-profile-meta-list strong {
+	color: #052e1f;
+	font-size: 0.82rem;
+	text-align: right;
+}
+
+.admin-profile-settings {
+	display: grid;
+	gap: 1rem;
+}
+
+.admin-profile-section {
+	padding: 1.1rem;
+}
+
+.admin-profile-section-head {
+	display: flex;
+	align-items: center;
+	gap: 0.8rem;
+	margin-bottom: 1.05rem;
+	padding-bottom: 0.9rem;
+	border-bottom: 1px solid rgba(0, 99, 60, 0.14);
+}
+
+.admin-profile-section-head h3 {
+	margin: 0;
+	color: #052e1f;
+	font-size: 1rem;
+}
+
+.admin-profile-section-head p {
+	margin: 0.18rem 0 0;
+	color: #587092;
+	font-size: 0.8rem;
+}
+
+.admin-profile-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.9rem 1rem;
+}
+
+.admin-profile-form-grid label {
+	display: grid;
+	gap: 0.35rem;
+}
+
+.admin-profile-form-grid input,
+.admin-profile-form-grid select {
+	width: 100%;
+	min-height: 46px;
+	border: 1px solid #c9ddd3;
+	border-radius: 6px;
+	background: #fbfefd;
+	color: #052e1f;
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 500;
+}
+
+.admin-profile-form-grid input,
+.admin-profile-form-grid select {
+	padding: 0 0.8rem;
+}
+
+.admin-profile-form-grid input:focus,
+.admin-profile-form-grid select:focus {
+	outline: 2px solid rgba(0, 99, 60, 0.14);
+	border-color: #00633c;
+}
+
+.admin-profile-toggle-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.85rem;
+	margin-top: 0.9rem;
+}
+
+.admin-profile-toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.85rem;
+	min-height: 76px;
+	padding: 0.9rem;
+	border: 1px solid #d8e5de;
+	border-radius: 8px;
+	background: #fbfefd;
+	color: #334155;
+	text-align: left;
+	cursor: pointer;
+	transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.admin-profile-toggle i {
+	position: relative;
+	width: 44px;
+	height: 24px;
+	flex: 0 0 auto;
+	border-radius: 999px;
+	background: #dbe3ea;
+	box-shadow: inset 0 0 0 1px rgba(100, 116, 139, 0.2);
+}
+
+.admin-profile-toggle i::after {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #ffffff;
+	box-shadow: 0 2px 7px rgba(15, 23, 42, 0.18);
+	transition: transform 0.16s ease;
+}
+
+.admin-profile-toggle.active {
+	border-color: #83caa4;
+	background: linear-gradient(135deg, rgba(0, 99, 60, 0.09), rgba(255, 255, 255, 0.92));
+	color: #052e1f;
+	box-shadow: 0 12px 26px rgba(0, 99, 60, 0.08);
+}
+
+.admin-profile-toggle:hover {
+	transform: translateY(-1px);
+	border-color: #9ed8b8;
+	box-shadow: 0 12px 24px rgba(0, 99, 60, 0.07);
+}
+
+.admin-profile-toggle.active i {
+	background: #00633c;
+}
+
+.admin-profile-toggle.active i::after {
+	transform: translateX(20px);
+}
+
+.admin-profile-toggle strong,
+.admin-profile-toggle small {
+	display: block;
+}
+
+.admin-profile-toggle strong {
+	font-size: 0.86rem;
+}
+
+.admin-profile-toggle small {
+	margin-top: 0.15rem;
+	color: #63758e;
+	font-size: 0.74rem;
+}
+
+.admin-profile-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.75rem;
+}
+
 /* Redesigned admin overview */
 .admin-dashboard-overview,
 .admin-inbox-page {
 	width: 100%;
+}
+
+.admin-inbox-page,
+.admin-notifications-page,
+.admin-logs-page {
+	max-height: calc(100vh - var(--admin-topbar-height, 64px) - 2.4rem);
+	max-height: calc(100dvh - var(--admin-topbar-height, 64px) - 2.4rem);
+	overflow-y: auto;
+	padding-right: 0.35rem;
+	scrollbar-gutter: stable;
+	overscroll-behavior: contain;
 }
 
 .admin-overview-head,
@@ -10779,6 +11381,9 @@
 }
 
 .admin-inbox-list {
+	max-height: min(62vh, 640px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
 	border-bottom: 1px solid #dce7e1;
 }
 
@@ -10880,13 +11485,20 @@
 .admin-portal--dark .admin-dashboard-overview .admin-kpi-card,
 .admin-portal--dark .admin-overview-grid .admin-analytics-card,
 .admin-portal--dark .admin-overview-actions,
-.admin-portal--dark .admin-inbox-item {
+.admin-portal--dark .admin-inbox-item,
+.admin-portal--dark .admin-profile-head,
+.admin-portal--dark .admin-profile-card,
+.admin-portal--dark .admin-profile-section,
+.admin-portal--dark .admin-profile-form-grid input,
+.admin-portal--dark .admin-profile-form-grid select,
+.admin-portal--dark .admin-profile-toggle {
 	background: #111827;
 	border-color: #334155;
 }
 
 .admin-portal--dark .admin-account-card,
-.admin-portal--dark .admin-inbox-item.unread {
+.admin-portal--dark .admin-inbox-item.unread,
+.admin-portal--dark .admin-profile-toggle.active {
 	background: #13261f;
 }
 
@@ -10896,7 +11508,14 @@
 .admin-portal--dark .admin-dashboard-overview .admin-kpi-card strong,
 .admin-portal--dark .admin-overview-actions nav a,
 .admin-portal--dark .admin-inbox-summary,
-.admin-portal--dark .admin-inbox-item {
+.admin-portal--dark .admin-inbox-item,
+.admin-portal--dark .admin-profile-head h2,
+.admin-portal--dark .admin-profile-card h3,
+.admin-portal--dark .admin-profile-meta-list strong,
+.admin-portal--dark .admin-profile-section-head h3,
+.admin-portal--dark .admin-profile-toggle strong,
+.admin-portal--dark .admin-profile-form-grid input,
+.admin-portal--dark .admin-profile-form-grid select {
 	color: #f8fafc;
 }
 
@@ -10906,8 +11525,65 @@
 .admin-portal--dark .admin-inbox-summary,
 .admin-portal--dark .admin-inbox-list,
 .admin-portal--dark .admin-inbox-item,
-.admin-portal--dark .admin-overview-actions nav a {
+.admin-portal--dark .admin-overview-actions nav a,
+.admin-portal--dark .admin-profile-head,
+.admin-portal--dark .admin-profile-meta-list,
+.admin-portal--dark .admin-profile-section-head {
 	border-color: #334155;
+}
+
+.admin-portal--dark .admin-profile-section-head > svg {
+	background: #13261f;
+	color: #86efac;
+}
+
+.admin-portal--dark .admin-profile-head {
+	background:
+		linear-gradient(90deg, rgba(0, 99, 60, 0.22), rgba(17, 24, 39, 0.96) 48%, rgba(0, 99, 60, 0.2)),
+		#111827;
+}
+
+.admin-portal--dark .admin-inbox-page,
+.admin-portal--dark .admin-logs-page,
+.admin-portal--dark .admin-inbox-list,
+.admin-portal--dark .admin-log-preview-list,
+.admin-portal--dark .admin-log-table-wrap {
+	scrollbar-color: #34d399 #0f172a;
+}
+
+.admin-portal--dark .admin-inbox-page::-webkit-scrollbar-track,
+.admin-portal--dark .admin-logs-page::-webkit-scrollbar-track,
+.admin-portal--dark .admin-inbox-list::-webkit-scrollbar-track,
+.admin-portal--dark .admin-log-preview-list::-webkit-scrollbar-track,
+.admin-portal--dark .admin-log-table-wrap::-webkit-scrollbar-track {
+	background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+	border-color: rgba(52, 211, 153, 0.12);
+}
+
+.admin-portal--dark .admin-inbox-page::-webkit-scrollbar-thumb,
+.admin-portal--dark .admin-logs-page::-webkit-scrollbar-thumb,
+.admin-portal--dark .admin-inbox-list::-webkit-scrollbar-thumb,
+.admin-portal--dark .admin-log-preview-list::-webkit-scrollbar-thumb,
+.admin-portal--dark .admin-log-table-wrap::-webkit-scrollbar-thumb {
+	border-color: #0f172a;
+	background: linear-gradient(180deg, #34d399, #047857);
+}
+
+.admin-portal--dark .admin-notifications-page,
+.admin-portal--dark .admin-mail-list {
+	scrollbar-color: #94a3b8 #0f172a;
+}
+
+.admin-portal--dark .admin-notifications-page::-webkit-scrollbar-track,
+.admin-portal--dark .admin-mail-list::-webkit-scrollbar-track {
+	background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+	border-color: rgba(148, 163, 184, 0.14);
+}
+
+.admin-portal--dark .admin-notifications-page::-webkit-scrollbar-thumb,
+.admin-portal--dark .admin-mail-list::-webkit-scrollbar-thumb {
+	border-color: #0f172a;
+	background: linear-gradient(180deg, #94a3b8, #64748b);
 }
 
 .admin-portal--dark .admin-account-theme button.active {
@@ -10923,6 +11599,19 @@
 	.admin-overview-grid {
 		grid-template-columns: 1fr;
 	}
+
+	.admin-profile-head {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.admin-profile-layout {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-profile-card {
+		position: static;
+	}
 }
 
 @media (max-width: 640px) {
@@ -10931,9 +11620,14 @@
 	}
 
 	.admin-overview-head,
-	.admin-inbox-head {
+	.admin-inbox-head,
+	.admin-profile-head {
 		align-items: flex-start;
 		flex-direction: column;
+	}
+
+	.admin-profile-title {
+		align-items: flex-start;
 	}
 
 	.admin-overview-date {
@@ -10947,6 +11641,16 @@
 	.admin-inbox-item-meta {
 		grid-column: 2;
 		justify-content: space-between;
+	}
+
+	.admin-profile-form-grid,
+	.admin-profile-toggle-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-profile-actions {
+		align-items: stretch;
+		flex-direction: column;
 	}
 }
 
@@ -11008,7 +11712,8 @@
 
 .admin-inbox-list--limited {
 	max-height: 380px;
-	overflow: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
 }
 
 .admin-inbox-empty--compact {
@@ -11017,7 +11722,8 @@
 
 .admin-log-preview-list {
 	max-height: 322px;
-	overflow: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
 }
 
 .admin-log-preview-row {
@@ -11135,9 +11841,11 @@
 }
 
 .admin-mail-list {
+	max-height: min(68vh, 720px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
 	border: 1px solid #dce7e1;
 	border-radius: 8px;
-	overflow: hidden;
 	background: #ffffff;
 }
 
@@ -11271,8 +11979,86 @@
 .admin-log-table-wrap {
 	max-height: calc(100vh - 260px);
 	overflow: auto;
+	overscroll-behavior: contain;
 	border: 1px solid #dce7e1;
 	border-radius: 8px;
+}
+
+.admin-inbox-page::-webkit-scrollbar,
+.admin-logs-page::-webkit-scrollbar,
+.admin-inbox-list::-webkit-scrollbar,
+.admin-log-preview-list::-webkit-scrollbar,
+.admin-log-table-wrap::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.admin-inbox-page::-webkit-scrollbar-track,
+.admin-logs-page::-webkit-scrollbar-track,
+.admin-inbox-list::-webkit-scrollbar-track,
+.admin-log-preview-list::-webkit-scrollbar-track,
+.admin-log-table-wrap::-webkit-scrollbar-track {
+	background: linear-gradient(180deg, #f8fbf9 0%, #eaf5ef 100%);
+	border: 1px solid rgba(0, 99, 60, 0.08);
+	border-radius: 999px;
+}
+
+.admin-inbox-page::-webkit-scrollbar-thumb,
+.admin-logs-page::-webkit-scrollbar-thumb,
+.admin-inbox-list::-webkit-scrollbar-thumb,
+.admin-log-preview-list::-webkit-scrollbar-thumb,
+.admin-log-table-wrap::-webkit-scrollbar-thumb {
+	border: 2px solid #eef8f3;
+	background: linear-gradient(180deg, rgba(0, 99, 60, 0.72), rgba(0, 99, 60, 0.46));
+	border-radius: 999px;
+}
+
+.admin-inbox-page::-webkit-scrollbar-thumb:hover,
+.admin-logs-page::-webkit-scrollbar-thumb:hover,
+.admin-inbox-list::-webkit-scrollbar-thumb:hover,
+.admin-log-preview-list::-webkit-scrollbar-thumb:hover,
+.admin-log-table-wrap::-webkit-scrollbar-thumb:hover {
+	background: linear-gradient(180deg, #00633c, #08764b);
+}
+
+.admin-inbox-page,
+.admin-logs-page,
+.admin-inbox-list,
+.admin-log-preview-list,
+.admin-log-table-wrap {
+	scrollbar-color: rgba(0, 99, 60, 0.68) #eef8f3;
+	scrollbar-width: thin;
+}
+
+.admin-notifications-page::-webkit-scrollbar,
+.admin-mail-list::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.admin-notifications-page::-webkit-scrollbar-track,
+.admin-mail-list::-webkit-scrollbar-track {
+	background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+	border: 1px solid rgba(100, 116, 139, 0.12);
+	border-radius: 999px;
+}
+
+.admin-notifications-page::-webkit-scrollbar-thumb,
+.admin-mail-list::-webkit-scrollbar-thumb {
+	border: 2px solid #f1f5f9;
+	background: linear-gradient(180deg, rgba(100, 116, 139, 0.72), rgba(100, 116, 139, 0.42));
+	border-radius: 999px;
+}
+
+.admin-notifications-page::-webkit-scrollbar-thumb:hover,
+.admin-mail-list::-webkit-scrollbar-thumb:hover {
+	background: linear-gradient(180deg, #64748b, #475569);
+}
+
+.admin-notifications-page,
+.admin-mail-list {
+	scrollbar-color: rgba(100, 116, 139, 0.68) #f1f5f9;
+	scrollbar-width: thin;
 }
 
 .admin-log-table {
@@ -11781,6 +12567,26 @@
 	text-decoration: none;
 }
 
+.admin-detail-scholarship-row--rejected {
+	border-color: #fecaca !important;
+	background: #fff5f5 !important;
+	color: #b91c1c !important;
+}
+
+.admin-detail-scholarship-row--archived {
+	border-color: #cbd5e1 !important;
+	background: #f8fafc !important;
+	color: #64748b !important;
+}
+
+.admin-detail-scholarship-reason {
+	grid-column: 1 / -1;
+	color: #b91c1c;
+	font-size: 0.75rem;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
 .admin-detail-docs-empty {
 	color: #8a9a93;
 }
@@ -11799,6 +12605,22 @@
 .admin-portal--dark .admin-detail-scholarship-row {
 	background: #101a16;
 	border-color: #27443a;
+}
+
+.admin-portal--dark .admin-detail-scholarship-row--rejected {
+	background: rgba(127, 29, 29, 0.35) !important;
+	border-color: rgba(248, 113, 113, 0.65) !important;
+	color: #fecaca !important;
+}
+
+.admin-portal--dark .admin-detail-scholarship-row--archived {
+	background: rgba(71, 85, 105, 0.24) !important;
+	border-color: rgba(148, 163, 184, 0.45) !important;
+	color: #cbd5e1 !important;
+}
+
+.admin-portal--dark .admin-detail-scholarship-reason {
+	color: #fecaca;
 }
 
 .admin-portal--dark .admin-student-management .admin-management-table thead th,
@@ -12054,12 +12876,12 @@
 }
 
 .admin-detail-shell--report {
-	width: min(52vw, 760px);
+	width: min(72vw, 1080px);
 	height: min(86vh, 900px);
 }
 
 .admin-detail-backdrop--report .admin-detail-shell--report.admin-report-preview-modal-shell {
-	width: min(52vw, 760px) !important;
+	width: min(72vw, 1080px) !important;
 	max-width: calc(100vw - 4rem);
 }
 
@@ -12701,12 +13523,24 @@
 	gap: 0.65rem;
 	color: #64748b;
 	font-size: 0.82rem;
+	text-align: center;
 }
 
 .admin-document-preview-state svg {
 	width: 2rem;
 	height: 2rem;
 	color: #00633c;
+}
+
+.admin-document-preview-state strong {
+	color: #17342a;
+	font-size: 0.95rem;
+	font-weight: 750;
+}
+
+.admin-document-preview-state span {
+	max-width: 42rem;
+	line-height: 1.5;
 }
 
 .admin-portal--dark .admin-student-modal-header,
@@ -13845,6 +14679,143 @@
 	color: #8ee0bc;
 }
 
+/* Targeted admin modal and form fixes */
+.admin-detail-backdrop,
+.admin-announcement-modal-backdrop,
+.admin-announcement-schedule-backdrop,
+.admin-schedule-modal-backdrop,
+.admin-reject-modal-backdrop {
+	position: fixed !important;
+	inset: 0 !important;
+	z-index: 10000 !important;
+}
+
+.admin-lightbox-backdrop,
+.admin-document-preview-backdrop {
+	position: fixed !important;
+	inset: 0 !important;
+	z-index: 11000 !important;
+}
+
+.admin-detail-backdrop {
+	width: 100vw;
+	min-height: 100vh;
+}
+
+.admin-scholar-import-grid input.admin-scholar-field-error,
+.admin-scholar-import-grid select.admin-scholar-field-error,
+.admin-scholar-import-grid textarea.admin-scholar-field-error,
+.admin-scholar-import-grid .custom-select.admin-scholar-field-error .custom-select__button {
+	border-color: #dc2626 !important;
+	background: #fff7f7;
+	box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12) !important;
+}
+
+.admin-scholar-form-error-summary {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: start;
+	gap: 0.75rem;
+	padding: 0.85rem 1rem;
+	border: 1px solid #fecaca;
+	border-radius: 8px;
+	background: #fff1f2;
+	color: #991b1b;
+}
+
+.admin-scholar-form-error-summary svg {
+	width: 20px;
+	height: 20px;
+	color: #dc2626;
+}
+
+.admin-scholar-form-error-summary strong,
+.admin-scholar-form-error-summary span {
+	display: block;
+}
+
+.admin-scholar-form-error-summary strong {
+	font-size: 0.88rem;
+	font-weight: 700;
+}
+
+.admin-scholar-form-error-summary span {
+	margin-top: 0.2rem;
+	font-size: 0.82rem;
+	line-height: 1.45;
+}
+
+.admin-detail-confirm-detail {
+	margin: 0.65rem 0 0;
+	padding: 0.75rem 0.85rem;
+	border-left: 3px solid #c76a00;
+	border-radius: 6px;
+	background: #fff7ed;
+	color: #8a3f00;
+	font-size: 0.84rem;
+	font-weight: 600;
+	line-height: 1.45;
+}
+
+.admin-grantor-inline-tabs {
+	padding-left: 0.25rem !important;
+	overflow: visible !important;
+}
+
+.admin-grantor-inline-tabs .admin-section-tab {
+	min-width: max-content;
+	padding-left: 0.15rem !important;
+	overflow: visible;
+}
+
+.admin-grantor-student-card {
+	align-content: start;
+	overflow: hidden;
+}
+
+.admin-grantor-student-card > div {
+	display: grid;
+	grid-template-columns: 38px minmax(0, 1fr);
+	align-items: center;
+}
+
+.admin-grantor-student-card > div > div {
+	min-width: 0;
+}
+
+.admin-grantor-student-card strong,
+.admin-grantor-student-card small {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-grantor-student-card p,
+.admin-grantor-student-card li {
+	overflow-wrap: anywhere;
+	word-break: normal;
+}
+
+.admin-portal--dark .admin-scholar-import-grid input.admin-scholar-field-error,
+.admin-portal--dark .admin-scholar-import-grid select.admin-scholar-field-error {
+	border-color: #f87171 !important;
+	background: rgba(127, 29, 29, 0.28);
+	box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12) !important;
+}
+
+.admin-portal--dark .admin-scholar-form-error-summary {
+	border-color: rgba(248, 113, 113, 0.45);
+	background: rgba(127, 29, 29, 0.24);
+	color: #fecaca;
+}
+
+.admin-portal--dark .admin-detail-confirm-detail {
+	border-left-color: #f59e0b;
+	background: rgba(146, 64, 14, 0.22);
+	color: #fed7aa;
+}
+
 .admin-portal--dark .admin-grantor-detail-actions .admin-table-btn:disabled,
 .admin-portal--dark .admin-grantor-detail-actions .admin-danger-btn:disabled {
 	border-color: #475569 !important;
@@ -14042,7 +15013,8 @@
 
 .admin-scholarship-management .admin-head-actions .admin-table-btn,
 .admin-scholarship-management .admin-head-actions .admin-student-report-btn {
-	min-width: auto;
+	width: 148px;
+	min-width: 148px;
 	min-height: 38px;
 	padding: 0.52rem 0.95rem;
 	border-radius: 7px;
@@ -14053,6 +15025,7 @@
 	font-weight: 650;
 	line-height: 1;
 	box-shadow: none;
+	justify-content: center;
 }
 
 .admin-scholarship-management .admin-head-actions .admin-table-btn:hover,
@@ -15370,6 +16343,273 @@
 	background: currentColor;
 }
 
+.admin-scholarship-announcement-shell {
+	width: min(920px, calc(100vw - 2rem));
+}
+
+.admin-detail-backdrop--scholarship-announcement {
+	inset: var(--admin-topbar-height, 64px) 0 0 var(--admin-sidebar-width, 220px);
+	align-items: center;
+	justify-content: center;
+	padding: 1.25rem;
+	overflow: auto;
+}
+
+.admin-detail-backdrop--scholarship-announcement .admin-scholarship-announcement-shell {
+	margin: auto;
+}
+
+.admin-scholarship-announcement-modal {
+	max-height: min(84vh, 820px);
+	overflow-y: auto;
+	padding: 1.1rem;
+	border-radius: 10px;
+}
+
+@media (max-width: 980px) {
+	.admin-detail-backdrop--scholarship-announcement {
+		inset: var(--admin-topbar-height, 64px) 0 0;
+		padding: 0.85rem;
+	}
+
+	.admin-detail-backdrop--scholarship-announcement .admin-scholarship-announcement-shell {
+		width: min(100%, calc(100vw - 1rem));
+	}
+}
+
+.admin-scholarship-announcement-hero {
+	display: grid;
+	grid-template-columns: 48px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.9rem;
+	padding: 0.95rem;
+	border: 1px solid rgba(0, 99, 60, 0.16);
+	border-radius: 8px;
+	background: linear-gradient(90deg, rgba(0, 99, 60, 0.08), #fff 76%);
+}
+
+.admin-scholarship-announcement-icon {
+	width: 48px;
+	height: 48px;
+	border-radius: 8px;
+}
+
+.admin-scholarship-announcement-title {
+	min-width: 0;
+}
+
+.admin-scholarship-announcement-title > span {
+	display: block;
+	margin-bottom: 0.2rem;
+	color: #00633c;
+	font-size: 0.68rem;
+	font-weight: 750;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+.admin-scholarship-announcement-title h3 {
+	margin: 0;
+	max-width: 100%;
+	color: #082f22;
+	font-size: 1.34rem;
+	font-weight: 700;
+	line-height: 1.2;
+	overflow-wrap: anywhere;
+}
+
+.admin-scholarship-announcement-title p {
+	margin: 0.32rem 0 0;
+	color: #52677a;
+	font-size: 0.86rem;
+	font-weight: 500;
+}
+
+.admin-scholarship-announcement-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 0.7rem;
+	margin-top: 0.8rem;
+}
+
+.admin-scholarship-announcement-card {
+	min-width: 0;
+	padding: 0.8rem;
+	border: 1px solid rgba(0, 99, 60, 0.14);
+	border-radius: 8px;
+	background: #fbfefd;
+}
+
+.admin-scholarship-announcement-card span {
+	display: block;
+	margin-bottom: 0.35rem;
+	color: #64748b;
+	font-size: 0.7rem;
+	font-weight: 750;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.admin-scholarship-announcement-card strong {
+	display: block;
+	color: #061b14;
+	font-size: 0.94rem;
+	font-weight: 700;
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+}
+
+.admin-scholarship-announcement-section {
+	margin-top: 0.85rem;
+	padding: 0.9rem;
+	border: 1px solid rgba(0, 99, 60, 0.14);
+	border-radius: 8px;
+	background: #ffffff;
+}
+
+.admin-scholarship-announcement-section p {
+	margin: 0.65rem 0 0;
+	color: #334155;
+	font-size: 0.92rem;
+	line-height: 1.55;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+.admin-scholarship-announcement-section--images {
+	padding-bottom: 1rem;
+}
+
+.admin-scholarship-announcement-images {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.65rem;
+	margin-top: 0.75rem;
+}
+
+.admin-scholarship-announcement-images button {
+	display: block;
+	width: 100%;
+	overflow: hidden;
+	padding: 0;
+	border: 1px solid rgba(0, 99, 60, 0.18);
+	border-radius: 8px;
+	background: #f8fcfa;
+	cursor: zoom-in;
+	transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.admin-scholarship-announcement-images button:hover {
+	border-color: rgba(0, 99, 60, 0.44);
+	box-shadow: 0 10px 24px rgba(0, 99, 60, 0.1);
+	transform: translateY(-1px);
+}
+
+.admin-scholarship-announcement-images img {
+	display: block;
+	width: 100%;
+	aspect-ratio: 16 / 10;
+	object-fit: cover;
+}
+
+.admin-scholarship-announcement-actions {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 0.75rem;
+	margin-top: 0.95rem;
+	padding-top: 0.95rem;
+	border-top: 1px solid #dce7e1;
+}
+
+.admin-scholarship-announcement-actions button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.45rem;
+	min-height: 44px;
+	border-radius: 8px;
+	font-size: 0.92rem;
+	font-weight: 650;
+	cursor: pointer;
+	transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.admin-scholarship-announcement-actions button:hover {
+	transform: translateY(-1px);
+}
+
+.admin-scholarship-announcement-actions .admin-secondary-action {
+	border: 1px solid rgba(0, 99, 60, 0.28);
+	background: #ffffff;
+	color: #00633c;
+}
+
+.admin-scholarship-announcement-actions .admin-primary-action {
+	width: 100%;
+	border: 1px solid #00633c;
+	background: #00633c;
+	color: #ffffff;
+}
+
+.admin-portal--dark .admin-scholarship-announcement-hero {
+	border-color: rgba(125, 211, 158, 0.24);
+	background: linear-gradient(90deg, rgba(34, 197, 94, 0.12), rgba(15, 23, 42, 0.96) 76%);
+}
+
+.admin-portal--dark .admin-scholarship-announcement-title h3,
+.admin-portal--dark .admin-scholarship-announcement-card strong {
+	color: #f8fafc;
+}
+
+.admin-portal--dark .admin-scholarship-announcement-title p,
+.admin-portal--dark .admin-scholarship-announcement-section p {
+	color: #cbd5e1;
+}
+
+.admin-portal--dark .admin-scholarship-announcement-card,
+.admin-portal--dark .admin-scholarship-announcement-section {
+	border-color: rgba(125, 211, 158, 0.18);
+	background: rgba(15, 23, 42, 0.72);
+}
+
+.admin-portal--dark .admin-scholarship-announcement-images button,
+.admin-portal--dark .admin-scholarship-announcement-actions .admin-secondary-action {
+	border-color: rgba(125, 211, 158, 0.24);
+	background: rgba(15, 23, 42, 0.88);
+	color: #d1fae5;
+}
+
+.admin-portal--dark .admin-scholarship-announcement-actions {
+	border-top-color: rgba(125, 211, 158, 0.18);
+}
+
+@media (max-width: 860px) {
+	.admin-scholarship-announcement-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.admin-scholarship-announcement-images {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 620px) {
+	.admin-scholarship-announcement-hero {
+		grid-template-columns: 44px minmax(0, 1fr);
+	}
+
+	.admin-scholarship-announcement-hero .admin-status-badge {
+		grid-column: 1 / -1;
+		justify-self: start;
+	}
+
+	.admin-scholarship-announcement-grid,
+	.admin-scholarship-announcement-images,
+	.admin-scholarship-announcement-actions {
+		grid-template-columns: 1fr;
+	}
+}
+
 .admin-detail-modal--soe-review .admin-soe-review-layout {
 	display: grid;
 	gap: 0.75rem;
@@ -15879,14 +17119,86 @@
 }
 
 .admin-portal--dark .admin-scholar-import-grid input,
-.admin-portal--dark .admin-scholar-import-grid select {
+.admin-portal--dark .admin-scholar-import-grid select,
+.admin-portal--dark .admin-scholar-import-grid textarea,
+.admin-portal--dark .admin-scholar-manual-select {
 	border-color: rgba(148, 163, 184, 0.32);
 	background: #0f172a;
 	color: #e2e8f0;
 }
 
-.admin-portal--dark .admin-scholar-import-grid input::placeholder {
+.admin-portal--dark .admin-scholar-manual-section {
+	border-color: rgba(148, 163, 184, 0.28);
+	background: #111827;
+}
+
+.admin-portal--dark .admin-scholar-manual-section-head {
+	border-bottom-color: rgba(148, 163, 184, 0.22);
+}
+
+.admin-portal--dark .admin-scholar-manual-section-head > span {
+	border-color: #2f6f55;
+	background: rgba(20, 83, 45, 0.35);
+	color: #bbf7d0;
+}
+
+.admin-portal--dark .admin-scholar-manual-section-head h4 {
+	color: #f1f5f9;
+}
+
+.admin-portal--dark .admin-scholar-manual-section-head p {
 	color: #94a3b8;
+}
+
+.admin-portal--dark .admin-scholar-import-grid input::placeholder,
+.admin-portal--dark .admin-scholar-import-grid textarea::placeholder {
+	color: #94a3b8;
+}
+
+.admin-portal--dark .admin-scholar-manual-field > span {
+	color: #cbd5e1;
+}
+
+.admin-portal--dark .admin-scholar-manual-field > small {
+	color: #94a3b8;
+}
+
+.admin-portal--dark .admin-scholar-import-grid .custom-select__menu {
+	border-color: rgba(148, 163, 184, 0.34);
+	background: #111827;
+	box-shadow: 0 18px 35px rgba(0, 0, 0, 0.35);
+}
+
+.admin-portal--dark .admin-scholar-import-grid .custom-select__option {
+	color: #e2e8f0;
+	background: #111827;
+}
+
+.admin-portal--dark .admin-scholar-import-grid .custom-select__option.is-selected,
+.admin-portal--dark .admin-scholar-import-grid .custom-select__option:hover {
+	background: rgba(34, 197, 94, 0.16);
+	color: #bbf7d0;
+}
+
+.admin-portal--dark .admin-scholar-id-status {
+	border-color: rgba(148, 163, 184, 0.28);
+	background: rgba(15, 23, 42, 0.85);
+	color: #cbd5e1;
+}
+
+.admin-portal--dark .admin-scholar-id-status strong {
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-scholar-id-status--available {
+	border-color: rgba(74, 222, 128, 0.32);
+	background: rgba(20, 83, 45, 0.24);
+}
+
+.admin-portal--dark .admin-scholar-id-status--account,
+.admin-portal--dark .admin-scholar-id-status--roster {
+	border-color: rgba(251, 191, 36, 0.36);
+	background: rgba(120, 53, 15, 0.22);
 }
 
 .admin-portal--dark .admin-scholar-import-info {
@@ -15991,6 +17303,14 @@
 		grid-template-columns: 1fr;
 	}
 
+	.admin-scholar-manual-section {
+		padding: 0.85rem;
+	}
+
+	.admin-scholar-manual-section-grid {
+		grid-template-columns: 1fr;
+	}
+
 	.admin-scholar-import-actions {
 		flex-direction: column;
 		align-items: stretch;
@@ -16032,6 +17352,7 @@
 .admin-portal .admin-log-table-wrap,
 .admin-portal .admin-report-table-scroll {
 	width: 100%;
+	border-radius: 10px;
 	overflow-x: auto;
 }
 
@@ -16042,6 +17363,7 @@
 .admin-portal .admin-log-table {
 	table-layout: fixed;
 	border-collapse: collapse;
+	border-radius: 10px;
 }
 
 .admin-portal .admin-requirements-table,
@@ -16058,7 +17380,7 @@
 .admin-portal .admin-log-table thead th {
 	padding: 0.56rem 0.82rem !important;
 	overflow: hidden;
-	background: #fff;
+	background: rgba(148, 163, 184, 0.15);
 	color: #06231b;
 	font-size: 0.72rem !important;
 	font-weight: 650 !important;
@@ -16192,7 +17514,7 @@
 .admin-portal--dark .admin-scholarship-table thead th,
 .admin-portal--dark .admin-requirements-table thead th,
 .admin-portal--dark .admin-log-table thead th {
-	background: #101a16;
+	background: rgba(71, 85, 105, 0.35);
 	color: #e2e8f0;
 }
 
@@ -16208,12 +17530,14 @@
 .admin-portal table {
 	width: 100%;
 	border-collapse: collapse;
+	border-radius: 10px;
 	table-layout: fixed;
 }
 
 .admin-portal table thead th {
 	padding: 0.56rem 0.82rem;
 	overflow: hidden;
+	background: rgba(148, 163, 184, 0.15);
 	color: #06231b;
 	font-size: 0.72rem;
 	font-weight: 650;
@@ -16269,6 +17593,7 @@
 }
 
 .admin-portal--dark table thead th {
+	background: rgba(71, 85, 105, 0.35);
 	color: #e2e8f0;
 }
 
@@ -16341,4 +17666,753 @@
 .admin-portal--dark .admin-duplicate-choice-card p,
 .admin-portal--dark .admin-duplicate-choice-card span {
 	color: #b8c7bd;
+}
+
+/* Grantor table and filter polish */
+.admin-portal .admin-table-wrap--grantors,
+.admin-portal .admin-table-wrap--scholarships {
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table,
+.admin-portal .admin-table-wrap--scholarships .admin-scholarship-table {
+	width: 100%;
+	min-width: 980px;
+	border-collapse: collapse;
+	table-layout: fixed;
+	font-family: inherit;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table thead th,
+.admin-portal .admin-table-wrap--scholarships .admin-scholarship-table thead th {
+	padding: 0.72rem 0.9rem !important;
+	border-bottom: 1px solid #9fb0c7;
+	background: #ffffff;
+	color: #06231b;
+	font-size: 0.74rem !important;
+	font-weight: 650 !important;
+	line-height: 1.25;
+	text-align: center;
+	text-transform: uppercase;
+	letter-spacing: 0;
+	white-space: nowrap;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table tbody td,
+.admin-portal .admin-table-wrap--scholarships .admin-scholarship-table tbody td {
+	padding: 0.78rem 0.9rem !important;
+	border-bottom: 1px solid #d2dce8;
+	color: #102033;
+	font-size: 0.82rem !important;
+	font-weight: 520;
+	line-height: 1.35;
+	text-align: center;
+	vertical-align: middle;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table tbody tr:hover td,
+.admin-portal .admin-table-wrap--scholarships .admin-scholarship-table tbody tr:hover td {
+	background: rgba(0, 99, 60, 0.055);
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table th:first-child,
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table td:first-child {
+	width: auto;
+	max-width: none;
+	overflow: hidden;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table th:first-child:has(input[type="checkbox"]),
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table td:first-child:has(input[type="checkbox"]) {
+	width: 46px;
+	max-width: 46px;
+	overflow: visible;
+}
+
+.admin-portal .admin-grantor-col-select {
+	width: 46px;
+}
+
+.admin-portal .admin-grantor-col-id {
+	width: 14%;
+}
+
+.admin-portal .admin-grantor-col-name {
+	width: 17%;
+}
+
+.admin-portal .admin-grantor-col-email {
+	width: 18%;
+}
+
+.admin-portal .admin-grantor-col-org {
+	width: 16%;
+}
+
+.admin-portal .admin-grantor-col-total {
+	width: 12%;
+}
+
+.admin-portal .admin-grantor-col-status {
+	width: 12%;
+}
+
+.admin-portal .admin-grantor-col-action {
+	width: 128px;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table th:last-child,
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table td:last-child {
+	width: 128px;
+	padding-inline: 0.45rem !important;
+	overflow: visible;
+	text-align: center;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table td > span:not(.admin-student-status),
+.admin-portal .admin-table-wrap--scholarships .admin-scholarship-table td > span:not(.admin-status-badge):not(.admin-student-status) {
+	display: block;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-grantor-row-actions,
+.admin-portal .admin-table-wrap--scholarships .admin-table-action-row {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.45rem;
+	width: 100%;
+	min-width: 0;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-student-action-btn,
+.admin-portal .admin-table-wrap--scholarships .admin-table-btn {
+	box-sizing: border-box;
+	min-height: 34px !important;
+	min-width: 84px;
+	max-width: 100%;
+	padding: 0.42rem 0.72rem !important;
+	border: 1px solid #00633c;
+	border-radius: 6px;
+	background: transparent;
+	color: #00633c;
+	font-size: 0.76rem !important;
+	font-weight: 650;
+	line-height: 1;
+	transition:
+		background 0.16s ease,
+		color 0.16s ease,
+		border-color 0.16s ease,
+		transform 0.16s ease;
+}
+
+.admin-portal .admin-table-wrap--grantors .admin-student-action-btn:hover,
+.admin-portal .admin-table-wrap--scholarships .admin-table-btn:hover {
+	background: rgba(0, 99, 60, 0.08);
+	transform: translateY(-1px);
+}
+
+.admin-portal .admin-grantor-management .admin-filter-select,
+.admin-portal .admin-scholarship-management .admin-filter-select,
+.admin-portal .admin-requirements-management .admin-filter-select {
+	min-width: 180px;
+}
+
+.admin-portal .admin-grantor-management .admin-filter-select__button,
+.admin-portal .admin-scholarship-management .admin-filter-select__button,
+.admin-portal .admin-requirements-management .admin-filter-select__button {
+	min-height: 40px;
+	padding: 0 1.9rem 0 0.2rem;
+	border: 0;
+	border-bottom: 1px solid #7ea08e;
+	border-radius: 0;
+	background: transparent;
+	color: #06231b;
+	font-size: 0.88rem;
+	font-weight: 560;
+}
+
+.admin-portal .admin-grantor-management .admin-filter-select__button::after,
+.admin-portal .admin-scholarship-management .admin-filter-select__button::after,
+.admin-portal .admin-requirements-management .admin-filter-select__button::after {
+	right: 0.45rem;
+	border-color: #00633c;
+}
+
+.admin-portal .admin-grantor-management .admin-filter-select__menu,
+.admin-portal .admin-scholarship-management .admin-filter-select__menu,
+.admin-portal .admin-requirements-management .admin-filter-select__menu {
+	min-width: 100%;
+	max-width: min(360px, 84vw);
+	padding: 0.36rem;
+	border: 1px solid #b8d8ca;
+	border-radius: 7px;
+	background: #ffffff;
+	box-shadow: 0 18px 36px rgba(15, 23, 42, 0.14);
+}
+
+.admin-portal .admin-grantor-management .admin-filter-select__menu button,
+.admin-portal .admin-scholarship-management .admin-filter-select__menu button,
+.admin-portal .admin-requirements-management .admin-filter-select__menu button {
+	padding: 0.68rem 0.78rem;
+	border-radius: 6px;
+	color: #06231b;
+	font-size: 0.84rem;
+	font-weight: 600;
+	line-height: 1.25;
+}
+
+.admin-portal .admin-grantor-management .admin-filter-select__menu button:hover,
+.admin-portal .admin-grantor-management .admin-filter-select__menu button.active,
+.admin-portal .admin-scholarship-management .admin-filter-select__menu button:hover,
+.admin-portal .admin-scholarship-management .admin-filter-select__menu button.active,
+.admin-portal .admin-requirements-management .admin-filter-select__menu button:hover,
+.admin-portal .admin-requirements-management .admin-filter-select__menu button.active {
+	background: rgba(0, 99, 60, 0.1);
+	color: #00633c;
+}
+
+.admin-portal--dark .admin-table-wrap--grantors .admin-grantor-table thead th,
+.admin-portal--dark .admin-table-wrap--scholarships .admin-scholarship-table thead th {
+	background: #101a16;
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-table-wrap--grantors .admin-grantor-table tbody td,
+.admin-portal--dark .admin-table-wrap--scholarships .admin-scholarship-table tbody td {
+	color: #d8eee4;
+	border-bottom-color: rgba(148, 163, 184, 0.24);
+}
+
+.admin-portal--dark .admin-table-wrap--grantors .admin-grantor-table tbody tr:hover td,
+.admin-portal--dark .admin-table-wrap--scholarships .admin-scholarship-table tbody tr:hover td {
+	background: rgba(125, 211, 170, 0.1);
+}
+
+.admin-portal--dark .admin-grantor-management .admin-filter-select__button,
+.admin-portal--dark .admin-scholarship-management .admin-filter-select__button,
+.admin-portal--dark .admin-requirements-management .admin-filter-select__button {
+	color: #e2e8f0;
+	border-bottom-color: #527063;
+}
+
+.admin-portal--dark .admin-grantor-management .admin-filter-select__menu,
+.admin-portal--dark .admin-scholarship-management .admin-filter-select__menu,
+.admin-portal--dark .admin-requirements-management .admin-filter-select__menu {
+	background: #101a16;
+	border-color: #2f6f55;
+}
+
+.admin-portal--dark .admin-grantor-management .admin-filter-select__menu button,
+.admin-portal--dark .admin-scholarship-management .admin-filter-select__menu button,
+.admin-portal--dark .admin-requirements-management .admin-filter-select__menu button {
+	color: #d8eee4;
+}
+
+.admin-portal--dark .admin-grantor-management .admin-filter-select__menu button:hover,
+.admin-portal--dark .admin-grantor-management .admin-filter-select__menu button.active,
+.admin-portal--dark .admin-scholarship-management .admin-filter-select__menu button:hover,
+.admin-portal--dark .admin-scholarship-management .admin-filter-select__menu button.active,
+.admin-portal--dark .admin-requirements-management .admin-filter-select__menu button:hover,
+.admin-portal--dark .admin-requirements-management .admin-filter-select__menu button.active {
+	background: rgba(125, 211, 170, 0.14);
+	color: #8ee0bc;
+}
+/* Admin polish fixes */
+.admin-student-management .admin-panel-head h2,
+.admin-grantor-management .admin-panel-head h2,
+.admin-scholarship-management .admin-panel-head h2,
+.admin-requirements-management .admin-panel-head h2 {
+	font-weight: 800 !important;
+}
+
+.admin-detail-modal--confirm-danger .admin-detail-confirm-kicker,
+.admin-detail-modal--confirm-danger .admin-detail-confirm-copy h3,
+.admin-detail-modal--confirm-danger .admin-detail-confirm-copy .admin-detail-meta {
+	color: #b91c1c;
+}
+
+.admin-document-preview-modal {
+	max-height: calc(100vh - 2rem);
+}
+
+.admin-document-preview-body {
+	max-height: calc(100vh - 150px);
+	align-items: start;
+	overflow: auto;
+}
+
+.admin-document-preview-body > .zoomable-preview {
+	min-height: min(70vh, 680px);
+}
+
+.admin-management-table--roomy.admin-management-table {
+	table-layout: fixed;
+}
+
+/* Shared confirmation modal redesign */
+.admin-detail-shell--confirm {
+	width: min(680px, calc(100vw - 2rem)) !important;
+}
+
+.admin-detail-modal--confirm {
+	position: relative;
+	gap: 1.15rem !important;
+	padding: 1.6rem !important;
+	border: 1px solid rgba(0, 99, 60, 0.2) !important;
+	border-radius: 14px !important;
+	background:
+		radial-gradient(circle at top left, rgba(0, 99, 60, 0.12), transparent 34%),
+		linear-gradient(135deg, rgba(236, 253, 245, 0.9), rgba(255, 255, 255, 0.98) 48%),
+		#ffffff !important;
+	box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28) !important;
+	overflow: hidden;
+}
+
+.admin-detail-modal--confirm::before {
+	content: "";
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 5px;
+	background: linear-gradient(180deg, #00633c, rgba(0, 99, 60, 0.22));
+}
+
+.admin-detail-modal--confirm-danger::before {
+	background: linear-gradient(180deg, #dc2626, rgba(248, 113, 113, 0.26));
+}
+
+.admin-detail-shell--confirm .admin-detail-close {
+	top: 1rem !important;
+	right: 1rem !important;
+	width: 42px !important;
+	height: 42px !important;
+	border-radius: 999px !important;
+	border: 1px solid rgba(0, 99, 60, 0.22) !important;
+	background: rgba(255, 255, 255, 0.92) !important;
+	color: #173b2d !important;
+	box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12) !important;
+	transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.admin-detail-shell--confirm .admin-detail-close:hover {
+	transform: translateY(-1px);
+	border-color: rgba(0, 99, 60, 0.42) !important;
+	background: #ffffff !important;
+}
+
+.admin-detail-confirm-head {
+	align-items: center !important;
+	gap: 1.15rem !important;
+	padding: 0 3rem 0 0.15rem !important;
+}
+
+.admin-detail-confirm-icon {
+	width: 60px !important;
+	height: 60px !important;
+	border-radius: 12px !important;
+	border: 1px solid rgba(0, 99, 60, 0.22) !important;
+	background:
+		linear-gradient(180deg, rgba(236, 253, 245, 0.95), rgba(220, 252, 231, 0.72)),
+		#ecfdf5 !important;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72), 0 14px 24px rgba(0, 99, 60, 0.08);
+}
+
+.admin-detail-confirm-icon svg {
+	width: 25px !important;
+	height: 25px !important;
+}
+
+.admin-detail-confirm-icon--danger {
+	border-color: rgba(220, 38, 38, 0.28) !important;
+	background:
+		linear-gradient(180deg, rgba(254, 242, 242, 0.98), rgba(254, 226, 226, 0.84)),
+		#fff1f2 !important;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.78), 0 14px 24px rgba(220, 38, 38, 0.08);
+}
+
+.admin-detail-confirm-copy {
+	gap: 0.5rem !important;
+}
+
+.admin-detail-confirm-kicker {
+	color: #00633c !important;
+	font-size: 0.76rem !important;
+	font-weight: 800 !important;
+	letter-spacing: 0.16em !important;
+}
+
+.admin-detail-confirm-copy h3 {
+	color: #14532d !important;
+	font-size: clamp(1.35rem, 2vw, 1.75rem) !important;
+	font-weight: 850 !important;
+	letter-spacing: 0 !important;
+}
+
+.admin-detail-confirm-copy .admin-detail-meta {
+	max-width: 56ch;
+	color: #3f5068 !important;
+	font-size: 1rem !important;
+	font-weight: 600;
+	line-height: 1.65 !important;
+}
+
+.admin-confirm-summary-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem;
+	padding: 0.9rem;
+	border: 1px solid rgba(0, 99, 60, 0.14);
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.72);
+}
+
+.admin-confirm-summary-card {
+	display: grid;
+	grid-template-columns: 36px minmax(0, 1fr);
+	align-items: center;
+	gap: 0.65rem;
+	min-width: 0;
+	padding: 0.72rem;
+	border: 1px solid rgba(0, 99, 60, 0.14);
+	border-radius: 9px;
+	background: rgba(255, 255, 255, 0.86);
+}
+
+.admin-confirm-summary-icon {
+	width: 36px;
+	height: 36px;
+	border-radius: 999px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 99, 60, 0.09);
+	color: #00633c;
+}
+
+.admin-confirm-summary-icon svg {
+	width: 18px;
+	height: 18px;
+}
+
+.admin-confirm-summary-card span:not(.admin-confirm-summary-icon) {
+	display: block;
+	color: #64748b;
+	font-size: 0.68rem;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.admin-confirm-summary-card strong {
+	display: block;
+	margin-top: 0.12rem;
+	overflow: hidden;
+	color: #0f241c;
+	font-size: 0.88rem;
+	font-weight: 800;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-confirm-summary-value--regular {
+	font-weight: 650 !important;
+}
+
+.admin-confirm-record-table {
+	overflow: hidden;
+	border: 1px solid rgba(0, 99, 60, 0.16);
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.82);
+}
+
+.admin-confirm-record-table-head,
+.admin-confirm-record-row {
+	display: grid;
+	grid-template-columns: minmax(120px, 0.85fr) minmax(150px, 1.05fr) minmax(180px, 1.35fr) minmax(72px, 0.45fr);
+	align-items: center;
+	gap: 0.65rem;
+}
+
+.admin-confirm-record-table-head {
+	padding: 0.72rem 0.9rem;
+	border-bottom: 1px solid rgba(0, 99, 60, 0.16);
+	background: rgba(148, 163, 184, 0.35);
+	color: #385044;
+	font-size: 0.72rem;
+	font-weight: 850;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.admin-confirm-record-table-body {
+	max-height: 168px;
+	overflow: auto;
+}
+
+.admin-confirm-record-row {
+	padding: 0.72rem 0.9rem;
+	border-bottom: 1px solid rgba(0, 99, 60, 0.1);
+	color: #10251d;
+	font-size: 0.9rem;
+	font-weight: 650;
+}
+
+.admin-confirm-record-row:last-child {
+	border-bottom: 0;
+}
+
+.admin-confirm-record-row span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.admin-detail-modal--confirm .admin-detail-info--compact {
+	border: 1px solid rgba(0, 99, 60, 0.18) !important;
+	border-radius: 10px !important;
+	background: rgba(255, 255, 255, 0.82) !important;
+	box-shadow: none !important;
+}
+
+.admin-detail-actions--confirm {
+	margin-top: 0.25rem !important;
+	padding-top: 1.15rem !important;
+	border-top: 1px solid rgba(0, 99, 60, 0.16) !important;
+}
+
+.admin-detail-actions--confirm .admin-table-btn,
+.admin-detail-actions--confirm .admin-danger-btn,
+.admin-detail-actions--confirm .admin-safe-btn {
+	min-height: 52px !important;
+	border-radius: 8px !important;
+	font-size: 0.95rem !important;
+	font-weight: 800 !important;
+	transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.admin-detail-actions--confirm .admin-table-btn:hover,
+.admin-detail-actions--confirm .admin-danger-btn:hover,
+.admin-detail-actions--confirm .admin-safe-btn:hover {
+	transform: translateY(-1px);
+}
+
+.admin-detail-actions--confirm .admin-safe-btn {
+	background: linear-gradient(180deg, #007a49, #00633c) !important;
+	box-shadow: 0 14px 26px rgba(0, 99, 60, 0.2) !important;
+}
+
+.admin-detail-actions--confirm .admin-danger-btn {
+	background: #fff1f2 !important;
+}
+
+.admin-portal--dark .admin-detail-modal--confirm {
+	background:
+		radial-gradient(circle at top left, rgba(125, 211, 170, 0.16), transparent 34%),
+		linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98)),
+		#0f172a !important;
+	border-color: #2f6f55 !important;
+}
+
+.admin-portal--dark .admin-detail-shell--confirm .admin-detail-close {
+	background: #101a16 !important;
+	border-color: #2f6f55 !important;
+	color: #e2e8f0 !important;
+}
+
+.admin-portal--dark .admin-detail-confirm-copy h3 {
+	color: #e7fff3 !important;
+}
+
+.admin-portal--dark .admin-detail-confirm-copy .admin-detail-meta {
+	color: #cbd5e1 !important;
+}
+
+.admin-portal--dark .admin-confirm-summary-grid,
+.admin-portal--dark .admin-confirm-summary-card,
+.admin-portal--dark .admin-confirm-record-table,
+.admin-portal--dark .admin-detail-modal--confirm .admin-detail-info--compact {
+	border-color: #27443a !important;
+	background: rgba(15, 23, 42, 0.76) !important;
+}
+
+.admin-portal--dark .admin-confirm-summary-card strong {
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-confirm-summary-card span:not(.admin-confirm-summary-icon) {
+	color: #94a3b8;
+}
+
+.admin-portal--dark .admin-confirm-summary-icon {
+	background: rgba(125, 211, 170, 0.12);
+	color: #8ee0bc;
+}
+
+.admin-portal--dark .admin-confirm-record-table-head {
+	border-color: #27443a;
+	background: rgba(71, 85, 105, 0.35);
+	color: #a7f3d0;
+}
+
+.admin-portal--dark .admin-confirm-record-row {
+	border-color: #27443a;
+	color: #e2e8f0;
+}
+
+@media (max-width: 680px) {
+	.admin-detail-modal--confirm {
+		padding: 1.2rem !important;
+	}
+
+	.admin-detail-confirm-head {
+		grid-template-columns: 1fr !important;
+		padding-right: 2.7rem !important;
+	}
+
+	.admin-confirm-summary-grid,
+	.admin-detail-actions--confirm {
+		grid-template-columns: 1fr !important;
+	}
+
+	.admin-confirm-record-table {
+		overflow-x: auto;
+	}
+
+	.admin-confirm-record-table-head,
+	.admin-confirm-record-row {
+		min-width: 620px;
+	}
+}
+
+.admin-student-management .admin-management-table--roomy th:nth-child(3),
+.admin-student-management .admin-management-table--roomy td:nth-child(3) {
+	width: 24%;
+}
+
+.admin-student-management .admin-management-table--roomy th:nth-child(5),
+.admin-student-management .admin-management-table--roomy td:nth-child(5) {
+	width: 82px;
+	text-align: center;
+}
+
+.admin-student-management .admin-management-table--roomy th:last-child,
+.admin-student-management .admin-management-table--roomy td:last-child {
+	width: 118px;
+	padding-right: 5px !important;
+	text-align: center;
+}
+
+.admin-student-management .admin-management-table thead th,
+.admin-student-management .admin-management-table--roomy thead th {
+	background: rgba(148, 163, 184, 0.15) !important;
+}
+
+.admin-student-management .admin-table-wrap {
+	border-radius: 10px !important;
+	overflow: hidden !important;
+}
+
+.admin-student-management .admin-management-table {
+	border-radius: 10px !important;
+}
+
+.admin-grantor-detail-stats {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-grantor-detail-stats article strong {
+	white-space: normal;
+}
+
+@media (max-width: 720px) {
+	.admin-grantor-detail-stats {
+		grid-template-columns: 1fr;
+	}
+}
+
+.admin-portal .admin-table-wrap,
+.admin-portal .admin-table-wrap--grantors,
+.admin-portal .admin-table-wrap--scholarships,
+.admin-portal .admin-log-table-wrap,
+.admin-portal .admin-report-table-scroll {
+	border-radius: 10px !important;
+	overflow: hidden auto !important;
+}
+
+.admin-portal .admin-management-table thead th,
+.admin-portal .admin-grantor-table thead th,
+.admin-portal .admin-scholarship-table thead th,
+.admin-portal .admin-requirements-table thead th,
+.admin-portal .admin-log-table thead th,
+.admin-portal .admin-table-wrap--grantors .admin-grantor-table thead th,
+.admin-portal .admin-table-wrap--scholarships .admin-scholarship-table thead th,
+.admin-portal table thead th {
+	background: rgba(148, 163, 184, 0.15) !important;
+}
+
+.admin-portal--dark .admin-management-table thead th,
+.admin-portal--dark .admin-grantor-table thead th,
+.admin-portal--dark .admin-scholarship-table thead th,
+.admin-portal--dark .admin-requirements-table thead th,
+.admin-portal--dark .admin-log-table thead th,
+.admin-portal--dark .admin-table-wrap--grantors .admin-grantor-table thead th,
+.admin-portal--dark .admin-table-wrap--scholarships .admin-scholarship-table thead th,
+.admin-portal--dark table thead th {
+	background: rgba(71, 85, 105, 0.35) !important;
+}
+.admin-feature-page { width:100%; }.admin-feature-header { display:flex;align-items:center;gap:16px;padding:26px 4px;border-bottom:1px solid rgba(0,99,60,.2); }.admin-feature-header>span { width:54px;height:54px;border:1px solid rgba(0,99,60,.25);border-radius:6px;display:grid;place-items:center;color:#00633c;font-size:27px;background:#eef8f3; }.admin-feature-header h2 { margin:0;font-size:28px; }.admin-feature-header p { margin:5px 0 0;color:#64748b; }.admin-feature-stats { display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid rgba(0,99,60,.2); }.admin-feature-stats>div { display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-right:1px solid rgba(0,99,60,.18); }.admin-feature-stats>div:last-child { border-right:0; }.admin-feature-stats span { color:#536477; }.admin-feature-stats strong { font-size:22px; }.admin-feature-tabs { display:flex;gap:25px;padding:24px 4px 0;border-bottom:1px solid rgba(0,99,60,.18); }.admin-feature-tabs button { border:0;border-bottom:3px solid transparent;background:none;padding:0 0 12px;text-transform:capitalize;font:inherit;font-weight:650;color:#4d5c72; }.admin-feature-tabs button.active { color:#00633c;border-bottom-color:#00633c; }.admin-feature-table-wrap { overflow-x:auto;margin-top:18px;border:1px solid rgba(0,99,60,.16);border-radius:8px; }.admin-feature-table { width:100%;border-collapse:collapse;white-space:nowrap; }.admin-feature-table th { background:rgba(107,114,128,.15);font-size:12px;text-transform:uppercase;text-align:left;padding:14px; }.admin-feature-table td { padding:13px 14px;border-top:1px solid rgba(0,99,60,.14);max-width:220px;overflow:hidden;text-overflow:ellipsis; }.admin-table-view { border:1px solid #00633c;border-radius:5px;background:#fff;color:#00633c;padding:8px 11px;font-weight:700;display:inline-flex;align-items:center;gap:6px; }
+.admin-feature-header-actions { margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end; }.admin-feature-header-actions button { border:1px solid #00633c;border-radius:5px;background:#fff;color:#00633c;padding:9px 12px;font-weight:700;display:flex;align-items:center;gap:6px; }.admin-feature-header-actions button:first-of-type { background:#00633c;color:#fff; }.admin-feature-filters { display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:18px;align-items:center;margin-top:18px; }.admin-feature-filters>label:first-child { display:flex;align-items:center;gap:9px;border-bottom:1px solid #8ca99d;padding:10px 3px;color:#00633c; }.admin-feature-filters input { border:0;outline:0;font:inherit;width:100%;background:transparent; }.admin-feature-checkbox { display:flex;align-items:center;gap:7px;white-space:nowrap; }.admin-feature-checkbox input { width:16px; }.portal-empty { padding:30px;text-align:center;color:#64748b; }
+@media(max-width:800px){.admin-feature-header{align-items:flex-start;flex-wrap:wrap}.admin-feature-header-actions{width:100%;margin-left:0;justify-content:flex-start}.admin-feature-stats{grid-template-columns:1fr}.admin-feature-stats>div{border-right:0;border-bottom:1px solid rgba(0,99,60,.16)}.admin-feature-filters{grid-template-columns:1fr}}
+.admin-notification-detail-backdrop { z-index: 10050; }
+
+.admin-notification-detail-modal {
+	width: min(620px, calc(100vw - 2rem));
+	max-height: min(720px, calc(100vh - 2rem));
+	overflow-y: auto;
+	background: #fff;
+	border: 1px solid rgba(0, 99, 60, 0.22);
+	border-radius: 8px;
+	box-shadow: 0 24px 70px rgba(16, 36, 28, 0.25);
+}
+
+.admin-notification-detail-modal > header {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: 0.85rem;
+	padding: 1.15rem;
+	border-bottom: 1px solid rgba(0, 99, 60, 0.14);
+}
+
+.admin-notification-detail-modal h3 { margin: 0.15rem 0 0; font-size: 1.25rem; }
+.admin-notification-detail-modal header small,
+.admin-notification-detail-message > span,
+.admin-notification-detail-meta span { color: #617188; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+.admin-notification-detail-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: #00633c; background: rgba(0, 99, 60, 0.09); font-size: 1.25rem; }
+.admin-notification-detail-modal header button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid rgba(0, 99, 60, 0.2); border-radius: 50%; color: #244137; background: #fff; }
+.admin-notification-detail-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; padding: 1rem 1.15rem 0; }
+.admin-notification-detail-meta > div { display: grid; gap: 0.35rem; padding: 0.85rem; border: 1px solid rgba(0, 99, 60, 0.14); border-radius: 6px; background: rgba(0, 99, 60, 0.025); }
+.admin-notification-detail-message { margin: 1rem 1.15rem; padding: 1rem; border: 1px solid rgba(0, 99, 60, 0.18); border-radius: 6px; background: rgba(0, 99, 60, 0.045); }
+.admin-notification-detail-message p { margin: 0.55rem 0 0; line-height: 1.65; white-space: pre-wrap; }
+.admin-notification-detail-modal footer { display: flex; justify-content: flex-end; gap: 0.65rem; padding: 1rem 1.15rem; border-top: 1px solid rgba(0, 99, 60, 0.14); }
+.admin-notification-detail-modal footer button { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; min-height: 42px; padding: 0 1rem; border: 1px solid #00633c; border-radius: 6px; color: #00633c; background: #fff; font-weight: 600; }
+.admin-notification-detail-modal footer .admin-notification-open-action { color: #fff; background: #00633c; }
+
+.admin-portal--dark .admin-notification-detail-modal,
+.admin-portal--dark .admin-notification-detail-modal header button,
+.admin-portal--dark .admin-notification-detail-modal footer button { color: #e9f5ef; background: #15231e; }
+
+@media (max-width: 640px) {
+	.admin-notification-detail-meta { grid-template-columns: 1fr; }
+	.admin-notification-detail-modal footer { align-items: stretch; flex-direction: column; }
 }

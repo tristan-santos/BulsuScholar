@@ -165,6 +165,143 @@ def first_existing_record(checks: list[tuple[str, dict[str, Any]]]) -> dict[str,
     return None
 
 
+def normalize_identity_name(value: Any = "") -> str:
+    normalized = str(value or "").lower()
+    normalized = re.sub(r"[^a-z0-9\s]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def levenshtein_similarity(left: Any = "", right: Any = "") -> float:
+    a = normalize_identity_name(left)
+    b = normalize_identity_name(right)
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+
+    distances = list(range(len(b) + 1))
+    for left_index, left_char in enumerate(a, start=1):
+        diagonal = distances[0]
+        distances[0] = left_index
+        for right_index, right_char in enumerate(b, start=1):
+            above = distances[right_index]
+            cost = 0 if left_char == right_char else 1
+            distances[right_index] = min(
+                distances[right_index] + 1,
+                distances[right_index - 1] + 1,
+                diagonal + cost,
+            )
+            diagonal = above
+    return max(0.0, 1 - distances[len(b)] / max(len(a), len(b)))
+
+
+def identity_name_tokens(value: Any = "") -> list[str]:
+    return [token for token in normalize_identity_name(value).split(" ") if token]
+
+
+def token_sorted_name(value: Any = "") -> str:
+    return " ".join(sorted(identity_name_tokens(value)))
+
+
+def token_overlap_similarity(left: Any = "", right: Any = "") -> float:
+    left_tokens = set(identity_name_tokens(left))
+    right_tokens = set(identity_name_tokens(right))
+    token_count = max(len(left_tokens), len(right_tokens))
+    if not token_count:
+        return 0.0
+    return len(left_tokens.intersection(right_tokens)) / token_count
+
+
+def last_name_token(value: Any = "") -> str:
+    tokens = identity_name_tokens(value)
+    return tokens[-1] if tokens else ""
+
+
+def build_person_name(record: dict[str, Any] | None = None) -> str:
+    record = record or {}
+    return re.sub(
+        r"\s+",
+        " ",
+        str(
+            record.get("fullName")
+            or " ".join(
+                str(record.get(key) or "").strip()
+                for key in ["fname", "mname", "lname"]
+                if str(record.get(key) or "").strip()
+            )
+        ),
+    ).strip()
+
+
+def is_similar_roster_name(roster_name: Any = "", submitted_name: Any = "") -> bool:
+    expected = normalize_identity_name(roster_name)
+    actual = normalize_identity_name(submitted_name)
+    if not expected or not actual:
+        return True
+    if expected == actual:
+        return True
+
+    same_last_name = bool(last_name_token(expected) and last_name_token(expected) == last_name_token(actual))
+    return bool(
+        levenshtein_similarity(expected, actual) >= 0.72
+        or levenshtein_similarity(token_sorted_name(expected), token_sorted_name(actual)) >= 0.72
+        or (same_last_name and token_overlap_similarity(expected, actual) >= 0.5)
+    )
+
+
+def get_row_data(row: dict[str, Any] | None = None) -> dict[str, Any]:
+    row = row or {}
+    data = row.get("data")
+    return data if isinstance(data, dict) else {}
+
+
+def is_archived_roster_row(data: dict[str, Any]) -> bool:
+    return bool(data.get("archived") is True or str(data.get("status") or "").strip().lower() == "archived")
+
+
+def find_roster_identity_conflicts(student_id: str, student: dict[str, Any]) -> dict[str, Any]:
+    submitted_name = build_person_name(student)
+    rows_by_key: dict[str, dict[str, Any]] = {}
+    checks = [
+        {"data->>studentId": student_id},
+        {"data->>studentnumber": student_id},
+        {"data->>studentNumber": student_id},
+    ]
+
+    for filters in checks:
+        result = supabase_select("grantor_portal_scholars", filters, limit=200)
+        if not result.get("ok"):
+            return {"ok": False, "reason": "roster_identity_check_failed", "result": result}
+        for row in result.get("rows") or []:
+            rows_by_key[f"{row.get('parent_id') or ''}:{row.get('id') or ''}"] = row
+
+    conflicts = []
+    for row in rows_by_key.values():
+        data = get_row_data(row)
+        if is_archived_roster_row(data):
+            continue
+        roster_student_id = normalize_student_id(
+            data.get("studentId") or data.get("studentnumber") or data.get("studentNumber")
+        )
+        if roster_student_id != student_id:
+            continue
+        roster_name = build_person_name(data)
+        if roster_name and not is_similar_roster_name(roster_name, submitted_name):
+            conflicts.append({
+                "studentId": student_id,
+                "rosterName": roster_name,
+                "submittedName": submitted_name,
+                "grantorId": data.get("grantorId") or row.get("parent_id") or "",
+                "grantorName": data.get("grantorName") or data.get("provider") or "",
+                "scholarshipName": data.get("scholarshipTitle") or data.get("scholarshipName") or "",
+            })
+
+    return {"ok": True, "conflicts": conflicts}
+
+
 def is_missing_or_unloaded_table(owner: dict[str, Any] | None, table: str = "") -> bool:
     if not owner or not owner.get("error"):
         return False
@@ -252,6 +389,22 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
                 "currentCycle": current_cycle,
                 "previousCycle": previous_cycle,
             }
+
+    roster_identity = find_roster_identity_conflicts(student_id, student)
+    if not roster_identity.get("ok"):
+        return {
+            "ok": False,
+            "reason": "roster_identity_check_failed",
+            "result": roster_identity,
+        }
+    if roster_identity.get("conflicts"):
+        return {
+            "ok": False,
+            "reason": "roster_student_name_mismatch",
+            "message": "This student number already exists in a scholarship roster, but the submitted name does not match the roster closely enough. Use the correct roster name, visit the Office of the Scholarship with proof, or submit a Help ticket once available.",
+            "studentId": student_id,
+            "conflicts": roster_identity.get("conflicts"),
+        }
 
     for table in ["students", "pending_students", "providers", "admins"]:
         existing = supabase_document_get(table, student_id)

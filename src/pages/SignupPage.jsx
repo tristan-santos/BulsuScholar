@@ -32,6 +32,7 @@ import {
 import { scanStudentDocument } from "../services/documentScanService"
 import { finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
 import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
+import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber } from "../utils/contactNumber"
 import { isPdf, convertPdfToImage } from "../utils/pdfConverter"
 import CustomSelect from "../components/CustomSelect"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
@@ -244,6 +245,8 @@ function getSignupWorkflowErrorMessage(error = {}) {
 		["cor_identity_cycle_already_used", "This student already has a COR/Advising Slip recorded for the current cycle."],
 		["cor_hash_check_failed", "The system could not verify whether this COR was already used. Please try again later."],
 		["cor_cycle_check_failed", "The system could not verify this COR cycle. Please try again later."],
+		["roster_student_name_mismatch", "This student number already exists in a scholarship roster, but the name you entered does not match the roster closely enough. Use the correct roster name, visit the Office of the Scholarship with proof, or submit a Help ticket once available."],
+		["roster_identity_check_failed", "The system could not verify your student number against scholarship rosters. Please try again later."],
 	]
 	const match = reasonMatchers.find(([reason]) => rawMessage.includes(reason))
 	return match?.[1] || rawMessage || "Failed to create account. Please try again."
@@ -412,12 +415,8 @@ export default function SignupPage() {
 
 	const normalizeStudentNumber = (value = "") => String(value).replace(/\D/g, "")
 	const normalizeEmail = (value = "") => String(value || "").trim().toLowerCase()
-	const normalizeCpNumber = (value = "") => {
-		const digits = String(value || "").replace(/\D/g, "")
-		if (/^9\d{9}$/.test(digits)) return `0${digits}`
-		return digits
-	}
-	const isValidCpNumber = useCallback((value = "") => /^09\d{9}$/.test(normalizeCpNumber(value)), [])
+	const normalizeCpNumber = normalizeContactNumber
+	const isValidCpNumber = useCallback((value = "") => isValidContactNumber(value), [])
 	const getFileSha256 = async (file) => {
 		if (!file) return ""
 		const buffer = await file.arrayBuffer()
@@ -501,6 +500,72 @@ export default function SignupPage() {
 		const maxLength = Math.max(a.length, b.length)
 		if (!maxLength) return 0
 		return Number((1 - getLevenshteinDistance(a, b) / maxLength).toFixed(4))
+	}
+
+	const buildSignupFullName = (record = {}) =>
+		normalizeSpace(
+			record.fullName ||
+				[record.fname, record.mname, record.lname]
+					.filter(Boolean)
+					.join(" "),
+		)
+
+	const getNameLastToken = (value = "") => {
+		const tokens = getNameTokens(value)
+		return tokens[tokens.length - 1] || ""
+	}
+
+	const isSimilarRosterName = (rosterName = "", submittedName = "") => {
+		const expected = normalizeIdentityText(rosterName)
+		const actual = normalizeIdentityText(submittedName)
+		if (!expected || !actual) return true
+		if (expected === actual) return true
+
+		const directSimilarity = getLevenshteinSimilarity(expected, actual)
+		const sortedSimilarity = getLevenshteinSimilarity(
+			getTokenSortedName(expected),
+			getTokenSortedName(actual),
+		)
+		const tokenOverlap = getTokenOverlapSimilarity(expected, actual)
+		const sameLastName = Boolean(
+			getNameLastToken(expected) &&
+				getNameLastToken(expected) === getNameLastToken(actual),
+		)
+
+		return (
+			directSimilarity >= 0.72 ||
+			sortedSimilarity >= 0.72 ||
+			(sameLastName && tokenOverlap >= 0.5)
+		)
+	}
+
+	const getRosterIdentityConflicts = (matches = [], studentDraft = {}) => {
+		const submittedStudentId = normalizeStudentNumber(
+			studentDraft.studentnumber || studentDraft.studentId || userId,
+		)
+		const submittedName = buildSignupFullName(studentDraft)
+		return matches
+			.filter((match) => {
+				const matchStudentId = normalizeStudentNumber(
+					match.studentId || match.studentnumber || match.studentNumber || "",
+				)
+				const rosterName = buildSignupFullName(match)
+				return Boolean(
+					submittedStudentId &&
+						matchStudentId === submittedStudentId &&
+						rosterName &&
+						!isSimilarRosterName(rosterName, submittedName),
+				)
+			})
+			.map((match) => ({
+				studentId:
+					match.studentId || match.studentnumber || match.studentNumber || "",
+				rosterName: buildSignupFullName(match),
+				submittedName,
+				grantorId: match.grantorId || "",
+				grantorName: match.grantorName || "",
+				scholarshipName: match.scholarshipName || match.scholarshipTitle || "",
+			}))
 	}
 
 	const buildScannedFullName = (extracted = {}) =>
@@ -1170,7 +1235,7 @@ export default function SignupPage() {
 
 		// Validate CP Number
 		if (!isValidCpNumber(cpNumber)) {
-			toast.error("CP Number must be 11 digits and start with 09")
+			toast.error(CONTACT_NUMBER_RULE_MESSAGE)
 			scrollToSection("section-personal")
 			return
 		}
@@ -1384,7 +1449,7 @@ export default function SignupPage() {
 
 		// Validate CP Number
 		if (!isValidCpNumber(cpNumber)) {
-			toast.error("CP Number must be 11 digits and start with 09")
+			toast.error(CONTACT_NUMBER_RULE_MESSAGE)
 			scrollToSection("section-personal")
 			return
 		}
@@ -1619,18 +1684,38 @@ export default function SignupPage() {
 					matchReason: match.matchReason || "",
 				})),
 			})
-			const matchedScholarships = buildGrantorMatchScholarships(
+			const rosterIdentityConflicts = getRosterIdentityConflicts(
 				matchedGrantors,
 				registrationDraft,
-				studentId,
-				semesterTag,
 			)
-			const hasMultipleMatchedGrantors = matchedScholarships.length >= 2
-			const hasRosterMatchedGrantor = matchedScholarships.length > 0
+			if (rosterIdentityConflicts.length > 0) {
+				console.warn("Signup blocked: roster student identity mismatch.", {
+					studentId,
+					submittedName: `${fname.trim()} ${mname.trim()} ${lname.trim()}`
+						.replace(/\s+/g, " ")
+						.trim(),
+					conflicts: rosterIdentityConflicts,
+				})
+				toast.error(
+					"This student number is already in a scholarship roster, but the name does not match closely enough. Use the correct roster name, visit the Office of the Scholarship with proof, or submit a Help ticket once available.",
+				)
+				scrollToSection("section-personal")
+				return
+			}
+			const hasMultipleMatchedGrantors = matchedGrantors.length >= 2
+			const matchedScholarships = hasMultipleMatchedGrantors
+				? buildGrantorMatchScholarships(
+						matchedGrantors,
+						registrationDraft,
+						studentId,
+						semesterTag,
+					)
+				: []
+			const hasRosterMatchedGrantor = matchedGrantors.length > 0
 			if (hasRosterMatchedGrantor) {
 				console.info("SignupPage: roster match found. Backend will create an auto-confirmed Supabase Auth user.", {
 					studentId,
-					matchCount: matchedScholarships.length,
+					matchCount: matchedGrantors.length,
 				})
 			} else {
 				console.log(
@@ -1734,9 +1819,9 @@ export default function SignupPage() {
 					? "Congratulations! Your account has been successfully created."
 					: "Your application has been submitted for review.",
 			)
-			if (matchedScholarships.length === 1) {
+			if (matchedGrantors.length === 1) {
 				toast.info(
-					`Matched grantor found: ${matchedScholarships[0].name}. Upload the required documents first before requesting materials.`,
+					`Matched grantor found: ${matchedGrantors[0].grantorName || matchedGrantors[0].providerLabel || "Grantor"}. Choose an available scholarship from this grantor in your scholarship page.`,
 				)
 			} else if (matchedScholarships.length >= 2) {
 				toast.info(
@@ -2389,7 +2474,7 @@ export default function SignupPage() {
 												id="signup-cp"
 												type="text"
 												className="login-input"
-												placeholder="09XXXXXXXXX"
+												placeholder="09XXXXXXXXX or 9XXXXXXXXX"
 												maxLength={11}
 												value={cpNumber}
 												onChange={(e) =>

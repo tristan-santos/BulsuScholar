@@ -26,17 +26,15 @@ export async function exportApplicationFormPdfDocument({
 	try {
 		const response = await fetch(APPLICATION_FORM_TEMPLATE_URL)
 		if (!response.ok) throw new Error(`template_load_failed_${response.status}`)
-
-		const pdfBytes = new Uint8Array(await response.arrayBuffer())
-
-		if (autoDownload) {
-			downloadApplicationFormPdfBytes(
-				pdfBytes,
-				`Application_Form_${safeText(studentId || student?.studentnumber, "student")}.pdf`,
-			)
-		}
-
-		return { pdfBytes, source: "template" }
+		const templatePdf = await PDFDocument.load(await response.arrayBuffer())
+		return exportGeneratedApplicationFormPdfDocument({
+			student,
+			studentId,
+			scholarship,
+			autoDownload,
+			basePdfDoc: templatePdf,
+			source: "template-with-autofill",
+		})
 	} catch (error) {
 		console.warn("Application form template could not be loaded. Using generated fallback.", error)
 		return exportGeneratedApplicationFormPdfDocument({
@@ -53,8 +51,10 @@ async function exportGeneratedApplicationFormPdfDocument({
 	studentId = "",
 	scholarship = {},
 	autoDownload = true,
+	basePdfDoc = null,
+	source = "generated",
 } = {}) {
-	const pdfDoc = await PDFDocument.create()
+	const pdfDoc = basePdfDoc || await PDFDocument.create()
 	const page = pdfDoc.addPage([612, 792])
 	const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
 	const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
@@ -73,7 +73,7 @@ async function exportGeneratedApplicationFormPdfDocument({
 	const email = safeText(student?.email)
 	const contact = safeText(student?.cpNumber || student?.contact || student?.mobile)
 
-	page.drawText("BulsuScholar Application Form", {
+	page.drawText("BulsuScholar Student Application Profile", {
 		x: 50,
 		y: 735,
 		size: 22,
@@ -130,7 +130,7 @@ async function exportGeneratedApplicationFormPdfDocument({
 	})
 
 	page.drawText(
-		"I confirm that the information reflected in this generated application form follows the current scholarship record stored in BulsuScholar. This document is issued upon approved student request.",
+		"I confirm that the information reflected in this generated Student Application Profile follows the current scholarship record stored in BulsuScholar. This document is issued upon approved student request.",
 		{
 			x: 50,
 			y: 336,
@@ -162,16 +162,42 @@ async function exportGeneratedApplicationFormPdfDocument({
 	if (autoDownload) {
 		downloadApplicationFormPdfBytes(
 			pdfBytes,
-			`Application_Form_${safeText(studentId || student?.studentnumber, "student")}.pdf`,
+			`Student_Application_Profile_${safeText(studentId || student?.studentnumber, "student")}.pdf`,
 		)
 	}
 
-	return { pdfBytes, source: "generated" }
+	return { pdfBytes, source }
+}
+
+export function getApplicationFormSource(scholarship = {}) {
+	const customForm = scholarship?.customApplicationForm || scholarship?.customApplicationProfile || null
+	return customForm?.url || customForm?.publicUrl
+		? { type: "grantor", label: "Grantor-specific application form", file: customForm }
+		: { type: "default", label: "Default Student Application Profile", file: null }
+}
+
+export async function downloadStudentApplicationProfile({ student = {}, studentId = "", scholarship = {}, useGrantorForm = true } = {}) {
+	const sourceInfo = useGrantorForm ? getApplicationFormSource(scholarship) : { type: "default", file: null }
+	const customProfile = sourceInfo.file
+	const customUrl = String(customProfile?.url || customProfile?.publicUrl || "").trim()
+	if (!customUrl) {
+		return exportApplicationFormPdfDocument({ student, studentId, scholarship })
+	}
+
+	const response = await fetch(customUrl)
+	if (!response.ok) throw new Error(`custom_application_profile_load_failed_${response.status}`)
+	const pdfBytes = new Uint8Array(await response.arrayBuffer())
+	const requestedName = String(customProfile?.name || "").trim()
+	const fileName = requestedName.toLowerCase().endsWith(".pdf")
+		? requestedName
+		: `${requestedName || "Student_Application_Profile"}.pdf`
+	downloadApplicationFormPdfBytes(pdfBytes, fileName)
+	return { pdfBytes, source: "grantor-custom", sourceLabel: "Grantor-specific application form" }
 }
 
 export function downloadApplicationFormPdfBytes(
 	pdfBytes,
-	fileName = "Application_Form.pdf",
+	fileName = "Student_Application_Profile.pdf",
 ) {
 	const blob = new Blob([pdfBytes], { type: "application/pdf" })
 	const link = document.createElement("a")

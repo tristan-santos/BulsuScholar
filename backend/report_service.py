@@ -107,8 +107,17 @@ def _student_report_filters(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _student_dataset_title(view: str) -> str:
+    if view == "archived":
+        return "Archived Students"
+    if view == "all":
+        return "All Students"
+    return "Students"
+
+
 def build_student_report(payload: dict[str, Any]) -> dict[str, Any]:
     filters = _student_report_filters(payload)
+    dataset_title = _student_dataset_title(filters["view"])
     payload_rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
     if payload_rows:
         students = [_flatten_student_row(row) for row in payload_rows if isinstance(row, dict)]
@@ -136,7 +145,8 @@ def build_student_report(payload: dict[str, Any]) -> dict[str, Any]:
     filter_label = f"View: {filters['view']} | Search: {filters['search'] or '-'} | Course: {filters['course']} | Year: {filters['year']}"
     return {
         "key": "students",
-        "title": "Student Management Report",
+        "title": f"Student Management Report - {dataset_title}",
+        "datasetTitle": dataset_title,
         "description": "Backend-generated student records using the current management filters.",
         "filterLabel": filter_label,
         "columns": STUDENT_REPORT_HEADERS,
@@ -151,9 +161,10 @@ def build_student_report(payload: dict[str, Any]) -> dict[str, Any]:
 
 def build_student_report_pdf_bytes(payload: dict[str, Any]) -> tuple[bytes, str]:
     report = build_student_report(payload)
-    report["subtitle"] = "Student Management"
+    report["subtitle"] = report["datasetTitle"]
     report["headers"] = report["columns"]
-    filename = f"student-management-{datetime.now().strftime('%Y%m%d-%H%M%S')}.pdf"
+    dataset_slug = report["datasetTitle"].lower().replace(" ", "-")
+    filename = f"student-management-{dataset_slug}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.pdf"
     return build_report_pdf_bytes(report), filename
 
 
@@ -168,7 +179,7 @@ def build_student_report_excel_bytes(payload: dict[str, Any]) -> tuple[bytes, st
     report = build_student_report(payload)
     workbook = Workbook()
     sheet = workbook.active
-    sheet.title = "Students"
+    sheet.title = report["datasetTitle"][:31]
     sheet.append([report["title"]])
     sheet.append([report["filterLabel"]])
     sheet.append([])
@@ -195,7 +206,8 @@ def build_student_report_excel_bytes(payload: dict[str, Any]) -> tuple[bytes, st
 
     output = io.BytesIO()
     workbook.save(output)
-    filename = f"student-management-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx"
+    dataset_slug = report["datasetTitle"].lower().replace(" ", "-")
+    filename = f"student-management-{dataset_slug}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx"
     return output.getvalue(), filename
 
 
@@ -205,6 +217,54 @@ def build_csv_bytes(headers: list[str], rows: list[list[Any]]) -> bytes:
     writer.writerow(headers)
     writer.writerows(rows)
     return buffer.getvalue().encode("utf-8")
+
+
+def build_excel_bytes(payload: dict[str, Any]) -> bytes:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+    except ImportError as error:  # pragma: no cover - dependency guard
+        raise RuntimeError("openpyxl is required for Excel report generation.") from error
+
+    headers = payload.get("headers") or payload.get("columns") or []
+    normalized_headers = [item.get("label") if isinstance(item, dict) else item for item in headers]
+    rows = payload.get("rows") or []
+    title = _text(payload.get("title"), "BulsuScholar Report")
+    filter_label = _text(payload.get("filterLabel"), "")
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Report"
+    sheet.append([title])
+    sheet.append([filter_label])
+    sheet.append([])
+    sheet.append(normalized_headers)
+    for row in rows:
+        sheet.append(list(row) if isinstance(row, (list, tuple)) else [row])
+
+    last_column = max(1, len(normalized_headers))
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_column)
+    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_column)
+    sheet["A1"].font = Font(size=16, bold=True, color="00633C")
+    sheet["A2"].font = Font(size=10, color="526176")
+    for cell in sheet[4]:
+        cell.fill = PatternFill("solid", fgColor="00633C")
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    sheet.freeze_panes = "A5"
+    if normalized_headers:
+        sheet.auto_filter.ref = f"A4:{get_column_letter(last_column)}{max(4, sheet.max_row)}"
+    for column_index, column_cells in enumerate(sheet.columns, start=1):
+        width = min(42, max(12, max(len(str(cell.value or "")) for cell in column_cells) + 2))
+        sheet.column_dimensions[get_column_letter(column_index)].width = width
+    for row in sheet.iter_rows(min_row=5):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
 
 
 def _report_column_widths(headers: list[str], available_width: float) -> list[float]:
@@ -264,7 +324,12 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
         styles[style_name].fontSize = 10
         styles[style_name].leading = 12
     styles["Title"].fontName = font_bold
+    styles["Title"].fontSize = 16
+    styles["Title"].leading = 19
+    styles["Title"].spaceAfter = 5
     styles["Heading2"].fontName = font_bold
+    styles["Heading2"].fontSize = 11
+    styles["Heading2"].leading = 14
     styles.add(styles["BodyText"].clone("ReportTableHeader"))
     styles.add(styles["BodyText"].clone("ReportTableCell"))
     styles["ReportTableHeader"].fontName = font_bold
@@ -275,16 +340,17 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
     styles["ReportTableCell"].fontSize = 10
     styles["ReportTableCell"].leading = 12
     styles["ReportTableCell"].wordWrap = "CJK"
-    story = [
-        Paragraph("BulsuScholar", styles["Title"]),
-        Paragraph(payload.get("title") or "Report", styles["Heading2"]),
-        Paragraph(payload.get("subtitle") or "", styles["BodyText"]),
-        Spacer(1, 10),
-        Paragraph(f"Generated: {datetime.now().strftime('%b %d, %Y %I:%M %p')}", styles["BodyText"]),
-    ]
-    if payload.get("filterLabel"):
-        story.append(Paragraph(f"Filters: {payload['filterLabel']}", styles["BodyText"]))
-    story.append(Spacer(1, 12))
+    def append_report_heading() -> None:
+        story.append(Paragraph(payload.get("title") or "Report", styles["Title"]))
+        if payload.get("subtitle"):
+            story.append(Paragraph(payload.get("subtitle"), styles["Heading2"]))
+        story.append(Paragraph(f"Generated: {datetime.now().strftime('%b %d, %Y %I:%M %p')}", styles["BodyText"]))
+        if payload.get("filterLabel"):
+            story.append(Paragraph(f"Filters: {payload['filterLabel']}", styles["BodyText"]))
+        story.append(Spacer(1, 12))
+
+    story = []
+    append_report_heading()
 
     def normalize_headers(raw_headers: list[Any]) -> list[str]:
         return [
@@ -325,11 +391,7 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
         for group_index, group in enumerate(grouped_pages):
             if group_index > 0:
                 story.append(PageBreak())
-                story.append(Paragraph("BulsuScholar", styles["Title"]))
-                story.append(Paragraph(payload.get("title") or "Report", styles["Heading2"]))
-                if payload.get("filterLabel"):
-                    story.append(Paragraph(f"Filters: {payload['filterLabel']}", styles["BodyText"]))
-                story.append(Spacer(1, 12))
+                append_report_heading()
             story.append(Paragraph(_text(group.get("title") or f"Grantor {group_index + 1}"), styles["Heading2"]))
             if group.get("subtitle"):
                 story.append(Paragraph(_text(group.get("subtitle")), styles["BodyText"]))
@@ -348,9 +410,9 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
         canvas.saveState()
         canvas.setFillColor(colors.white)
         canvas.setStrokeColor(colors.white)
-        canvas.rect(0, 175, page_width, page_height - 370, fill=1, stroke=0)
-        canvas.rect(66, 820, 320, 30, fill=1, stroke=0)
-        canvas.rect(66, 208, 420, 30, fill=1, stroke=0)
+        # Clear only the template's editable body and marker text. The official
+        # university artwork above and footer artwork below remain untouched.
+        canvas.rect(0, 145, page_width, page_height - margin_top - 145, fill=1, stroke=0)
         canvas.restoreState()
 
     doc.build(story, onFirstPage=draw_template_marker_masks, onLaterPages=draw_template_marker_masks)
@@ -361,7 +423,7 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
     overlay_reader = PdfReader(overlay_buffer)
     writer = PdfWriter()
     for overlay_page in overlay_reader.pages:
-        page = template_page.clone(writer)
+        page = PdfReader(str(template_path)).pages[0]
         page.merge_page(overlay_page)
         writer.add_page(page)
 

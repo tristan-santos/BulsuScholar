@@ -14,7 +14,9 @@ import {
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import "../css/StudentDashboard.css"
+import "../css/StudentPortalRefresh.css"
 import useThemeMode from "../hooks/useThemeMode"
+import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import StudentTopbar from "../components/StudentTopbar"
 import {
 	isPreviousStudentAnnouncement,
@@ -56,6 +58,7 @@ function buildAnnouncementImageList(item = {}) {
 }
 
 export default function StudentAnnouncementsPage() {
+	const archivedGrantorIds = useArchivedGrantorIds()
 	const navigate = useNavigate()
 	const [sessionState] = useState(() => {
 		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
@@ -115,7 +118,10 @@ export default function StudentAnnouncementsPage() {
 		let grantorRows = []
 
 		const updateAnnouncements = () => {
-			setAnnouncements(sortStudentAnnouncements([...adminRows, ...grantorRows]))
+			setAnnouncements(
+				sortStudentAnnouncements([...adminRows, ...grantorRows])
+					.filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds)),
+			)
 		}
 
 		const unsubscribeAdminAnnouncements = onSnapshot(
@@ -135,9 +141,13 @@ export default function StudentAnnouncementsPage() {
 		const unsubscribeGrantorAnnouncements = onSnapshot(
 			collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements),
 			(snap) => {
-				grantorRows = snap.docs.map((item) =>
-					normalizeStudentAnnouncement(item.data() || {}, item.id, "grantor"),
-				)
+				grantorRows = snap.docs.map((item) => {
+					const raw = item.data() || {}
+					return normalizeStudentAnnouncement({
+						...raw,
+						grantorId: raw.grantorId || item.ref?.parent?.parent?.id || "",
+					}, item.id, "grantor")
+				})
 				updateAnnouncements()
 			},
 			() => {
@@ -150,7 +160,7 @@ export default function StudentAnnouncementsPage() {
 			unsubscribeAdminAnnouncements()
 			unsubscribeGrantorAnnouncements()
 		}
-	}, [])
+	}, [archivedGrantorIds])
 
 	const studentAccessState = useMemo(() => getStudentAccessState(user || {}), [user])
 	const hasBlockedScholarshipBanner =
@@ -269,7 +279,7 @@ export default function StudentAnnouncementsPage() {
 
 	if (!userLoaded) {
 		return (
-			<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+			<div className={`student-portal student-dashboard student-portal-view student-portal-view--announcements ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 				<main className="student-shell">
 					<div className="student-shell-content student-dashboard-surface">
 						<div className="student-loading-panel">
@@ -282,7 +292,7 @@ export default function StudentAnnouncementsPage() {
 	}
 
 	return (
-		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+		<div className={`student-portal student-dashboard student-portal-view student-portal-view--announcements ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 
 			<main className="student-shell">

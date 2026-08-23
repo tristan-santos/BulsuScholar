@@ -60,7 +60,7 @@ function buildKwspSteps(appliedViaAnnouncement = false) {
 		{ id: "account", label: "Creation of Account", owner: "system" },
 		{ id: "kwsp_apply", label: "Application for KWSP", owner: "student" },
 		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
-		{ id: "application_form", label: "Application Form", owner: "student" },
+		{ id: "application_form", label: "Student Application Profile", owner: "student" },
 		{ id: "document_review", label: "Document Review", owner: "admin" },
 		{ id: "admin_review", label: "Admin Review", owner: "admin" },
 		{ id: "interview", label: "Interview", owner: "admin" },
@@ -77,7 +77,7 @@ function buildStandardSteps(scholarshipName = "Scholarship", appliedViaAnnouncem
 		{ id: "account", label: "Creation of Account", owner: "system" },
 		{ id: "scholarship_apply", label: `Application for ${scholarshipName}`, owner: "student" },
 		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
-		{ id: "application_form", label: "Application Form", owner: "student" },
+		{ id: "application_form", label: "Student Application Profile", owner: "student" },
 		{ id: "document_review", label: "Document Review", owner: "admin" },
 		{ id: "request_materials", label: "Requesting of Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
@@ -132,19 +132,19 @@ function buildTrackingDetail(stepId, context) {
 			return `Application recorded for ${scholarshipName} under ${semesterTag || "the current semester"}.`
 		case "document_uploading":
 			if (state === "complete") {
-				return "COR and COG are complete. The student can now proceed to the application form stage."
+				return "COR and ROG are complete. The student can now proceed to the Student Application Profile stage."
 			}
-			if (documentCheck?.ok) return "COR and COG are uploaded and ready for admin confirmation."
+			if (documentCheck?.ok) return "COR and ROG are uploaded and ready for admin confirmation."
 			return missingCopy
 				? `Student still needs to comply with: ${missingCopy}.`
-				: "Student still needs to upload the required COR and COG."
+				: "Student still needs to upload the required COR and ROG."
 		case "application_form":
 			return state === "complete"
 				? "Application form has been uploaded and is ready for review."
-				: "Student must complete and upload the application form before review continues."
+				: "Student must complete and upload the Student Application Profile before review continues."
 		case "document_review":
 			return state === "complete"
-				? "Submitted COR, COG, Student ID, and application form were reviewed."
+				? "Submitted COR, ROG, Student ID, and Student Application Profile were reviewed."
 				: "Admin and the assigned grantor must review the submitted documents before the application can move forward."
 		case "admin_review":
 			return state === "complete"
@@ -177,7 +177,7 @@ function buildTrackingDetail(stepId, context) {
 			if (hasPendingMaterialApproval) return "Requested materials are still pending admin approval."
 			return "Materials will become available for download after approval."
 		case "signing_materials":
-			if (signingAttention) return "Downloaded SOE was marked non-compliant and needs follow-up."
+			if (signingAttention) return "Downloaded SOE was rejected. Download a new SOE and submit it again for signing."
 			if (signingComplete) return "Downloaded SOE already completed the checking and signing stage."
 			if (hasDownloadedMaterials) return "Downloaded SOE is waiting for scholarship office checking and signing."
 			return "Signing starts after the student downloads the approved SOE."
@@ -354,6 +354,43 @@ export function getScholarshipTrackingProgress({
 		}
 	}
 
+	const terminalStatus = String(
+		scholarship.status || scholarship.applicationStatus || scholarship.reviewStatus || "",
+	).toLowerCase()
+	const terminalLabel = scholarship.frozen === true || terminalStatus.includes("frozen")
+		? "Frozen"
+		: scholarship.archived === true || terminalStatus.includes("archived")
+			? "Archived"
+			: scholarship.rejected === true || terminalStatus.includes("rejected")
+				? "Rejected"
+				: ""
+	if (terminalLabel) {
+		const providerType = normalizeProviderType(scholarship.providerType || scholarship.provider || scholarship.name)
+		const scholarshipName = scholarship.name || scholarship.provider || "Scholarship"
+		const tracking = normalizeScholarshipTrackingState(scholarship.tracking, { providerType, scholarshipName })
+		return {
+			isKwspFlow: providerType === "kuya_win",
+			scholarshipName,
+			tracking,
+			steps: getScholarshipTrackingSteps(providerType, scholarshipName).map((step) => ({ ...step, state: "blocked" })),
+			currentStep: null,
+			highlightedStepId: "",
+			currentStepLabel: terminalLabel,
+			currentStepOwnerLabel: "Office",
+			hasRequestedMaterials: false,
+			hasApprovedMaterials: false,
+			hasPendingMaterialApproval: false,
+			hasDownloadedMaterials: false,
+			signingComplete: false,
+			signingAttention: false,
+			payoutComplete: false,
+			canAdminCompleteCurrentStep: false,
+			adminCompletionReason: `This application is ${terminalLabel.toLowerCase()} and cannot progress.`,
+			canRequestMaterials: false,
+			terminalState: terminalLabel.toLowerCase(),
+		}
+	}
+
 	const providerType = normalizeProviderType(scholarship.providerType || scholarship.provider || scholarship.name)
 	const scholarshipName = scholarship.name || scholarship.provider || "Scholarship"
 	const isKwspFlow = providerType === "kuya_win"
@@ -499,7 +536,7 @@ export function getScholarshipTrackingProgress({
 			currentStep.owner === "student"
 				? "This step must be completed by the student."
 				: currentStep.id === "signing_materials" && signingAttention
-					? "Resolve the non-compliant SOE first in Materials Checking."
+					? "Student must download a new SOE before signing can continue."
 					: "This step depends on student downloads or materials checking."
 	} else if (currentStep.id === "document_uploading" && documentCheck?.ok !== true) {
 		adminCompletionReason = "Student must complete the required document uploads first."
@@ -544,7 +581,7 @@ export function getScholarshipTrackingStatusLabel(progress = null) {
 	if (progress.hasPendingMaterialApproval) return "Pending Material Approval"
 	if (progress.hasRequestedMaterials) return "Materials Requested"
 	if (progress.currentStep?.id === "document_uploading") return "Uploading of Document"
-	if (progress.currentStep?.id === "application_form") return "Application Form"
+	if (progress.currentStep?.id === "application_form") return "Student Application Profile"
 	if (progress.currentStep?.id === "document_review") return "Document Review"
 	if (progress.currentStep?.id === "admin_review") return "Admin Review"
 	if (progress.currentStep?.id === "interview") return "Interview"

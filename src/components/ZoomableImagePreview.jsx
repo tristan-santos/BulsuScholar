@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import "../css/ZoomableImagePreview.css"
 
 const MIN_ZOOM = 1
@@ -19,6 +19,7 @@ export default function ZoomableImagePreview({
 	const [zoom, setZoom] = useState(1)
 	const [pan, setPan] = useState({ x: 0, y: 0 })
 	const [isDragging, setIsDragging] = useState(false)
+	const stageRef = useRef(null)
 	const dragRef = useRef(null)
 	const zoomDisplay = Math.round((zoom - 1) * 100)
 
@@ -35,11 +36,23 @@ export default function ZoomableImagePreview({
 		if (next <= 1) setPan({ x: 0, y: 0 })
 	}
 
-	const handleWheel = (event) => {
-		event.preventDefault()
-		event.stopPropagation()
-		updateZoom(event.deltaY < 0 ? 0.12 : -0.12)
-	}
+	useEffect(() => {
+		const stage = stageRef.current
+		if (!stage) return undefined
+
+		const handleNativeWheel = (event) => {
+			event.preventDefault()
+			event.stopPropagation()
+			setZoom((currentZoom) => {
+				const next = clampZoom(currentZoom + (event.deltaY < 0 ? 0.12 : -0.12))
+				if (next <= 1) setPan({ x: 0, y: 0 })
+				return next
+			})
+		}
+
+		stage.addEventListener("wheel", handleNativeWheel, { passive: false })
+		return () => stage.removeEventListener("wheel", handleNativeWheel)
+	}, [])
 
 	const handlePointerDown = (event) => {
 		if (!src || zoom <= 1) return
@@ -86,8 +99,8 @@ export default function ZoomableImagePreview({
 				<button type="button" onClick={resetZoom}>Reset</button>
 			</div>
 			<div
+				ref={stageRef}
 				className={`zoomable-preview__stage ${stageClassName} ${isDragging ? "is-dragging" : ""}`.trim()}
-				onWheel={handleWheel}
 				onPointerDown={handlePointerDown}
 				onPointerMove={handlePointerMove}
 				onPointerUp={stopDragging}

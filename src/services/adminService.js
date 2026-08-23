@@ -302,11 +302,11 @@ export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", l
 	})
 }
 
-export async function exportSoeRequestsReportPdf(rows = [], filterLabel = "", logoUrl = "") {
+export async function exportSoeRequestsReportPdf(rows = [], filterLabel = "", logoUrl = "", options = {}) {
 	await exportTemplateReportPdf({
-		filename: `materials-request-report-${Date.now()}.pdf`,
-		title: "Materials Request Report",
-		subtitle: "Request lifecycle, download readiness, and review state exported in the required formatted layout.",
+		filename: options.filename || `materials-request-report-${Date.now()}.pdf`,
+		title: options.title || "Requirements Report - All Requests",
+		subtitle: options.subtitle || "Request lifecycle, download readiness, and review state exported in the required formatted layout.",
 		filterLabel,
 		stats: buildSoeReportStats(rows),
 		logoUrl,
@@ -331,11 +331,11 @@ export async function exportSoeRequestsReportPdf(rows = [], filterLabel = "", lo
 	})
 }
 
-export async function exportComplianceReportPdf(rows = [], filterLabel = "", logoUrl = "") {
+export async function exportComplianceReportPdf(rows = [], filterLabel = "", logoUrl = "", options = {}) {
 	await exportTemplateReportPdf({
-		filename: `compliance-report-${Date.now()}.pdf`,
-		title: "Compliance Monitoring Report",
-		subtitle: "Violation counts and current compliance standing prepared on top of the provided formatted report template.",
+		filename: options.filename || `compliance-report-${Date.now()}.pdf`,
+		title: options.title || "Compliance Monitoring Report",
+		subtitle: options.subtitle || "Violation counts and current compliance standing prepared on top of the provided formatted report template.",
 		filterLabel,
 		stats: buildComplianceReportStats(rows),
 		logoUrl,
@@ -390,6 +390,25 @@ export async function downloadCsvReport(filename, headers = [], rows = []) {
 	link.click()
 	document.body.removeChild(link)
 	URL.revokeObjectURL(url)
+}
+
+export async function downloadExcelReport(filename, title, filterLabel = "", headers = [], rows = []) {
+	const normalizedFilename = String(filename || `report-${Date.now()}.xlsx`).replace(/\.csv$/i, ".xlsx")
+	const response = await fetch(`${BACKEND_API_URL}/reports/excel`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			filename: normalizedFilename,
+			title: title || "BulsuScholar Report",
+			filterLabel,
+			headers,
+			rows,
+		}),
+	})
+	if (!response.ok) throw new Error(await readBackendError(response))
+	const disposition = response.headers.get("content-disposition") || ""
+	const serverFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+	downloadBackendFile(await response.blob(), serverFilename || normalizedFilename)
 }
 
 function escapeCsvValue(value) {

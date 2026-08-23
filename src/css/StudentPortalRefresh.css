@@ -1,0 +1,937 @@
+/* Final student-portal visual layer. Keep this file loaded after legacy page styles. */
+.student-portal-view {
+	--student-primary: #00633c;
+	--student-primary-strong: #004f30;
+	--student-primary-soft: #edf8f2;
+	--student-primary-faint: rgba(0, 99, 60, 0.08);
+	--student-line: rgba(0, 99, 60, 0.18);
+	--student-line-strong: rgba(0, 99, 60, 0.3);
+	--student-ink: #12271f;
+	--student-muted: #5e7169;
+	--student-canvas: #f7faf8;
+	--student-surface: #ffffff;
+	--student-surface-raised: #ffffff;
+	--student-shadow: 0 12px 30px rgba(0, 79, 48, 0.07);
+	min-height: 100dvh;
+	background: var(--student-canvas);
+	color: var(--student-ink);
+	font-family: Inter, "Segoe UI", Arial, sans-serif;
+	overflow-x: clip;
+}
+
+.student-portal-view *,
+.student-portal-view *::before,
+.student-portal-view *::after {
+	box-sizing: border-box;
+}
+
+.student-portal-view :where(h1, h2, h3, h4, p) {
+	margin-top: 0;
+}
+
+.student-portal-view :where(h1, h2, h3, h4, strong, button) {
+	letter-spacing: 0;
+}
+
+.student-portal-view :where(button, a, input, select, textarea) {
+	font: inherit;
+}
+
+.student-portal-view :where(button, a, input, select, textarea):focus-visible {
+	outline: 3px solid rgba(0, 99, 60, 0.2);
+	outline-offset: 2px;
+}
+
+.student-portal-view :where(button, a) {
+	transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease,
+		color 160ms ease, box-shadow 160ms ease;
+}
+
+.student-portal-view :where(button, a):not(:disabled):active {
+	transform: translateY(1px);
+}
+
+.student-portal-view :where(button):disabled {
+	cursor: not-allowed;
+	opacity: 0.58;
+}
+
+.student-portal-view .student-shell,
+.student-portal-view .student-dashboard-content,
+.student-portal-view .student-announcement-detail,
+.student-portal-view .student-recommendation-page,
+.student-portal-view--leave .portal-support-main {
+	width: min(100%, 1280px);
+	margin-inline: auto;
+	padding: 28px clamp(18px, 3vw, 40px) 48px;
+}
+
+.student-portal-view :where(
+	.student-inbox-panel,
+	.student-profile-section-card,
+	.student-vault-card,
+	.student-announcement-page-card,
+	.student-announcement-insights,
+	.student-announcement-detail-hero,
+	.student-announcement-detail-panel,
+	.student-announcement-summary-card,
+	.student-recommendation-page-card,
+	.leave-action-grid > article,
+	.leave-history
+) {
+	border: 1px solid var(--student-line);
+	border-radius: 8px;
+	background: var(--student-surface);
+	box-shadow: var(--student-shadow);
+}
+
+/* Inbox */
+.student-portal-view--inbox .student-inbox-panel {
+	overflow: hidden;
+}
+
+.student-portal-view--inbox .student-inbox-head {
+	min-height: 76px;
+	padding: 20px 24px;
+	border-bottom: 1px solid var(--student-line);
+	background: var(--student-surface);
+}
+
+.student-portal-view--inbox .student-inbox-head h1,
+.student-portal-view--inbox .student-inbox-head h2 {
+	margin: 0;
+	font-size: 1.45rem;
+	font-weight: 700;
+}
+
+.student-portal-view--inbox .student-inbox-group {
+	border-bottom: 1px solid var(--student-line);
+}
+
+.student-portal-view--inbox .student-inbox-group:last-child {
+	border-bottom: 0;
+}
+
+.student-portal-view--inbox .student-inbox-group > header {
+	padding: 14px 22px;
+	background: var(--student-primary-faint);
+	color: var(--student-primary-strong);
+}
+
+.student-portal-view--inbox .student-inbox-item {
+	position: relative;
+	min-height: 82px;
+	padding: 16px 22px;
+	border-bottom: 1px solid var(--student-line);
+	background: var(--student-surface);
+}
+
+.student-portal-view--inbox .student-inbox-item:last-child {
+	border-bottom: 0;
+}
+
+.student-portal-view--inbox .student-inbox-item:hover {
+	background: var(--student-primary-faint);
+}
+
+.student-portal-view--inbox .student-inbox-item.is-unread,
+.student-portal-view--inbox .student-inbox-item.unread {
+	box-shadow: inset 4px 0 0 var(--student-primary);
+}
+
+.student-portal-view--inbox :where(.student-inbox-detail-backdrop, .student-photo-lightbox) {
+	z-index: 12000;
+}
+
+.student-portal-view--inbox .student-inbox-detail-modal {
+	width: min(760px, calc(100vw - 32px));
+	max-height: calc(100dvh - 32px);
+	margin: auto;
+	overflow: auto;
+	overscroll-behavior: contain;
+	border: 1px solid var(--student-line-strong);
+	border-radius: 8px;
+	background: var(--student-surface-raised);
+	box-shadow: 0 28px 70px rgba(8, 27, 20, 0.28);
+}
+
+.student-portal-view--inbox .student-inbox-detail-head {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	padding: 20px 22px;
+	border-bottom: 1px solid var(--student-line);
+	background: var(--student-surface-raised);
+}
+
+.student-portal-view--inbox .student-inbox-detail-meta,
+.student-portal-view--inbox .student-inbox-detail-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+	padding: 18px 22px 0;
+}
+
+.student-portal-view--inbox :where(.student-inbox-detail-meta > *, .student-inbox-detail-grid > *) {
+	min-width: 0;
+	padding: 14px;
+	border: 1px solid var(--student-line);
+	border-radius: 6px;
+	background: var(--student-canvas);
+}
+
+.student-portal-view--inbox .student-inbox-detail-message {
+	margin: 18px 22px 0;
+	padding: 18px;
+	border-left: 4px solid var(--student-primary);
+	border-radius: 0 6px 6px 0;
+	background: var(--student-primary-soft);
+	line-height: 1.7;
+}
+
+.student-portal-view--inbox .student-inbox-detail-actions {
+	position: sticky;
+	bottom: 0;
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	padding: 18px 22px;
+	border-top: 1px solid var(--student-line);
+	background: var(--student-surface-raised);
+}
+
+/* Profile */
+.student-portal-view--profile .student-profile-modern-wrap {
+	display: grid;
+	grid-template-columns: 280px minmax(0, 1fr);
+	align-items: start;
+	gap: 0;
+	overflow: visible;
+}
+
+.student-portal-view--profile .student-profile-cover {
+	position: sticky;
+	top: 86px;
+	display: block;
+	align-self: start;
+	min-height: 0;
+	height: auto;
+	padding: 0;
+	border: 0;
+	border-right: 1px solid var(--student-line);
+	border-radius: 0;
+	background: var(--student-surface);
+	box-shadow: none;
+}
+
+.student-portal-view--profile .student-profile-cover::before,
+.student-portal-view--profile .student-profile-cover::after {
+	display: none;
+}
+
+.student-portal-view--profile .student-profile-cover h1,
+.student-portal-view--profile .student-profile-cover h2 {
+	font-weight: 700;
+}
+
+.student-portal-view--profile .student-profile-section-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 18px;
+}
+
+.student-portal-view--profile .student-profile-section-card {
+	padding: clamp(18px, 3vw, 26px);
+}
+
+.student-portal-view--profile .student-profile-section-card > header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 20px;
+	padding-bottom: 14px;
+	border-bottom: 1px solid var(--student-line);
+}
+
+.student-portal-view--profile .student-profile-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 18px 22px;
+}
+
+.student-portal-view--profile :where(input, select, textarea) {
+	width: 100%;
+	min-height: 44px;
+	border: 1px solid var(--student-line-strong);
+	border-radius: 6px;
+	background: var(--student-surface);
+	color: var(--student-ink);
+}
+
+.student-portal-view--profile .student-vault-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 14px;
+}
+
+.student-portal-view--profile .student-vault-card {
+	display: flex;
+	flex-direction: column;
+	min-height: 154px;
+	padding: 18px;
+}
+
+.student-portal-view--profile .student-vault-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: auto;
+	padding-top: 16px;
+}
+
+.student-portal-view--profile :where(.student-vault-link, .student-vault-upload-btn) {
+	width: auto;
+	min-height: 34px;
+	padding: 0 11px;
+	border-radius: 4px;
+	font-size: 0.74rem;
+	font-weight: 600;
+}
+
+.student-portal-view--profile :where(.student-document-preview-backdrop, .student-photo-lightbox) {
+	z-index: 12000;
+}
+
+.student-portal-view--profile .student-document-preview-modal {
+	width: min(1040px, calc(100vw - 32px));
+	max-height: calc(100dvh - 32px);
+	margin: auto;
+	overflow: auto;
+	border-radius: 8px;
+}
+
+/* Announcements */
+.student-portal-view--announcements .student-announcement-page-actions,
+.student-portal-view--announcement-detail .student-announcement-detail-nav {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 20px;
+}
+
+.student-portal-view--announcements .student-announcement-insights {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	overflow: hidden;
+}
+
+.student-portal-view--announcements .student-announcement-insights > * {
+	min-width: 0;
+	padding: 18px 20px;
+	border-right: 1px solid var(--student-line);
+}
+
+.student-portal-view--announcements .student-announcement-insights > *:last-child {
+	border-right: 0;
+}
+
+.student-portal-view--announcements .student-announcement-tools {
+	display: grid;
+	grid-template-columns: minmax(260px, 1fr) auto;
+	align-items: end;
+	gap: 16px;
+	margin: 22px 0;
+}
+
+.student-portal-view--announcements .student-announcement-search {
+	min-width: 0;
+}
+
+.student-portal-view--announcements .student-announcement-filter-pills {
+	display: flex;
+	gap: 6px;
+	padding: 4px;
+	border: 1px solid var(--student-line);
+	border-radius: 6px;
+	background: var(--student-surface);
+}
+
+.student-portal-view--announcements .student-announcement-page-section {
+	padding-top: 24px;
+	border-top: 1px solid var(--student-line);
+}
+
+.student-portal-view--announcements .student-announcement-page-section-head {
+	display: flex;
+	align-items: end;
+	justify-content: space-between;
+	gap: 16px;
+	margin-bottom: 18px;
+}
+
+.student-portal-view--announcements .student-announcement-page-grid,
+.student-portal-view--announcement-detail .student-announcement-related-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 18px;
+}
+
+.student-portal-view--announcements .student-announcement-page-card {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.student-portal-view--announcements .student-announcement-page-card img {
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	object-fit: cover;
+}
+
+.student-portal-view--announcements .student-announcement-page-card :where(h2, h3) {
+	font-size: 1.06rem;
+	line-height: 1.35;
+}
+
+/* Announcement details */
+.student-portal-view--announcement-detail .student-announcement-detail {
+	display: grid;
+	gap: 20px;
+}
+
+.student-portal-view--announcement-detail .student-announcement-detail-strip {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding-bottom: 14px;
+	border-bottom: 1px solid var(--student-line);
+}
+
+.student-portal-view--announcement-detail .student-announcement-detail-hero {
+	overflow: hidden;
+	padding: 0;
+}
+
+.student-portal-view--announcement-detail .student-announcement-detail-media {
+	background: var(--student-surface);
+}
+
+.student-portal-view--announcement-detail .student-announcement-detail-media img {
+	width: 100%;
+	max-height: 520px;
+	object-fit: contain;
+}
+
+.student-portal-view--announcement-detail .student-announcement-detail-copy {
+	padding: clamp(20px, 4vw, 36px);
+}
+
+.student-portal-view--announcement-detail .student-announcement-summary-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 14px;
+}
+
+.student-portal-view--announcement-detail .student-announcement-summary-card,
+.student-portal-view--announcement-detail .student-announcement-detail-panel {
+	padding: 18px;
+}
+
+.student-portal-view--announcement-detail .student-document-preview-backdrop {
+	z-index: 12000;
+}
+
+.student-portal-view--announcement-detail .student-announcement-image-lightbox {
+	width: min(1120px, calc(100vw - 32px));
+	max-height: calc(100dvh - 32px);
+	margin: auto;
+	overflow: auto;
+	border-radius: 8px;
+}
+
+/* Scholarships keep their established control-center layout. */
+.student-portal-view--scholarships :where(
+	.student-soe-modal-backdrop,
+	.student-soe-preview-backdrop,
+	.student-document-preview-backdrop
+) {
+	z-index: 12000;
+	display: grid;
+	place-items: center;
+	padding: 16px;
+}
+
+.student-portal-view--scholarships :where(
+	.student-soe-modal,
+	.student-soe-expense-modal,
+	.student-soe-preview-modal,
+	.student-document-preview-modal
+) {
+	position: relative;
+	inset: auto;
+	width: min(920px, 100%);
+	max-height: calc(100dvh - 32px);
+	margin: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
+	border: 1px solid var(--student-line-strong);
+	border-radius: 8px;
+	background: var(--student-surface-raised);
+	box-shadow: 0 28px 70px rgba(8, 27, 20, 0.3);
+}
+
+.student-portal-view--recommendations .student-recommendation-page-nav-row {
+	display: flex;
+	justify-content: flex-start;
+	margin-bottom: 18px;
+}
+
+.student-portal-view--recommendations .student-recommendation-page-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 18px;
+}
+
+.student-portal-view--recommendations .student-recommendation-page-card {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	padding: 20px;
+}
+
+.student-portal-view--recommendations .student-recommendation-page-card button {
+	margin-top: auto;
+}
+
+/* Leave of absence */
+.student-portal-view--leave .portal-support-main {
+	display: grid;
+	gap: 22px;
+}
+
+.student-portal-view--leave .leave-action-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 18px;
+}
+
+.student-portal-view--leave .leave-action-grid > article {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	min-width: 0;
+	padding: clamp(20px, 3vw, 28px);
+}
+
+.student-portal-view--leave .leave-action-grid > article > svg {
+	width: 44px;
+	height: 44px;
+	margin-bottom: 18px;
+	padding: 10px;
+	border-radius: 50%;
+	background: var(--student-primary-soft);
+	color: var(--student-primary);
+}
+
+.student-portal-view--leave .leave-action-grid > article h2 {
+	margin-bottom: 8px;
+	font-size: 1.2rem;
+	font-weight: 700;
+}
+
+.student-portal-view--leave .leave-action-grid > article p {
+	margin-bottom: 22px;
+	color: var(--student-muted);
+	line-height: 1.65;
+}
+
+.student-portal-view--leave .leave-action-grid > article button {
+	min-height: 42px;
+	margin-top: auto;
+	padding: 0 16px;
+	border: 1px solid var(--student-primary);
+	border-radius: 6px;
+	background: var(--student-primary);
+	color: #fff;
+	font-weight: 600;
+}
+
+.student-portal-view--leave .leave-history {
+	overflow: hidden;
+}
+
+.student-portal-view--leave .leave-history > header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 20px 22px;
+	border-bottom: 1px solid var(--student-line);
+}
+
+.student-portal-view--leave .leave-history > header h2 {
+	margin: 0;
+	font-size: 1.2rem;
+	font-weight: 700;
+}
+
+.student-portal-view--leave .leave-history > article {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 18px;
+	padding: 18px 22px;
+	border-bottom: 1px solid var(--student-line);
+}
+
+.student-portal-view--leave .leave-history > article:last-child {
+	border-bottom: 0;
+}
+
+.student-portal-view--leave .leave-history time {
+	color: var(--student-muted);
+	font-size: 0.88rem;
+	white-space: nowrap;
+}
+
+.student-portal-view--leave .priority-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 12000;
+	display: grid;
+	place-items: center;
+	padding: 16px;
+	background: rgba(7, 22, 17, 0.68);
+	backdrop-filter: blur(3px);
+}
+
+.student-portal-view--leave .priority-modal {
+	position: relative;
+	inset: auto;
+	width: min(620px, 100%);
+	max-height: calc(100dvh - 32px);
+	margin: 0;
+	padding: 24px;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	border: 1px solid var(--student-line-strong);
+	border-radius: 8px;
+	background: var(--student-surface-raised);
+	color: var(--student-ink);
+	box-shadow: 0 28px 70px rgba(8, 27, 20, 0.34);
+}
+
+.student-portal-view--leave .priority-modal-close {
+	position: absolute;
+	top: 18px;
+	right: 18px;
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	border: 1px solid var(--student-line);
+	border-radius: 50%;
+	background: var(--student-surface);
+	color: var(--student-primary);
+}
+
+.student-portal-view--leave .priority-modal > header {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	margin: 0 48px 22px 0;
+	padding-bottom: 18px;
+	border-bottom: 1px solid var(--student-line);
+}
+
+.student-portal-view--leave .priority-modal > header > span {
+	display: grid;
+	place-items: center;
+	width: 46px;
+	height: 46px;
+	border-radius: 6px;
+	background: var(--student-primary-soft);
+	color: var(--student-primary);
+}
+
+.student-portal-view--leave .priority-modal > header h2 {
+	margin: 2px 0 0;
+	font-size: 1.3rem;
+	font-weight: 700;
+}
+
+.student-portal-view--leave .priority-modal label {
+	display: grid;
+	gap: 8px;
+	margin-bottom: 16px;
+	color: var(--student-ink);
+	font-size: 0.9rem;
+	font-weight: 600;
+}
+
+.student-portal-view--leave .priority-modal :where(select, input, textarea) {
+	width: 100%;
+	min-height: 46px;
+	padding: 10px 12px;
+	border: 1px solid var(--student-line-strong);
+	border-radius: 6px;
+	background: var(--student-surface);
+	color: var(--student-ink);
+}
+
+.student-portal-view--leave .leave-file-picker {
+	position: relative;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 12px;
+	min-height: 64px;
+	padding: 10px 12px;
+	border: 1px dashed var(--student-line-strong);
+	border-radius: 6px;
+	background: var(--student-primary-faint);
+	cursor: pointer;
+}
+
+.student-portal-view--leave .leave-file-picker > svg {
+	width: 26px;
+	height: 26px;
+	color: var(--student-primary);
+}
+
+.student-portal-view--leave .leave-file-picker > span:not(.leave-file-picker-action) {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+}
+
+.student-portal-view--leave .leave-file-picker strong,
+.student-portal-view--leave .leave-file-picker small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.student-portal-view--leave .leave-file-picker small {
+	color: var(--student-muted);
+	font-size: 0.74rem;
+	font-weight: 500;
+}
+
+.student-portal-view--leave .leave-file-picker-action {
+	padding: 8px 12px;
+	border: 1px solid var(--student-primary);
+	border-radius: 4px;
+	background: var(--student-surface);
+	color: var(--student-primary);
+	font-size: 0.76rem;
+	font-weight: 600;
+}
+
+.student-portal-view--leave .leave-file-picker input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.student-portal-view--leave .priority-modal textarea {
+	min-height: 110px;
+	resize: vertical;
+}
+
+.student-portal-view--leave .priority-modal > footer {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+	margin-top: 24px;
+	padding-top: 18px;
+	border-top: 1px solid var(--student-line);
+}
+
+.student-portal-view--leave .priority-modal > footer button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 44px;
+	border: 1px solid var(--student-primary);
+	border-radius: 6px;
+	background: var(--student-primary);
+	color: #fff;
+	font-weight: 600;
+}
+
+.student-portal-view--leave .priority-modal > footer button.secondary {
+	background: transparent;
+	color: var(--student-primary);
+}
+
+/* Dark mode */
+.student-portal-view.student-dashboard--dark,
+.student-portal-view.student-dashboard-page--dark {
+	--student-primary: #69d6a4;
+	--student-primary-strong: #a9ebca;
+	--student-primary-soft: rgba(65, 190, 132, 0.12);
+	--student-primary-faint: rgba(65, 190, 132, 0.08);
+	--student-line: rgba(148, 205, 178, 0.2);
+	--student-line-strong: rgba(148, 205, 178, 0.34);
+	--student-ink: #edf8f2;
+	--student-muted: #a9bdb4;
+	--student-canvas: #0c1713;
+	--student-surface: #12221c;
+	--student-surface-raised: #172a22;
+	--student-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+}
+
+.student-portal-view.student-dashboard--dark :where(input, select, textarea),
+.student-portal-view.student-dashboard-page--dark :where(input, select, textarea) {
+	color-scheme: dark;
+}
+
+.student-portal-view.student-dashboard--dark :where(.student-topbar, .student-menu-panel),
+.student-portal-view.student-dashboard-page--dark :where(.student-topbar, .student-menu-panel) {
+	background: #12221c;
+	color: var(--student-ink);
+}
+
+/* Responsive hierarchy */
+@media (max-width: 980px) {
+	.student-portal-view--announcements .student-announcement-page-grid,
+	.student-portal-view--announcement-detail .student-announcement-related-grid,
+	.student-portal-view--recommendations .student-recommendation-page-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+}
+
+@media (max-width: 760px) {
+	.student-portal-view .student-shell,
+	.student-portal-view .student-dashboard-content,
+	.student-portal-view .student-announcement-detail,
+	.student-portal-view .student-recommendation-page,
+	.student-portal-view--leave .portal-support-main {
+		padding: 20px 14px 38px;
+	}
+
+	.student-portal-view :where(
+		.student-page-title,
+		.student-announcement-page-hero,
+		.student-scholarship-control-hero,
+		.student-recommendation-page-hero,
+		.portal-support-hero
+	) {
+		margin-bottom: 18px;
+		padding: 2px 0 16px 14px;
+	}
+
+	.student-portal-view :where(
+		.student-page-title,
+		.student-announcement-page-hero,
+		.student-scholarship-control-hero,
+		.student-recommendation-page-hero,
+		.portal-support-hero
+	) h1 {
+		font-size: 1.6rem;
+	}
+
+	.student-portal-view--profile .student-profile-cover {
+		position: static;
+		border-right: 0;
+		border-bottom: 1px solid var(--student-line);
+	}
+
+	.student-portal-view--profile .student-profile-modern-wrap {
+		grid-template-columns: 1fr;
+	}
+
+	.student-portal-view--profile .student-profile-form-grid,
+	.student-portal-view--profile .student-vault-grid,
+	.student-portal-view--inbox .student-inbox-detail-meta,
+	.student-portal-view--inbox .student-inbox-detail-grid,
+	.student-portal-view--announcements .student-announcement-insights,
+	.student-portal-view--announcement-detail .student-announcement-summary-grid,
+	.student-portal-view--leave .leave-action-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.student-portal-view--profile :where(.student-vault-link, .student-vault-upload-btn) {
+		width: 100%;
+	}
+
+	.student-portal-view--announcements .student-announcement-insights > * {
+		border-right: 0;
+		border-bottom: 1px solid var(--student-line);
+	}
+
+	.student-portal-view--announcements .student-announcement-insights > *:last-child {
+		border-bottom: 0;
+	}
+
+	.student-portal-view--announcements .student-announcement-tools {
+		grid-template-columns: 1fr;
+	}
+
+	.student-portal-view--leave .leave-history > article {
+		grid-template-columns: 1fr;
+		gap: 8px;
+	}
+
+	.student-portal-view--leave .leave-history time {
+		white-space: normal;
+	}
+}
+
+@media (max-width: 560px) {
+	.student-portal-view--announcements .student-announcement-page-grid,
+	.student-portal-view--announcement-detail .student-announcement-related-grid,
+	.student-portal-view--recommendations .student-recommendation-page-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.student-portal-view--announcements .student-announcement-page-actions,
+	.student-portal-view--announcement-detail .student-announcement-detail-nav,
+	.student-portal-view--announcements .student-announcement-page-section-head,
+	.student-portal-view--scholarships .student-kwsp-tracker-head {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.student-portal-view--inbox .student-inbox-head,
+	.student-portal-view--inbox .student-inbox-item,
+	.student-portal-view--inbox .student-inbox-group > header {
+		padding-inline: 16px;
+	}
+
+	.student-portal-view--inbox .student-inbox-detail-actions,
+	.student-portal-view--leave .priority-modal > footer {
+		grid-template-columns: 1fr;
+		flex-direction: column;
+	}
+
+	.student-portal-view--inbox .student-inbox-detail-actions > *,
+	.student-portal-view--leave .priority-modal > footer button {
+		width: 100%;
+	}
+
+	.student-portal-view--leave .priority-modal {
+		padding: 20px 16px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.student-portal-view *,
+	.student-portal-view *::before,
+	.student-portal-view *::after {
+		scroll-behavior: auto !important;
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+	}
+}

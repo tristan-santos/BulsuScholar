@@ -472,9 +472,46 @@
 	grid-template-rows: auto minmax(0, 1fr);
 	gap: 0.75rem;
 	max-width: 1080px;
-	height: 100%;
+	height: calc(100vh - var(--grantor-topbar-height, 70px) - 2.4rem);
+	height: calc(100dvh - var(--grantor-topbar-height, 70px) - 2.4rem);
+	max-height: calc(100vh - var(--grantor-topbar-height, 70px) - 2.4rem);
+	max-height: calc(100dvh - var(--grantor-topbar-height, 70px) - 2.4rem);
 	margin: 0 auto;
+	overflow: hidden;
+	padding-right: 0.35rem;
 	background: transparent;
+	scrollbar-gutter: stable;
+	overscroll-behavior: contain;
+}
+
+.grantor-profile-page::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.grantor-profile-page::-webkit-scrollbar-track {
+	background: #f3f7f5;
+	border-radius: 999px;
+}
+
+.grantor-profile-page::-webkit-scrollbar-thumb {
+	background: rgba(0, 99, 60, 0.28);
+	border-radius: 999px;
+}
+
+.grantor-profile-form::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.grantor-profile-form::-webkit-scrollbar-track {
+	background: #f3f7f5;
+	border-radius: 999px;
+}
+
+.grantor-profile-form::-webkit-scrollbar-thumb {
+	background: rgba(0, 99, 60, 0.28);
+	border-radius: 999px;
 }
 
 .grantor-profile-page-head {
@@ -490,6 +527,7 @@
 .grantor-profile-layout {
 	display: grid;
 	grid-template-columns: 250px minmax(0, 1fr);
+	min-height: 0;
 	border: 1px solid #dce7e1;
 	border-radius: 8px;
 	background: #fff;
@@ -598,8 +636,13 @@
 .grantor-profile-password-btn:disabled { cursor: not-allowed; opacity: 0.62; }
 
 .grantor-inbox-panel {
+	display: flex;
+	flex-direction: column;
 	max-width: 1100px;
+	max-height: calc(100vh - var(--grantor-topbar-height, 70px) - 2.4rem);
+	max-height: calc(100dvh - var(--grantor-topbar-height, 70px) - 2.4rem);
 	margin: 0 auto;
+	overflow: hidden;
 	border: 1px solid #dce5e0;
 	background: #fff;
 	font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -618,7 +661,14 @@
 .grantor-inbox-tab.active { border-color: #00633c; color: #00633c; box-shadow: 0 2px 7px rgba(0, 99, 60, 0.1); }
 .grantor-inbox-mark-read { padding: 0 0.3rem; border: 0; color: #00633c; }
 .grantor-inbox-mark-read:disabled { color: #94a3b8; cursor: default; }
-.grantor-inbox-list { display: grid; }
+.grantor-inbox-list {
+	display: grid;
+	flex: 1 1 auto;
+	min-height: 0;
+	max-height: min(68vh, 720px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
 .grantor-inbox-group + .grantor-inbox-group { border-top: 18px solid #f3f6f5; }
 .grantor-inbox-group > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 58px; padding: 0 1.4rem; border-bottom: 1px solid #e2e9e5; }
 .grantor-inbox-group > header > span { display: inline-flex; align-items: center; gap: 0.5rem; color: #17231f; font-size: 0.84rem; font-weight: 600; line-height: 1.3; }
@@ -670,6 +720,14 @@
 	background: #fff;
 	box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
 }
+.grantor-inbox-detail-body {
+	min-height: 0;
+	overflow-y: auto;
+	padding-bottom: 1rem;
+}
+.grantor-inbox-detail-body::-webkit-scrollbar { width: 8px; }
+.grantor-inbox-detail-body::-webkit-scrollbar-track { background: #eef4f1; }
+.grantor-inbox-detail-body::-webkit-scrollbar-thumb { border-radius: 999px; background: #b7c9c1; }
 .grantor-inbox-detail-head {
 	display: flex;
 	align-items: flex-start;
@@ -827,7 +885,6 @@
 	overflow-wrap: anywhere;
 }
 .grantor-inbox-detail-grid {
-	overflow-y: auto;
 	padding-bottom: 0.2rem;
 }
 .grantor-inbox-detail-actions {
@@ -860,6 +917,24 @@
 	color: #00633c;
 }
 
+.grantor-inbox-list::-webkit-scrollbar,
+.grantor-inbox-detail-grid::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.grantor-inbox-list::-webkit-scrollbar-track,
+.grantor-inbox-detail-grid::-webkit-scrollbar-track {
+	background: #f3f7f5;
+	border-radius: 999px;
+}
+
+.grantor-inbox-list::-webkit-scrollbar-thumb,
+.grantor-inbox-detail-grid::-webkit-scrollbar-thumb {
+	background: rgba(0, 99, 60, 0.28);
+	border-radius: 999px;
+}
+
 @media (max-width: 700px) {
 	.grantor-inbox-head { align-items: flex-start; flex-direction: column; padding: 1rem; }
 	.grantor-inbox-actions { justify-content: space-between; width: 100%; }
@@ -880,7 +955,14 @@
 	.grantor-inbox-change-list article { grid-template-columns: 1fr; }
 }
 
-.grantor-profile-form { min-width: 0; padding: 1rem 1.2rem; }
+.grantor-profile-form {
+	min-width: 0;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 1rem 1.2rem;
+	scrollbar-gutter: stable;
+	overscroll-behavior: contain;
+}
 .grantor-profile-form > section + section { margin-top: 0.9rem; padding-top: 0.85rem; border-top: 1px solid #e5ece8; }
 .grantor-profile-section-head { display: flex; align-items: flex-start; gap: 0.55rem; margin-bottom: 0.9rem; color: #00633c; }
 .grantor-profile-section-head svg { flex: 0 0 auto; width: 1.1rem; height: 1.1rem; margin-top: 0.08rem; }
@@ -905,6 +987,7 @@
 .grantor-profile-form-grid select:focus { border-color: #00633c; outline: 2px solid rgba(0, 99, 60, 0.1); }
 .grantor-profile-form-grid input:disabled,
 .grantor-profile-form-grid select:disabled { background: #f4f7f5; color: #94a3b8; }
+.grantor-profile-help-text { color: #c2410c; font-size: 0.68rem; line-height: 1.35; }
 .grantor-profile-form-actions {
 	position: sticky;
 	bottom: 0;
@@ -921,7 +1004,7 @@
 @media (min-width: 769px) {
 	.grantor-workspace--profile {
 		height: 100vh;
-		overflow: hidden;
+		overflow-y: auto;
 	}
 }
 
@@ -958,6 +1041,9 @@
 .grantor-applications-filters select { padding: 0 0.35rem; min-width: 0; }
 .grantor-applications-filters input:focus,
 .grantor-applications-filters select:focus { border-bottom-color: #00633c; outline: 0; }
+.grantor-date-sort-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; width: 100%; min-height: 42px; padding: 0 0.9rem; border: 1px solid #b8d9ca; border-radius: 6px; background: #fff; color: #00633c; font: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: border-color 160ms ease, background 160ms ease, transform 160ms ease; }
+.grantor-date-sort-btn:hover { border-color: #00633c; background: #f1faf5; transform: translateY(-1px); }
+.grantor-date-sort-btn svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
 
 .grantor-applications-table-wrap { border: 0; border-radius: 0; }
 .grantor-applications-table { width: 100%; min-width: 1040px; table-layout: auto; }
@@ -1036,28 +1122,42 @@
 .grantor-announcement-composer header p { margin: 0.15rem 0 0; color: #64748b; font-size: 0.72rem; }
 .grantor-announcement-composer header > span,
 .grantor-announcement-history header > span { color: #00633c; font-size: 0.7rem; font-weight: 600; }
-.grantor-announcement-compose-form { display: grid; gap: 0.85rem; padding: 1rem; border: 1px solid #dce7e1; border-radius: 6px; background: #fbfdfc; }
-.grantor-announcement-application-toggle { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.8rem 0.9rem; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; }
+.grantor-announcement-compose-form { display: grid; gap: 0.9rem; padding: 1rem; border: 1px solid #dce7e1; border-radius: 6px; background: linear-gradient(180deg, #fbfdfc 0%, #ffffff 100%); }
+.grantor-announcement-application-toggle { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.85rem 0.95rem; border: 1px solid #cfe3d9; border-radius: 6px; background: linear-gradient(135deg, #f4fbf7 0%, #fff 100%); box-shadow: 0 10px 26px rgba(0, 99, 60, 0.05); }
 .grantor-announcement-application-toggle strong { display: block; color: #17342a; font-size: 0.82rem; font-weight: 600; }
 .grantor-announcement-application-toggle p { margin: 0.18rem 0 0; color: #64748b; font-size: 0.72rem; line-height: 1.4; }
 .grantor-announcement-compose-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem; }
 .grantor-announcement-compose-form label { display: grid; gap: 0.35rem; min-width: 0; color: #52675f; font-size: 0.7rem; font-weight: 600; }
+.grantor-announcement-select-field > span,
+.grantor-announcement-new-title-field > span,
+.grantor-announcement-requirements > span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.grantor-announcement-select-field > span svg,
+.grantor-announcement-new-title-field > span svg,
+.grantor-announcement-requirements > span svg { width: 0.9rem; height: 0.9rem; color: #00633c; }
+.grantor-announcement-custom-select { width: 100%; height: 39px; border: 1px solid #cddbd4; border-radius: 4px; background: #fff; color: #17342a; font-size: 0.78rem; font-weight: 500; }
+.grantor-announcement-custom-select:focus,
+.grantor-announcement-custom-select:focus-visible { border-color: #00633c; outline: 2px solid rgba(0, 99, 60, 0.08); }
+.grantor-announcement-custom-select.is-missing { border-color: #dc2626; background: #fffafa; }
+.grantor-announcement-custom-select-menu { max-height: 245px; border-color: #b9d8ca; box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14); }
 .grantor-announcement-requirements { display: grid; gap: 0.45rem; min-width: 0; }
 .grantor-announcement-requirements > span { color: #52675f; font-size: 0.7rem; font-weight: 600; }
 .grantor-announcement-requirements { grid-column: 1 / -1; }
 .grantor-announcement-requirements > div { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; min-height: 39px; }
-.grantor-announcement-requirements label { display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.35rem; min-width: 0; min-height: 31px; padding: 0 0.55rem; border: 1px solid #cddbd4; border-radius: 4px; background: #fff; color: #17342a; font-size: 0.72rem; font-weight: 500; cursor: pointer; }
+.grantor-announcement-requirements label { display: inline-flex; align-items: center; justify-content: flex-start; gap: 0.45rem; min-width: 92px; min-height: 36px; padding: 0 0.7rem; border: 1px solid #cddbd4; border-radius: 5px; background: #fff; color: #17342a; font-size: 0.72rem; font-weight: 600; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease; }
+.grantor-announcement-requirements label:hover { border-color: #88bba3; background: #f4fbf7; color: #00633c; }
 .grantor-announcement-compose-form .grantor-announcement-requirements input[type="checkbox"] { flex: 0 0 14px; width: 14px; height: 14px; padding: 0; accent-color: #00633c; }
 .grantor-announcement-requirements label span { white-space: nowrap; }
 .grantor-announcement-checkbox-control { display: flex; align-items: center; gap: 0.5rem; min-height: 39px; padding: 0 0.65rem; border: 1px solid #cddbd4; border-radius: 4px; background: #fff; color: #17342a; font-size: 0.74rem; font-weight: 500; cursor: pointer; }
 .grantor-announcement-compose-form .grantor-announcement-checkbox-control input[type="checkbox"] { flex: 0 0 14px; width: 14px; height: 14px; padding: 0; accent-color: #00633c; }
 .grantor-announcement-other-requirements { display: grid; grid-column: 1 / -1; gap: 0.55rem; }
-.grantor-announcement-other-add { justify-self: start; min-height: 32px; padding: 0 0.7rem; border: 1px solid #00633c; border-radius: 4px; background: transparent; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+.grantor-announcement-other-add { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; justify-self: start; min-height: 34px; padding: 0 0.8rem; border: 1px solid #00633c; border-radius: 5px; background: transparent; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+.grantor-announcement-other-add svg { width: 0.9rem; height: 0.9rem; }
 .grantor-announcement-other-add:hover { background: #edf7f2; }
 .grantor-announcement-other-add:disabled { border-color: #cbd5e1; background: transparent; color: #94a3b8; cursor: not-allowed; }
 .grantor-announcement-other-list { display: grid; gap: 0.55rem; }
-.grantor-announcement-other-row { display: grid; grid-template-columns: minmax(180px, 1fr) 120px 130px 32px 32px; align-items: end; gap: 0.55rem; padding: 0.65rem; border: 1px solid #dce7e1; border-radius: 5px; background: #fff; }
+.grantor-announcement-other-row { display: grid; grid-template-columns: minmax(180px, 1fr) 140px 82px 34px 34px; align-items: end; gap: 0.55rem; padding: 0.7rem; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04); }
 .grantor-announcement-other-row label { display: grid; gap: 0.32rem; }
+.grantor-announcement-other-row label:nth-child(3) input { padding-inline: 0.35rem; text-align: center; }
 .grantor-announcement-other-row select { width: 100%; height: 39px; padding: 0 0.65rem; border: 1px solid #cddbd4; border-radius: 4px; background: #fff; color: #17342a; font: inherit; font-size: 0.78rem; }
 .grantor-announcement-other-row > button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid #fecaca; border-radius: 4px; background: #fff; color: #dc2626; cursor: pointer; }
 .grantor-announcement-other-row > button.grantor-announcement-other-confirm { border-color: #b9d8ca; color: #00633c; }
@@ -1152,6 +1252,10 @@
 .grantor-announcement-history.is-all-view { padding-top: 1.1rem; }
 .grantor-announcement-history header p { margin: 0.18rem 0 0; color: #64748b; font-size: 0.72rem; }
 .grantor-announcement-history-actions { display: inline-flex; align-items: center; gap: 0.65rem; }
+.grantor-announcement-counts { display: inline-flex; align-items: center; gap: 0.65rem; min-height: 36px; padding: 0 0.8rem; border: 1px solid rgba(0, 99, 60, 0.2); border-radius: 5px; background: rgba(0, 99, 60, 0.045); color: #315549; font-size: 0.72rem; font-weight: 500; white-space: nowrap; }
+.grantor-announcement-counts span { display: inline-flex; align-items: center; gap: 0.25rem; }
+.grantor-announcement-counts strong { color: #00633c; font-weight: 700; }
+.grantor-announcement-counts i { width: 1px; height: 18px; background: rgba(0, 99, 60, 0.28); }
 .grantor-announcement-history-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; padding: 0 0.75rem; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .grantor-announcement-tabs { display: flex; align-items: center; gap: 1.1rem; margin: 0.2rem 0 1rem; border-bottom: 1px solid #dce7e1; }
 .grantor-announcement-tabs button { position: relative; display: inline-flex; align-items: center; gap: 0.4rem; min-height: 38px; padding: 0 0 0.55rem; border: 0; background: transparent; color: #64748b; font: inherit; font-size: 0.76rem; font-weight: 600; cursor: pointer; }
@@ -1338,13 +1442,14 @@
 .grantor-calendar-grid > button.selected { background: #00633c; color: #fff; font-weight: 600; }
 .grantor-calendar-modal > footer { display: flex; justify-content: space-between; gap: 0.75rem; margin-top: 0.9rem; padding-top: 0.8rem; border-top: 1px solid #e1e9e5; }
 .grantor-calendar-modal > footer button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; padding: 0 0.7rem; border-radius: 4px; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
-.grantor-calendar-clear { border: 1px solid #cddbd4; background: #fff; color: #52675f; }
+.grantor-calendar-cancel { flex: 1; border: 1px solid #cddbd4; background: #fff; color: #52675f; }
 .grantor-calendar-done { border: 1px solid #00633c; background: #00633c; color: #fff; }
+.grantor-calendar-actions .grantor-calendar-done { flex: 1; }
 .grantor-calendar-done:disabled { cursor: not-allowed; opacity: 0.5; }
 
 @media (max-width: 760px) {
 	.grantor-announcement-compose-grid { grid-template-columns: 1fr; }
-	.grantor-announcement-other-row { grid-template-columns: minmax(0, 1fr) 110px 120px 32px 32px; }
+	.grantor-announcement-other-row { grid-template-columns: minmax(0, 1fr) 110px 78px 32px 32px; }
 	.grantor-announcements-summary { grid-template-columns: 1fr; }
 	.grantor-announcements-summary > div + div { border-top: 1px solid #e5ece8; border-left: 0; }
 	.grantor-announcement-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1352,6 +1457,8 @@
 }
 
 @media (max-width: 520px) {
+	.grantor-announcement-history-actions { width: 100%; flex-wrap: wrap; }
+	.grantor-announcement-counts { width: 100%; justify-content: center; white-space: normal; }
 	.grantor-announcement-images label { grid-template-columns: 24px minmax(0, 1fr); }
 	.grantor-announcement-images label small { grid-column: 2; }
 	.grantor-announcement-requirements > div { grid-template-columns: 1fr; }
@@ -1656,9 +1763,28 @@
 }
 
 .grantor-scholars-panel .grantor-scholar-table {
+	width: 100%;
+	table-layout: fixed;
 	border: 0;
 	border-spacing: 0;
 	background: #fff;
+}
+
+.grantor-scholar-table .grantor-scholar-col--check { width: 42px; }
+.grantor-scholar-table .grantor-scholar-col--id { width: 12%; }
+.grantor-scholar-table .grantor-scholar-col--name { width: 18%; }
+.grantor-scholar-table .grantor-scholar-col--course { width: 31%; }
+.grantor-scholar-table .grantor-scholar-col--year { width: 7%; }
+.grantor-scholar-table .grantor-scholar-col--status { width: 10%; }
+.grantor-scholar-table .grantor-scholar-col--reason { width: 14%; }
+.grantor-scholar-table .grantor-scholar-col--updated { width: 12%; }
+
+.grantor-scholar-cell-text {
+	display: block;
+	width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .grantor-scholars-panel .grantor-scholar-table th,
@@ -1986,6 +2112,43 @@
 .grantor-portal--dark .grantor-scholar-modal--create .grantor-form-grid select option {
 	background: #0f172a;
 	color: #f1f5f9;
+}
+
+.grantor-portal--dark .grantor-date-sort-btn {
+	border-color: #475569;
+	background: #0f172a;
+	color: #86efac;
+}
+
+.grantor-portal--dark .grantor-date-sort-btn:hover {
+	border-color: #86efac;
+	background: rgba(22, 101, 52, 0.2);
+}
+
+.grantor-portal--dark .grantor-create-field {
+	color: #e2e8f0;
+}
+
+.grantor-portal--dark .grantor-create-field > span {
+	color: #94a3b8;
+}
+
+.grantor-portal--dark .grantor-create-select,
+.grantor-portal--dark .grantor-create-field .custom-select__menu {
+	border-color: #475569;
+	background: #0f172a;
+	color: #f1f5f9;
+}
+
+.grantor-portal--dark .grantor-create-field .custom-select__option {
+	color: #e2e8f0;
+}
+
+.grantor-portal--dark .grantor-create-field .custom-select__option:hover,
+.grantor-portal--dark .grantor-create-field .custom-select__option:focus,
+.grantor-portal--dark .grantor-create-field .custom-select__option.is-selected {
+	background: rgba(22, 101, 52, 0.28);
+	color: #86efac;
 }
 
 .grantor-portal--dark .grantor-upload-zone {
@@ -2584,6 +2747,112 @@
 	font-size: 0.76rem;
 	font-weight: 600;
 	white-space: nowrap;
+}
+
+.grantor-scholar-modal--create .grantor-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem 0.9rem;
+}
+
+.grantor-create-field {
+	display: grid;
+	gap: 0.34rem;
+	min-width: 0;
+	color: #17342a;
+	font-size: 0.78rem;
+	font-weight: 650;
+}
+
+.grantor-create-field > span {
+	color: #435876;
+	font-size: 0.72rem;
+	font-weight: 650;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+
+.grantor-create-field input,
+.grantor-create-field textarea,
+.grantor-create-select {
+	width: 100%;
+	min-height: 44px;
+	padding: 0 0.85rem;
+	border: 1px solid #cbded5;
+	border-radius: 7px;
+	background: #fff;
+	color: #041f16;
+	font: inherit;
+	font-size: 0.91rem;
+	font-weight: 500;
+}
+
+.grantor-create-field textarea {
+	min-height: 94px;
+	padding-top: 0.75rem;
+	resize: vertical;
+}
+
+.grantor-create-field input:focus,
+.grantor-create-field textarea:focus,
+.grantor-create-select:focus {
+	border-color: #00633c;
+	box-shadow: 0 0 0 3px rgba(0, 99, 60, 0.1);
+	outline: 0;
+}
+
+.grantor-create-field--full {
+	grid-column: 1 / -1;
+}
+
+.grantor-create-field small {
+	color: #c2410c;
+	font-size: 0.72rem;
+	font-weight: 500;
+}
+
+.grantor-create-field .custom-select {
+	position: relative;
+	width: 100%;
+	min-width: 0;
+}
+
+.grantor-create-field .custom-select__menu {
+	position: absolute;
+	z-index: 40;
+	top: calc(100% + 0.25rem);
+	left: 0;
+	right: 0;
+	max-height: 250px;
+	overflow-y: auto;
+	padding: 0.3rem;
+	border: 1px solid #bfd8cc;
+	border-radius: 7px;
+	background: #fff;
+	box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);
+}
+
+.grantor-create-field .custom-select__option {
+	display: block;
+	width: 100%;
+	padding: 0.72rem 0.75rem;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: #041f16;
+	font: inherit;
+	font-size: 0.88rem;
+	font-weight: 550;
+	text-align: left;
+	cursor: pointer;
+}
+
+.grantor-create-field .custom-select__option:hover,
+.grantor-create-field .custom-select__option:focus,
+.grantor-create-field .custom-select__option.is-selected {
+	background: rgba(0, 99, 60, 0.1);
+	color: #00633c;
+	outline: 0;
 }
 
 .grantor-import-modal-actions {
@@ -3235,6 +3504,8 @@
 	border-color: #334155;
 	background: #111827;
 }
+.grantor-portal--dark .grantor-inbox-detail-body::-webkit-scrollbar-track { background: #0f172a; }
+.grantor-portal--dark .grantor-inbox-detail-body::-webkit-scrollbar-thumb { background: #475569; }
 .grantor-portal--dark .grantor-inbox-detail-head,
 .grantor-portal--dark .grantor-inbox-detail-actions {
 	border-color: #334155;
@@ -3322,6 +3593,8 @@
 .grantor-portal--dark .grantor-announcement-application-toggle,
 .grantor-portal--dark .grantor-announcement-compose-form input,
 .grantor-portal--dark .grantor-announcement-compose-form textarea,
+.grantor-portal--dark .grantor-announcement-custom-select,
+.grantor-portal--dark .grantor-announcement-custom-select-menu,
 .grantor-portal--dark .grantor-announcement-calendar-btn,
 .grantor-portal--dark .grantor-announcement-images label,
 .grantor-portal--dark .grantor-announcement-requirements label,
@@ -3329,6 +3602,7 @@
 .grantor-portal--dark .grantor-announcement-other-row,
 .grantor-portal--dark .grantor-announcement-other-confirmed-row,
 .grantor-portal--dark .grantor-announcement-other-row select,
+.grantor-portal--dark .grantor-announcement-custom-select-menu .custom-select__option,
 .grantor-portal--dark .grantor-announcement-other-row > button,
 .grantor-portal--dark .grantor-announcement-other-confirmed-row > button,
 .grantor-portal--dark .grantor-announcement-card,
@@ -3369,6 +3643,8 @@
 .grantor-portal--dark .grantor-announcement-requirements label,
 .grantor-portal--dark .grantor-announcement-checkbox-control,
 .grantor-portal--dark .grantor-announcement-other-row select,
+.grantor-portal--dark .grantor-announcement-custom-select,
+.grantor-portal--dark .grantor-announcement-custom-select-menu .custom-select__option,
 .grantor-portal--dark .grantor-announcement-other-confirmed-row strong,
 .grantor-portal--dark .grantor-announcement-card h4,
 .grantor-portal--dark .grantor-announcement-author strong,
@@ -3389,11 +3665,19 @@
 .grantor-portal--dark .grantor-announcement-compose-form input,
 .grantor-portal--dark .grantor-announcement-compose-form textarea,
 .grantor-portal--dark .grantor-announcement-calendar-btn,
+.grantor-portal--dark .grantor-announcement-custom-select,
+.grantor-portal--dark .grantor-announcement-custom-select-menu,
 .grantor-portal--dark .grantor-announcement-requirements label,
 .grantor-portal--dark .grantor-announcement-checkbox-control,
 .grantor-portal--dark .grantor-announcement-other-row,
 .grantor-portal--dark .grantor-announcement-other-confirmed-row,
 .grantor-portal--dark .grantor-announcement-other-row select { border-color: #475569; }
+.grantor-portal--dark .grantor-announcement-custom-select-menu .custom-select__option:hover,
+.grantor-portal--dark .grantor-announcement-custom-select-menu .custom-select__option:focus,
+.grantor-portal--dark .grantor-announcement-custom-select-menu .custom-select__option.is-selected {
+	background: rgba(0, 99, 60, 0.28);
+	color: #6ee7b7;
+}
 .grantor-portal--dark .grantor-announcement-requirements > span { color: #cbd5e1; }
 .grantor-portal--dark .grantor-announcement-other-confirmed-row { background: #111827; }
 .grantor-portal--dark .grantor-announcement-other-confirmed-row span { color: #94a3b8; }
@@ -3440,6 +3724,10 @@
 .grantor-portal--dark .grantor-calendar-clear { border-color: #475569; background: #111827; color: #cbd5e1; }
 .grantor-portal--dark .grantor-calendar-modal > header,
 .grantor-portal--dark .grantor-calendar-modal > footer { border-color: #334155; }
+.grantor-portal--dark .grantor-announcement-counts { border-color: rgba(52, 211, 153, 0.24); background: rgba(0, 99, 60, 0.18); color: #cbd5e1; }
+.grantor-portal--dark .grantor-announcement-counts strong { color: #6ee7b7; }
+.grantor-portal--dark .grantor-announcement-counts i { background: rgba(52, 211, 153, 0.3); }
+.grantor-portal--dark .grantor-calendar-cancel { border-color: #475569; background: #111827; color: #cbd5e1; }
 .grantor-portal--dark .grantor-calendar-modal > header h3,
 .grantor-portal--dark .grantor-calendar-selection strong,
 .grantor-portal--dark .grantor-calendar-nav strong { color: #f8fafc; }
@@ -3651,13 +3939,21 @@
 		padding: 3px 8px 3px 3px;
 	}
 
+	.grantor-profile-page {
+		height: auto;
+		max-height: none;
+		overflow: visible;
+		padding-right: 0;
+	}
+
 	.grantor-sidebar-nav {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
-	.grantor-profile-layout { grid-template-columns: 1fr; }
+	.grantor-profile-layout { grid-template-columns: 1fr; overflow: visible; }
 	.grantor-profile-identity { border-right: 0; border-bottom: 1px solid #e5ece8; }
 	.grantor-portal--dark .grantor-profile-identity { border-bottom-color: #334155; }
+	.grantor-profile-form { overflow: visible; }
 	.grantor-profile-form-grid { grid-template-columns: 1fr; }
 
 	.grantor-workspace {
@@ -4481,15 +4777,21 @@
 	font-weight: 600;
 }
 
+.grantor-reject-modal-body input,
 .grantor-reject-modal-body select,
 .grantor-reject-modal-body textarea {
 	width: 100%;
 	border: 1px solid #dce7e1;
-	border-radius: 6px;
+	border-radius: 5px;
 	background: #fff;
 	color: #0f172a;
 	font-family: inherit;
 	font-size: 0.82rem;
+}
+
+.grantor-reject-modal-body input {
+	min-height: 40px;
+	padding: 0 0.75rem;
 }
 
 .grantor-reject-modal-body select {
@@ -4700,6 +5002,7 @@
 	color: #64748b;
 	font-size: 0.74rem;
 	font-weight: 600;
+	white-space: nowrap;
 }
 
 .grantor-tracking-badge::before {
@@ -4728,7 +5031,8 @@
 }
 
 .grantor-tracking-badge--ongoing {
-	color: #d97706;
+	color: #c76a00;
+	white-space: nowrap;
 }
 
 .grantor-tracking-badge--ongoing::before {
@@ -4856,6 +5160,7 @@
 	color: #fecaca;
 }
 
+.grantor-portal--dark .grantor-reject-modal-body input,
 .grantor-portal--dark .grantor-reject-modal-body select,
 .grantor-portal--dark .grantor-reject-modal-body textarea {
 	border-color: #334155;
@@ -5099,4 +5404,730 @@
 		linear-gradient(0deg, rgba(0, 99, 60, 0.28), rgba(0, 99, 60, 0.28)),
 		#0f172a !important;
 	color: #d1fae5 !important;
+}
+/* Optional grantor-supplied student application profile. */
+.grantor-announcement-profile-template {
+	grid-column: 1 / -1;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.85rem 1rem;
+	border: 1px solid rgba(0, 99, 60, 0.25);
+	border-radius: 5px;
+	background: rgba(0, 99, 60, 0.035);
+}
+
+.grantor-announcement-profile-template > div,
+.grantor-announcement-profile-template > div > span {
+	display: flex;
+	align-items: center;
+	gap: 0.65rem;
+}
+
+.grantor-announcement-profile-template > div > span {
+	align-items: flex-start;
+	flex-direction: column;
+	gap: 0.15rem;
+}
+
+.grantor-announcement-profile-template small { font-weight: 400; color: #64748b; }
+.grantor-announcement-profile-template input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.grantor-announcement-profile-template > label {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	padding: 0.6rem 0.8rem;
+	border: 1px solid #00633c;
+	border-radius: 5px;
+	color: #00633c;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.grantor-announcement-profile-file {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	min-width: 0;
+	color: #334155;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.grantor-announcement-profile-file button {
+	display: inline-grid;
+	place-items: center;
+	width: 1.8rem;
+	height: 1.8rem;
+	border: 1px solid #dc2626;
+	border-radius: 50%;
+	background: transparent;
+	color: #dc2626;
+}
+
+@media (max-width: 640px) {
+	.grantor-announcement-profile-template { grid-template-columns: 1fr; }
+}
+.grantor-profile-application-form-upload {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem;
+	border: 1px solid rgba(0, 99, 60, 0.2);
+	border-radius: 6px;
+	background: rgba(0, 99, 60, 0.035);
+}
+
+.grantor-profile-application-form-upload > div {
+	display: grid;
+	gap: 0.25rem;
+	min-width: 0;
+}
+
+.grantor-profile-application-form-upload strong,
+.grantor-profile-application-form-upload small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.grantor-profile-application-form-upload input { display: none; }
+
+.grantor-profile-application-form-upload label { flex: 0 0 auto; cursor: pointer; }
+
+@media (max-width: 700px) {
+	.grantor-profile-application-form-upload { align-items: stretch; flex-direction: column; }
+}
+
+/* Final grantor dark-theme compatibility layer.
+ * Keep this after component rules so newly added light surfaces cannot win the cascade. */
+.grantor-portal--dark .grantor-scholar-modal--create,
+.grantor-portal--dark .grantor-scholar-modal--create .admin-detail-info {
+	border-color: #334155;
+	background: #111827;
+	color: #e5e7eb;
+}
+
+.grantor-portal--dark .grantor-scholar-modal-shell:has(.grantor-scholar-modal--create) .grantor-scholar-modal-close {
+	border-color: #475569;
+	background: #1e293b;
+	color: #cbd5e1;
+	box-shadow: 0 8px 22px rgba(2, 6, 23, 0.38);
+}
+
+.grantor-portal--dark .grantor-scholar-modal-shell:has(.grantor-scholar-modal--create) .grantor-scholar-modal-close:hover {
+	border-color: #f87171;
+	background: rgba(127, 29, 29, 0.34);
+	color: #fecaca;
+}
+
+.grantor-portal--dark .grantor-import-modal-head,
+.grantor-portal--dark .grantor-import-modal-actions {
+	border-color: #334155;
+	background: #111827;
+}
+
+.grantor-portal--dark .grantor-import-modal-head h3,
+.grantor-portal--dark .grantor-upload-zone strong {
+	color: #f8fafc;
+}
+
+.grantor-portal--dark .grantor-import-modal-head p,
+.grantor-portal--dark .grantor-import-sub,
+.grantor-portal--dark .grantor-upload-zone p {
+	color: #94a3b8;
+}
+
+.grantor-portal--dark .grantor-import-modal-icon,
+.grantor-portal--dark .grantor-upload-zone-icon {
+	border-color: rgba(52, 211, 153, 0.32);
+	background: rgba(0, 99, 60, 0.28);
+	color: #6ee7b7;
+}
+
+.grantor-portal--dark .grantor-upload-zone {
+	border-color: #475569;
+	background: #0f172a;
+	color: #e2e8f0;
+}
+
+.grantor-portal--dark .grantor-upload-zone:hover,
+.grantor-portal--dark .grantor-upload-zone:focus-within {
+	border-color: #34d399;
+	background: rgba(0, 99, 60, 0.14);
+}
+
+.grantor-portal--dark .grantor-scholar-modal--create .grantor-form-grid input,
+.grantor-portal--dark .grantor-scholar-modal--create .grantor-form-grid textarea,
+.grantor-portal--dark .grantor-create-select,
+.grantor-portal--dark .grantor-create-field .custom-select__trigger,
+.grantor-portal--dark .grantor-create-field .custom-select__menu {
+	border-color: #475569;
+	background: #0f172a;
+	color: #f8fafc;
+}
+
+.grantor-portal--dark .grantor-scholar-modal--create .grantor-form-grid input::placeholder,
+.grantor-portal--dark .grantor-scholar-modal--create .grantor-form-grid textarea::placeholder {
+	color: #64748b;
+}
+
+.grantor-portal--dark .grantor-create-field > span,
+.grantor-portal--dark .grantor-scholar-modal--create .grantor-form-grid label > span {
+	color: #cbd5e1;
+}
+
+.grantor-portal--dark .grantor-create-field .custom-select__option {
+	background: #0f172a;
+	color: #e2e8f0;
+}
+
+.grantor-portal--dark .grantor-create-field .custom-select__option:hover,
+.grantor-portal--dark .grantor-create-field .custom-select__option:focus,
+.grantor-portal--dark .grantor-create-field .custom-select__option.is-selected {
+	background: rgba(0, 99, 60, 0.3);
+	color: #d1fae5;
+}
+
+.grantor-portal--dark .grantor-import-info {
+	border-color: rgba(52, 211, 153, 0.32);
+	background: rgba(6, 78, 59, 0.34);
+	color: #a7f3d0;
+}
+
+.grantor-portal--dark .grantor-import-info strong,
+.grantor-portal--dark .grantor-import-info em,
+.grantor-portal--dark .grantor-import-info p {
+	color: inherit;
+}
+
+.grantor-portal--dark .grantor-duplicate-policy-note {
+	border-color: #d97706;
+	background: rgba(120, 53, 15, 0.3);
+	color: #fde68a;
+}
+
+.grantor-portal--dark .grantor-duplicate-policy-note.is-warning {
+	border-color: #f59e0b;
+	background: rgba(154, 52, 18, 0.28);
+	color: #fed7aa;
+}
+
+.grantor-portal--dark .grantor-import-table-wrap {
+	border-color: #475569;
+	background: #1e293b;
+	scrollbar-color: #64748b #0f172a;
+}
+
+.grantor-portal--dark .grantor-import-table-wrap::-webkit-scrollbar-track {
+	background: #0f172a;
+}
+
+.grantor-portal--dark .grantor-import-table-wrap::-webkit-scrollbar-thumb {
+	border: 2px solid #0f172a;
+	border-radius: 999px;
+	background: #64748b;
+}
+
+.grantor-portal--dark .grantor-import-table th {
+	border-bottom-color: #475569;
+	background: #0f172a;
+	color: #d1fae5;
+}
+
+.grantor-portal--dark .grantor-import-table td {
+	border-bottom-color: #334155;
+	background: #1e293b;
+	color: #e2e8f0;
+}
+
+.grantor-portal--dark .grantor-import-table tbody tr:hover td {
+	background: #243247;
+	color: #f8fafc;
+}
+
+.grantor-portal--dark .grantor-import-table .grantor-import-row--duplicate td {
+	border-color: #f59e0b;
+	background: rgba(120, 53, 15, 0.42);
+	color: #ffedd5;
+}
+
+.grantor-portal--dark .grantor-import-table .grantor-import-row--warning td {
+	border-color: rgba(251, 191, 36, 0.72);
+	background: rgba(113, 63, 18, 0.42);
+	color: #fef3c7;
+}
+
+.grantor-portal--dark .grantor-import-table .grantor-import-row--duplicate:hover td,
+.grantor-portal--dark .grantor-import-table .grantor-import-row--warning:hover td {
+	background: rgba(146, 64, 14, 0.58);
+	color: #fff7ed;
+}
+
+.grantor-portal--dark .grantor-import-select,
+.grantor-portal--dark .grantor-import-custom-input {
+	border-color: #475569;
+	background: #0f172a;
+	color: #f8fafc;
+}
+
+.grantor-portal--dark .grantor-import-select:focus,
+.grantor-portal--dark .grantor-import-custom-input:focus {
+	border-color: #34d399;
+	box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.12);
+}
+
+.grantor-portal--dark .grantor-import-select option {
+	background: #0f172a;
+	color: #f8fafc;
+}
+
+.grantor-portal--dark .grantor-import-more {
+	background: #0f172a;
+	color: #94a3b8 !important;
+}
+
+.grantor-portal--dark .grantor-import-modal-actions .grantor-action-btn:not(:disabled) {
+	background: transparent;
+}
+
+.grantor-portal--dark .grantor-import-modal-actions .grantor-action-btn--primary:not(:disabled) {
+	border-color: #34d399;
+	color: #a7f3d0;
+}
+
+.grantor-portal--dark .grantor-import-modal-actions .grantor-action-btn--primary:hover:not(:disabled) {
+	background: rgba(0, 99, 60, 0.28);
+}
+
+.grantor-portal--dark .grantor-import-modal-actions .grantor-action-btn--danger:not(:disabled) {
+	border-color: #f87171;
+	color: #fca5a5;
+}
+
+.grantor-portal--dark .grantor-import-modal-actions .grantor-action-btn--danger:hover:not(:disabled) {
+	background: rgba(127, 29, 29, 0.28);
+}
+
+.grantor-portal--dark .grantor-import-modal-actions .grantor-action-btn:disabled,
+.grantor-portal--dark .grantor-import-actions button:disabled {
+	border-color: #334155;
+	background: #1e293b;
+	color: #64748b;
+}
+
+.grantor-portal--dark .grantor-announcement-profile-template,
+.grantor-portal--dark .grantor-profile-application-form-upload {
+	border-color: rgba(52, 211, 153, 0.24);
+	background: rgba(0, 99, 60, 0.14);
+	color: #e2e8f0;
+}
+
+.grantor-portal--dark .grantor-announcement-profile-template small,
+.grantor-portal--dark .grantor-profile-application-form-upload small {
+	color: #94a3b8;
+}
+
+.grantor-portal--dark .grantor-announcement-profile-template > label {
+	border-color: #34d399;
+	color: #a7f3d0;
+}
+
+.grantor-portal--dark .grantor-announcement-profile-template > label:hover {
+	background: rgba(0, 99, 60, 0.24);
+}
+
+.grantor-portal--dark .grantor-announcement-profile-file {
+	color: #cbd5e1;
+}
+
+/* Final grantor responsive layer.
+ * Admin remains desktop-oriented; these rules are intentionally scoped to
+ * the grantor portal and its shared modal surfaces only. */
+.grantor-portal {
+	width: 100%;
+	min-width: 0;
+	overflow-x: hidden;
+	overflow-x: clip;
+}
+
+.grantor-portal *,
+.grantor-portal *::before,
+.grantor-portal *::after {
+	box-sizing: border-box;
+}
+
+.grantor-portal img,
+.grantor-portal iframe,
+.grantor-portal object,
+.grantor-portal embed {
+	max-width: 100%;
+}
+
+.grantor-portal :where(h1, h2, h3, h4, p, strong, small, span, label, a, button, td, th) {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.grantor-portal :where(button, a, input, select, textarea) {
+	touch-action: manipulation;
+}
+
+.grantor-portal :where(button, a, input, select, textarea):focus-visible {
+	outline: 2px solid #00633c;
+	outline-offset: 2px;
+}
+
+.grantor-portal :where(.admin-table-wrap, .grantor-applications-table-wrap, .grantor-import-table-wrap) {
+	max-width: 100%;
+	overflow-x: auto;
+	overscroll-behavior-inline: contain;
+	-webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1100px) {
+	.grantor-workspace {
+		padding-inline: clamp(0.9rem, 2.5vw, 1.2rem);
+	}
+
+	.grantor-applications-summary,
+	.grantor-panel-overview,
+	.grantor-metric-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.grantor-applications-summary > div:nth-child(3),
+	.grantor-panel-stat:nth-child(3) {
+		border-left: 0;
+	}
+
+	.grantor-announcement-card-grid,
+	.grantor-announcement-preview-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 980px) {
+	.grantor-portal {
+		display: block;
+		padding-top: calc(var(--grantor-topbar-height) + 58px);
+	}
+
+	.grantor-topbar {
+		padding-inline: clamp(0.7rem, 2.5vw, 1rem);
+	}
+
+	.grantor-topbar-brand {
+		width: auto;
+		padding: 0;
+	}
+
+	.grantor-sidebar {
+		position: fixed;
+		inset: var(--grantor-topbar-height) 0 auto 0;
+		z-index: 110;
+		display: block;
+		width: 100% !important;
+		max-width: 100% !important;
+		height: 58px;
+		padding: 0.45rem clamp(0.7rem, 2.5vw, 1rem) !important;
+		border-right: 0;
+		border-bottom: 1px solid #c9d9d0;
+		overflow: hidden !important;
+	}
+
+	.grantor-sidebar-label {
+		display: none;
+	}
+
+	.grantor-sidebar-nav {
+		display: flex;
+		gap: 0.4rem;
+		width: 100%;
+		margin: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
+		overscroll-behavior-inline: contain;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	.grantor-sidebar-nav::-webkit-scrollbar {
+		display: none;
+	}
+
+	.grantor-sidebar-link {
+		flex: 0 0 auto;
+		min-height: 42px;
+		padding: 0.55rem 0.75rem;
+		white-space: nowrap;
+	}
+
+	.grantor-workspace,
+	.grantor-workspace--profile {
+		width: 100%;
+		min-height: calc(100vh - var(--grantor-topbar-height) - 58px);
+		min-height: calc(100dvh - var(--grantor-topbar-height) - 58px);
+		height: auto;
+		margin-left: 0;
+		padding-top: 1rem;
+		overflow: visible;
+	}
+
+	.grantor-account-menu {
+		position: fixed;
+		top: calc(var(--grantor-topbar-height) + 0.5rem);
+		right: clamp(0.7rem, 2.5vw, 1rem);
+		left: auto;
+		max-height: calc(100vh - var(--grantor-topbar-height) - 1rem);
+		max-height: calc(100dvh - var(--grantor-topbar-height) - 1rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
+	.grantor-profile-page {
+		height: auto;
+		max-height: none;
+		overflow: visible;
+	}
+
+	.grantor-profile-layout {
+		grid-template-columns: minmax(220px, 0.36fr) minmax(0, 1fr);
+	}
+
+	.grantor-applications-head,
+	.grantor-announcements-head,
+	.grantor-panel-heading {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.grantor-applications-availability {
+		width: 100%;
+		padding: 0.75rem 0 0;
+		border-top: 1px solid #dce7e1;
+		border-left: 0;
+		justify-content: space-between;
+	}
+
+	.grantor-applications-filters,
+	.grantor-scholars-panel .admin-filter-bar {
+		grid-template-columns: minmax(0, 1fr) minmax(170px, 0.38fr);
+	}
+
+	.grantor-scholar-modal-backdrop,
+	.grantor-announcement-modal-backdrop,
+	.grantor-calendar-backdrop,
+	.grantor-reject-modal-backdrop,
+	.grantor-document-preview-backdrop,
+	.grantor-image-lightbox,
+	.grantor-inbox-detail-backdrop {
+		padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+	}
+
+	.grantor-scholar-modal-shell,
+	.grantor-scholar-modal,
+	.grantor-announcement-composer--modal,
+	.grantor-announcement-view-modal,
+	.grantor-calendar-modal,
+	.grantor-reject-modal,
+	.grantor-document-preview-modal,
+	.grantor-inbox-detail-modal {
+		max-height: calc(100vh - 1.5rem);
+		max-height: calc(100dvh - 1.5rem);
+		overscroll-behavior: contain;
+		scrollbar-gutter: stable;
+	}
+}
+
+@media (max-width: 700px) {
+	.grantor-portal {
+		padding-top: calc(var(--grantor-topbar-height) + 56px);
+	}
+
+	.grantor-sidebar {
+		height: 56px;
+	}
+
+	.grantor-topbar-brand strong {
+		font-size: 0.88rem;
+	}
+
+	.grantor-topbar-theme {
+		display: none;
+	}
+
+	.grantor-notification-btn,
+	.grantor-account-btn {
+		min-width: 44px;
+		min-height: 44px;
+	}
+
+	.grantor-account-menu {
+		right: 0.7rem;
+		left: 0.7rem;
+		width: auto;
+	}
+
+	.grantor-workspace {
+		padding: 0.85rem 0.7rem max(1rem, env(safe-area-inset-bottom));
+	}
+
+	.grantor-profile-layout,
+	.grantor-profile-form-grid,
+	.grantor-announcement-compose-grid,
+	.grantor-announcement-card-grid,
+	.grantor-announcement-preview-grid,
+	.grantor-applications-summary,
+	.grantor-panel-overview,
+	.grantor-metric-grid,
+	.grantor-dashboard-grid,
+	.grantor-application-info-list,
+	.grantor-reject-summary-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.grantor-profile-identity {
+		border-right: 0;
+		border-bottom: 1px solid #e5ece8;
+	}
+
+	.grantor-profile-form,
+	.grantor-profile-page {
+		overflow: visible;
+	}
+
+	.grantor-profile-form-actions {
+		margin-inline: -1.2rem;
+	}
+
+	.grantor-applications-summary > div,
+	.grantor-panel-stat,
+	.grantor-metric-card {
+		border-left: 0 !important;
+		border-right: 0;
+		border-bottom: 1px solid #e5ece8;
+	}
+
+	.grantor-applications-filters,
+	.grantor-scholars-panel .admin-filter-bar {
+		grid-template-columns: 1fr;
+		gap: 0.75rem;
+	}
+
+	.grantor-scholar-tabs-row,
+	.grantor-applications-toolbar,
+	.grantor-announcements-head,
+	.grantor-announcement-history-actions,
+	.grantor-announcement-card-actions,
+	.grantor-announcement-compose-actions,
+	.grantor-modal-actions,
+	.grantor-modal-actions--split,
+	.grantor-calendar-actions,
+	.grantor-reject-modal-actions,
+	.grantor-document-preview-actions {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.grantor-scholars-panel .grantor-scholar-tabs {
+		width: 100%;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	.grantor-scholars-panel .grantor-scholar-tabs::-webkit-scrollbar {
+		display: none;
+	}
+
+	.grantor-scholars-panel .grantor-scholar-tabs .admin-section-tab {
+		flex: 0 0 auto;
+	}
+
+	.grantor-scholars-panel .grantor-toolbar-actions {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		width: 100%;
+	}
+
+	.grantor-portal :where(.grantor-action-btn, .grantor-date-sort-btn, .grantor-create-announcement-btn, .grantor-application-view-btn, .admin-export-btn) {
+		min-height: 44px;
+	}
+
+	.grantor-announcement-compose-actions > *,
+	.grantor-modal-actions > *,
+	.grantor-modal-actions--split > *,
+	.grantor-calendar-actions > *,
+	.grantor-reject-modal-actions > *,
+	.grantor-document-preview-actions > * {
+		width: 100%;
+		justify-content: center;
+	}
+
+	.grantor-scholar-modal-shell,
+	.grantor-announcement-composer--modal,
+	.grantor-announcement-view-modal,
+	.grantor-calendar-modal,
+	.grantor-reject-modal,
+	.grantor-document-preview-modal,
+	.grantor-inbox-detail-modal {
+		width: 100%;
+		max-width: 100%;
+	}
+
+	.grantor-scholar-modal-close {
+		top: 0.65rem;
+		right: 0.65rem;
+	}
+}
+
+@media (max-width: 460px) {
+	.grantor-topbar-brand span {
+		display: none;
+	}
+
+	.grantor-topbar-brand img {
+		width: 32px;
+		height: 32px;
+	}
+
+	.grantor-topbar-actions {
+		gap: 0.4rem;
+	}
+
+	.grantor-sidebar-link {
+		padding-inline: 0.65rem;
+	}
+
+	.grantor-panel-overview,
+	.grantor-scholars-panel .grantor-toolbar-actions {
+		grid-template-columns: 1fr;
+	}
+
+	.grantor-panel-heading,
+	.grantor-applications-head,
+	.grantor-dashboard-head,
+	.grantor-dashboard-card,
+	.grantor-announcements-panel,
+	.grantor-scholars-panel,
+	.grantor-profile-layout,
+	.grantor-inbox-panel {
+		border-radius: 7px;
+	}
+
+	.grantor-import-modal-head,
+	.grantor-edit-modal-head {
+		grid-template-columns: 38px minmax(0, 1fr);
+		padding-right: 2.8rem;
+	}
+
+	.grantor-import-modal-count,
+	.grantor-edit-modal-status {
+		grid-column: 2;
+	}
 }

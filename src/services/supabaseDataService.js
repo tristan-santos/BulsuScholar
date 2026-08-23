@@ -1,7 +1,9 @@
 import { supabase } from "./supabaseClient"
+import { invalidateReferenceData } from "./referenceDataCache"
 
 export const TABLES = {
 	admins: "admins",
+	adminSettings: "admin_settings",
 	students: "students",
 	pendingStudent: "pending_students",
 	pending_students: "pending_students",
@@ -169,7 +171,12 @@ function serializeValue(value) {
 }
 
 function serializeData(data = {}) {
-	return serializeValue(expandDottedKeys(data))
+	const normalized = expandDottedKeys(data)
+	if (normalized.cogFile && !normalized.rogFile) normalized.rogFile = normalized.cogFile
+	if (normalized.documentScan?.cog && !normalized.documentScan?.rog) {
+		normalized.documentScan = { ...normalized.documentScan, rog: normalized.documentScan.cog }
+	}
+	return serializeValue(normalized)
 }
 
 function applyFilters(builder, filters = []) {
@@ -287,10 +294,32 @@ export function where(field, op, value) {
 	return { type: "where", field, op, value }
 }
 
+export function orderBy(field, direction = "asc") {
+	return {
+		type: "orderBy",
+		field,
+		direction: String(direction).toLowerCase() === "desc" ? "desc" : "asc",
+	}
+}
+
+export function limit(count = 25) {
+	const normalized = Math.max(1, Math.min(500, Number.parseInt(count, 10) || 25))
+	return { type: "limit", count: normalized }
+}
+
+export function range(from = 0, to = 24) {
+	const normalizedFrom = Math.max(0, Number.parseInt(from, 10) || 0)
+	const normalizedTo = Math.max(normalizedFrom, Number.parseInt(to, 10) || normalizedFrom)
+	return { type: "range", from: normalizedFrom, to: normalizedTo }
+}
+
 export function query(ref, ...constraints) {
 	return {
 		...ref,
 		filters: [...(ref.filters || []), ...constraints.filter((item) => item?.type === "where")],
+		order: constraints.find((item) => item?.type === "orderBy") || ref.order || null,
+		limitCount: constraints.find((item) => item?.type === "limit")?.count || ref.limitCount || null,
+		rangeValue: constraints.find((item) => item?.type === "range") || ref.rangeValue || null,
 	}
 }
 
@@ -317,6 +346,12 @@ export async function getDocs(ref) {
 	let request = supabase.from(ref.table).select("*")
 	if (ref.parentId) request = request.eq("parent_id", ref.parentId)
 	request = applyFilters(request, ref.filters || [])
+	if (ref.order) {
+		const orderColumn = ref.order.field === "id" ? "id" : `data->>${ref.order.field}`
+		request = request.order(orderColumn, { ascending: ref.order.direction !== "desc" })
+	}
+	if (ref.rangeValue) request = request.range(ref.rangeValue.from, ref.rangeValue.to)
+	else if (ref.limitCount) request = request.limit(ref.limitCount)
 	const { data, error } = await request
 	if (error) throw error
 	const rows = (data || []).map((row) => ({
@@ -339,6 +374,9 @@ export async function setDoc(ref, payload = {}, options = {}) {
 		onConflict: ref.parentId ? "parent_id,id" : "id",
 	})
 	if (error) throw error
+	if (["grantor_portals", "grantor_portal_scholars", "grantor_portal_announcements"].includes(ref.table)) {
+		invalidateReferenceData("recommendations:")
+	}
 }
 
 export async function updateDoc(ref, payload = {}) {
@@ -360,6 +398,9 @@ export async function deleteDoc(ref) {
 	if (ref.parentId) request = request.eq("parent_id", ref.parentId)
 	const { error } = await request
 	if (error) throw error
+	if (["grantor_portals", "grantor_portal_scholars", "grantor_portal_announcements"].includes(ref.table)) {
+		invalidateReferenceData("recommendations:")
+	}
 }
 
 export function writeBatch() {

@@ -8,3 +8,9 @@ services:
         value: https://bulsu-scholar.vercel.app
       - key: DOCUMENT_SCAN_ALLOWED_ORIGINS
         value: https://bulsu-scholar.vercel.app
+      - key: ENFORCE_PORTAL_ACTOR_HEADERS
+        value: "true"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: UVICORN_KEEP_ALIVE
+        value: "30"

@@ -221,3 +221,18 @@ Expected:
 - Check Render is awake and deployed.
 - Open `/deployment/health`.
 - Confirm Vercel `VITE_BACKEND_API_URL`.
+
+## Priority 2-4 Production Pass
+
+1. Run `supabase/priority-two-four.sql` once in the Supabase SQL Editor. It is idempotent and may be rerun after schema changes.
+2. Confirm Vercel has `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_STORAGE_BUCKET`, `VITE_BACKEND_API_URL`, `VITE_DOCUMENT_SCAN_API_URL`, `VITE_APP_URL`, and `VITE_PUBLIC_SITE_URL`.
+3. Confirm Render/Railway has `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_URL`, `DOCUMENT_SCAN_ALLOWED_ORIGINS`, `ENFORCE_PORTAL_ACTOR_HEADERS=true`, email settings, and optional OpenAI settings.
+4. Keep `WEB_CONCURRENCY=1` until workflow concurrency has been load-tested. Raise it only when the hosting memory limit and Supabase connection usage are known.
+5. In Supabase Auth, set the site URL and redirect allow-list to `https://bulsu-scholar.vercel.app`, including `/confirm-email` and `/reset-password`.
+6. Confirm the `bulsuscholar` bucket policies permit authenticated uploads and the application-required preview/download reads. Match the application limit of 10 MB and the supported PDF/image/spreadsheet MIME types.
+7. Run `npm run verify:deployment` from a shell containing the production environment values. This checks backend health routes and production CORS without writing data or sending email.
+8. Manually test one student, one grantor, and one admin session. Verify own-record isolation, grantor ownership filtering, audit logs, and inbox delivery.
+
+### Access Compatibility Note
+
+Student requests include their Supabase bearer token. Existing legacy admin and grantor accounts still use signed-in portal identity headers until those accounts are fully migrated to Supabase Auth. `ENFORCE_PORTAL_ACTOR_HEADERS=true` rejects missing or mismatched role/owner identity, but the final security target is Supabase Auth for every role plus database RLS policies.

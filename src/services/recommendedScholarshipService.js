@@ -20,6 +20,7 @@ import {
 	toGrantorDisplayName,
 } from "./grantorService"
 import { recommendScholarshipsWorkflow } from "./workflowService"
+import { getCachedReferenceData } from "./referenceDataCache"
 
 function toNumber(value, fallback = null) {
 	const parsed = Number.parseFloat(value)
@@ -51,10 +52,14 @@ function normalizeGrantorCandidate(raw = {}, id = "") {
 		minimumGwa,
 		minGwa: minimumGwa,
 		applicationsBlocked: raw.applicationsBlocked === true,
+		archived:
+			raw.archived === true ||
+			["archived", "inactive", "disabled"].includes(String(raw.status || raw.accountStatus || "").toLowerCase()),
 		applicationEnabled: normalizeOpenFlag(raw),
 		applyOpen: normalizeOpenFlag(raw),
 		profileImageUrl: raw.profileImageUrl || raw.imageUrl || raw.authorImageUrl || "",
 		authorImageUrl: raw.authorImageUrl || raw.profileImageUrl || raw.imageUrl || "",
+		customApplicationForm: raw.customApplicationForm || null,
 		province: raw.province || "",
 		city: raw.city || "",
 		barangay: raw.barangay || "",
@@ -67,7 +72,12 @@ function normalizeGrantorCandidate(raw = {}, id = "") {
 
 function pickLatestOpenAnnouncement(list = []) {
 	return [...list]
-		.filter((item) => item.applicationEnabled === true && !isAnnouncementArchived(item))
+		.filter((item) =>
+			item.applicationEnabled === true &&
+			item.grantorAccountArchived !== true &&
+			item.hiddenFromStudents !== true &&
+			!isAnnouncementArchived(item),
+		)
 		.sort((left, right) => {
 			const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime() || 0
 			const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime() || 0
@@ -76,11 +86,15 @@ function pickLatestOpenAnnouncement(list = []) {
 }
 
 export async function loadRecommendedScholarships(student = {}) {
-	const [portalSnapshot, scholarSnapshot, announcementSnapshot] = await Promise.all([
-		getDocs(collection(db, GRANTOR_PORTAL_COLLECTION)),
-		getDocs(collectionGroup(db, GRANTOR_SUBCOLLECTIONS.scholars)),
-		getDocs(collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements)),
-	])
+	const [portalSnapshot, scholarSnapshot, announcementSnapshot] = await getCachedReferenceData(
+		"recommendations:grantor-reference-data",
+		() => Promise.all([
+			getDocs(collection(db, GRANTOR_PORTAL_COLLECTION)),
+			getDocs(collectionGroup(db, GRANTOR_SUBCOLLECTIONS.scholars)),
+			getDocs(collectionGroup(db, GRANTOR_SUBCOLLECTIONS.announcements)),
+		]),
+		20_000,
+	)
 
 	const rosterCounts = scholarSnapshot.docs.reduce((lookup, row) => {
 		const data = row.data() || {}
@@ -100,27 +114,50 @@ export async function loadRecommendedScholarships(student = {}) {
 	}, {})
 
 	const candidates = portalSnapshot.docs
-		.map((row) => {
+		.flatMap((row) => {
 			const raw = row.data() || {}
 			const grantor = normalizeGrantorCandidate(raw, row.id)
-			const latestAnnouncement = pickLatestOpenAnnouncement(announcementsByGrantor[grantor.grantorId] || [])
-			const minimumGwa = toNumber(
-				latestAnnouncement?.minimumGrade ?? latestAnnouncement?.minGwa ?? grantor.minimumGwa,
-				grantor.minimumGwa,
-			)
-			return {
-				...grantor,
-				minimumGwa,
-				minGwa: minimumGwa,
-				announcementId: latestAnnouncement?.id || "",
-				announcementTitle: latestAnnouncement?.title || "",
-				announcementSubtitle: latestAnnouncement?.subtitle || latestAnnouncement?.previewText || "",
-				applicationWindow: latestAnnouncement?.applicationWindow || "",
-				requiredDocuments: latestAnnouncement?.requiredDocuments || {},
-				otherRequirements: latestAnnouncement?.otherRequirements || [],
-				applicationEnabled: grantor.applicationEnabled && (latestAnnouncement ? latestAnnouncement.applicationEnabled : true),
-				rosterCount: rosterCounts[grantor.grantorId] || 0,
+			if (grantor.archived) return []
+			const openAnnouncements = (announcementsByGrantor[grantor.grantorId] || [])
+				.filter((item) =>
+					item.applicationEnabled === true &&
+					item.grantorAccountArchived !== true &&
+					item.hiddenFromStudents !== true &&
+					!isAnnouncementArchived(item),
+				)
+				.sort((left, right) => {
+					const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime() || 0
+					const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime() || 0
+					return rightTime - leftTime
+				})
+			const sourceAnnouncements = openAnnouncements.length > 0 ? openAnnouncements : [pickLatestOpenAnnouncement(announcementsByGrantor[grantor.grantorId] || [])].filter(Boolean)
+			if (sourceAnnouncements.length === 0) {
+				// Students choose an actual scholarship, not a generic grantor record.
+				return []
 			}
+			return sourceAnnouncements.map((announcement) => {
+				const minimumGwa = toNumber(
+					announcement?.minimumGrade ?? announcement?.minGwa ?? grantor.minimumGwa,
+					grantor.minimumGwa,
+				)
+				return {
+					...grantor,
+					minimumGwa,
+					minGwa: minimumGwa,
+					announcementId: announcement?.id || "",
+					announcementTitle: announcement?.scholarshipTitle || announcement?.title || "",
+					scholarshipTitle: announcement?.scholarshipTitle || announcement?.title || "",
+					scholarshipKey: announcement?.scholarshipKey || "",
+					announcementSubtitle: announcement?.subtitle || announcement?.previewText || "",
+					applicationWindow: announcement?.applicationWindow || "",
+					requiredDocuments: announcement?.requiredDocuments || {},
+					otherRequirements: announcement?.otherRequirements || [],
+					customApplicationProfile: announcement?.customApplicationProfile || null,
+					customApplicationForm: announcement?.customApplicationForm || grantor.customApplicationForm || null,
+					applicationEnabled: grantor.applicationEnabled && announcement?.applicationEnabled === true,
+					rosterCount: rosterCounts[grantor.grantorId] || 0,
+				}
+			})
 		})
 		.filter((item) => item.grantorId && item.applicationEnabled && item.applicationsBlocked !== true)
 
@@ -166,6 +203,8 @@ export function buildRecommendationApplyPayload(student = {}, studentId = "", re
 		announcementSource: recommendation.announcementId ? "grantor" : "",
 		requiredDocuments: recommendation.requiredDocuments || {},
 		otherRequirements: recommendation.otherRequirements || [],
+		customApplicationProfile: recommendation.customApplicationProfile || null,
+		customApplicationForm: recommendation.customApplicationForm || null,
 	}
 	const fullName =
 		[student?.fname, student?.mname, student?.lname].filter(Boolean).join(" ").trim() ||
@@ -199,6 +238,8 @@ export function buildRecommendationApplyPayload(student = {}, studentId = "", re
 				minimumGrade: recommendation.minimumGwa,
 				requiredDocuments: recommendation.requiredDocuments || {},
 				otherRequirements: recommendation.otherRequirements || [],
+				customApplicationProfile: recommendation.customApplicationProfile || null,
+				customApplicationForm: recommendation.customApplicationForm || null,
 				status: nextRecord.status,
 				tracking: nextRecord.tracking,
 				applicationDate: serverTimestamp(),

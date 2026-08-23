@@ -28,7 +28,9 @@ import {
 import { db } from "../services/supabaseDataService"
 import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
+import "../css/StudentPortalRefresh.css"
 import useThemeMode from "../hooks/useThemeMode"
+import useArchivedGrantorIds from "../hooks/useArchivedGrantorIds"
 import {
 	buildScholarshipRecord,
 	getCurrentAcademicYear,
@@ -57,6 +59,7 @@ import {
 	toMaterialLabel,
 } from "../services/materialRequestService"
 import { downloadSoePdfBytes, exportSoePdfDocument } from "../services/soeService"
+import { downloadStudentApplicationProfile, getApplicationFormSource } from "../services/applicationFormService"
 import { resolveSoeRequestNumber } from "../services/soeRequestNumberService"
 import {
 	completeScholarshipTrackingStep,
@@ -64,6 +67,7 @@ import {
 	getScholarshipTrackingStepBadgeLabel,
 } from "../services/scholarshipTrackingService"
 import {
+	GRANTOR_SUBCOLLECTIONS,
 	GRANTOR_PORTAL_COLLECTION,
 	normalizeGrantorPortalSettings,
 } from "../services/grantorService"
@@ -73,6 +77,7 @@ import {
 	buildRecommendationApplyPayload,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
+import { createStudentNotification } from "../services/notificationService"
 import { uploadToStorage } from "../services/storageService"
 import {
 	getOtherRequirementUploadEntry,
@@ -196,6 +201,43 @@ function getRejectionProviderLabel(entry = {}) {
 	)
 }
 
+function isPlaceholderDisplayLabel(value = "") {
+	const compact = String(value || "").trim().replace(/\s+/g, "")
+	if (!compact) return true
+	if (/^(.)\1{5,}$/i.test(compact)) return true
+	return false
+}
+
+function getFirstUsableDisplayLabel(values = [], fallback = "Scholarship") {
+	const match = values.find((value) => !isPlaceholderDisplayLabel(value))
+	return String(match || fallback).trim()
+}
+
+function getScholarshipGrantorDisplayLabel(entry = {}, catalogItem = {}, grantorLabelLookup = {}) {
+	const providerType = String(entry?.providerType || "").trim()
+	const grantorId = String(entry?.grantorId || entry?.providerId || "").trim()
+
+	return getFirstUsableDisplayLabel(
+		[
+			entry?.grantorName,
+			entry?.matchedGrantorName,
+			entry?.providerName,
+			entry?.providerLabel,
+			entry?.provider,
+			providerType ? grantorLabelLookup[`providerType:${providerType}`] : "",
+			grantorId ? grantorLabelLookup[`grantorId:${grantorId}`] : "",
+			catalogItem?.grantorName,
+			catalogItem?.providerName,
+			catalogItem?.providerLabel,
+			catalogItem?.provider,
+			catalogItem?.name,
+			entry?.scholarshipName,
+			entry?.name,
+		],
+		"Scholarship",
+	)
+}
+
 function matchesScholarshipTarget(rejectedEntry = {}, target = {}) {
 	const rejectedKeys = [
 		rejectedEntry.grantorId,
@@ -225,6 +267,35 @@ function matchesScholarshipTarget(rejectedEntry = {}, target = {}) {
 
 	if (rejectedKeys.length === 0 || targetKeys.length === 0) return false
 	return rejectedKeys.some((key) => targetKeys.includes(key))
+}
+
+function matchesArchivedGrantorTarget(entry = {}, target = {}) {
+	const status = String(entry?.status || "").toLowerCase()
+	const isArchived =
+		entry?.archived === true ||
+		entry?.frozen === true ||
+		status.includes("archived") ||
+		status.includes("frozen") ||
+		status.includes("previous")
+	if (!isArchived) return false
+	const entryKeys = [
+		entry?.blockedGrantorId,
+		entry?.archivedBy,
+		entry?.grantorId,
+		entry?.providerId,
+		entry?.providerType,
+	]
+		.filter(Boolean)
+		.map((value) => String(value).trim().toLowerCase())
+	const targetKeys = [
+		target?.grantorId,
+		target?.providerId,
+		target?.providerType,
+		target?.id,
+	]
+		.filter(Boolean)
+		.map((value) => String(value).trim().toLowerCase())
+	return entryKeys.length > 0 && targetKeys.length > 0 && entryKeys.some((key) => targetKeys.includes(key))
 }
 
 function formatApplicationStatus(status = "") {
@@ -284,7 +355,7 @@ function getMultipleScholarshipBannerCopy(user, scholarships) {
 
 function buildDocumentRequirementCopy(documentCheck) {
 	if (documentCheck?.ok) {
-		return `COR and COG are ready for ${documentCheck?.semesterTag || "the current semester"}.`
+		return `COR and ROG are ready for ${documentCheck?.semesterTag || "the current semester"}.`
 	}
 
 	const notes = []
@@ -294,12 +365,12 @@ function buildDocumentRequirementCopy(documentCheck) {
 	if (Array.isArray(documentCheck?.expired) && documentCheck.expired.length > 0) {
 		notes.push(`Update needed: ${documentCheck.expired.join(", ")}`)
 	}
-	return notes.join(" | ") || "Upload the required COR and COG."
+	return notes.join(" | ") || "Upload the required COR and ROG."
 }
 
 function buildDocumentRequirementPrompt(documentCheck, scholarshipName = "this scholarship") {
 	if (!documentCheck) {
-		return `Upload the required COR and COG for ${scholarshipName} before requesting materials.`
+		return `Upload the required COR and ROG for ${scholarshipName} before requesting materials.`
 	}
 
 	const notes = []
@@ -313,7 +384,7 @@ function buildDocumentRequirementPrompt(documentCheck, scholarshipName = "this s
 	}
 
 	return (
-		`Upload the required COR and COG for ${scholarshipName} before requesting materials.` +
+		`Upload the required COR and ROG for ${scholarshipName} before requesting materials.` +
 		(notes.length > 0 ? ` ${notes.join(" | ")}` : "")
 	)
 }
@@ -328,7 +399,46 @@ function formatDisplayText(value, fallback = "") {
 		.replace(/\b([a-z])([a-z]*)/g, (_, first, rest) => `${first.toUpperCase()}${rest}`)
 }
 
+function normalizeStudentScholarshipNotice(row = {}, id = "", sourceTable = "studentNotifications") {
+	return {
+		id,
+		sourceTable,
+		...row,
+		type: row.type || row.notificationType || "",
+		title: row.title || row.subject || "",
+		message: row.message || row.body || "",
+		studentId: row.studentId || row.studentID || row.studentNumber || "",
+		grantorId: row.grantorId || row.providerId || "",
+		grantorName: row.grantorName || row.providerLabel || row.authorName || "",
+		scholarshipName: row.scholarshipName || row.announcementTitle || row.providerLabel || "",
+		announcementId: row.announcementId || "",
+		createdAt: row.createdAt || row.timestamp || row.date || null,
+	}
+}
+
+function isMultipleScholarshipWarning(row = {}) {
+	const type = String(row.warningType || row.type || row.notificationType || "").toLowerCase()
+	const reason = String(row.scholarshipRestrictionReason || row.reason || row.source || "").toLowerCase()
+	return (
+		type.includes("multiple_scholarship") ||
+		type.includes("duplicate_scholarship") ||
+		reason.includes("multiple_scholarship") ||
+		reason.includes("duplicate_scholarship")
+	)
+}
+
+function recommendationKey(item = {}) {
+	return [
+		item.announcementId || "",
+		item.grantorId || item.providerType || item.id || "",
+		item.scholarshipName || item.announcementTitle || item.providerLabel || item.grantorName || "",
+	]
+		.filter(Boolean)
+		.join("::")
+}
+
 export default function StudentScholarshipsPage() {
+	const archivedGrantorIds = useArchivedGrantorIds()
 	const location = useLocation()
 	const navigate = useNavigate()
 	const [user, setUser] = useState(null)
@@ -343,10 +453,15 @@ export default function StudentScholarshipsPage() {
 	const [studentApplications, setStudentApplications] = useState([])
 	const [studentSoeRequests, setStudentSoeRequests] = useState([])
 	const [studentSoeDownloads, setStudentSoeDownloads] = useState([])
+	const [studentScholarshipNotices, setStudentScholarshipNotices] = useState([])
+	const [studentWarningNotices, setStudentWarningNotices] = useState([])
 	const [recommendedScholarships, setRecommendedScholarships] = useState([])
 	const [recommendationsLoading, setRecommendationsLoading] = useState(false)
 	const [recommendationAlgorithm, setRecommendationAlgorithm] = useState("")
 	const [applyingRecommendationId, setApplyingRecommendationId] = useState("")
+	const [invitationDecision, setInvitationDecision] = useState(null)
+	const [invitationRejectReason, setInvitationRejectReason] = useState("Not interested")
+	const [invitationRejectNotes, setInvitationRejectNotes] = useState("")
 	const [soeExpenses, setSoeExpenses] = useState([{ label: "", amount: "" }])
 	const [isExportingSoe, setIsExportingSoe] = useState(false)
 	const [isDownloadingSoe, setIsDownloadingSoe] = useState(false)
@@ -363,15 +478,12 @@ export default function StudentScholarshipsPage() {
 	const forcedLogoutRef = useRef(false)
 	const availableProgramsRef = useRef(null)
 	const rosterSyncRef = useRef("")
+	const recommendationRequestKeyRef = useRef("")
 
 	const scholarshipCatalog = useMemo(() => getScholarshipCatalog(), [])
 	const scholarships = useMemo(
 		() => normalizeScholarshipList(user?.scholarships || []),
 		[user?.scholarships],
-	)
-	const recommendationPreview = useMemo(
-		() => recommendedScholarships.slice(0, 3),
-		[recommendedScholarships],
 	)
 	const scholarshipChoices = useMemo(
 		() => scholarships.filter((item) => !isScholarshipRejected(item)),
@@ -407,6 +519,77 @@ export default function StudentScholarshipsPage() {
 		() => getRejectionCooldown(latestRejectedApplication || {}),
 		[latestRejectedApplication],
 	)
+	useEffect(() => {
+		if (!user || !userId || scholarships.length === 0) return
+		const expiredRejected = scholarships.filter((entry) => isScholarshipRejected(entry) && !getRejectionCooldown(entry).active)
+		if (expiredRejected.length === 0) return
+
+		let cancelled = false
+		const cleanupExpiredRejections = async () => {
+			try {
+				const retainedScholarships = scholarships.filter((entry) => !(isScholarshipRejected(entry) && !getRejectionCooldown(entry).active))
+				const previousEntries = expiredRejected.map((entry) => ({
+					...entry,
+					status: "Previous Scholar",
+					previousScholar: true,
+					movedToPreviousAt: serverTimestamp(),
+				}))
+				await setDoc(
+					doc(db, "students", userId),
+					{
+						scholarships: retainedScholarships,
+						previousScholars: [...(Array.isArray(user.previousScholars) ? user.previousScholars : []), ...previousEntries],
+						updatedAt: serverTimestamp(),
+					},
+					{ merge: true },
+				)
+
+				await Promise.all(expiredRejected.map(async (entry) => {
+					const grantorId = entry.grantorId || entry.providerId
+					if (!grantorId) return
+					const scholarSnap = await getDocs(collection(doc(db, "grantorPortals", grantorId), GRANTOR_SUBCOLLECTIONS.scholars))
+					const matchingRows = scholarSnap.docs
+						.map((item) => ({ id: item.id, ...(item.data() || {}) }))
+						.filter((row) => {
+							const rowStudentId = row.studentId || row.studentID || row.studentNumber || row.studentnumber
+							return String(rowStudentId || "") === String(userId)
+						})
+					await Promise.all(matchingRows.map((row) =>
+						setDoc(
+							doc(collection(doc(db, "grantorPortals", grantorId), GRANTOR_SUBCOLLECTIONS.scholars), row.id),
+							{
+								archived: true,
+								status: "Archived",
+								archivedAt: serverTimestamp(),
+								archivedBy: "system",
+								archivedByName: "BulsuScholar",
+								archiveReason: entry.rejectionReason || "Rejected application cooldown completed",
+								archiveNotes: entry.rejectionNotes || "Moved from rejected application to previous scholar history after the 24-hour cooldown.",
+								rejectionReason: entry.rejectionReason || "",
+								rejectionNotes: entry.rejectionNotes || "",
+								updatedAt: serverTimestamp(),
+							},
+							{ merge: true },
+						),
+					))
+				}))
+
+				if (!cancelled) {
+					setUser((prev) => ({
+						...(prev || {}),
+						scholarships: retainedScholarships,
+						previousScholars: [...(Array.isArray(prev?.previousScholars) ? prev.previousScholars : []), ...previousEntries],
+					}))
+				}
+			} catch (error) {
+				console.error("Failed to clean up expired rejected scholarship cooldown.", error)
+			}
+		}
+		void cleanupExpiredRejections()
+		return () => {
+			cancelled = true
+		}
+	}, [scholarships, user, userId])
 	const getRejectedCooldownForTarget = useCallback(
 		(target = {}) => {
 			const rejected = rejectedApplications.find((item) => matchesScholarshipTarget(item, target))
@@ -418,6 +601,44 @@ export default function StudentScholarshipsPage() {
 		},
 		[rejectedApplications],
 	)
+	const archivedGrantorBlocks = useMemo(() => {
+		return [
+			...(Array.isArray(user?.scholarships) ? user.scholarships : []),
+			...(Array.isArray(user?.previousScholars) ? user.previousScholars : []),
+		].filter((entry) => {
+			const status = String(entry?.status || "").toLowerCase()
+			return entry?.archived === true || entry?.frozen === true || status.includes("archived") || status.includes("frozen") || status.includes("previous")
+		})
+	}, [user?.previousScholars, user?.scholarships])
+	const getArchivedGrantorBlockForTarget = useCallback(
+		(target = {}) => archivedGrantorBlocks.find((entry) => matchesArchivedGrantorTarget(entry, target)) || null,
+		[archivedGrantorBlocks],
+	)
+	const pendingScholarshipInvitations = useMemo(
+		() => (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : [])
+			.filter((item) => item?.type === "grantor_unarchive_invitation" && String(item.status || "").toLowerCase() === "pending"),
+		[user?.scholarshipInvitations],
+	)
+	const adminScholarshipRecommendations = useMemo(
+		() => studentScholarshipNotices
+			.filter((item) => String(item.type || "").toLowerCase() === "admin_scholarship_recommendation")
+			.sort((left, right) => (toJsDate(right.createdAt)?.getTime() || 0) - (toJsDate(left.createdAt)?.getTime() || 0)),
+		[studentScholarshipNotices],
+	)
+	const hasMultipleScholarshipConflict =
+		user?.scholarshipConflictWarning === true ||
+		(user?.scholarshipRestrictionReason === "multiple_scholarships" && scholarships.length > 1)
+	const warningRecommendationBlock = useMemo(
+		() => studentWarningNotices.some(isMultipleScholarshipWarning) || hasMultipleScholarshipConflict,
+		[hasMultipleScholarshipConflict, studentWarningNotices],
+	)
+	const matchedGrantorScope = useMemo(() => {
+		if (scholarships.length > 0) return []
+		return (Array.isArray(user?.grantorMatches) ? user.grantorMatches : [])
+			.map((item) => String(item.grantorId || item.id || "").trim())
+			.filter(Boolean)
+	}, [scholarships.length, user?.grantorMatches])
+	const hasMatchedGrantorScope = matchedGrantorScope.length > 0
 	const applicationLockTooltip =
 		"You already have an existing scholarship application. You cannot apply for another until the current one is resolved."
 	const isValidated = checkValidated(user)
@@ -431,9 +652,6 @@ export default function StudentScholarshipsPage() {
 	const hasBlockedScholarshipBanner =
 		studentAccessState.scholarshipEligibilityBlocked || studentAccessState.soeComplianceBlocked
 	const blockedScholarshipBannerCopy = getStudentBlockedBannerMessage(user || {})
-	const hasMultipleScholarshipConflict =
-		user?.scholarshipConflictWarning === true ||
-		(user?.scholarshipRestrictionReason === "multiple_scholarships" && scholarships.length > 1)
 	const multipleScholarshipBannerCopy = getMultipleScholarshipBannerCopy(user, scholarships)
 	const canResolveMultipleScholarshipConflict =
 		hasMultipleScholarshipConflict &&
@@ -454,6 +672,14 @@ export default function StudentScholarshipsPage() {
 			return lookup
 		}, {})
 	}, [blockedGrantorPortals])
+	const grantorDisplayLabels = useMemo(() => {
+		return grantorPortals.reduce((lookup, item) => {
+			const label = item.grantorName || item.providerLabel || item.providerName || item.grantorId || ""
+			if (item.providerType && label) lookup[`providerType:${item.providerType}`] = label
+			if (item.grantorId && label) lookup[`grantorId:${item.grantorId}`] = label
+			return lookup
+		}, {})
+	}, [grantorPortals])
 	const _announcementFocusProviderType = useMemo(
 		() => String(location.state?.focusProviderType || "").trim(),
 		[location.state],
@@ -616,14 +842,26 @@ export default function StudentScholarshipsPage() {
 
 	useEffect(() => {
 		if (!userLoaded || !user || !userId) return
-		if (hasActiveOrPendingScholarship) {
+		if (hasActiveOrPendingScholarship || latestRejectedCooldown?.active || warningRecommendationBlock) {
+			recommendationRequestKeyRef.current = ""
 			setRecommendedScholarships([])
 			setRecommendationAlgorithm("")
 			setRecommendationsLoading(false)
 			return
 		}
+		const recommendationRequestKey = JSON.stringify([
+			userId,
+			user.gwa || user.currentGwa || user.generalWeightedAverage || "",
+			user.course || "",
+			user.year || user.yearLevel || "",
+			user.province || "",
+			user.city || user.municipality || "",
+			user.barangay || "",
+			[...archivedGrantorIds].sort(),
+		])
+		if (recommendationRequestKeyRef.current === recommendationRequestKey) return
+		recommendationRequestKeyRef.current = recommendationRequestKey
 
-		let cancelled = false
 		setRecommendationsLoading(true)
 		loadRecommendedScholarships({
 			...user,
@@ -631,24 +869,24 @@ export default function StudentScholarshipsPage() {
 			studentId: user.studentId || user.studentnumber || userId,
 		})
 			.then((result) => {
-				if (cancelled) return
-				setRecommendedScholarships(result.recommendations || [])
+				if (recommendationRequestKeyRef.current !== recommendationRequestKey) return
+				setRecommendedScholarships(
+					(result.recommendations || []).filter(
+						(item) => !archivedGrantorIds.has(String(item.grantorId || item.providerId || "")),
+					),
+				)
 				setRecommendationAlgorithm(result.algorithm || "")
 			})
 			.catch((error) => {
-				if (cancelled) return
+				if (recommendationRequestKeyRef.current !== recommendationRequestKey) return
 				console.error("StudentScholarshipsPage: recommendation loading failed:", error)
 				setRecommendedScholarships([])
 				setRecommendationAlgorithm("")
 			})
 			.finally(() => {
-				if (!cancelled) setRecommendationsLoading(false)
+				if (recommendationRequestKeyRef.current === recommendationRequestKey) setRecommendationsLoading(false)
 			})
-
-		return () => {
-			cancelled = true
-		}
-	}, [hasActiveOrPendingScholarship, user, userId, userLoaded])
+	}, [archivedGrantorIds, hasActiveOrPendingScholarship, latestRejectedCooldown?.active, user, userId, userLoaded, warningRecommendationBlock])
 
 	useEffect(() => {
 		if (location.state?.fromAnnouncement !== true) return
@@ -698,6 +936,38 @@ export default function StudentScholarshipsPage() {
 				setStudentApplications([])
 			},
 		)
+	}, [userId])
+
+	useEffect(() => {
+		if (!userId) {
+			setStudentScholarshipNotices([])
+			setStudentWarningNotices([])
+			return undefined
+		}
+
+		const unsubscribeNotifications = onSnapshot(
+			query(collection(db, "studentNotifications"), where("studentId", "==", userId)),
+			(snap) => {
+				setStudentScholarshipNotices(
+					snap.docs.map((row) => normalizeStudentScholarshipNotice(row.data() || {}, row.id, "studentNotifications")),
+				)
+			},
+			() => setStudentScholarshipNotices([]),
+		)
+		const unsubscribeWarnings = onSnapshot(
+			query(collection(db, "studentWarning"), where("studentId", "==", userId)),
+			(snap) => {
+				setStudentWarningNotices(
+					snap.docs.map((row) => normalizeStudentScholarshipNotice(row.data() || {}, row.id, "studentWarning")),
+				)
+			},
+			() => setStudentWarningNotices([]),
+		)
+
+		return () => {
+			unsubscribeNotifications()
+			unsubscribeWarnings()
+		}
 	}, [userId])
 
 	useEffect(() => {
@@ -1021,10 +1291,13 @@ export default function StudentScholarshipsPage() {
 	)
 
 	const kwspTracking = useMemo(() => {
-		const trackedScholarshipLabel = kwspEntry?.name || kwspCatalogItem?.name || "Scholarship"
+		const trackedScholarshipLabel = getScholarshipGrantorDisplayLabel(
+			kwspEntry || {},
+			kwspCatalogItem || {},
+			grantorDisplayLabels,
+		)
 		const isKwspFlow = kwspEntry?.providerType === "kuya_win"
 		const isMorissonFlow = kwspEntry?.providerType === "morisson"
-		const trackerTitle = `Applying for: ${trackedScholarshipLabel}`
 		const trackerCopy = "Track your application stage and the next action required for this scholarship."
 		const trackerAriaLabel = isKwspFlow
 			? "KWSP application tracking"
@@ -1074,13 +1347,13 @@ export default function StudentScholarshipsPage() {
 				: documentCopy
 			nextActionHelp = kwspDocumentCheck.ok
 				? "No upload action is needed right now. Wait for the scholarship office to review your submitted documents."
-				: "Go to Profile, open your document uploads, then update the missing COR or COG."
+				: "Go to Profile, open your document uploads, then update the missing COR or ROG."
 			summaryTone = kwspDocumentCheck.ok ? "current" : "attention"
 			nextPanelTone = kwspDocumentCheck.ok ? "default" : "missing"
 		} else if (trackingProgress.currentStep?.id === "application_form") {
-			nextActionTitle = "Application Form"
-			nextActionCopy = "Your COR and COG are complete. Complete and upload the required application form before review continues."
-			nextActionHelp = "Go to Profile, open your document uploads, then add your scholarship application form."
+			nextActionTitle = "Student Application Profile"
+			nextActionCopy = "Your COR and ROG are complete. Complete and upload the required Student Application Profile before review continues."
+			nextActionHelp = "Go to Profile, open your document uploads, then add your Student Application Profile."
 			summaryTone = "current"
 			nextPanelTone = "pending"
 		} else if (trackingProgress.currentStep?.id === "document_review") {
@@ -1114,7 +1387,7 @@ export default function StudentScholarshipsPage() {
 		} else if (trackingProgress.currentStep?.id === "request_materials") {
 			nextActionTitle = "Requesting of Materials"
 			nextActionCopy = isMorissonFlow
-				? "Your Morisson application form is confidential. Get the application form directly from the scholarship office, then request your SOE here if you still need it."
+				? "Your Student Application Profile is confidential. Get it directly from the scholarship office, then request your SOE here if you still need it."
 				: isKwspFlow
 					? "Your KWSP application is approved. Request your SOE if you still need it."
 					: `Request your SOE for ${trackedScholarshipLabel} if you still need it.`
@@ -1135,8 +1408,9 @@ export default function StudentScholarshipsPage() {
 			summaryTone = "current"
 			nextPanelTone = trackingProgress.hasApprovedMaterials ? "default" : "pending"
 		} else if (trackingProgress.signingAttention) {
-			nextActionTitle = "Resolve SOE checking issue"
-			nextActionCopy = "Your downloaded SOE was marked non-compliant. Coordinate with the scholarship office before proceeding."
+			nextActionTitle = "Download SOE again"
+			nextActionCopy = "Your downloaded SOE was rejected during signing. Download a new SOE and submit it again."
+			nextActionHelp = "Use the SOE download button below, then bring the fresh copy to the scholarship office for signing."
 			summaryTone = "attention"
 		} else if (trackingProgress.currentStep?.id === "signing_materials") {
 			nextActionTitle = "Go to admin for the signature"
@@ -1164,7 +1438,7 @@ export default function StudentScholarshipsPage() {
 			nextPanelTone,
 			currentStageLabel: trackingProgress.currentStepLabel || `${trackedScholarshipLabel} Tracking`,
 			highlightedStepId: trackingProgress.highlightedStepId || "",
-			trackerTitle,
+			trackedScholarshipLabel,
 			trackerCopy,
 			trackerAriaLabel,
 			applicationStatus: formatApplicationStatus(kwspEntry?.status),
@@ -1194,6 +1468,7 @@ export default function StudentScholarshipsPage() {
 		applicationLockTooltip,
 		hasActiveOrPendingScholarship,
 		hasScholarshipActionBlock,
+		grantorDisplayLabels,
 		kwspCatalogItem,
 		kwspDocumentCheck,
 		kwspEntry,
@@ -1237,7 +1512,10 @@ export default function StudentScholarshipsPage() {
 			if (expectedType === "PDF") {
 				return type === "application/pdf" || name.endsWith(".pdf")
 			}
-			return true
+			if (expectedType === "BOTH") {
+				return type === "application/pdf" || type === "image/png" || name.endsWith(".pdf") || name.endsWith(".png")
+			}
+			return false
 		})
 	}
 
@@ -1340,7 +1618,11 @@ export default function StudentScholarshipsPage() {
 						const complete = uploadedFiles.length >= uploadLimit
 						const busyKey = `${entry.id}_${toRequirementKey(requirement, index)}`
 						const isBusy = otherRequirementUploadBusy === busyKey
-						const accept = requirement.fileType === "PNG" ? ".png,image/png" : ".pdf,application/pdf"
+						const accept = requirement.fileType === "PNG"
+							? ".png,image/png"
+							: requirement.fileType === "BOTH"
+								? ".pdf,.png,application/pdf,image/png"
+								: ".pdf,application/pdf"
 						return (
 							<div className="student-other-requirement-card" key={`${entry.id}_${requirement.id}`}>
 								<div>
@@ -1384,18 +1666,33 @@ export default function StudentScholarshipsPage() {
 
 	const applyRecommendedScholarship = async (recommendation) => {
 		if (!user || !userId || isMutating || applyingRecommendationId) return
+		if (archivedGrantorIds.has(String(recommendation.grantorId || recommendation.providerId || ""))) {
+			toast.error("This grantor is archived and is not accepting scholarship applications.")
+			return
+		}
 		if (isScholarshipActionBlocked()) return
+		if (latestRejectedCooldown?.active) {
+			toast.info(
+				`You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}. Your previous application was rejected and is still under the 24-hour cooldown.`,
+			)
+			return
+		}
 		if (hasLockedScholarship || hasActiveOrPendingScholarship) {
 			toast.info(applicationLockTooltip)
 			return
 		}
 
-		const recommendationId = recommendation.grantorId || recommendation.id
+		const recommendationId = recommendationKey(recommendation) || recommendation.grantorId || recommendation.id
 		const rejectedMatch = getRejectedCooldownForTarget(recommendation)
 		if (rejectedMatch?.cooldown?.active) {
 			toast.info(
 				`You can re-apply to ${getRejectionProviderLabel(rejectedMatch.record)} after ${formatCooldownDuration(rejectedMatch.cooldown.remainingMs)}.`,
 			)
+			return
+		}
+		const archivedBlock = getArchivedGrantorBlockForTarget(recommendation)
+		if (archivedBlock) {
+			toast.info(`You cannot apply to ${recommendation.grantorName || "this grantor"} again unless they invite you back.`)
 			return
 		}
 
@@ -1420,7 +1717,11 @@ export default function StudentScholarshipsPage() {
 			toast.success(`Application sent to ${recommendation.grantorName || "the grantor"}. Upload the required documents next to continue.`)
 		} catch (error) {
 			console.error("Failed to apply recommended scholarship:", error)
-			toast.error("Failed to apply recommended scholarship. Please try again.")
+			toast.error(
+				String(error?.message || "").toLowerCase().includes("grantor is archived")
+					? error.message
+					: "Failed to apply recommended scholarship. Please try again.",
+			)
 		} finally {
 			setApplyingRecommendationId("")
 			setIsMutating(false)
@@ -1430,11 +1731,22 @@ export default function StudentScholarshipsPage() {
 	const _applyScholarship = async (catalogItem) => {
 		if (!user || !userId || isMutating) return
 		if (isScholarshipActionBlocked()) return
+		if (latestRejectedCooldown?.active) {
+			toast.info(
+				`You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}. Your previous application was rejected and is still under the 24-hour cooldown.`,
+			)
+			return
+		}
 		const rejectedMatch = getRejectedCooldownForTarget(catalogItem)
 		if (rejectedMatch?.cooldown?.active) {
 			toast.info(
 				`You can re-apply to ${getRejectionProviderLabel(rejectedMatch.record)} after ${formatCooldownDuration(rejectedMatch.cooldown.remainingMs)}.`,
 			)
+			return
+		}
+		const archivedBlock = getArchivedGrantorBlockForTarget(catalogItem)
+		if (archivedBlock) {
+			toast.info(`You cannot apply to ${catalogItem.name || "this grantor"} again unless they invite you back.`)
 			return
 		}
 		if (blockedProviderTypes.has(catalogItem.providerType)) {
@@ -1518,6 +1830,165 @@ export default function StudentScholarshipsPage() {
 			toast.error("Failed to apply scholarship. Please try again.")
 		} finally {
 			setIsMutating(false)
+		}
+	}
+
+	const acceptScholarshipInvitation = async (invitation = {}) => {
+		if (!user || !userId || isMutating || !invitation?.id) return
+		if (isScholarshipActionBlocked()) return
+		if (latestRejectedCooldown?.active) {
+			toast.info(
+				`You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}. Your previous application was rejected and is still under the 24-hour cooldown.`,
+			)
+			return
+		}
+		if (hasLockedScholarship || hasActiveOrPendingScholarship) {
+			toast.info(applicationLockTooltip)
+			return
+		}
+
+		const invitationTarget = {
+			id: invitation.id,
+			grantorId: invitation.grantorId || "",
+			grantorName: invitation.grantorName || "Grantor",
+			providerLabel: invitation.scholarshipName || invitation.grantorName || "Scholarship",
+			announcementTitle: invitation.scholarshipName || invitation.grantorName || "Scholarship",
+			providerType: invitation.providerType || toScholarshipProviderType(invitation.grantorName || invitation.scholarshipName || "Scholarship"),
+			minimumGwa: invitation.minimumGwa || invitation.minGwa || "",
+			requiredDocuments: invitation.requiredDocuments || {},
+			otherRequirements: invitation.otherRequirements || [],
+		}
+		const retainedScholarships = scholarships.filter((item) => !matchesArchivedGrantorTarget(item, invitationTarget))
+		const nextInvitations = (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : []).map((item) =>
+			item.id === invitation.id
+				? {
+						...item,
+						status: "Accepted",
+						acceptedAt: serverTimestamp(),
+						updatedAt: serverTimestamp(),
+					}
+				: item,
+		)
+
+		setIsMutating(true)
+		try {
+			const { workflowPayload } = buildRecommendationApplyPayload(
+				{
+					...user,
+					scholarships: retainedScholarships,
+				},
+				userId,
+				invitationTarget,
+			)
+			await applyScholarshipWorkflow({
+				...workflowPayload,
+				allowArchivedGrantorReapply: true,
+				studentUpdate: {
+					...workflowPayload.studentUpdate,
+					scholarshipInvitations: nextInvitations,
+				},
+			})
+			if (invitation.grantorId && invitation.scholarId) {
+				await setDoc(
+					doc(db, GRANTOR_PORTAL_COLLECTION, invitation.grantorId, GRANTOR_SUBCOLLECTIONS.scholars, invitation.scholarId),
+					{
+						status: "Pending",
+						archived: false,
+						frozen: false,
+						unarchiveInvitationPending: false,
+						invitationAcceptedAt: serverTimestamp(),
+						scholarshipTitle: invitation.scholarshipName || invitationTarget.providerLabel,
+						updatedAt: serverTimestamp(),
+					},
+					{ merge: true },
+				)
+			}
+			setUser((prev) => ({
+				...(prev || {}),
+				scholarships: workflowPayload.studentUpdate.scholarships,
+				scholarshipInvitations: nextInvitations,
+				updatedAt: serverTimestamp(),
+			}))
+			await syncWarnings(workflowPayload.studentUpdate.scholarships)
+			toast.success(`Invitation accepted. Your application for ${invitationTarget.providerLabel} was submitted.`)
+		} catch (error) {
+			console.error("Failed to accept scholarship invitation:", error)
+			toast.error("Failed to accept the scholarship invitation. Please try again.")
+		} finally {
+			setIsMutating(false)
+		}
+	}
+
+	const rejectScholarshipInvitation = async () => {
+		const invitation = invitationDecision
+		if (!user || !userId || isMutating || !invitation?.id) return
+		const reason = invitationRejectReason === "Other"
+			? invitationRejectNotes.trim() || "Other reason"
+			: invitationRejectReason
+		const nextInvitations = (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : []).map((item) =>
+			item.id === invitation.id
+				? {
+						...item,
+						status: "Rejected",
+						rejectedAt: serverTimestamp(),
+						rejectionReason: reason,
+						rejectionNotes: invitationRejectNotes.trim(),
+						updatedAt: serverTimestamp(),
+					}
+				: item,
+		)
+
+		setIsMutating(true)
+		try {
+			await setDoc(
+				doc(db, "students", userId),
+				{
+					scholarshipInvitations: nextInvitations,
+					updatedAt: serverTimestamp(),
+				},
+				{ merge: true },
+			)
+			if (invitation.grantorId && invitation.scholarId) {
+				await setDoc(
+					doc(db, GRANTOR_PORTAL_COLLECTION, invitation.grantorId, GRANTOR_SUBCOLLECTIONS.scholars, invitation.scholarId),
+					{
+						status: "Archived",
+						archived: true,
+						frozen: true,
+						unarchiveInvitationPending: false,
+						invitationRejectedAt: serverTimestamp(),
+						invitationRejectionReason: reason,
+						invitationRejectionNotes: invitationRejectNotes.trim(),
+						updatedAt: serverTimestamp(),
+					},
+					{ merge: true },
+				)
+			}
+			await createStudentNotification({
+				studentId: userId,
+				source: "personal",
+				type: "scholarship_invitation_rejected",
+				title: "Scholarship Invitation Rejected",
+				message: `You rejected the invitation from ${invitation.grantorName || "the grantor"} for ${invitation.scholarshipName || "their scholarship"}. Reason: ${reason}${invitationRejectNotes.trim() ? ` - ${invitationRejectNotes.trim()}` : ""}`,
+				grantorId: invitation.grantorId || "",
+				authorName: invitation.grantorName || "Grantor",
+				read: false,
+				createdAt: serverTimestamp(),
+			}).catch((error) => console.warn("Student invitation rejection inbox notification failed:", error))
+			setUser((prev) => ({
+				...(prev || {}),
+				scholarshipInvitations: nextInvitations,
+				updatedAt: serverTimestamp(),
+			}))
+			toast.info("Scholarship invitation rejected.")
+		} catch (error) {
+			console.error("Failed to reject scholarship invitation:", error)
+			toast.error("Failed to reject the scholarship invitation. Please try again.")
+		} finally {
+			setIsMutating(false)
+			setInvitationDecision(null)
+			setInvitationRejectReason("Not interested")
+			setInvitationRejectNotes("")
 		}
 	}
 
@@ -1906,7 +2377,22 @@ export default function StudentScholarshipsPage() {
 	}
 
 	const getExportWindow = () => {
-		const lastExportDate = toJsDate(user?.soeLastExportAt)
+		const signedSoeDownload = [...studentSoeDownloads]
+			.filter((download) => {
+				const state = String(download.reviewState || download.status || "").toLowerCase()
+				return state === "signed"
+			})
+			.sort((a, b) => {
+				const left = toJsDate(a.signedAt || a.checkedAt || a.updatedAt || a.downloadedAt)?.getTime() || 0
+				const right = toJsDate(b.signedAt || b.checkedAt || b.updatedAt || b.downloadedAt)?.getTime() || 0
+				return right - left
+			})[0]
+		const lastExportDate = toJsDate(
+			signedSoeDownload?.signedAt ||
+				signedSoeDownload?.checkedAt ||
+				signedSoeDownload?.updatedAt ||
+				(studentSoeDownloads.length === 0 ? user?.soeLastExportAt : null),
+		)
 		if (!lastExportDate) {
 			return {
 				locked: false,
@@ -2059,26 +2545,17 @@ export default function StudentScholarshipsPage() {
 		if (!target || !userId || isDownloadingApplicationForm) return
 		if (isScholarshipActionBlocked()) return
 		if (hasMultipleScholarshipChoices) {
-			toast.info("Choose one scholarship first before downloading the application form.")
+			toast.info("Choose one scholarship first before downloading the student application profile.")
 			return
 		}
 
 		setIsDownloadingApplicationForm(true)
 		try {
-			const response = await fetch("/Templates/soe-template.pdf")
-			if (!response.ok) {
-				throw new Error(`Template download failed with status ${response.status}`)
-			}
-
-			const pdfBlob = await response.blob()
-			const downloadUrl = URL.createObjectURL(pdfBlob)
-			const link = document.createElement("a")
-			link.href = downloadUrl
-			link.download = "SOE-Format.pdf"
-			document.body.appendChild(link)
-			link.click()
-			document.body.removeChild(link)
-			URL.revokeObjectURL(downloadUrl)
+			await downloadStudentApplicationProfile({
+				student: user || {},
+				studentId: userId,
+				scholarship: target,
+			})
 
 			const downloadedAt = new Date().toISOString()
 			const nextScholarships = scholarships.map((entry) =>
@@ -2104,10 +2581,10 @@ export default function StudentScholarshipsPage() {
 			})
 			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
 
-			toast.success("Application form downloaded.")
+			toast.success("Student application profile downloaded.")
 		} catch (error) {
-			console.error("Failed to download application form:", error)
-			toast.error("Unable to download the application form. Please try again.")
+			console.error("Failed to download student application profile:", error)
+			toast.error("Unable to download the student application profile. Please try again.")
 		} finally {
 			setIsDownloadingApplicationForm(false)
 		}
@@ -2311,7 +2788,6 @@ export default function StudentScholarshipsPage() {
 						id: userId,
 						data: {
 							scholarships: nextLatestScholarships,
-							soeLastExportAt: serverTimestamp(),
 							updatedAt: serverTimestamp(),
 						},
 					},
@@ -2320,19 +2796,9 @@ export default function StudentScholarshipsPage() {
 			setUser((prev) => ({
 				...(prev || {}),
 				scholarships: nextLatestScholarships,
-				soeLastExportAt: new Date().toISOString(),
 			}))
-			const nextAllowedDate = addMonths(new Date(), SOE_EXPORT_LOCK_MONTHS)
 			toast.success(
-				`SOE downloaded. SOE Request Number: ${soeRequestNumber}. Next export available after ${
-					nextAllowedDate
-						? nextAllowedDate.toLocaleDateString("en-PH", {
-								month: "long",
-								day: "numeric",
-								year: "numeric",
-							})
-						: "6 months"
-				}.`,
+				`SOE downloaded. SOE Request Number: ${soeRequestNumber}. Bring it to the scholarship office for signing.`,
 			)
 			closeSoePreview()
 		} catch (error) {
@@ -2401,6 +2867,113 @@ export default function StudentScholarshipsPage() {
 		if (!label || !Number.isFinite(amount) || amount <= 0) return sum
 		return sum + amount
 	}, 0)
+	const recommendationDisplayItems = useMemo(() => {
+		if (warningRecommendationBlock) return []
+		const adminRecommendedGrantors = new Set(
+			adminScholarshipRecommendations
+				.map((item) => String(item.grantorId || "").trim().toLowerCase())
+				.filter(Boolean),
+		)
+		const allowedGrantors = adminRecommendedGrantors.size > 0
+			? adminRecommendedGrantors
+			: new Set(matchedGrantorScope.map((item) => String(item).toLowerCase()))
+		const isAllowed = (item = {}) => {
+			if (!allowedGrantors.size) return true
+			const grantorId = String(item.grantorId || item.providerId || item.id || "").toLowerCase()
+			return grantorId && allowedGrantors.has(grantorId)
+		}
+		const byKey = new Map()
+		const pushRecommendation = (item = {}, { bypassGrantorScope = false } = {}) => {
+			if (!item || (!bypassGrantorScope && !isAllowed(item))) return
+			if (archivedGrantorIds.has(String(item.grantorId || item.providerId || ""))) return
+			const key = recommendationKey(item)
+			if (!key || byKey.has(key)) return
+			byKey.set(key, item)
+		}
+
+		pendingScholarshipInvitations.forEach((invitation) => {
+			pushRecommendation({
+				...invitation,
+				recommendationSource: "grantor_invitation",
+				recommendationPriority: 1,
+				label: "Apply again",
+				announcementTitle: invitation.scholarshipName || invitation.announcementTitle || "Scholarship Invitation",
+				providerLabel: invitation.scholarshipName || invitation.grantorName || "Scholarship",
+				reasons: [
+					`You are being invited to apply again in your previous scholarship ${invitation.scholarshipName || "scholarship"}.`,
+					`Sent by ${invitation.grantorName || "Grantor"}.`,
+				],
+			}, { bypassGrantorScope: true })
+		})
+
+		if (latestRejectedApplication && !latestRejectedCooldown.active) {
+			const matchingRecommendation = recommendedScholarships.find((item) => matchesScholarshipTarget(latestRejectedApplication, item))
+			if (matchingRecommendation) {
+				pushRecommendation({
+					...matchingRecommendation,
+					recommendationSource: "reapply_after_rejection",
+					recommendationPriority: 1,
+					label: "Try to apply again in this scholarship",
+					reasons: [getRejectionReason(latestRejectedApplication), "The 24-hour cooldown is complete."],
+				}, { bypassGrantorScope: true })
+			}
+		}
+
+		adminScholarshipRecommendations.forEach((notice) => {
+			const matchingRecommendation = recommendedScholarships.find((item) =>
+				(notice.announcementId && item.announcementId === notice.announcementId) ||
+				(notice.grantorId && item.grantorId === notice.grantorId),
+			)
+			pushRecommendation({
+				...(matchingRecommendation || {}),
+				grantorId: notice.grantorId || matchingRecommendation?.grantorId || "",
+				grantorName: notice.grantorName || matchingRecommendation?.grantorName || "Grantor",
+				providerLabel: notice.scholarshipName || matchingRecommendation?.providerLabel || notice.grantorName || "Scholarship",
+				announcementId: notice.announcementId || matchingRecommendation?.announcementId || "",
+				announcementTitle: notice.scholarshipName || matchingRecommendation?.announcementTitle || "Recommended Scholarship",
+				minimumGwa: notice.minimumGwa || matchingRecommendation?.minimumGwa || matchingRecommendation?.minGwa || "",
+				score: notice.score || matchingRecommendation?.score || "",
+				recommendationSource: "admin_recommendation",
+				recommendationPriority: 2,
+				label: "Recommended by the Admin",
+				reasons: Array.isArray(notice.reasons) && notice.reasons.length
+					? notice.reasons
+					: [notice.message || "BulsuScholar Admin recommended this scholarship based on your profile."],
+			}, { bypassGrantorScope: true })
+		})
+
+		recommendedScholarships.forEach((recommendation) => {
+			pushRecommendation({
+				...recommendation,
+				recommendationSource: hasMatchedGrantorScope ? "roster_scoped_recommendation" : "algorithm_recommendation",
+				recommendationPriority: hasMatchedGrantorScope ? 2 : 3,
+				label: hasMatchedGrantorScope
+					? "Roster-matched scholarship option"
+					: recommendation.label || "This scholarship is best for you",
+			})
+		})
+
+		return [...byKey.values()]
+			.sort((left, right) => {
+				const priorityDiff = (left.recommendationPriority || 9) - (right.recommendationPriority || 9)
+				if (priorityDiff !== 0) return priorityDiff
+				return Number(right.score || 0) - Number(left.score || 0)
+			})
+	}, [
+		adminScholarshipRecommendations,
+		archivedGrantorIds,
+		hasMatchedGrantorScope,
+		latestRejectedApplication,
+		latestRejectedCooldown.active,
+		matchedGrantorScope,
+		pendingScholarshipInvitations,
+		recommendedScholarships,
+		warningRecommendationBlock,
+	])
+	const recommendationDisplayPreview = useMemo(
+		() => recommendationDisplayItems.slice(0, 3),
+		[recommendationDisplayItems],
+	)
 	const scholarshipControlStats = [
 		{
 			label: scholarships.length > 0 ? "Applying To" : "Available Programs",
@@ -2421,7 +2994,7 @@ export default function StudentScholarshipsPage() {
 
 	if (!userLoaded) {
 		return (
-			<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+			<div className={`student-portal student-dashboard student-portal-view student-portal-view--scholarships ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 				<main className="student-shell">
 					<div className="student-shell-content">
 						<div className="student-loading-panel student-dashboard-loading-panel">
@@ -2434,7 +3007,7 @@ export default function StudentScholarshipsPage() {
 	}
 
 	return (
-		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+		<div className={`student-portal student-dashboard student-portal-view student-portal-view--scholarships ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 
 			<main className="student-shell">
@@ -2508,7 +3081,10 @@ export default function StudentScholarshipsPage() {
 								<div className="student-kwsp-tracker-head">
 									<div>
 										<p className="student-kwsp-tracker-eyebrow">Student Tracking</p>
-										<h3>{kwspTracking.trackerTitle}</h3>
+										<h3 className="student-kwsp-tracker-title">
+											<span>Applying for: </span>
+											<strong>{kwspTracking.trackedScholarshipLabel}</strong>
+										</h3>
 										<p className="student-kwsp-tracker-copy">{kwspTracking.trackerCopy}</p>
 									</div>
 									<span
@@ -2679,7 +3255,7 @@ export default function StudentScholarshipsPage() {
 							</div>
 							{hasMultipleScholarshipChoices ? (
 								<p className="dashboard-placeholder">
-									One scholarship per student policy: choose one scholarship first before SOE and application form actions become available.
+									One scholarship per student policy: choose one scholarship first before SOE and Student Application Profile actions become available.
 								</p>
 							) : null}
 							{scholarships.length === 0 ? (
@@ -2723,7 +3299,7 @@ export default function StudentScholarshipsPage() {
 												</p>
 												{entry.matchSource === "grantor_roster" ? (
 													<p className="student-scholarship-card-note">
-														Matched grantor: {entry.matchedGrantorName || entry.name}. Upload the required COR and COG before completing the form stage.
+												Matched grantor: {entry.matchedGrantorName || entry.name}. Upload the required COR and ROG before completing the form stage.
 													</p>
 												) : null}
 												{entryFrozen ? (
@@ -2757,6 +3333,9 @@ export default function StudentScholarshipsPage() {
 														Application form: Get it directly from the scholarship office because Morisson forms are confidential.
 													</p>
 												) : null}
+												<p className="student-scholarship-card-note">
+													Application form: {getApplicationFormSource(entry).label}
+												</p>
 											</div>
 											<div className="student-scholarship-card-action">
 												<div className="student-scholarship-card-action-buttons">
@@ -2858,47 +3437,79 @@ export default function StudentScholarshipsPage() {
 							)}
 						</div>
 
-						{!hasActiveOrPendingScholarship ? (
+						{!hasActiveOrPendingScholarship && !latestRejectedCooldown?.active ? (
 							<div className="student-scholarship-board" ref={availableProgramsRef}>
 								<div className="student-scholarship-board-head">
 									<div>
 										<span>Recommendation Center</span>
-										<h3>Recommended Scholarships</h3>
+										<h3>
+											{warningRecommendationBlock
+												? "Scholarship Review Required"
+												: hasMatchedGrantorScope
+													? "Choose a Scholarship"
+													: "Recommended Scholarships"}
+										</h3>
 									</div>
 									<div className="student-scholarship-board-actions">
-										<strong>{recommendedScholarships.length} matched</strong>
+										<strong>
+											{warningRecommendationBlock ? "Review needed" : `${recommendationDisplayItems.length} matched`}
+										</strong>
 										<button
 											type="button"
 											className="student-mini-btn student-mini-btn--secondary"
 											onClick={() => navigate("/student-dashboard/recommended-scholarships")}
+											disabled={warningRecommendationBlock}
 										>
 											See all
 											<HiOutlineExternalLink aria-hidden />
 										</button>
 									</div>
 								</div>
-								{recommendationsLoading ? (
+								{warningRecommendationBlock ? (
+									<div className="student-modern-recommended-empty student-modern-recommended-empty--warning">
+										<HiOutlineExclamation />
+										<strong>Multiple scholarships detected.</strong>
+										<p>
+											The system detected your student record in multiple scholarship rosters. Choose one grantor from the warning notice, visit the Office of the Scholarship, or submit a ticket in the Help Center.
+										</p>
+									</div>
+								) : recommendationsLoading ? (
 									<div className="student-modern-recommended-empty">
 										<HiOutlineAcademicCap />
 										<strong>Finding recommended scholarships...</strong>
 										<p>Checking open grantors, minimum GWA, roster strength, and location fit.</p>
 									</div>
-								) : recommendationPreview.length === 0 ? (
+								) : recommendationDisplayPreview.length === 0 ? (
 									<div className="student-modern-recommended-empty">
 										<HiOutlineAcademicCap />
 										<strong>No recommended scholarship yet.</strong>
-										<p>No open grantor currently matches your GWA and profile.</p>
+										<p>
+											{hasMatchedGrantorScope
+												? "Your matched grantor has no open scholarship option for your profile yet."
+												: "No open grantor currently matches your GWA and profile."}
+										</p>
 									</div>
 								) : (
 									<div className="student-modern-recommendation-grid">
-										{recommendationPreview.map((recommendation) => {
-											const recommendationId = recommendation.grantorId || recommendation.id
+										{recommendationDisplayPreview.map((recommendation) => {
+											const recommendationId = recommendationKey(recommendation) || recommendation.grantorId || recommendation.id
 											const grantorInitials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
 											const rejectedMatch = getRejectedCooldownForTarget(recommendation)
 											const hasActiveCooldown = rejectedMatch?.cooldown?.active === true
+											const archivedBlock = getArchivedGrantorBlockForTarget(recommendation)
+											const isInvitation = recommendation.recommendationSource === "grantor_invitation"
+											const isApplying = applyingRecommendationId === recommendationId
 											return (
-												<article key={recommendationId} className="student-modern-recommendation-card">
-													<div className="student-modern-recommendation-top">
+											<article
+												key={recommendationId}
+												className={`student-modern-recommendation-card student-modern-recommendation-card--${recommendation.recommendationSource || "algorithm"}`}
+											>
+												<div className="student-modern-recommendation-media">
+													{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
+														<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt={`${recommendation.grantorName || "Grantor"} profile`} />
+													) : <span>{grantorInitials}</span>}
+												</div>
+												<div className="student-modern-recommendation-top">
 														<span className="student-modern-recommendation-avatar">
 															{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
 																<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt="" />
@@ -2921,12 +3532,28 @@ export default function StudentScholarshipsPage() {
 													</div>
 													<button
 														type="button"
-														onClick={() => applyRecommendedScholarship(recommendation)}
-														disabled={Boolean(applyingRecommendationId) || isMutating || hasScholarshipActionBlock || hasActiveCooldown}
+														onClick={() => (isInvitation ? acceptScholarshipInvitation(recommendation) : applyRecommendedScholarship(recommendation))}
+														disabled={Boolean(applyingRecommendationId) || isMutating || hasScholarshipActionBlock || hasActiveCooldown || Boolean(archivedBlock)}
 													>
-														<HiOutlineAcademicCap />
-														{applyingRecommendationId === recommendationId ? "Applying..." : "Apply"}
+														{isInvitation ? <HiOutlineCheckCircle /> : <HiOutlineAcademicCap />}
+														{archivedBlock
+															? "Unavailable"
+															: isApplying
+																? "Applying..."
+																: isInvitation
+																	? "Accept Invitation"
+																	: "Apply"}
 													</button>
+													{isInvitation ? (
+														<button
+															type="button"
+															className="student-modern-recommendation-link"
+															onClick={() => setInvitationDecision(recommendation)}
+															disabled={isMutating}
+														>
+															Reject invitation
+														</button>
+													) : null}
 												</article>
 											)
 										})}
@@ -3072,6 +3699,68 @@ export default function StudentScholarshipsPage() {
 					</div>
 				</div>
 			)}
+
+			{invitationDecision ? (
+				<div className="student-soe-modal-backdrop" role="presentation">
+					<div
+						className="student-soe-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Reject scholarship invitation"
+					>
+						<button
+							type="button"
+							className="student-soe-modal-close"
+							onClick={() => {
+								setInvitationDecision(null)
+								setInvitationRejectReason("Not interested")
+								setInvitationRejectNotes("")
+							}}
+						>
+							<HiX aria-hidden />
+						</button>
+						<h3>Reject Invitation</h3>
+						<p>
+							Tell the grantor why you are not accepting the invitation for{" "}
+							<strong>{invitationDecision.scholarshipName || "this scholarship"}</strong>.
+						</p>
+						<div className="student-invitation-reject-form">
+							<label>
+								<span>Reason</span>
+								<select
+									value={invitationRejectReason}
+									onChange={(event) => setInvitationRejectReason(event.target.value)}
+								>
+									<option>Not interested</option>
+									<option>Already applying elsewhere</option>
+									<option>Need more time</option>
+									<option>Other</option>
+								</select>
+							</label>
+							<label>
+								<span>Notes</span>
+								<textarea
+									value={invitationRejectNotes}
+									onChange={(event) => setInvitationRejectNotes(event.target.value)}
+									placeholder="Add more details for the grantor."
+									rows={4}
+								/>
+							</label>
+						</div>
+						<div className="student-soe-modal-actions">
+							<button
+								type="button"
+								className="student-program-apply-btn student-mini-btn student-mini-btn--danger"
+								onClick={rejectScholarshipInvitation}
+								disabled={isMutating}
+							>
+								<HiX aria-hidden />
+								{isMutating ? "Rejecting..." : "Reject Invitation"}
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 
 			{expenseModalTarget && (
 				<div className="student-soe-modal-backdrop" role="presentation">

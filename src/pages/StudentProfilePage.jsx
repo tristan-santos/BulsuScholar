@@ -30,12 +30,15 @@ import {
 } from "../services/scholarshipService"
 import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
 import { isPdf, convertPdfToImage, convertPdfToImageFile } from "../utils/pdfConverter"
+import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
 import StudentTopbar from "../components/StudentTopbar"
 import CustomSelect from "../components/CustomSelect"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
-import { exportApplicationFormPdfDocument } from "../services/applicationFormService"
+import { downloadStudentApplicationProfile } from "../services/applicationFormService"
+import { scanStudentDocument } from "../services/documentScanService"
 import "../css/StudentDashboard.css"
+import "../css/StudentPortalRefresh.css"
 import useThemeMode from "../hooks/useThemeMode"
 
 const COURSES_WITH_MAJORS = new Set([
@@ -146,7 +149,7 @@ function _validateApplicationFormIdentity({ student = {}, studentId = "", extrac
 	const failedRules = []
 
 	if (!expectedName) failedRules.push("Missing expected student name from the account.")
-	if (!scannedName) failedRules.push("Student name was not readable in the uploaded application form.")
+	if (!scannedName) failedRules.push("Student name was not readable in the uploaded Student Application Profile.")
 	if (hasReadableName && nameSimilarity < 0.7) {
 		failedRules.push(`Name similarity too low: ${nameSimilarity}. Required at least 0.70.`)
 	}
@@ -155,7 +158,7 @@ function _validateApplicationFormIdentity({ student = {}, studentId = "", extrac
 		algorithm: "Weighted Record Linkage with Levenshtein Similarity",
 		passed,
 		thresholds: {
-			studentNumber: "Skipped for application form because the template has no student number field",
+			studentNumber: "Skipped because the Student Application Profile template has no student number field",
 			nameSimilarity: ">= 0.70",
 		},
 		score: nameSimilarity,
@@ -183,6 +186,12 @@ function _validateApplicationFormIdentity({ student = {}, studentId = "", extrac
 		},
 		rawExtracted: extracted,
 	}
+}
+
+async function isValidPdfUpload(file) {
+	if (!file || file.size <= 0 || file.size > 10 * 1024 * 1024) return false
+	const header = new Uint8Array(await file.slice(0, 5).arrayBuffer())
+	return String.fromCharCode(...header) === "%PDF-"
 }
 
 function isPreviewPdf(file = {}) {
@@ -230,10 +239,11 @@ export default function StudentProfilePage() {
 		const status = String(item?.status || "").toLowerCase()
 		return !["rejected", "denied", "cancelled", "canceled", "expired"].some((value) => status.includes(value))
 	}) || null
-	const hasDownloadedApplicationForm = Boolean(applicationScholarship?.applicationFormDownloadedAt)
-	const canDownloadApplicationForm = Boolean(applicationScholarship)
+	const hasDownloadedApplicationForm = Boolean(
+		applicationScholarship?.applicationFormDownloadedAt || user?.applicationFormDownloadedAt,
+	)
+	const canDownloadApplicationForm = true
 	const canUploadApplicationForm =
-		Boolean(applicationScholarship) &&
 		hasDownloadedApplicationForm &&
 		canUploadDocument(user?.scholarshipApplicationFile, currentSemesterTag)
 
@@ -322,23 +332,22 @@ export default function StudentProfilePage() {
 
 	const handleDownloadApplicationForm = async () => {
 		if (!user || !userId || isDownloadingApplicationForm) return
-		if (!applicationScholarship) {
-			toast.info("Apply for a scholarship before downloading its application form.")
-			return
-		}
 
 		setIsDownloadingApplicationForm(true)
 		try {
-			await exportApplicationFormPdfDocument({
+			await downloadStudentApplicationProfile({
 				student: user,
 				studentId: userId,
-				scholarship: applicationScholarship,
+				scholarship: applicationScholarship || {},
+				useGrantorForm: false,
 			})
 			const downloadedAt = new Date().toISOString()
 			const nextScholarships = normalizeScholarshipList(user?.scholarships || []).map((entry) =>
-				entry.id === applicationScholarship.id ||
-				entry.applicationNumber === applicationScholarship.applicationNumber ||
-				entry.requestNumber === applicationScholarship.requestNumber
+				applicationScholarship && (
+					entry.id === applicationScholarship.id ||
+					entry.applicationNumber === applicationScholarship.applicationNumber ||
+					entry.requestNumber === applicationScholarship.requestNumber
+				)
 					? {
 							...entry,
 							applicationFormDownloadedAt: downloadedAt,
@@ -350,15 +359,22 @@ export default function StudentProfilePage() {
 				doc(db, "students", userId),
 				{
 					scholarships: nextScholarships,
+					applicationFormDownloadedAt: downloadedAt,
+					applicationFormDownloadedSemesterTag: currentSemesterTag,
 					updatedAt: serverTimestamp(),
 				},
 				{ merge: true },
 			)
-			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
-			toast.success("Application form downloaded.")
+			setUser((prev) => ({
+				...(prev || {}),
+				scholarships: nextScholarships,
+				applicationFormDownloadedAt: downloadedAt,
+				applicationFormDownloadedSemesterTag: currentSemesterTag,
+			}))
+			toast.success("Student Application Profile downloaded.")
 		} catch (error) {
-			console.error("Failed to generate application form:", error)
-			toast.error("Unable to download the application form.")
+			console.error("Failed to generate Student Application Profile:", error)
+			toast.error("Unable to download the Student Application Profile.")
 		} finally {
 			setIsDownloadingApplicationForm(false)
 		}
@@ -480,12 +496,8 @@ export default function StudentProfilePage() {
 	const handleDocumentUpload = async (type, file) => {
 		if (!file || !userId) return
 		if (type === "applicationForm") {
-			if (!applicationScholarship) {
-				toast.info("Apply for a scholarship before uploading an application form.")
-				return
-			}
 			if (!hasDownloadedApplicationForm) {
-				toast.info("Download the application form first before uploading it.")
+				toast.info("Download the Student Application Profile first before uploading it.")
 				return
 			}
 		}
@@ -500,15 +512,34 @@ export default function StudentProfilePage() {
 		if (!isAllowedFile) {
 			toast.error(
 				isApplicationFormUpload
-					? "Scholarship application must be uploaded as a PDF file."
+					? "Student Application Profile must be uploaded as a PDF file."
 					: "Only PNG, JPG, JPEG, and PDF files are allowed.",
 			)
+			return
+		}
+		if (isApplicationFormUpload && !(await isValidPdfUpload(file))) {
+			toast.error("Invalid Student Application Profile. Upload a valid PDF file no larger than 10 MB.")
 			return
 		}
 
 		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
 		try {
 			let fileToUpload = file
+			let applicationProfileValidation = null
+
+			if (isApplicationFormUpload) {
+				const scanResult = await scanStudentDocument(file, "application_profile")
+				applicationProfileValidation = _validateApplicationFormIdentity({
+					student: user,
+					studentId: userId,
+					extracted: scanResult?.extracted || {},
+				})
+				if (!applicationProfileValidation.passed) {
+					const reason = applicationProfileValidation.failedRules[0] || "The student name does not match this account."
+					toast.error(`Invalid Student Application Profile. ${reason}`)
+					return
+				}
+			}
 
 			// Convert PDF to image if needed for document preview compatibility.
 			if (isPdf(file) && (type === "cor" || type === "cog" || type === "schoolId")) {
@@ -535,6 +566,13 @@ export default function StudentProfilePage() {
 				bucket: uploadResult.bucket || "",
 				uploadedAt: new Date().toISOString(),
 				semesterTag: currentSemesterTag,
+				...(applicationProfileValidation
+					? {
+						identityValidated: true,
+						identityScore: applicationProfileValidation.nameSimilarity,
+						validationAlgorithm: applicationProfileValidation.algorithm,
+					}
+					: {}),
 			}
 
 			await setDoc(
@@ -558,7 +596,7 @@ export default function StudentProfilePage() {
 				type === "cor"
 					? "COR uploaded successfully."
 					: type === "cog"
-					? "COG uploaded successfully."
+					? "ROG uploaded successfully."
 					: type === "applicationForm"
 						? "Scholarship application uploaded successfully."
 						: "Student ID uploaded successfully.",
@@ -744,6 +782,10 @@ export default function StudentProfilePage() {
 			toast.error("All name, contact, and address details are required.")
 			return
 		}
+		if (!isValidContactNumber(formData.cpNumber)) {
+			toast.error(CONTACT_NUMBER_RULE_MESSAGE)
+			return
+		}
 
 		setIsSaving(true)
 		try {
@@ -752,7 +794,7 @@ export default function StudentProfilePage() {
 				mname: formData.mname.trim(),
 				lname: formData.lname.trim(),
 				email: formData.email.trim(),
-				cpNumber: formData.cpNumber.trim(),
+				cpNumber: normalizeContactNumber(formData.cpNumber),
 				street: formData.street.trim(),
 				city: formData.city.trim(),
 				province: formData.province.trim(),
@@ -781,7 +823,7 @@ export default function StudentProfilePage() {
 	}
 
 	return (
-		<div className={`student-portal student-dashboard ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+		<div className={`student-portal student-dashboard student-portal-view student-portal-view--profile ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 
 			<main className="student-shell">
@@ -905,8 +947,10 @@ export default function StudentProfilePage() {
 										<input
 											type="text"
 											className="student-profile-input"
+											placeholder="09XXXXXXXXX or 9XXXXXXXXX"
 											value={formData.cpNumber}
-											onChange={(e) => setFormData((prev) => ({ ...prev, cpNumber: e.target.value.replace(/\D/g, "") }))}
+											onChange={(e) => setFormData((prev) => ({ ...prev, cpNumber: sanitizeContactNumber(e.target.value) }))}
+											inputMode="numeric"
 											maxLength={11}
 										/>
 									</label>
@@ -1035,7 +1079,7 @@ export default function StudentProfilePage() {
 							<section className="student-profile-section-card student-profile-section-card--full">
 								<h3>Document Vault</h3>
 								<p className="student-profile-vault-sub">
-									Upload and review COR, COG, Student ID, and scholarship application records.
+									Upload and review COR, ROG, Student ID, and Student Application Profile records.
 								</p>
 								<div className="student-vault-grid">
 									<article className="student-vault-card">
@@ -1082,7 +1126,7 @@ export default function StudentProfilePage() {
 									</article>
 									<article className="student-vault-card">
 										<div>
-											<h4>COG</h4>
+											<h4>ROG</h4>
 											<p>{documentStatus(user?.cogFile, currentSemesterTag)}</p>
 										</div>
 										<div className="student-vault-actions">
@@ -1090,9 +1134,9 @@ export default function StudentProfilePage() {
 												<button
 													type="button"
 													className="student-vault-link"
-													onClick={() => openDocumentPreview("Certificate of Grades (COG)", user.cogFile)}
+													onClick={() => openDocumentPreview("Report of Grades (ROG)", user.cogFile)}
 												>
-													<HiOutlineDocumentText aria-hidden /> View COG
+													<HiOutlineDocumentText aria-hidden /> View ROG
 												</button>
 											) : null}
 											{user?.cogFile?.url || canUploadCog ? (
@@ -1105,8 +1149,8 @@ export default function StudentProfilePage() {
 													{isDocumentUploading.cog
 														? "Uploading..."
 														: user?.cogFile?.url
-															? "Update COG"
-															: "Upload COG"}
+															? "Update ROG"
+															: "Upload ROG"}
 												</button>
 											) : null}
 											<input
@@ -1166,7 +1210,7 @@ export default function StudentProfilePage() {
 									</article>
 									<article className="student-vault-card student-vault-card--application">
 										<div>
-											<h4>Scholarship Application</h4>
+											<h4>Student Application Profile</h4>
 											<p>{documentStatus(user?.scholarshipApplicationFile, currentSemesterTag)}</p>
 										</div>
 										<div className="student-vault-actions">
@@ -1176,7 +1220,7 @@ export default function StudentProfilePage() {
 													className="student-vault-link"
 													onClick={() =>
 														openDocumentPreview(
-															"Scholarship Application Form",
+															"Student Application Profile",
 															user.scholarshipApplicationFile,
 														)
 													}
@@ -1191,8 +1235,8 @@ export default function StudentProfilePage() {
 												disabled={!canDownloadApplicationForm || isDownloadingApplicationForm}
 												title={
 													canDownloadApplicationForm
-														? "Download your scholarship application form"
-														: "Apply for a scholarship before downloading the application form."
+														? "Download your Student Application Profile"
+														: "Download your Student Application Profile"
 												}
 											>
 												<HiOutlineDownload aria-hidden />
@@ -1209,15 +1253,15 @@ export default function StudentProfilePage() {
 												disabled={!canUploadApplicationForm || isDocumentUploading.applicationForm}
 												title={
 													canUploadApplicationForm
-														? "Upload your completed PDF application form"
-														: "Download the application form first before uploading."
+															? "Upload your completed PDF Student Application Profile"
+															: "Download the Student Application Profile first before uploading."
 												}
 											>
 												{isDocumentUploading.applicationForm
 													? "Uploading..."
 													: user?.scholarshipApplicationFile?.url
-														? "Update Application Form"
-														: "Upload Application Form"}
+																? "Update Profile Document"
+																: "Upload Profile Document"}
 											</button>
 											<input
 												ref={applicationFormFileInputRef}

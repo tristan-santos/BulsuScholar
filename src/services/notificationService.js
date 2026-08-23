@@ -5,20 +5,15 @@ const BACKEND_API_URL = (
 ).replace(/\/$/, "")
 
 async function postNotification(path, payload = {}) {
-	const response = await fetch(`${BACKEND_API_URL}${path}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(payload),
-	})
-	const data = await response.json().catch(() => ({}))
-	if (!response.ok || data?.ok === false) {
-		throw new Error(data?.detail || data?.reason || data?.error || `Notification request failed: ${response.status}`)
-	}
-	return data
+	return postPortalJson(BACKEND_API_URL, path, payload, "Notification")
 }
 
 export function createStudentNotification(payload = {}) {
 	return postNotification("/notifications/student/create", payload)
+}
+
+export function broadcastStudentNotification(payload = {}) {
+	return postNotification("/notifications/student/broadcast", payload)
 }
 
 export function createAdminNotification(payload = {}) {
@@ -52,3 +47,4 @@ export function deleteStudentNotification(id = "") {
 export function deleteGrantorNotification(id = "") {
 	return postNotification("/notifications/grantor/delete", { id })
 }
+import { postPortalJson } from "./portalApi"
