@@ -935,3 +935,22 @@
 		animation-iteration-count: 1 !important;
 	}
 }
+
+/* Keep page actions clear of the fixed student topbar on every student route. */
+.student-portal-view .student-shell,
+.student-portal-view .student-dashboard-content,
+.student-portal-view .student-announcement-detail,
+.student-portal-view .student-recommendation-page,
+.student-portal-view--leave .portal-support-main {
+	padding-top: calc(var(--student-topbar-height, 72px) + 1.35rem);
+}
+
+@media (max-width: 820px) {
+	.student-portal-view .student-shell,
+	.student-portal-view .student-dashboard-content,
+	.student-portal-view .student-announcement-detail,
+	.student-portal-view .student-recommendation-page,
+	.student-portal-view--leave .portal-support-main {
+		padding-top: calc(var(--student-topbar-height, 72px) + 1rem);
+	}
+}

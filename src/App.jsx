@@ -29,7 +29,17 @@ const HelpSupportPage = lazy(() => import("./pages/HelpSupportPage"))
 const StudentLeavePage = lazy(() => import("./pages/StudentLeavePage"))
 
 const MAINTENANCE_ALLOWED_PREFIXES = ["/admin"]
-const MAINTENANCE_ALLOWED_PATHS = ["/maintenance"]
+const MAINTENANCE_ALLOWED_PATHS = [
+	"/",
+	"/maintenance",
+	"/signup",
+	"/confirm-email",
+	"/reset-password",
+	"/grantor/change-password",
+	"/help",
+	"/faq",
+	"/about",
+]
 
 function MaintenanceGate({ children }) {
 	const location = useLocation()

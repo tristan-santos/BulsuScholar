@@ -34,7 +34,7 @@ import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import useThemeMode from "../hooks/useThemeMode"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
-import { getCurrentSemesterTag, normalizeScholarshipList } from "../services/scholarshipService"
+import { getCurrentSemesterTag, normalizeScholarshipList, validateScholarshipDocuments } from "../services/scholarshipService"
 import {
 	isPreviousStudentAnnouncement,
 	normalizeStudentAnnouncement,
@@ -54,6 +54,7 @@ import {
 import { getAnnouncementApplyAvailability, isScholarshipActiveOrPending } from "../services/announcementApplyEligibilityService"
 import { applyScholarshipWorkflow } from "../services/workflowService"
 import { formatCooldownDuration, getLatestRejectedScholarship, getRejectionCooldown, splitExpiredRejectedScholarships } from "../services/rejectionCooldownService"
+import { getScholarshipTrackingProgress, getScholarshipTrackingStatusLabel } from "../services/scholarshipTrackingService"
 import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
 
@@ -119,6 +120,23 @@ function buildAnnouncementImageList(item = {}) {
 	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
 	const imageObjects = Array.isArray(item.images) ? item.images.map((image) => image?.url).filter(Boolean) : []
 	return [...new Set([item.imageUrl, ...imageUrls, ...imageObjects].filter(Boolean))]
+}
+
+function buildScholarshipPreviewTracking(entry = {}, user = {}, isValidated = false) {
+	const documentCheck = validateScholarshipDocuments(user || {})
+	const progress = getScholarshipTrackingProgress({
+		scholarship: entry,
+		isValidated,
+		documentCheck,
+	})
+	const steps = Array.isArray(progress.steps) ? progress.steps : []
+	const completedCount = steps.filter((step) => step.state === "completed").length
+	const totalCount = steps.length || 1
+	return {
+		label: getScholarshipTrackingStatusLabel(progress),
+		count: `${completedCount}/${totalCount}`,
+		percent: Math.min(100, Math.max(0, Math.round((completedCount / totalCount) * 100))),
+	}
 }
 
 function getReadAnnouncementStorageKey(studentId = "") {
@@ -425,6 +443,7 @@ export default function StudentDashboard() {
 		}
 	}, [scholarships, sessionState.storedUserId, user])
 	const scholarshipPreview = activeOrPendingScholarships.slice(0, 6)
+	const shouldShowDashboardScholarshipPreview = scholarshipPreview.length > 0
 	const latestAnnouncements = useMemo(() => announcements.slice(0, 3), [announcements])
 	const previousAnnouncementCount = useMemo(
 		() => allAnnouncements.filter((item) => isPreviousStudentAnnouncement(item)).length,
@@ -1031,6 +1050,7 @@ export default function StudentDashboard() {
 							</div>
 						</section>
 
+						{!shouldShowDashboardScholarshipPreview ? (
 						<section className="student-modern-section student-modern-section--recommendations">
 							<header className="student-modern-section-head">
 								<div className="student-modern-section-title"><span aria-hidden="true"><HiOutlineAcademicCap /></span><div>
@@ -1112,8 +1132,10 @@ export default function StudentDashboard() {
 								</div>
 							)}
 						</section>
+						) : null}
 
-						<div className="student-dashboard-utility-grid">
+						<div className={`student-dashboard-utility-grid ${!shouldShowDashboardScholarshipPreview ? "student-dashboard-utility-grid--single" : ""}`}>
+						{shouldShowDashboardScholarshipPreview ? (
 						<section className="student-modern-section student-modern-section--scholarship">
 							<header className="student-modern-section-head">
 								<div className="student-modern-section-title"><span aria-hidden="true"><HiOutlineDocumentText /></span><div><h3>Scholarship Preview</h3><p>Your current scholarship records and renewal reminders.</p></div></div>
@@ -1129,16 +1151,28 @@ export default function StudentDashboard() {
 								<div className="student-modern-empty"><HiOutlineAcademicCap /><strong>No scholarship records yet.</strong><p>Your active scholarship preview will appear here.</p></div>
 							) : (
 								<div className="student-modern-scholarship-list">
-									{scholarshipPreview.map((entry) => (
-										<article key={entry.id} className={`student-modern-scholarship-item ${entry.adminBlocked === true || hasBlockedScholarshipBanner ? "is-blocked" : ""}`}>
-											<span><HiOutlineAcademicCap /></span>
-											<div><h4>{formatDisplayText(entry.name, "Scholarship")}</h4><p>{formatDisplayText(entry.status, "Applied")} - Application No. {entry.applicationNumber || entry.requestNumber || entry.id}</p></div>
-											<small>{formatDisplayText(entry.semesterTag, "Current Semester")}</small>
-										</article>
-									))}
+									{scholarshipPreview.map((entry) => {
+										const previewTracking = buildScholarshipPreviewTracking(entry, user, isValidated)
+										return (
+											<article key={entry.id} className={`student-modern-scholarship-item ${entry.adminBlocked === true || hasBlockedScholarshipBanner ? "is-blocked" : ""}`}>
+												<span><HiOutlineAcademicCap /></span>
+												<div>
+													<h4>{formatDisplayText(entry.name, "Scholarship")}</h4>
+													<p>{formatDisplayText(entry.status, "Applied")} - Application No. {entry.applicationNumber || entry.requestNumber || entry.id}</p>
+													<div className="student-modern-scholarship-track" aria-label={`Current tracking: ${previewTracking.label}`}>
+														<i><em style={{ width: `${previewTracking.percent}%` }} /></i>
+														<strong>{previewTracking.label}</strong>
+														<small>{previewTracking.count}</small>
+													</div>
+												</div>
+												<small>{formatDisplayText(entry.semesterTag, "Current Semester")}</small>
+											</article>
+										)
+									})}
 								</div>
 							)}
 						</section>
+						) : null}
 
 						<section className="student-modern-section student-modern-section--actions">
 							<header className="student-modern-section-head">

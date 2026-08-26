@@ -6,7 +6,7 @@ import { findStudentAccountByUniqueField, promotePendingStudentToActive, TABLES 
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
-import logo2 from "../assets/logo2.png"
+import logo2 from "../assets/logo.png"
 
 export default function ConfirmEmailPage() {
 	const navigate = useNavigate()

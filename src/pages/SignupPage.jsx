@@ -40,7 +40,6 @@ import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
-import logo2 from "../assets/logo2.png"
 
 const APP_URL = (
 	import.meta.env.VITE_APP_URL ||
@@ -1891,11 +1890,18 @@ export default function SignupPage() {
 
 				<div className="login-panel login-panel-form">
 					<div className="login-form-inner signup-pending-inner">
-						<img
-							src={logo2}
-							alt="Bulacan State University Office of the Scholarships"
-							className="login-form-logo"
-						/>
+						<button
+							type="button"
+							className="signup-logo-link"
+							onClick={() => navigate("/")}
+							aria-label="Go to login page"
+						>
+							<img
+								src={logo}
+								alt="Institutional Student Programs and Services logo"
+								className="login-form-logo"
+							/>
+						</button>
 						<h2 className="login-form-title">BulsuScholar</h2>
 						{verificationStatus === "auto-verified" ? (
 							<>
@@ -2018,11 +2024,18 @@ export default function SignupPage() {
 
 			<div className="login-panel login-panel-form">
 				<div className="login-form-inner">
-					<img
-						src={logo2}
-						alt="Bulacan State University Office of the Scholarships"
-						className="login-form-logo"
-					/>
+					<button
+						type="button"
+						className="signup-logo-link"
+						onClick={() => navigate("/")}
+						aria-label="Go to login page"
+					>
+						<img
+							src={logo}
+							alt="Institutional Student Programs and Services logo"
+							className="login-form-logo"
+						/>
+					</button>
 					<h2 className="login-form-title">BulsuScholar</h2>
 					<p className="login-form-subtitle">
 						Create your account to get started
@@ -2467,7 +2480,7 @@ export default function SignupPage() {
 								<div className="signup-row">
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-cp">
-											CP Number <span className="required">*</span>
+											Cellphone Number <span className="required">*</span>
 										</label>
 										<div className="login-input-wrap">
 											<input
@@ -2777,7 +2790,7 @@ export default function SignupPage() {
 											<span className="signup-review-row-icon" aria-hidden>
 												<HiOutlineUser />
 											</span>
-											<span>CP Number:</span>
+											<span>Cellphone Number:</span>
 										</span>
 										<span className="signup-review-value">{cpNumber}</span>
 									</div>

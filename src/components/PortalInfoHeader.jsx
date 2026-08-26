@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom"
 import { HiOutlineArrowLeft, HiOutlineHome } from "react-icons/hi"
-import logo from "../assets/logo2.png"
+import logo from "../assets/logo.png"
 
 function getHomePath() {
 	const role = sessionStorage.getItem("bulsuscholar_userType")

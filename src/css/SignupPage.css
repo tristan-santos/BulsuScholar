@@ -31,6 +31,21 @@
 	min-width: 0;
 }
 
+.signup-logo-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0 auto 1rem;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+
+.signup-logo-link .login-form-logo {
+	margin-bottom: 0;
+}
+
 .signup-field--small {
 	flex: 0 0 120px;
 }

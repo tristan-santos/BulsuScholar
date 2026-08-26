@@ -1,0 +1,53 @@
+.floating-help-button {
+	position: fixed;
+	right: 22px;
+	bottom: 22px;
+	z-index: 9000;
+	display: grid;
+	width: 52px;
+	min-width: 52px;
+	height: 52px;
+	min-height: 52px;
+	padding: 0;
+	place-items: center;
+	border: 2px solid #fff;
+	border-radius: 50%;
+	background: #00633c;
+	color: #fff;
+	box-shadow: 0 8px 24px rgba(0, 99, 60, 0.25);
+	font-size: 29px;
+	line-height: 1;
+	cursor: pointer;
+	appearance: none;
+	transition:
+		transform 0.16s ease,
+		box-shadow 0.16s ease,
+		background 0.16s ease;
+}
+
+.floating-help-button:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 12px 30px rgba(0, 99, 60, 0.3);
+}
+
+.floating-help-button:focus-visible {
+	outline: 3px solid rgba(0, 99, 60, 0.22);
+	outline-offset: 3px;
+}
+
+.floating-help-button svg {
+	display: block;
+	width: 29px;
+	height: 29px;
+}
+
+@media (max-width: 760px) {
+	.floating-help-button {
+		right: 14px;
+		bottom: 14px;
+		width: 50px;
+		min-width: 50px;
+		height: 50px;
+		min-height: 50px;
+	}
+}

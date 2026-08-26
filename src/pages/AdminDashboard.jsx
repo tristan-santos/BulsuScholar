@@ -53,7 +53,7 @@ import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import { encryptPasswordAES256 } from "../services/authService"
 import { GRANTOR_DEFAULT_PASSWORD } from "../constants/grantorAuth"
-import logo2 from "../assets/logo2.png"
+import logo2 from "../assets/logo.png"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
 import TablePagination from "../components/TablePagination"
@@ -164,18 +164,35 @@ const ADMIN_SCHOLAR_FORM = {
 	notes: "",
 }
 
+const ADMIN_COURSE_OPTIONS = [
+	"Bachelor of Elementary Education",
+	"Bachelor of Early Childhood Education",
+	"Bachelor of Secondary Education",
+	"Bachelor of Technology and Livelihood Education - Home Economics",
+	"Bachelor of Physical Education",
+	"Bachelor of Science in Business Administration",
+	"Bachelor of Science in Entrepreneurship",
+	"Bachelor of Science in Information Technology",
+	"Bachelor of Science in Computer Engineering",
+	"Bachelor of Science in Industrial Engineering",
+	"Bachelor in Industrial Technology",
+].map((course) => ({ value: course, label: course }))
+
 const DEFAULT_ADMIN_PROFILE = {
 	displayName: "Administrator",
 	email: "admin@bulsuscholar.local",
 	officeName: "Office of the Scholarship",
 	contactNumber: "",
 	supportEmail: "scholarships@bulsu.edu.ph",
-	systemMode: "Operational",
-	accountVerification: "Manual and list-based",
 	maintenanceMode: false,
 	allowStudentSignup: true,
 	allowGrantorAnnouncements: true,
 	reportExportEnabled: true,
+}
+
+const normalizeAdminProfileSettings = (settings = {}) => {
+	const { systemMode, accountVerification, ...profileSettings } = settings || {}
+	return { ...DEFAULT_ADMIN_PROFILE, ...profileSettings }
 }
 
 const ADMIN_IMPORT_MAPPABLE_FIELDS = [
@@ -1311,7 +1328,7 @@ export default function AdminDashboard() {
 		if (cachedSettings) {
 			try {
 				const parsed = JSON.parse(cachedSettings)
-				const merged = { ...DEFAULT_ADMIN_PROFILE, ...parsed }
+				const merged = normalizeAdminProfileSettings(parsed)
 				setAdminProfile(merged)
 				setAdminProfileForm(merged)
 			} catch (error) {
@@ -1322,7 +1339,7 @@ export default function AdminDashboard() {
 			doc(db, "adminSettings", "profile"),
 			(snapshot) => {
 				if (!active || !snapshot.exists()) return
-				const merged = { ...DEFAULT_ADMIN_PROFILE, ...(snapshot.data() || {}) }
+				const merged = normalizeAdminProfileSettings(snapshot.data() || {})
 				setAdminProfile(merged)
 				setAdminProfileForm(merged)
 				localStorage.setItem("bulsuscholar_admin_profile", JSON.stringify(merged))
@@ -7098,9 +7115,10 @@ export default function AdminDashboard() {
 			toast.error(CONTACT_NUMBER_RULE_MESSAGE)
 			return
 		}
+		const cleanProfileForm = normalizeAdminProfileSettings(adminProfileForm)
 		const payload = {
-			...adminProfileForm,
-			contactNumber: normalizeContactNumber(adminProfileForm.contactNumber),
+			...cleanProfileForm,
+			contactNumber: normalizeContactNumber(cleanProfileForm.contactNumber),
 			updatedAt: serverTimestamp(),
 			updatedBy: sessionStorage.getItem("bulsuscholar_userId") || "admin",
 		}
@@ -7668,7 +7686,6 @@ export default function AdminDashboard() {
 							<p>{adminProfileForm.email || "admin account"}</p>
 							<div className="admin-profile-meta-list">
 								<div><span>Office</span><strong>{adminProfileForm.officeName || "Office of the Scholarship"}</strong></div>
-								<div><span>Mode</span><strong>{adminProfileForm.systemMode || "Operational"}</strong></div>
 							</div>
 						</aside>
 
@@ -7697,10 +7714,6 @@ export default function AdminDashboard() {
 										<h3>System Settings</h3>
 										<p>Controls for portal availability, account review, and exports.</p>
 									</div>
-								</div>
-								<div className="admin-profile-form-grid">
-									<label><span>System Mode</span><select value={adminProfileForm.systemMode} onChange={(event) => updateAdminProfileField("systemMode", event.target.value)}><option>Operational</option><option>Monitoring</option><option>Maintenance Preparation</option></select></label>
-									<label><span>Account Verification</span><select value={adminProfileForm.accountVerification} onChange={(event) => updateAdminProfileField("accountVerification", event.target.value)}><option>Manual and list-based</option><option>List-based only</option><option>Manual review only</option></select></label>
 								</div>
 								<div className="admin-profile-toggle-grid">
 									{[
@@ -8297,17 +8310,17 @@ export default function AdminDashboard() {
 						<div className="admin-head-actions">
 							<button
 								type="button"
-								className="admin-table-btn admin-table-btn--view"
-								onClick={() => setAdminScholarModalOpen(true)}
-							>
-								<HiOutlineCloudUpload /> Add / Import
-							</button>
-							<button
-								type="button"
-								className="admin-student-report-btn"
+								className="admin-scholarship-head-action admin-scholarship-head-action--secondary"
 								onClick={() => openReportPreview(scholarshipSectionPreviewConfig)}
 							>
 								<HiOutlineEye /> Generate
+							</button>
+							<button
+								type="button"
+								className="admin-scholarship-head-action admin-scholarship-head-action--primary"
+								onClick={() => setAdminScholarModalOpen(true)}
+							>
+								<HiOutlineCloudUpload /> Import
 							</button>
 						</div>
 					</div>
@@ -10628,7 +10641,14 @@ export default function AdminDashboard() {
 											</label>
 											<label className="admin-scholar-manual-field">
 												<span>Course</span>
-												<input className={getAdminScholarFieldClass("course")} placeholder="Course" value={adminScholarForm.course} onChange={(event) => updateAdminScholarFormField("course", event.target.value)} />
+												<CustomSelect
+													value={adminScholarForm.course}
+													onChange={(value) => updateAdminScholarFormField("course", value)}
+													options={ADMIN_COURSE_OPTIONS}
+													placeholder="Select course"
+													className={getAdminScholarFieldClass("course")}
+													buttonClassName="admin-scholar-manual-select"
+												/>
 											</label>
 											<label className="admin-scholar-manual-field">
 												<span>Year Level</span>

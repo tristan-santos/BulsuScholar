@@ -15011,10 +15011,13 @@
 	gap: 0.65rem;
 }
 
-.admin-scholarship-management .admin-head-actions .admin-table-btn,
-.admin-scholarship-management .admin-head-actions .admin-student-report-btn {
+.admin-scholarship-management .admin-head-actions .admin-scholarship-head-action {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
 	width: 148px;
 	min-width: 148px;
+	flex: 0 0 148px;
 	min-height: 38px;
 	padding: 0.52rem 0.95rem;
 	border-radius: 7px;
@@ -15026,18 +15029,34 @@
 	line-height: 1;
 	box-shadow: none;
 	justify-content: center;
+	transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 
-.admin-scholarship-management .admin-head-actions .admin-table-btn:hover,
-.admin-scholarship-management .admin-head-actions .admin-student-report-btn:hover {
+.admin-scholarship-management .admin-head-actions .admin-scholarship-head-action--secondary {
+	background: #ffffff;
+	color: #00633c;
+}
+
+.admin-scholarship-management .admin-head-actions .admin-scholarship-head-action--primary {
+	background: #00633c;
+	color: #ffffff;
+}
+
+.admin-scholarship-management .admin-head-actions .admin-scholarship-head-action--secondary:hover {
 	border-color: #00633c;
 	background: rgba(0, 99, 60, 0.06);
 	color: #005333;
 	transform: translateY(-1px);
 }
 
-.admin-scholarship-management .admin-head-actions .admin-table-btn svg,
-.admin-scholarship-management .admin-head-actions .admin-student-report-btn svg {
+.admin-scholarship-management .admin-head-actions .admin-scholarship-head-action--primary:hover {
+	border-color: #005333;
+	background: #005333;
+	color: #ffffff;
+	transform: translateY(-1px);
+}
+
+.admin-scholarship-management .admin-head-actions .admin-scholarship-head-action svg {
 	width: 16px;
 	height: 16px;
 	stroke-width: 1.9;
@@ -15366,9 +15385,10 @@
 	}
 
 	.admin-scholarship-management .admin-head-actions,
-	.admin-scholarship-management .admin-head-actions .admin-table-btn,
-	.admin-scholarship-management .admin-head-actions .admin-student-report-btn {
+	.admin-scholarship-management .admin-head-actions .admin-scholarship-head-action {
 		width: 100%;
+		min-width: 0;
+		flex-basis: 100%;
 	}
 
 	.admin-scholarship-management .admin-head-actions {

@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from "react-router-dom"
 import { MdSupportAgent } from "react-icons/md"
+import "../css/FloatingHelpButton.css"
 
 export default function FloatingHelpButton() {
 	const location = useLocation()

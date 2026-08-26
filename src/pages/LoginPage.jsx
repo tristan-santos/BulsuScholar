@@ -16,7 +16,7 @@ import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
-import logo2 from "../assets/logo2.png"
+import logo2 from "../assets/logo.png"
 
 const APP_URL = (
 	import.meta.env.VITE_APP_URL ||

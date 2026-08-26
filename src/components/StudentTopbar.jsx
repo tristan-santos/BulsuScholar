@@ -27,7 +27,7 @@ import {
 } from "../services/announcementService"
 import { GRANTOR_SUBCOLLECTIONS } from "../services/grantorService"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
-import logo2 from "../assets/logo2.png"
+import logo2 from "../assets/logo.png"
 
 function getReadAnnouncementStorageKey(studentId = "") {
 	return `bulsuscholar_student_read_announcements_${studentId || "guest"}`
