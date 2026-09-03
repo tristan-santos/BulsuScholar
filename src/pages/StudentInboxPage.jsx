@@ -542,7 +542,7 @@ export default function StudentInboxPage() {
 				<div className="student-inbox-detail-backdrop" role="presentation" onMouseDown={(event) => {
 					if (event.target === event.currentTarget) setSelectedNotification(null)
 				}}>
-					<section className="student-inbox-detail-modal" role="dialog" aria-modal="true" aria-labelledby="student-inbox-detail-title">
+					<section className="student-inbox-detail-modal" role="dialog" aria-modal="true" aria-labelledby="student-inbox-detail-title" onMouseDown={(event) => event.stopPropagation()}>
 						<header className="student-inbox-detail-head">
 							<div className="student-inbox-detail-title">
 								<span className="student-inbox-detail-icon">{renderInboxItemIcon(selectedNotification)}</span>

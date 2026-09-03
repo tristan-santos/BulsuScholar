@@ -7,7 +7,12 @@ const BACKEND_API_URL = (
 ).replace(/\/$/, "")
 
 async function postWorkflow(path, payload = {}) {
-	return postPortalJson(BACKEND_API_URL, path, payload, "Workflow")
+	return postPortalJson(BACKEND_API_URL, path, payload, "Workflow", {
+		actor: {
+			actorId: payload.actorId,
+			actorType: payload.actorType,
+		},
+	})
 }
 
 export function applyScholarshipWorkflow(payload = {}) {

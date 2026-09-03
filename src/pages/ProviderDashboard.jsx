@@ -368,6 +368,14 @@ function buildScholarPayloadFromStudentAccount(student = {}, fallback = {}) {
 	}
 }
 
+function getGrantorWorkflowErrorMessage(error, fallback = "Unable to complete the grantor action right now.") {
+	const message = String(error?.message || error || "")
+	if (message.includes("portal_actor_id_mismatch")) {
+		return "Session does not match this grantor account. Please log out and log in again."
+	}
+	return fallback
+}
+
 function buildExactStudentIdConflict(record = {}, kind = "roster") {
 	return {
 		record,
@@ -640,17 +648,30 @@ function isApplicationOwnedByGrantor(application = {}, grantorId = "") {
 }
 
 function pickLatestGrantorRow(rows = [], application = {}) {
-	const applicationGrantorId = getApplicationGrantorId(application)
+	const normalizeKey = (value = "") => String(value || "").trim().toLowerCase()
+	const applicationGrantorId = normalizeKey(getApplicationGrantorId(application))
+	const applicationNumber = normalizeKey(application.applicationNumber)
+	const scholarshipId = normalizeKey(application.scholarshipId)
+	const requestNumber = normalizeKey(application.requestNumber)
+	const providerType = normalizeKey(application.providerType)
 	return [...rows]
 		.filter((row) => {
-			if (applicationGrantorId && String(row.grantorId || row.grantor_id || "").trim() !== applicationGrantorId) {
+			const rowGrantorId = normalizeKey(row.grantorId || row.grantor_id || row.providerId || row.ownerId)
+			if (applicationGrantorId && rowGrantorId && rowGrantorId !== applicationGrantorId) {
 				return false
 			}
+			const rowApplicationNumber = normalizeKey(row.applicationNumber || row.soeSnapshot?.applicationNumber || row.requestSnapshot?.applicationNumber)
+			const rowScholarshipId = normalizeKey(row.scholarshipId || row.soeSnapshot?.scholarshipId || row.requestSnapshot?.scholarshipId)
+			const rowRequestNumber = normalizeKey(row.requestNumber || row.soeSnapshot?.requestNumber || row.registrationNumber)
+			const rowProviderType = normalizeKey(row.providerType || row.soeSnapshot?.providerType || row.requestSnapshot?.providerType)
+			if (applicationNumber && rowApplicationNumber && rowApplicationNumber === applicationNumber) return true
+			if (scholarshipId && rowScholarshipId && rowScholarshipId === scholarshipId) return true
+			if (requestNumber && rowRequestNumber && rowRequestNumber === requestNumber) return true
 			return (
-				row.scholarshipId === application.scholarshipId ||
-				row.applicationNumber === application.applicationNumber ||
-				row.requestNumber === application.requestNumber ||
-				row.providerType === application.providerType
+				providerType &&
+				rowProviderType &&
+				rowProviderType === providerType &&
+				(!applicationGrantorId || !rowGrantorId || rowGrantorId === applicationGrantorId)
 			)
 		})
 		.sort((left, right) => {
@@ -2821,7 +2842,7 @@ export default function ProviderDashboard() {
 				if (acceptedScholars.length > 0) closeCreateModal()
 			} catch (err) {
 				console.error(err)
-				toast.error("Failed to import scholars.")
+				toast.error(getGrantorWorkflowErrorMessage(err, "Failed to import scholars."))
 			} finally {
 				setBusy("")
 			}
@@ -2929,7 +2950,7 @@ export default function ProviderDashboard() {
 			toast.success("Scholar added to the grantor scholar list.")
 		} catch (error) {
 			console.error(error)
-			toast.error("Unable to add scholar right now.")
+			toast.error(getGrantorWorkflowErrorMessage(error, "Unable to add scholar right now."))
 		} finally {
 			setBusy("")
 		}
@@ -2987,7 +3008,7 @@ export default function ProviderDashboard() {
 			toast.success("Scholar details updated.")
 		} catch (error) {
 			console.error(error)
-			toast.error("Unable to update scholar right now.")
+			toast.error(getGrantorWorkflowErrorMessage(error, "Unable to update scholar right now."))
 		} finally {
 			setBusy("")
 		}
@@ -3173,7 +3194,7 @@ export default function ProviderDashboard() {
 			toast.success("Selected scholars archived.")
 		} catch (error) {
 			console.error(error)
-			toast.error("Unable to archive scholars right now.")
+			toast.error(getGrantorWorkflowErrorMessage(error, "Unable to archive scholars right now."))
 		} finally {
 			setBusy("")
 		}
@@ -3330,7 +3351,7 @@ export default function ProviderDashboard() {
 			}
 		} catch (error) {
 			console.error(error)
-			toast.error("Unable to unarchive scholars right now.")
+			toast.error(getGrantorWorkflowErrorMessage(error, "Unable to unarchive scholars right now."))
 		} finally {
 			setBusy("")
 		}

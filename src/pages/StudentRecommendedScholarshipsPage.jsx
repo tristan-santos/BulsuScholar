@@ -32,7 +32,7 @@ import {
 	getStudentAccessState,
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
-import { isScholarshipActiveOrPending } from "../services/announcementApplyEligibilityService"
+import { getArchivedGrantorApplyBlock, isScholarshipActiveOrPending } from "../services/announcementApplyEligibilityService"
 import { formatCooldownDuration, getLatestRejectedScholarship, getRejectionCooldown } from "../services/rejectionCooldownService"
 import "../css/StudentDashboard.css"
 import "../css/StudentPortalRefresh.css"
@@ -316,6 +316,21 @@ export default function StudentRecommendedScholarshipsPage() {
 			try {
 				const { workflowPayload } = buildRecommendationApplyPayload(user, userId, recommendation)
 				const isInvitation = recommendation.recommendationSource === "grantor_invitation"
+				const archivedGrantorBlock = !isInvitation
+					? getArchivedGrantorApplyBlock(user, {
+							grantorId: recommendation.grantorId || recommendation.providerId || "",
+							providerId: recommendation.providerId || recommendation.grantorId || "",
+							providerType: recommendation.providerType || "",
+							providerLabel: recommendation.providerLabel || recommendation.scholarshipName || recommendation.announcementTitle || "",
+							sourceLabel: recommendation.grantorName || recommendation.providerLabel || "",
+							grantorName: recommendation.grantorName || "",
+							title: recommendation.announcementTitle || recommendation.scholarshipName || recommendation.providerLabel || "",
+						})
+					: null
+				if (archivedGrantorBlock) {
+					toast.info(`You cannot apply to ${recommendation.grantorName || "this grantor"} again unless they invite you back.`)
+					return
+				}
 				const nextInvitations = isInvitation
 					? (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : []).map((item) =>
 						item.id === recommendation.id
@@ -342,7 +357,8 @@ export default function StudentRecommendedScholarshipsPage() {
 			} catch (error) {
 				console.error("StudentRecommendedScholarshipsPage: apply failed:", error)
 				toast.error(
-					String(error?.message || "").toLowerCase().includes("grantor is archived")
+					String(error?.message || "").toLowerCase().includes("grantor is archived") ||
+						String(error?.message || "").toLowerCase().includes("student was archived")
 						? error.message
 						: "Failed to apply for this recommendation.",
 				)

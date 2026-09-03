@@ -17981,10 +17981,12 @@
 /* Shared confirmation modal redesign */
 .admin-detail-shell--confirm {
 	width: min(680px, calc(100vw - 2rem)) !important;
+	max-height: calc(100vh - 2rem) !important;
 }
 
 .admin-detail-modal--confirm {
 	position: relative;
+	max-height: calc(100vh - 2rem) !important;
 	gap: 1.15rem !important;
 	padding: 1.6rem !important;
 	border: 1px solid rgba(0, 99, 60, 0.2) !important;
@@ -17994,7 +17996,9 @@
 		linear-gradient(135deg, rgba(236, 253, 245, 0.9), rgba(255, 255, 255, 0.98) 48%),
 		#ffffff !important;
 	box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28) !important;
-	overflow: hidden;
+	overflow-x: hidden;
+	overflow-y: auto;
+	scrollbar-gutter: stable;
 }
 
 .admin-detail-modal--confirm::before {
@@ -18174,7 +18178,7 @@
 }
 
 .admin-confirm-record-table-body {
-	max-height: 168px;
+	max-height: min(168px, 24vh);
 	overflow: auto;
 }
 
@@ -18202,6 +18206,67 @@
 	border-radius: 10px !important;
 	background: rgba(255, 255, 255, 0.82) !important;
 	box-shadow: none !important;
+}
+
+.admin-confirm-archive-form {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 0.9rem;
+	padding: 1rem;
+	border: 1px solid rgba(0, 99, 60, 0.18);
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.84);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62);
+}
+
+.admin-confirm-archive-field {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 0.45rem;
+	color: #213f32;
+	font-size: 0.88rem;
+	font-weight: 800;
+}
+
+.admin-confirm-archive-field span {
+	color: #29483b;
+	font-size: 0.76rem;
+	font-weight: 850;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.admin-confirm-archive-field select,
+.admin-confirm-archive-field textarea {
+	width: 100%;
+	min-width: 0;
+	border: 1px solid rgba(0, 99, 60, 0.24);
+	border-radius: 7px;
+	background: #ffffff;
+	color: #10251d;
+	font: inherit;
+	font-weight: 650;
+	outline: none;
+	transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-confirm-archive-field select {
+	min-height: 44px;
+	padding: 0 0.85rem;
+}
+
+.admin-confirm-archive-field textarea {
+	min-height: 92px;
+	padding: 0.75rem 0.85rem;
+	line-height: 1.45;
+	resize: vertical;
+}
+
+.admin-confirm-archive-field select:focus,
+.admin-confirm-archive-field textarea:focus {
+	border-color: #00633c;
+	box-shadow: 0 0 0 3px rgba(0, 99, 60, 0.12);
 }
 
 .admin-detail-actions--confirm {
@@ -18260,9 +18325,22 @@
 .admin-portal--dark .admin-confirm-summary-grid,
 .admin-portal--dark .admin-confirm-summary-card,
 .admin-portal--dark .admin-confirm-record-table,
-.admin-portal--dark .admin-detail-modal--confirm .admin-detail-info--compact {
+.admin-portal--dark .admin-detail-modal--confirm .admin-detail-info--compact,
+.admin-portal--dark .admin-confirm-archive-form {
 	border-color: #27443a !important;
 	background: rgba(15, 23, 42, 0.76) !important;
+}
+
+.admin-portal--dark .admin-confirm-archive-field,
+.admin-portal--dark .admin-confirm-archive-field span {
+	color: #d8f3e5;
+}
+
+.admin-portal--dark .admin-confirm-archive-field select,
+.admin-portal--dark .admin-confirm-archive-field textarea {
+	border-color: #2f6f55;
+	background: #0b1220;
+	color: #e2e8f0;
 }
 
 .admin-portal--dark .admin-confirm-summary-card strong {
@@ -18300,7 +18378,8 @@
 	}
 
 	.admin-confirm-summary-grid,
-	.admin-detail-actions--confirm {
+	.admin-detail-actions--confirm,
+	.admin-confirm-archive-form {
 		grid-template-columns: 1fr !important;
 	}
 
@@ -18363,10 +18442,15 @@
 .admin-portal .admin-table-wrap,
 .admin-portal .admin-table-wrap--grantors,
 .admin-portal .admin-table-wrap--scholarships,
-.admin-portal .admin-log-table-wrap,
-.admin-portal .admin-report-table-scroll {
+.admin-portal .admin-log-table-wrap {
 	border-radius: 10px !important;
 	overflow: hidden auto !important;
+}
+
+.admin-portal .admin-report-table-scroll {
+	border-radius: 10px !important;
+	overflow-x: auto !important;
+	overflow-y: auto !important;
 }
 
 .admin-portal .admin-management-table thead th,
@@ -18393,6 +18477,240 @@
 .admin-feature-page { width:100%; }.admin-feature-header { display:flex;align-items:center;gap:16px;padding:26px 4px;border-bottom:1px solid rgba(0,99,60,.2); }.admin-feature-header>span { width:54px;height:54px;border:1px solid rgba(0,99,60,.25);border-radius:6px;display:grid;place-items:center;color:#00633c;font-size:27px;background:#eef8f3; }.admin-feature-header h2 { margin:0;font-size:28px; }.admin-feature-header p { margin:5px 0 0;color:#64748b; }.admin-feature-stats { display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid rgba(0,99,60,.2); }.admin-feature-stats>div { display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-right:1px solid rgba(0,99,60,.18); }.admin-feature-stats>div:last-child { border-right:0; }.admin-feature-stats span { color:#536477; }.admin-feature-stats strong { font-size:22px; }.admin-feature-tabs { display:flex;gap:25px;padding:24px 4px 0;border-bottom:1px solid rgba(0,99,60,.18); }.admin-feature-tabs button { border:0;border-bottom:3px solid transparent;background:none;padding:0 0 12px;text-transform:capitalize;font:inherit;font-weight:650;color:#4d5c72; }.admin-feature-tabs button.active { color:#00633c;border-bottom-color:#00633c; }.admin-feature-table-wrap { overflow-x:auto;margin-top:18px;border:1px solid rgba(0,99,60,.16);border-radius:8px; }.admin-feature-table { width:100%;border-collapse:collapse;white-space:nowrap; }.admin-feature-table th { background:rgba(107,114,128,.15);font-size:12px;text-transform:uppercase;text-align:left;padding:14px; }.admin-feature-table td { padding:13px 14px;border-top:1px solid rgba(0,99,60,.14);max-width:220px;overflow:hidden;text-overflow:ellipsis; }.admin-table-view { border:1px solid #00633c;border-radius:5px;background:#fff;color:#00633c;padding:8px 11px;font-weight:700;display:inline-flex;align-items:center;gap:6px; }
 .admin-feature-header-actions { margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end; }.admin-feature-header-actions button { border:1px solid #00633c;border-radius:5px;background:#fff;color:#00633c;padding:9px 12px;font-weight:700;display:flex;align-items:center;gap:6px; }.admin-feature-header-actions button:first-of-type { background:#00633c;color:#fff; }.admin-feature-filters { display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:18px;align-items:center;margin-top:18px; }.admin-feature-filters>label:first-child { display:flex;align-items:center;gap:9px;border-bottom:1px solid #8ca99d;padding:10px 3px;color:#00633c; }.admin-feature-filters input { border:0;outline:0;font:inherit;width:100%;background:transparent; }.admin-feature-checkbox { display:flex;align-items:center;gap:7px;white-space:nowrap; }.admin-feature-checkbox input { width:16px; }.portal-empty { padding:30px;text-align:center;color:#64748b; }
 @media(max-width:800px){.admin-feature-header{align-items:flex-start;flex-wrap:wrap}.admin-feature-header-actions{width:100%;margin-left:0;justify-content:flex-start}.admin-feature-stats{grid-template-columns:1fr}.admin-feature-stats>div{border-right:0;border-bottom:1px solid rgba(0,99,60,.16)}.admin-feature-filters{grid-template-columns:1fr}}
+
+.admin-leave-review-shell {
+	width: min(760px, calc(100vw - 2rem));
+}
+
+.admin-leave-review-modal {
+	gap: 1rem;
+	max-height: calc(100vh - 2.5rem);
+	overflow-y: auto;
+}
+
+.admin-leave-review-head {
+	align-items: center;
+}
+
+.admin-leave-review-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.8rem;
+}
+
+.admin-leave-review-grid p,
+.admin-leave-review-document,
+.admin-leave-review-decision {
+	margin: 0;
+	border: 1px solid rgba(0, 99, 60, 0.16);
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.84);
+}
+
+.admin-leave-review-grid p {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 0.3rem;
+	padding: 0.9rem;
+}
+
+.admin-leave-review-grid p span,
+.admin-leave-review-decision span {
+	color: #64748b;
+	font-size: 0.72rem;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.admin-leave-review-grid p strong {
+	overflow-wrap: anywhere;
+	color: #10251d;
+	font-size: 0.95rem;
+	line-height: 1.35;
+}
+
+.admin-leave-review-wide {
+	grid-column: 1 / -1;
+}
+
+.admin-leave-review-document {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem;
+}
+
+.admin-leave-review-document > div {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-width: 0;
+}
+
+.admin-leave-review-document svg {
+	width: 22px;
+	height: 22px;
+	color: #00633c;
+}
+
+.admin-leave-review-document strong,
+.admin-leave-review-document span {
+	display: block;
+}
+
+.admin-leave-review-document strong {
+	color: #10251d;
+}
+
+.admin-leave-review-document span {
+	color: #64748b;
+	font-size: 0.86rem;
+}
+
+.admin-leave-review-document a {
+	border: 1px solid #00633c;
+	border-radius: 7px;
+	padding: 0.7rem 0.9rem;
+	color: #00633c;
+	font-weight: 800;
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.admin-leave-review-decision {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 1rem;
+}
+
+.admin-leave-review-decision textarea {
+	width: 100%;
+	min-height: 110px;
+	border: 1px solid rgba(0, 99, 60, 0.22);
+	border-radius: 7px;
+	padding: 0.8rem;
+	color: #10251d;
+	font: inherit;
+	line-height: 1.45;
+	resize: vertical;
+}
+
+.admin-leave-review-actions {
+	margin-top: 0;
+}
+
+.admin-portal--dark .admin-leave-review-grid p,
+.admin-portal--dark .admin-leave-review-document,
+.admin-portal--dark .admin-leave-review-decision {
+	border-color: #27443a;
+	background: rgba(15, 23, 42, 0.76);
+}
+
+.admin-portal--dark .admin-leave-review-grid p strong,
+.admin-portal--dark .admin-leave-review-document strong,
+.admin-portal--dark .admin-leave-review-decision textarea {
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-leave-review-decision textarea {
+	border-color: #2f6f55;
+	background: #0b1220;
+}
+
+.admin-portal .admin-table-wrap--requirements {
+	overflow-x: auto !important;
+	overflow-y: visible !important;
+}
+
+.admin-portal .admin-requirements-table {
+	width: 100% !important;
+	min-width: 0 !important;
+	table-layout: fixed !important;
+}
+
+.admin-portal .admin-requirements-table thead th,
+.admin-portal .admin-requirements-table tbody td {
+	min-width: 0;
+	padding-inline: 0.5rem !important;
+}
+
+.admin-portal .admin-requirements-table--signing thead th,
+.admin-portal .admin-requirements-table--signing tbody td {
+	font-size: 0.72rem !important;
+}
+
+.admin-portal .admin-requirements-table--signing {
+	min-width: 1120px !important;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(1),
+.admin-portal .admin-requirements-table--signing td:nth-child(1) {
+	width: 12%;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(2),
+.admin-portal .admin-requirements-table--signing td:nth-child(2) {
+	width: 11%;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(3),
+.admin-portal .admin-requirements-table--signing td:nth-child(3) {
+	width: 15%;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(4),
+.admin-portal .admin-requirements-table--signing td:nth-child(4) {
+	width: 14%;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(5),
+.admin-portal .admin-requirements-table--signing td:nth-child(5) {
+	width: 12%;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(6),
+.admin-portal .admin-requirements-table--signing td:nth-child(6) {
+	width: 10%;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(7),
+.admin-portal .admin-requirements-table--signing td:nth-child(7) {
+	width: 10%;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(8),
+.admin-portal .admin-requirements-table--signing td:nth-child(8) {
+	width: 8%;
+}
+
+.admin-portal .admin-requirements-table--signing th:nth-child(9),
+.admin-portal .admin-requirements-table--signing td:nth-child(9) {
+	width: 8%;
+	max-width: none;
+}
+
+.admin-portal .admin-requirements-table .admin-table-btn {
+	min-width: 64px;
+	padding-inline: 0.55rem;
+}
+
+.admin-portal .admin-requirements-table--requesting th:nth-child(1),
+.admin-portal .admin-requirements-table--requesting td:nth-child(1),
+.admin-portal .admin-requirements-table--reviewed th:nth-child(1),
+.admin-portal .admin-requirements-table--reviewed td:nth-child(1) {
+	width: 14%;
+}
+
+.admin-portal .admin-requirements-table--requesting th:nth-child(3),
+.admin-portal .admin-requirements-table--requesting td:nth-child(3),
+.admin-portal .admin-requirements-table--reviewed th:nth-child(3),
+.admin-portal .admin-requirements-table--reviewed td:nth-child(3) {
+	width: 21%;
+}
 .admin-notification-detail-backdrop { z-index: 10050; }
 
 .admin-notification-detail-modal {

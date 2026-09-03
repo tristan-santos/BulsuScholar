@@ -227,7 +227,7 @@ export default function StudentLeavePage() {
             event.target === event.currentTarget && setModal("")
           }
         >
-          <section className="priority-modal">
+          <section className="priority-modal" onMouseDown={(event) => event.stopPropagation()}>
             <button
               className="priority-modal-close"
               onClick={() => setModal("")}

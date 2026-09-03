@@ -2200,20 +2200,43 @@ export default function AdminDashboard() {
 
 	const selectedGrantorAnnouncements = useMemo(() => {
 		if (!selectedGrantor?.id) return []
-		const grantorKeys = new Set(
-			[selectedGrantor.id, selectedGrantor.providerType, selectedGrantor.name]
+		const grantorIdKeys = new Set(
+			[selectedGrantor.id, selectedGrantor.providerId, selectedGrantor.parentId, selectedGrantor.ownerId, selectedGrantor.createdByGrantorId]
 				.filter(Boolean)
-				.map((item) => String(item).toLowerCase()),
+				.map((item) => String(item).trim().toLowerCase()),
+		)
+		const grantorNameKeys = new Set(
+			[
+				selectedGrantor.name,
+				selectedGrantor.grantorName,
+				selectedGrantor.providerName,
+				selectedGrantor.providerLabel,
+				selectedGrantor.organization,
+				buildGrantorName(selectedGrantor),
+			]
+				.filter(Boolean)
+				.map((item) => String(item).trim().toLowerCase()),
 		)
 		return grantorAnnouncementsRaw.filter((announcement) => {
-			const values = [
+			const sourceType = String(announcement.sourceType || announcement.source || announcement.authorRole || announcement.createdBy || "").toLowerCase()
+			if (sourceType === "admin" || sourceType.includes("admin")) return false
+			const ownerValues = [
 				announcement.grantorId,
+				announcement.providerId,
+				announcement.parentId,
+				announcement.ownerId,
+				announcement.createdByGrantorId,
+			].map((item) => String(item || "").trim().toLowerCase())
+			if (ownerValues.some(Boolean)) {
+				return ownerValues.some((value) => value && grantorIdKeys.has(value))
+			}
+			const nameValues = [
 				announcement.providerType,
 				announcement.providerLabel,
 				announcement.grantorName,
 				announcement.sourceLabel,
-			].map((item) => String(item || "").toLowerCase())
-			return values.some((value) => value && grantorKeys.has(value))
+			].map((item) => String(item || "").trim().toLowerCase())
+			return nameValues.some((value) => value && grantorNameKeys.has(value))
 		})
 	}, [grantorAnnouncementsRaw, selectedGrantor])
 
@@ -2234,12 +2257,12 @@ export default function AdminDashboard() {
 		if (!selectedGrantor) return 0
 		const names = new Set(
 			selectedGrantorAnnouncements
+				.filter(isGrantorScholarshipApplicationAnnouncement)
 				.map((announcement) =>
 					String(
 						announcement.scholarshipTitle ||
 							announcement.scholarshipName ||
-							announcement.title ||
-							announcement.announcementTitle ||
+							announcement.programName ||
 							"",
 					).trim().toLowerCase(),
 				)
@@ -2250,29 +2273,62 @@ export default function AdminDashboard() {
 
 	const selectedGrantorApplicantCount = useMemo(() => {
 		if (!selectedGrantor) return 0
-		const grantorKeys = new Set(
+		const grantorIdKeys = new Set(
 			[
 				selectedGrantor.id,
-				selectedGrantor.providerType,
+				selectedGrantor.providerId,
+				selectedGrantor.parentId,
+				selectedGrantor.ownerId,
+				selectedGrantor.createdByGrantorId,
+			]
+				.filter(Boolean)
+				.map((item) => String(item).trim().toLowerCase()),
+		)
+		const grantorNameKeys = new Set(
+			[
 				selectedGrantor.name,
+				selectedGrantor.grantorName,
+				selectedGrantor.providerName,
+				selectedGrantor.providerLabel,
+				selectedGrantor.organization,
 				buildGrantorName(selectedGrantor),
 			]
 				.filter(Boolean)
-				.map((item) => String(item).toLowerCase()),
+				.map((item) => String(item).trim().toLowerCase()),
 		)
-		return applicationsRaw.filter((application) =>
-			[
+		const matchedApplicationKeys = new Set()
+		applicationsRaw.forEach((application) => {
+			const ownerValues = [
 				application.grantorId,
 				application.providerId,
-				application.providerType,
-				application.provider,
+				application.parentId,
+				application.ownerId,
+				application.createdByGrantorId,
+			].map((item) => String(item || "").trim().toLowerCase())
+			const hasOwnerValue = ownerValues.some(Boolean)
+			const isMatch = hasOwnerValue
+				? ownerValues.some((value) => value && grantorIdKeys.has(value))
+				: [
+					application.providerType,
+					application.provider,
+					application.providerLabel,
 				application.grantorName,
 				application.providerName,
 				application.scholarshipProvider,
-			]
-				.filter(Boolean)
-				.some((value) => grantorKeys.has(String(value).toLowerCase())),
-		).length
+					application.sourceLabel,
+				]
+					.map((item) => String(item || "").trim().toLowerCase())
+					.some((value) => value && grantorNameKeys.has(value))
+			if (!isMatch) return
+			const uniqueKey = String(
+				application.id ||
+					application.applicationNumber ||
+					application.requestNumber ||
+					`${application.studentId || application.studentNumber || application.studentnumber || "student"}::${application.scholarshipId || application.scholarshipName || application.scholarshipTitle || "scholarship"}`,
+			)
+			matchedApplicationKeys.add(uniqueKey)
+		})
+		return matchedApplicationKeys.size
 	}, [applicationsRaw, selectedGrantor])
 
 	const visibleGrantorRows = useMemo(() => {
@@ -3411,11 +3467,36 @@ export default function AdminDashboard() {
 		(rows = []) =>
 			rows.map((student) => {
 				const grantorMatch = studentGrantorMatches.find((entry) => entry.student?.id === student.id)
+				const scholarshipGrantorLabels = normalizeScholarshipList(student.scholarships || [])
+					.filter((entry) => !isClosedScholarshipEntry(entry) && !isArchivedScholarshipEntry(entry))
+					.map((entry) =>
+						entry.grantorName ||
+						entry.providerName ||
+						entry.providerLabel ||
+						entry.provider ||
+						grantorLabelById.get(entry.grantorId) ||
+						grantorLabelById.get(entry.providerId) ||
+						grantorLabelById.get(entry.providerType) ||
+						(entry.providerType ? toProviderLabel(entry.providerType) : ""),
+					)
+					.filter(Boolean)
+				const rosterGrantorLabels = grantorScholarsRaw
+					.filter((scholar) => scholar.archived !== true && matchesGrantorScholarToStudent(student, scholar))
+					.map((scholar) =>
+						scholar.grantorName ||
+						scholar.providerName ||
+						grantorLabelById.get(scholar.grantorId) ||
+						grantorLabelById.get(scholar.providerType) ||
+						(scholar.providerType ? toProviderLabel(scholar.providerType) : ""),
+					)
+					.filter(Boolean)
 				const grantorLabel =
 					grantorMatch?.distinctGrantors?.map((grantor) => grantor.label).filter(Boolean).join(", ") ||
 					studentGrantorLabelById.get(student.id) ||
 					student.grantorName ||
 					student.providerName ||
+					Array.from(new Set(scholarshipGrantorLabels)).join(", ") ||
+					Array.from(new Set(rosterGrantorLabels)).join(", ") ||
 					grantorLabelById.get(student.grantorId) ||
 					grantorLabelById.get(student.providerType) ||
 					(student.providerType ? toProviderLabel(student.providerType) : "") ||
@@ -3428,7 +3509,7 @@ export default function AdminDashboard() {
 					recordStatus: student.recordStatus || (student.archived === true ? "Archived" : "Active"),
 				}
 			}),
-		[grantorLabelById, studentGrantorLabelById, studentGrantorMatches],
+		[grantorLabelById, grantorScholarsRaw, studentGrantorLabelById, studentGrantorMatches],
 	)
 
 	const allStudentReportRows = useMemo(
@@ -4372,10 +4453,61 @@ export default function AdminDashboard() {
 
 	const soeDownloadRows = useMemo(() => {
 		const studentMap = new Map(studentProfiles.map((student) => [student.id, student]))
-		return soeDownloads
+		const normalizeKey = (value = "") => String(value || "").trim().toLowerCase()
+		const soeRequestById = new Map(soeRequests.map((request) => [request.id, request]))
+		const findRelatedSoeRequest = (download = {}) => {
+			if (download.requestRecordId && soeRequestById.has(download.requestRecordId)) return soeRequestById.get(download.requestRecordId)
+			const downloadKeys = [
+				download.applicationNumber,
+				download.soeSnapshot?.applicationNumber,
+				download.scholarshipId,
+				download.soeSnapshot?.scholarshipId,
+				download.requestNumber,
+				download.soeSnapshot?.requestNumber,
+			].map(normalizeKey).filter(Boolean)
+			return soeRequests.find((request) => {
+				if (normalizeKey(request.studentId) !== normalizeKey(download.studentId)) return false
+				const requestKeys = [
+					request.applicationNumber,
+					request.scholarshipId,
+					request.requestNumber,
+				].map(normalizeKey).filter(Boolean)
+				return requestKeys.some((key) => downloadKeys.includes(key))
+			}) || null
+		}
+		const findRelatedStudentScholarship = (student = {}, download = {}, request = null) => {
+			const scholarships = Array.isArray(student?.scholarships) ? student.scholarships : []
+			const downloadKeys = [
+				download.applicationNumber,
+				download.soeSnapshot?.applicationNumber,
+				request?.applicationNumber,
+				download.scholarshipId,
+				download.soeSnapshot?.scholarshipId,
+				request?.scholarshipId,
+				download.requestNumber,
+				download.soeSnapshot?.requestNumber,
+				request?.requestNumber,
+				download.scholarshipName,
+				download.providerType,
+			].map(normalizeKey).filter(Boolean)
+			return scholarships.find((entry) => {
+				const entryKeys = [
+					entry.applicationNumber,
+					entry.id,
+					entry.requestNumber,
+					entry.name,
+					entry.provider,
+					entry.providerType,
+				].map(normalizeKey).filter(Boolean)
+				return entryKeys.some((key) => downloadKeys.includes(key))
+			}) || null
+		}
+		const normalizedRows = soeDownloads
 			.map((download) => {
 				const student = studentMap.get(download.studentId)
 				const snapshot = download.studentSnapshot || {}
+				const relatedRequest = findRelatedSoeRequest(download)
+				const relatedScholarship = findRelatedStudentScholarship(student, download, relatedRequest)
 				const reviewState = download.reviewState || "incoming"
 				const soeRequestNumber =
 					download.requestNumber ||
@@ -4384,6 +4516,14 @@ export default function AdminDashboard() {
 					download.soeSnapshot?.registrationNumber ||
 					download.id ||
 					"-"
+				const applicationNumber =
+					download.applicationNumber ||
+					download.soeSnapshot?.applicationNumber ||
+					download.requestSnapshot?.applicationNumber ||
+					relatedRequest?.applicationNumber ||
+					relatedScholarship?.applicationNumber ||
+					relatedScholarship?.requestNumber ||
+					""
 				const reviewStateLabel =
 					reviewState === "signed"
 						? "Signed"
@@ -4418,8 +4558,12 @@ export default function AdminDashboard() {
 						snapshot.studentNumber ||
 						snapshot.studentId ||
 						"-",
-					scholarshipName: download.scholarshipName || "-",
-					providerType: download.providerType || "Provider not set",
+					scholarshipId: download.scholarshipId || download.soeSnapshot?.scholarshipId || relatedRequest?.scholarshipId || relatedScholarship?.id || "",
+					grantorId: download.grantorId || download.soeSnapshot?.grantorId || relatedRequest?.grantorId || relatedScholarship?.grantorId || relatedScholarship?.providerId || "",
+					applicationNumber,
+					requestRecordId: download.requestRecordId || relatedRequest?.id || "",
+					scholarshipName: download.scholarshipName || relatedRequest?.scholarshipName || relatedScholarship?.name || "-",
+					providerType: download.providerType || relatedRequest?.providerType || relatedScholarship?.providerType || "Provider not set",
 					requestNumber: soeRequestNumber,
 					requestDate: toJsDate(download.createdAt || download.downloadedAt),
 					downloadedDate: toJsDate(download.downloadedAt || download.createdAt),
@@ -4434,8 +4578,32 @@ export default function AdminDashboard() {
 					studentEmail: snapshot.email || student?.email || "-",
 				}
 			})
+		const latestRows = new Map()
+		normalizedRows.forEach((row) => {
+			const studentKey = String(row.studentId || row.studentNumber || "unknown").trim().toLowerCase()
+			const scholarshipKey = String(
+				row.scholarshipId ||
+					row.applicationNumber ||
+					row.scholarshipName ||
+					row.providerType ||
+					row.requestNumber ||
+					"scholarship",
+			).trim().toLowerCase()
+			const cycleKey = String(row.semesterTag || currentSemesterTag || "current").trim().toLowerCase()
+			const dedupeKey = `${studentKey}__${scholarshipKey}__${cycleKey}`
+			const rowTime =
+				toJsDate(row.updatedAt || row.downloadedAt || row.createdAt || row.requestDate)?.getTime() || 0
+			const existing = latestRows.get(dedupeKey)
+			const existingTime = existing
+				? toJsDate(existing.updatedAt || existing.downloadedAt || existing.createdAt || existing.requestDate)?.getTime() || 0
+				: -1
+			if (!existing || rowTime >= existingTime) {
+				latestRows.set(dedupeKey, row)
+			}
+		})
+		return Array.from(latestRows.values())
 			.sort((a, b) => (b.downloadedDate?.getTime() || 0) - (a.downloadedDate?.getTime() || 0))
-	}, [currentSemesterTag, soeDownloads, studentProfiles])
+	}, [currentSemesterTag, soeDownloads, soeRequests, studentProfiles])
 
 	const soeCheckingRows = useMemo(() => {
 		const keyword = soeCheckSearch.trim().toLowerCase()
@@ -5869,6 +6037,16 @@ export default function AdminDashboard() {
 	}
 
 	const openBatchArchiveConfirmation = () => {
+		const targetIds = [...selectedStudentIds]
+		const targetIdSet = new Set(targetIds)
+		const targetRows = uniqueStudentProfiles
+			.filter((student) => targetIdSet.has(student.id))
+			.map((student) => ({
+				studentId: toDisplayStudentId(student.studentId || student.studentnumber || student.id),
+				fullName: student.fullName || studentFullName(student) || "-",
+				course: student.course || student.program || "-",
+				year: student.year || student.yearLevel || "-",
+			}))
 		setAdminConfirmDialog({
 			type: "batch_archive",
 			title: "Archive Selected Students",
@@ -5877,6 +6055,8 @@ export default function AdminDashboard() {
 			confirmLabel: "Confirm",
 			tone: "danger",
 			requiresArchiveReason: true,
+			recordCount: targetIds.length,
+			records: targetRows,
 		})
 	}
 
@@ -5929,6 +6109,7 @@ export default function AdminDashboard() {
 	}
 
 	const openScholarshipScholarArchiveConfirmation = () => {
+		const targetRows = [...selectedScholarshipScholarRows].filter((row) => row.rawScholar?.id || row.studentId)
 		setAdminConfirmDialog({
 			type: "batch_archive_scholarship_scholars",
 			title: "Archive Selected Scholars",
@@ -5937,6 +6118,13 @@ export default function AdminDashboard() {
 			confirmLabel: "Confirm",
 			tone: "danger",
 			requiresArchiveReason: true,
+			recordCount: targetRows.length || selectedScholarshipScholarKeys.length,
+			records: targetRows.map((row) => ({
+				studentId: toDisplayStudentId(row.studentId || row.rawScholar?.studentId || row.rawScholar?.studentNumber || row.rawScholar?.studentnumber),
+				fullName: row.fullName || row.rawScholar?.fullName || studentFullName(row.rawScholar || {}) || "-",
+				course: row.rawScholar?.course || row.rawScholar?.program || row.course || "-",
+				year: row.yearLevel || row.rawScholar?.yearLevel || row.rawScholar?.year || "-",
+			})),
 		})
 	}
 
@@ -6494,6 +6682,9 @@ export default function AdminDashboard() {
 					data: {
 						status: nextStatus,
 						reviewState: nextReviewState,
+						applicationNumber: row.applicationNumber || "",
+						scholarshipId: row.scholarshipId || "",
+						grantorId: row.grantorId || "",
 						checkedAt: serverTimestamp(),
 						updatedAt: serverTimestamp(),
 						signedAt: action === "signed" ? serverTimestamp() : null,
@@ -6624,7 +6815,8 @@ export default function AdminDashboard() {
 								: `Your downloaded SOE for ${row.scholarshipName || "your scholarship"} was rejected. Reason: ${rejectionReason || "Reason not provided"}${rejectionNotes ? ` - ${rejectionNotes}` : ""}. Please download the SOE again.`,
 						studentName: student.fullName || studentFullName(student),
 						scholarshipName: row.scholarshipName || "",
-						applicationNumber: row.requestNumber || row.applicationNumber || row.id || "",
+						applicationNumber: row.applicationNumber || row.id || "",
+						soeRequestNumber: row.requestNumber || "",
 						reason: rejectionReason,
 						notes: rejectionNotes,
 						stageId: "signing_materials",
@@ -8973,7 +9165,7 @@ export default function AdminDashboard() {
 					{soeTab === "requesting" ? (
 						<>
 							<div className="admin-table-wrap admin-table-wrap--requirements">
-								<table className="admin-management-table admin-management-table--roomy admin-requirements-table">
+								<table className="admin-management-table admin-management-table--roomy admin-requirements-table admin-requirements-table--requesting">
 									<thead>
 										<tr>
 											<th>Application No.</th>
@@ -9024,7 +9216,7 @@ export default function AdminDashboard() {
 					) : soeTab === "approved" || soeTab === "rejected" ? (
 						<>
 							<div className="admin-table-wrap admin-table-wrap--requirements">
-								<table className="admin-management-table admin-management-table--roomy admin-requirements-table">
+								<table className="admin-management-table admin-management-table--roomy admin-requirements-table admin-requirements-table--reviewed">
 									<thead>
 										<tr>
 											<th>Application No.</th>
@@ -9071,7 +9263,7 @@ export default function AdminDashboard() {
 					) : (
 						<>
 							<div className="admin-table-wrap admin-table-wrap--requirements">
-								<table className="admin-management-table admin-management-table--roomy admin-requirements-table">
+								<table className="admin-management-table admin-management-table--roomy admin-requirements-table admin-requirements-table--signing">
 									<thead>
 										<tr>
 											<th>SOE Request No.</th>
@@ -11271,8 +11463,8 @@ export default function AdminDashboard() {
 								</div>
 							) : null}
 							{adminConfirmDialog.requiresArchiveReason ? (
-								<div className="admin-detail-info admin-detail-info--compact">
-									<label className="admin-form-field">
+								<div className="admin-confirm-archive-form" aria-label="Archive details">
+									<label className="admin-confirm-archive-field">
 										<span>Archive Reason</span>
 										<select value={adminArchiveReason} onChange={(event) => setAdminArchiveReason(event.target.value)}>
 											<option value="Administrative archive">Administrative archive</option>
@@ -11282,7 +11474,7 @@ export default function AdminDashboard() {
 											<option value="Scholarship no longer valid">Scholarship no longer valid</option>
 										</select>
 									</label>
-									<label className="admin-form-field admin-form-field--full">
+									<label className="admin-confirm-archive-field">
 										<span>Notes</span>
 										<textarea
 											value={adminArchiveNotes}
@@ -11362,8 +11554,14 @@ export default function AdminDashboard() {
 											</div>
 											<div className="admin-soe-review-row">
 												<span>Application Number</span>
-												<strong>{selectedSoeReviewRow.requestNumber || selectedSoeReviewRow.id || "-"}</strong>
+												<strong>{selectedSoeReviewRow.applicationNumber || selectedSoeReviewScholarship?.applicationNumber || selectedSoeReviewRow.id || "-"}</strong>
 											</div>
+											{isSelectedSoeDownloadReview ? (
+												<div className="admin-soe-review-row">
+													<span>SOE Request No.</span>
+													<strong>{selectedSoeReviewRow.requestNumber || selectedSoeReviewRow.id || "-"}</strong>
+												</div>
+											) : null}
 										</div>
 									</section>
 									{isSelectedSoeDownloadReview ? (
@@ -11617,7 +11815,10 @@ export default function AdminDashboard() {
 								<p><span>Student</span><strong>{soeRejectModalRow.fullName || "-"}</strong></p>
 								<p><span>Student Number</span><strong>{soeRejectModalRow.studentId || "-"}</strong></p>
 								<p><span>{soeRejectModalRow.reviewSource === "download" ? "Review Item" : "Requested Documents"}</span><strong>{soeRejectModalRow.reviewSource === "download" ? "Downloaded SOE" : soeRejectModalRow.visibleMaterialsSummary || "-"}</strong></p>
-								<p><span>Application No.</span><strong>{soeRejectModalRow.requestNumber || soeRejectModalRow.id || "-"}</strong></p>
+								<p><span>Application No.</span><strong>{soeRejectModalRow.applicationNumber || soeRejectModalRow.id || "-"}</strong></p>
+								{soeRejectModalRow.reviewSource === "download" ? (
+									<p><span>SOE Request No.</span><strong>{soeRejectModalRow.requestNumber || soeRejectModalRow.id || "-"}</strong></p>
+								) : null}
 							</div>
 							<label>
 								Reason

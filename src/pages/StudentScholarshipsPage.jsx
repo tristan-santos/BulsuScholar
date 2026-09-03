@@ -3626,12 +3626,13 @@ export default function StudentScholarshipsPage() {
 			</main>
 
 			{documentUploadPrompt ? (
-				<div className="student-soe-modal-backdrop" role="presentation">
+				<div className="student-soe-modal-backdrop" role="presentation" onClick={() => setDocumentUploadPrompt(null)}>
 					<div
 						className="student-soe-modal"
 						role="dialog"
 						aria-modal="true"
 						aria-label="Required document upload"
+						onClick={(event) => event.stopPropagation()}
 					>
 						<button
 							type="button"
@@ -3668,12 +3669,13 @@ export default function StudentScholarshipsPage() {
 			) : null}
 
 			{confirmTarget && (
-				<div className="student-soe-modal-backdrop" role="presentation">
+				<div className="student-soe-modal-backdrop" role="presentation" onClick={() => setConfirmTarget(null)}>
 					<div
 						className="student-soe-modal"
 						role="dialog"
 						aria-modal="true"
 						aria-label="Scholarship selection confirmation"
+						onClick={(event) => event.stopPropagation()}
 					>
 						<button
 							type="button"
@@ -3701,12 +3703,21 @@ export default function StudentScholarshipsPage() {
 			)}
 
 			{invitationDecision ? (
-				<div className="student-soe-modal-backdrop" role="presentation">
+				<div
+					className="student-soe-modal-backdrop"
+					role="presentation"
+					onClick={() => {
+						setInvitationDecision(null)
+						setInvitationRejectReason("Not interested")
+						setInvitationRejectNotes("")
+					}}
+				>
 					<div
 						className="student-soe-modal"
 						role="dialog"
 						aria-modal="true"
 						aria-label="Reject scholarship invitation"
+						onClick={(event) => event.stopPropagation()}
 					>
 						<button
 							type="button"
@@ -3763,12 +3774,13 @@ export default function StudentScholarshipsPage() {
 			) : null}
 
 			{expenseModalTarget && (
-				<div className="student-soe-modal-backdrop" role="presentation">
+				<div className="student-soe-modal-backdrop" role="presentation" onClick={closeExpenseModal}>
 					<div
 						className="student-soe-modal student-soe-expense-modal"
 						role="dialog"
 						aria-modal="true"
 						aria-label="SOE expense entry"
+						onClick={(event) => event.stopPropagation()}
 					>
 						<button
 							type="button"
@@ -3862,8 +3874,8 @@ export default function StudentScholarshipsPage() {
 			)}
 
 			{isSoePreviewOpen && soePreviewUrl && (
-				<div className="student-soe-preview-backdrop" role="presentation">
-					<div className="student-soe-preview-modal" role="dialog" aria-modal="true" aria-label="SOE preview">
+				<div className="student-soe-preview-backdrop" role="presentation" onClick={closeSoePreview}>
+					<div className="student-soe-preview-modal" role="dialog" aria-modal="true" aria-label="SOE preview" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="student-soe-modal-close" onClick={closeSoePreview}>
 							<HiX aria-hidden />
 						</button>

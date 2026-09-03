@@ -1,9 +1,10 @@
 import { supabase } from "./supabaseClient"
 
-export async function buildPortalRequestHeaders() {
-	const actorId = sessionStorage.getItem("bulsuscholar_userId") || ""
+export async function buildPortalRequestHeaders(overrides = {}) {
+	const actorId = overrides.actorId || sessionStorage.getItem("bulsuscholar_userId") || ""
 	const storedActorType = sessionStorage.getItem("bulsuscholar_userType") || ""
-	const actorType = storedActorType === "provider" ? "grantor" : storedActorType
+	const overrideActorType = overrides.actorType === "provider" ? "grantor" : overrides.actorType
+	const actorType = overrideActorType || (storedActorType === "provider" ? "grantor" : storedActorType)
 	const { data } = await supabase.auth.getSession()
 	const accessToken = data?.session?.access_token || ""
 
@@ -15,12 +16,12 @@ export async function buildPortalRequestHeaders() {
 	}
 }
 
-export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "Request") {
+export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "Request", options = {}) {
 	let response
 	try {
 		response = await fetch(`${baseUrl}${path}`, {
 			method: "POST",
-			headers: await buildPortalRequestHeaders(),
+			headers: await buildPortalRequestHeaders(options.actor || {}),
 			body: JSON.stringify(payload),
 		})
 	} catch (error) {
