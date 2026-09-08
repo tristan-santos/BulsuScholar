@@ -810,10 +810,19 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
                         return {"ok": False, "reason": "scholarship_choice_required"}
                     if request_data.get("applicationNumber") != commitment.get("applicationNumber"):
                         return {"ok": False, "reason": "application_closed"}
-                    if str((request_data.get("materials") or {}).get("soe", {}).get("status") or request_data.get("status") or "").lower() != "approved":
-                        return {"ok": False, "reason": "material_approval_required"}
-                    allowed = {"materials.soe.downloadedAt", "downloadStatus", "downloadedAt", "updatedAt"}
-                    change["data"] = {key: value for key, value in (change.get("data") or {}).items() if key in allowed}
+                    material_updates = change.get("data") or {}
+                    materials = request_data.get("materials") or {}
+                    if any(key in material_updates for key in {"materials.soe.downloadedAt", "downloadStatus", "downloadedAt"}):
+                        if str((materials.get("soe") or {}).get("status") or request_data.get("status") or "").lower() != "approved":
+                            return {"ok": False, "reason": "material_approval_required"}
+                    if "materials.application_form.downloadedAt" in material_updates:
+                        if str((materials.get("application_form") or {}).get("status") or "").lower() != "approved":
+                            return {"ok": False, "reason": "material_approval_required"}
+                    allowed = {
+                        "materials.soe.downloadedAt", "materials.application_form.downloadedAt",
+                        "downloadStatus", "downloadedAt", "updatedAt",
+                    }
+                    change["data"] = {key: value for key, value in material_updates.items() if key in allowed}
                 else:
                     data = change.get("data") or {}
                     if data.get("applicationNumber") != commitment.get("applicationNumber"):

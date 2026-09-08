@@ -56,6 +56,26 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
         self.assertTrue(mutate_scholarship_choice(self.payload, withdraw=True)["idempotent"])
         self.assertEqual(rpc.call_args.args[1]["p_action"], "withdraw")
 
+    @patch("backend.scholarship_choice_service.supabase_document_get")
+    @patch("backend.scholarship_choice_service.supabase_rpc")
+    def test_choose_returns_persisted_enriched_material_request(self, rpc, document_get):
+        rpc.return_value = {"ok": True, "data": {
+            "materialRequest": {"id": "choice_application-a", "materials": {"soe": {"status": "pending"}}},
+        }}
+        document_get.return_value = {"ok": True, "data": {
+            "id": "choice_application-a",
+            "materials": {
+                "soe": {"status": "pending"},
+                "application_form": {"status": "pending"},
+            },
+            "customApplicationForm": {"url": "https://example.test/custom.pdf"},
+        }}
+
+        result = mutate_scholarship_choice(self.payload)
+
+        document_get.assert_called_once_with("soe_requests", "choice_application-a")
+        self.assertEqual(result["materialRequest"]["materials"]["application_form"]["status"], "pending")
+
     @patch("backend.scholarship_choice_service.supabase_rpc")
     def test_database_failure_is_not_reported_as_success(self, rpc):
         rpc.return_value = {"ok": False, "reason": "document_versions_changed"}

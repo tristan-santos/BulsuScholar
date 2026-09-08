@@ -210,7 +210,7 @@ begin
   end if;
   update public.scholarship_applications set data = jsonb_set(data, '{tracking,completedStepIds}', '["document_review"]')
     where id = '__choice_test_m2';
-  update public.scholarship_applications set data = data || '{"providerType":"kuya_win"}'
+  update public.scholarship_applications set data = data || '{"providerType":"kuya_win","customApplicationForm":{"url":"https://example.test/grantor-form.pdf","name":"grantor-form.pdf"}}'
     where id = '__choice_test_m2';
   begin
     perform public.mutate_scholarship_choice('__choice_test_multi', '__choice_test_m2', 'choose');
@@ -227,6 +227,11 @@ begin
   end if;
   if r#>>'{student,scholarshipCommitment,applicationId}' <> '__choice_test_m2' then
     raise exception 'TEST FAILED: reviewed v2 application could not commit';
+  end if;
+  if not exists(select 1 from public.soe_requests where id = 'choice___choice_test_m2'
+    and data#>>'{materials,application_form,status}' = 'pending'
+    and data#>>'{customApplicationForm,name}' = 'grantor-form.pdf') then
+    raise exception 'TEST FAILED: grantor custom form was not included in the material request';
   end if;
   perform public.update_scholarship_application_documents('__choice_test_multi', '__choice_test_m2',
     'applicationFormFile', '{"url":"corrected-form"}');

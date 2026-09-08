@@ -956,19 +956,70 @@
 }
 .scholarship-application-form-upload {
 	display: grid;
-	gap: 0.5rem;
+	gap: 0.65rem;
 	margin-block: 1rem;
+	padding: 0.85rem;
+	border: 1px solid #cfe2d9;
+	border-radius: 6px;
+	background: #f8fcfa;
 	font-size: 0.85rem;
 	min-width: 0;
 	overflow-wrap: anywhere;
 }
-.scholarship-application-form-upload input { width: 100%; min-width: 0; font: inherit; }
-.scholarship-application-form-upload input::file-selector-button {
-	padding: 0.5rem 0.75rem;
-	border: 1px solid #c6dfd4;
-	border-radius: 5px;
-	background: #f2faf6;
-	color: #075b38;
-	font: inherit;
-	cursor: pointer;
+.scholarship-application-form-upload__head,
+.scholarship-application-form-upload__control {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+.scholarship-application-form-upload__head > span {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	font-weight: 700;
+	color: #173e31;
+}
+.scholarship-application-form-upload__head small,
+.scholarship-application-form-upload__control > span {
+	color: #65786f;
+}
+.scholarship-application-form-upload__control > span {
+	min-width: 0;
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.scholarship-application-form-upload__input {
+	position: absolute;
+	inline-size: 1px;
+	block-size: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+.student-dashboard--dark .scholarship-application-form-upload {
+	border-color: #315447;
+	background: #172720;
+}
+.student-dashboard--dark .scholarship-application-form-upload__head > span {
+	color: #e2f1e9;
+}
+.student-dashboard--dark .scholarship-application-form-upload__head small,
+.student-dashboard--dark .scholarship-application-form-upload__control > span {
+	color: #abc1b6;
+}
+@media (max-width: 520px) {
+	.scholarship-application-form-upload__head,
+	.scholarship-application-form-upload__control {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+	.scholarship-application-form-upload__control > span {
+		max-width: 100%;
+	}
 }

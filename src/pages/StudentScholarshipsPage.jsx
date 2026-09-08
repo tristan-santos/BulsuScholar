@@ -162,6 +162,17 @@ function getRejectionTimestamp(entry = {}) {
 	)
 }
 
+function getApplicationTimestamp(entry = {}) {
+	return (
+		toJsDate(
+			entry?.appliedAt ||
+				entry?.applicationDate ||
+				entry?.createdAt ||
+				entry?.updatedAt,
+		)?.getTime() || 0
+	)
+}
+
 function getRejectionCooldown(entry = {}) {
 	const rejectedAt = getRejectionTimestamp(entry)
 	if (!rejectedAt) {
@@ -502,6 +513,16 @@ export default function StudentScholarshipsPage() {
 			.sort((left, right) => getRejectionTimestamp(right) - getRejectionTimestamp(left))
 	}, [scholarships, studentApplications])
 	const latestRejectedApplication = rejectedApplications[0] || null
+	const hasNewerActiveApplication = useMemo(() => {
+		if (!latestRejectedApplication) return false
+		const rejectedAt = getRejectionTimestamp(latestRejectedApplication)
+		return [...studentApplications, ...scholarships].some((entry) =>
+			!isClosedApplication(entry) &&
+			!isScholarshipRejected(entry) &&
+			getApplicationTimestamp(entry) > rejectedAt,
+		)
+	}, [latestRejectedApplication, scholarships, studentApplications])
+	const visibleRejectedApplication = hasNewerActiveApplication ? null : latestRejectedApplication
 	const latestRejectedCooldown = useMemo(
 		() => SCHOLARSHIP_CHOICE_ENABLED ? { active: false, remainingMs: 0 } : getRejectionCooldown(latestRejectedApplication || {}),
 		[latestRejectedApplication],
@@ -1128,7 +1149,7 @@ export default function StudentScholarshipsPage() {
 				return {
 					canDownload: false,
 					label: "Frozen",
-					reason: "This scholarship record was archived by the grantor. You cannot download or request SOE until it is restored.",
+					reason: `This scholarship record was archived by the grantor. You cannot download or request ${config.label.toLowerCase()} until it is restored.`,
 				}
 			}
 			const latestRequest = getLatestMaterialRequest(entry?.id || "")
@@ -1363,13 +1384,13 @@ export default function StudentScholarshipsPage() {
 				: `Your ${trackedScholarshipLabel} application is in final screening.`
 			summaryTone = "current"
 		} else if (trackingProgress.currentStep?.id === "request_materials") {
-			nextActionTitle = "Requesting of Materials"
+			nextActionTitle = "Request Materials"
 			nextActionCopy = isMorissonFlow
-				? "Your Student Application Profile is confidential. Get it directly from the scholarship office, then request your SOE here if you still need it."
+				? "Your Student Application Profile is confidential. Get it directly from the scholarship office, then request your available scholarship materials here."
 				: isKwspFlow
-					? "Your KWSP application is approved. Request your SOE if you still need it."
-					: `Request your SOE for ${trackedScholarshipLabel} if you still need it.`
-			nextActionHelp = "Use the My Scholarship Applications section below to request your SOE or continue your material request."
+					? "Your KWSP application is approved. Request your available scholarship materials."
+					: `Request the available materials for ${trackedScholarshipLabel}.`
+			nextActionHelp = "Request the SOE and the grantor Custom Application Form when one is provided."
 			summaryTone = "current"
 		} else if (trackingProgress.currentStep?.id === "download_materials") {
 			nextActionTitle = trackingProgress.hasApprovedMaterials
@@ -2069,7 +2090,7 @@ export default function StudentScholarshipsPage() {
 				if (result.materialRequest) setStudentSoeRequests((prev) => [
 					normalizeMaterialRequest(result.materialRequest), ...prev.filter((item) => item.id !== result.materialRequest.id),
 				])
-				toast.success("Scholarship selected and SOE request submitted.")
+				toast.success("Scholarship selected and materials request submitted.")
 				return
 			}
 			const selected = scholarships.find((item) => item.id === target.id)
@@ -2537,8 +2558,14 @@ export default function StudentScholarshipsPage() {
 	const handleDownloadApplicationForm = async (target) => {
 		if (!target || !userId || isDownloadingApplicationForm) return
 		if (isScholarshipActionBlocked()) return
-		if (hasMultipleScholarshipChoices) {
-			toast.info("Choose one scholarship first before downloading the student application profile.")
+		const source = getApplicationFormSource(target)
+		if (source.type !== "grantor") {
+			toast.info("This scholarship does not include a grantor Custom Application Form.")
+			return
+		}
+		const downloadGate = getMaterialDownloadGate(target, "application_form")
+		if (!downloadGate.canDownload) {
+			toast.info(downloadGate.reason || "The Custom Application Form is not available yet.")
 			return
 		}
 
@@ -2551,11 +2578,39 @@ export default function StudentScholarshipsPage() {
 			})
 
 			const downloadedAt = new Date().toISOString()
+			const materialRequest = getLatestMaterialRequest(target.id)
+			if (materialRequest?.id) {
+				await materialRequestWorkflow({
+					updates: [{
+						table: "soe_requests",
+						id: materialRequest.id,
+						data: {
+							studentId: userId,
+							"materials.application_form.downloadedAt": serverTimestamp(),
+							updatedAt: serverTimestamp(),
+						},
+					}],
+				})
+				setStudentSoeRequests((prev) => prev.map((request) =>
+					request.id === materialRequest.id
+						? normalizeMaterialRequest({
+							...request,
+							materials: {
+								...(request.materials || normalizeMaterialRequest(request).materials),
+								application_form: {
+									...getMaterialEntry(request, "application_form"),
+									downloadedAt,
+								},
+							},
+						})
+						: request,
+				))
+			}
 			const nextScholarships = scholarships.map((entry) =>
 				entry.id === target.id
 					? {
 							...entry,
-							applicationFormDownloadedAt: downloadedAt,
+							customApplicationFormDownloadedAt: downloadedAt,
 						}
 					: entry,
 			)
@@ -2574,10 +2629,10 @@ export default function StudentScholarshipsPage() {
 			})
 			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
 
-			toast.success("Student application profile downloaded.")
+			toast.success("Custom Application Form downloaded.")
 		} catch (error) {
-			console.error("Failed to download student application profile:", error)
-			toast.error("Unable to download the student application profile. Please try again.")
+			console.error("Failed to download Custom Application Form:", error)
+			toast.error("Unable to download the Custom Application Form. Please try again.")
 		} finally {
 			setIsDownloadingApplicationForm(false)
 		}
@@ -3058,15 +3113,15 @@ export default function StudentScholarshipsPage() {
 						</div>
 					)}
 
-					{latestRejectedApplication ? (
+					{visibleRejectedApplication ? (
 						<section className="student-rejection-panel" role="status">
 							<div className="student-rejection-panel-icon">
 								<HiOutlineExclamation aria-hidden />
 							</div>
 							<div className="student-rejection-panel-copy">
 								<span>Application Rejected</span>
-								<h3>{getRejectionProviderLabel(latestRejectedApplication)}</h3>
-								<p>{getRejectionReason(latestRejectedApplication)}</p>
+								<h3>{getRejectionProviderLabel(visibleRejectedApplication)}</h3>
+								<p>{getRejectionReason(visibleRejectedApplication)}</p>
 								<strong>
 									{latestRejectedCooldown.active
 										? `You can re-apply to this scholarship after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}.`
@@ -3142,18 +3197,28 @@ export default function StudentScholarshipsPage() {
 											const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
 											const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
 											const soeDownloadGate = getMaterialDownloadGate(entry, "soe")
+											const customApplicationFormSource = getApplicationFormSource(entry)
+											const hasCustomApplicationForm = customApplicationFormSource.type === "grantor"
+											const customApplicationFormGate = getMaterialDownloadGate(entry, "application_form")
+											const materialRequestButtonLabel = soeRequestButtonState.label === "Request SOE Again"
+												? "Request Materials Again"
+												: soeRequestButtonState.label === "Request SOE"
+													? "Request Materials"
+													: soeRequestButtonState.label === "Requested"
+														? "Materials Requested"
+													: soeRequestButtonState.label
 
 											return (
 												<div className="student-kwsp-soe-box">
 													<div className="student-kwsp-soe-copy">
-														<span>SOE Request</span>
-														<strong>{soeRequestLabel}</strong>
+														<span>Materials Request</span>
+														<strong>{soeRequestLabel.replace("SOE", "Materials")}</strong>
 														<p>
 															{entryFrozen
-																? "This scholarship was archived by the grantor. You cannot proceed to the next step or request SOE until it is restored."
+																? "This scholarship was archived by the grantor. You cannot proceed to the next step or request materials until it is restored."
 																: entryTrackingProgress.canRequestMaterials
-																? "Request or download your SOE once the scholarship office approves the material stage."
-																: `Current step: ${entryTrackingProgress.currentStepLabel}. Finish this stage before requesting SOE.`}
+																? `Request your SOE${hasCustomApplicationForm ? " and Custom Application Form" : ""}. Downloads become available after scholarship office approval.`
+																: `Current step: ${entryTrackingProgress.currentStepLabel}. Finish this stage before requesting materials.`}
 														</p>
 													</div>
 													<div className="student-kwsp-soe-actions">
@@ -3182,7 +3247,7 @@ export default function StudentScholarshipsPage() {
 																	? "Compliance Hold"
 																	: entry.adminBlocked === true
 																		? "Blocked by Office"
-																		: soeRequestButtonState.label}
+																			: materialRequestButtonLabel}
 														</button>
 														<button
 															type="button"
@@ -3213,14 +3278,34 @@ export default function StudentScholarshipsPage() {
 																	? "Compliance Hold"
 																	: isExportingSoe || isDownloadingSoe
 																		? "Processing..."
-																		: soeDownloadGate.label}
+																				: soeDownloadGate.label}
 														</button>
+														{hasCustomApplicationForm ? (
+															<button
+																type="button"
+																className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
+																disabled={hasScholarshipActionBlock || entryRejected || entryFrozen || isDownloadingApplicationForm || !customApplicationFormGate.canDownload}
+																title={customApplicationFormGate.canDownload ? "Download the approved grantor Custom Application Form" : customApplicationFormGate.reason}
+																onClick={() => handleDownloadApplicationForm(entry)}
+															>
+																<HiOutlineDocumentText />
+																{isDownloadingApplicationForm ? "Downloading..." : customApplicationFormGate.label}
+															</button>
+														) : null}
 													</div>
 													{SCHOLARSHIP_CHOICE_ENABLED ? (
-														<label className="scholarship-application-form-upload">
-															<span><HiOutlineCloudUpload /> Student Application Profile</span>
-															{entry.applicationFormFile?.name ? <span>{entry.applicationFormFile.name}</span> : null}
-															<input type="file" accept="application/pdf" disabled={isMutating || entryFrozen || entryRejected}
+														<div className="scholarship-application-form-upload">
+															<div className="scholarship-application-form-upload__head">
+																<span><HiOutlineCloudUpload /> Student Application Profile</span>
+																<small>PDF only, maximum 10 MB</small>
+															</div>
+															<div className="scholarship-application-form-upload__control">
+																<label className="student-mini-btn student-mini-btn--secondary" htmlFor={`application-profile-${entry.applicationId || entry.id}`}>
+																	<HiOutlineCloudUpload /> {isMutating ? "Uploading..." : entry.applicationFormFile?.name ? "Replace PDF" : "Choose PDF"}
+																</label>
+																<span title={entry.applicationFormFile?.name || "No file selected"}>{entry.applicationFormFile?.name || "No file selected"}</span>
+															</div>
+															<input id={`application-profile-${entry.applicationId || entry.id}`} className="scholarship-application-form-upload__input" type="file" accept="application/pdf" disabled={isMutating || entryFrozen || entryRejected}
 																onChange={async (event) => {
 																	const file = event.target.files?.[0]
 																	event.target.value = ""
@@ -3237,7 +3322,7 @@ export default function StudentScholarshipsPage() {
 																	} catch (error) { toast.error(error.message || "Unable to upload application profile.") }
 																	finally { setIsMutating(false) }
 																	}} />
-														</label>
+														</div>
 													) : null}
 													{renderOtherRequirementUploads(entry)}
 													{SCHOLARSHIP_CHOICE_ENABLED && !hasScholarshipCommitment(user || {}) ? (
@@ -3315,6 +3400,16 @@ export default function StudentScholarshipsPage() {
 										const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
 										const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
 										const soeDownloadGate = getMaterialDownloadGate(entry, "soe")
+										const customApplicationFormSource = getApplicationFormSource(entry)
+										const hasCustomApplicationForm = customApplicationFormSource.type === "grantor"
+										const customApplicationFormGate = getMaterialDownloadGate(entry, "application_form")
+										const materialRequestButtonLabel = soeRequestButtonState.label === "Request SOE Again"
+											? "Request Materials Again"
+											: soeRequestButtonState.label === "Request SOE"
+												? "Request Materials"
+												: soeRequestButtonState.label === "Requested"
+													? "Materials Requested"
+												: soeRequestButtonState.label
 
 										return (
 											<article
@@ -3366,7 +3461,7 @@ export default function StudentScholarshipsPage() {
 												) : null}
 												{entryRejected ? null : (
 													<p className="student-scholarship-card-note">
-														SOE: {hasMultipleScholarshipChoices ? "Choose one scholarship first" : soeRequestLabel}
+														Materials: {hasMultipleScholarshipChoices ? "Choose one scholarship first" : soeRequestLabel.replace("SOE", "Materials")}
 													</p>
 												)}
 												{entry.providerType === "morisson" ? (
@@ -3433,7 +3528,7 @@ export default function StudentScholarshipsPage() {
 																		? "Compliance Hold"
 																		: entry.adminBlocked === true
 																			? "Blocked by Office"
-																			: soeRequestButtonState.label}
+																			: materialRequestButtonLabel}
 															</button>
 															<button
 																type="button"
@@ -3466,6 +3561,18 @@ export default function StudentScholarshipsPage() {
 																			? "Processing..."
 																			: soeDownloadGate.label}
 															</button>
+															{hasCustomApplicationForm ? (
+																<button
+																	type="button"
+																	className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
+																	disabled={hasScholarshipActionBlock || entryRejected || entryFrozen || isDownloadingApplicationForm || !customApplicationFormGate.canDownload}
+																	title={customApplicationFormGate.canDownload ? "Download the approved grantor Custom Application Form" : customApplicationFormGate.reason}
+																	onClick={() => handleDownloadApplicationForm(entry)}
+																>
+																	<HiOutlineDocumentText />
+																	{isDownloadingApplicationForm ? "Downloading..." : customApplicationFormGate.label}
+																</button>
+															) : null}
 														</>
 													)}
 												</div>
@@ -3727,7 +3834,7 @@ export default function StudentScholarshipsPage() {
 						</button>
 						<h3>Choose Scholarship</h3>
 						<p>
-							Select <strong>{confirmTarget.name}</strong> from {confirmTarget.grantorName || confirmTarget.provider}? Your SOE request will commit you to this scholarship. Other pending applications will close and their slots will be returned. You cannot withdraw after confirming.
+							Select <strong>{confirmTarget.name}</strong> from {confirmTarget.grantorName || confirmTarget.provider}? Requesting materials will commit you to this scholarship and request the SOE{getApplicationFormSource(confirmTarget).type === "grantor" ? " and Custom Application Form" : ""}. Other pending applications will close and their slots will be returned. You cannot withdraw after confirming.
 						</p>
 						<div className="student-soe-modal-actions">
 							<button type="button" className="student-mini-btn student-mini-btn--secondary"
@@ -3738,7 +3845,7 @@ export default function StudentScholarshipsPage() {
 								onClick={() => chooseScholarship(confirmTarget)}
 								disabled={isMutating}
 							>
-								Confirm Choice
+								Request Materials
 							</button>
 						</div>
 					</div>

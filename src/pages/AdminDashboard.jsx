@@ -6931,7 +6931,7 @@ export default function AdminDashboard() {
 						applicationNumber: row.requestNumber || row.applicationNumber || row.id || "",
 						materialLabel: primaryMaterialLabel,
 						stageId: "request_materials",
-						stageLabel: "Requesting of Materials",
+						stageLabel: "Request Materials",
 						approvedBy: "BulsuScholar Admin",
 						authorName: "BulsuScholar Admin",
 						read: false,

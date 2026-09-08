@@ -120,7 +120,13 @@ def mutate_scholarship_choice(payload: dict[str, Any], *, withdraw: bool = False
         reason = result.get("reason") or "scholarship_choice_failed"
         return {"ok": False, "reason": reason,
                 "message": CHOICE_MESSAGES.get(reason, "Unable to update your application. Please refresh and try again.")}
-    return {"ok": True, **(result.get("data") or {})}
+    response_data = result.get("data") or {}
+    material_request = response_data.get("materialRequest") or {}
+    if not withdraw and material_request.get("id"):
+        persisted_request = supabase_document_get("soe_requests", str(material_request["id"]))
+        if persisted_request.get("ok") and persisted_request.get("data"):
+            response_data = {**response_data, "materialRequest": persisted_request["data"]}
+    return {"ok": True, **response_data}
 
 
 def update_scholarship_documents(payload: dict[str, Any]) -> dict[str, Any]:

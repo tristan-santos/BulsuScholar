@@ -562,6 +562,7 @@ export default function StudentAnnouncementDetailPage() {
 				requiredDocuments: announcement.requiredDocuments || {},
 				otherRequirements: announcement.otherRequirements || [],
 				customApplicationProfile: announcement.customApplicationProfile || null,
+				customApplicationForm: announcement.customApplicationForm || null,
 			}
 			const nextScholarships = [...scholarships, nextRecord]
 
@@ -590,6 +591,7 @@ export default function StudentAnnouncementDetailPage() {
 				requiredDocuments: announcement.requiredDocuments || {},
 				otherRequirements: announcement.otherRequirements || [],
 				customApplicationProfile: announcement.customApplicationProfile || null,
+				customApplicationForm: announcement.customApplicationForm || null,
 				status: nextRecord.status,
 				tracking: nextRecord.tracking,
 				applicationDate: serverTimestamp(),

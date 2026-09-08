@@ -67,7 +67,7 @@ function buildKwspSteps(appliedViaAnnouncement = false) {
 		{ id: "interview", label: "Interview", owner: "admin" },
 		{ id: "application_review", label: "Application Review", owner: "admin" },
 		{ id: "final_screening", label: "Final Screening", owner: "admin" },
-		{ id: "request_materials", label: "Requesting of Materials", owner: "student" },
+		{ id: "request_materials", label: "Request Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
 	], appliedViaAnnouncement)
@@ -80,7 +80,7 @@ function buildStandardSteps(scholarshipName = "Scholarship", appliedViaAnnouncem
 		{ id: "document_uploading", label: "Uploading of Document", owner: "admin" },
 		{ id: "application_form", label: "Student Application Profile", owner: "student" },
 		{ id: "document_review", label: "Document Review", owner: "admin" },
-		{ id: "request_materials", label: "Requesting of Materials", owner: "student" },
+		{ id: "request_materials", label: "Request Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
 	], appliedViaAnnouncement)
@@ -168,8 +168,8 @@ function buildTrackingDetail(stepId, context) {
 			return `Requested materials: ${requestedMaterials.map((item) => toMaterialLabel(item)).join(", ")}.`
 		}
 		return isKwspFlow
-			? "Student can request SOE after the KWSP review stages are completed."
-			: `Student can request SOE for ${scholarshipName}.`
+			? "Student can request materials after the KWSP review stages are completed."
+			: `Student can request materials for ${scholarshipName}.`
 	case "download_materials":
 		if (downloadedMaterials.length > 0) {
 			return `Downloaded materials: ${downloadedMaterials.map((item) => toMaterialLabel(item)).join(", ")}.`
