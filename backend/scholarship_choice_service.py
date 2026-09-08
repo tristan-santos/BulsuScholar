@@ -55,7 +55,7 @@ CHOICE_MESSAGES = {
 
 
 def scholarship_choice_enabled() -> bool:
-    return os.getenv("ENABLE_SCHOLARSHIP_CHOICE", "false").strip().lower() == "true"
+    return os.getenv("ENABLE_SCHOLARSHIP_CHOICE", "true").strip().lower() != "false"
 
 
 def reserve_scholarship_application(payload: dict[str, Any]) -> dict[str, Any]:

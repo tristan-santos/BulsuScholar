@@ -68,7 +68,7 @@ def _document_url(student: dict[str, Any], keys: tuple[str, ...]) -> str:
 
 def _eligible_low_slot_students(announcement: dict[str, Any], exclude_student_id: str = "") -> list[str]:
     import os
-    choice_enabled = os.getenv("ENABLE_SCHOLARSHIP_CHOICE", "false").lower() == "true"
+    choice_enabled = os.getenv("ENABLE_SCHOLARSHIP_CHOICE", "true").strip().lower() != "false"
     students_result = supabase_select("students", limit=0)
     applications_result = supabase_select("scholarship_applications", limit=0)
     if not students_result.get("ok") or not applications_result.get("ok"):
