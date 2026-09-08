@@ -972,7 +972,8 @@
 .grantor-profile-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem 1rem; }
 .grantor-profile-form-grid label { display: grid; gap: 0.38rem; min-width: 0; color: #52675f; font-size: 0.72rem; font-weight: 600; }
 .grantor-profile-form-grid input,
-.grantor-profile-form-grid select {
+.grantor-profile-form-grid select,
+.grantor-profile-select {
 	width: 100%;
 	height: 40px;
 	padding: 0 0.7rem;
@@ -984,9 +985,11 @@
 	font-size: 0.82rem;
 }
 .grantor-profile-form-grid input:focus,
-.grantor-profile-form-grid select:focus { border-color: #00633c; outline: 2px solid rgba(0, 99, 60, 0.1); }
+.grantor-profile-form-grid select:focus,
+.grantor-profile-select:focus { border-color: #00633c; outline: 2px solid rgba(0, 99, 60, 0.1); }
 .grantor-profile-form-grid input:disabled,
-.grantor-profile-form-grid select:disabled { background: #f4f7f5; color: #94a3b8; }
+.grantor-profile-form-grid select:disabled,
+.grantor-profile-select:disabled { background: #f4f7f5; color: #94a3b8; }
 .grantor-profile-help-text { color: #c2410c; font-size: 0.68rem; line-height: 1.35; }
 .grantor-profile-form-actions {
 	position: sticky;
@@ -1252,10 +1255,10 @@
 .grantor-announcement-history.is-all-view { padding-top: 1.1rem; }
 .grantor-announcement-history header p { margin: 0.18rem 0 0; color: #64748b; font-size: 0.72rem; }
 .grantor-announcement-history-actions { display: inline-flex; align-items: center; gap: 0.65rem; }
-.grantor-announcement-counts { display: inline-flex; align-items: center; gap: 0.65rem; min-height: 36px; padding: 0 0.8rem; border: 1px solid rgba(0, 99, 60, 0.2); border-radius: 5px; background: rgba(0, 99, 60, 0.045); color: #315549; font-size: 0.72rem; font-weight: 500; white-space: nowrap; }
-.grantor-announcement-counts span { display: inline-flex; align-items: center; gap: 0.25rem; }
-.grantor-announcement-counts strong { color: #00633c; font-weight: 700; }
-.grantor-announcement-counts i { width: 1px; height: 18px; background: rgba(0, 99, 60, 0.28); }
+.grantor-announcement-counts { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; width: max-content; max-width: 100%; min-height: 40px; padding: 0 0.7rem; border: 1px solid #c9ddd3; border-radius: 5px; background: #f8fbf9; color: #52675f; font-size: 0.72rem; font-weight: 550; line-height: 1.25; letter-spacing: 0; white-space: nowrap; }
+.grantor-announcement-counts > span { display: inline-flex; align-items: center; gap: 0.2rem; }
+.grantor-announcement-counts > span > strong { color: #00633c; font-size: 0.76rem; font-weight: 700; }
+.grantor-announcement-counts i { display: block; flex: 0 0 auto; width: 1px; height: 16px; background: #b4cfc2; }
 .grantor-announcement-history-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; padding: 0 0.75rem; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .grantor-announcement-tabs { display: flex; align-items: center; gap: 1.1rem; margin: 0.2rem 0 1rem; border-bottom: 1px solid #dce7e1; }
 .grantor-announcement-tabs button { position: relative; display: inline-flex; align-items: center; gap: 0.4rem; min-height: 38px; padding: 0 0 0.55rem; border: 0; background: transparent; color: #64748b; font: inherit; font-size: 0.76rem; font-weight: 600; cursor: pointer; }
@@ -1282,10 +1285,21 @@
 .grantor-announcement-card h4 { margin: 0; overflow: hidden; color: #17342a; font-size: 0.86rem; font-weight: 600; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
 .grantor-announcement-card p { display: -webkit-box; min-height: 2.35rem; margin: 0; overflow: hidden; color: #64748b; font-size: 0.72rem; line-height: 1.6; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .grantor-announcement-card-window { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 0.1rem; color: #00633c; font-size: 0.68rem; font-weight: 500; }
-.grantor-announcement-card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; padding: 0.7rem 0.75rem 0.75rem; border-top: 1px solid #eef3f0; }
+.scholarship-slot-badge { display: inline-flex; align-items: center; width: max-content; max-width: 100%; min-height: 26px; padding: 0 0.55rem; border: 1px solid #b9d8ca; border-radius: 4px; background: #f3faf6; color: #00633c; font-size: 0.68rem; font-weight: 650; }
+.scholarship-slot-badge.is-low { border-color: #f4c66a; background: #fff9e9; color: #9a5d00; }
+.scholarship-slot-badge.is-full { border-color: #fecaca; background: #fff5f5; color: #b91c1c; }
+.scholarship-slot-summary { display: flex; align-items: center; gap: 0.7rem; margin: 0 1rem 0.8rem; padding: 0.75rem; border: 1px solid #b9d8ca; border-left: 3px solid #007a4a; border-radius: 5px; background: #f5fbf8; color: #00633c; }
+.scholarship-slot-summary > svg { flex: 0 0 auto; width: 1.15rem; height: 1.15rem; }
+.scholarship-slot-summary span { display: grid; gap: 0.12rem; }
+.scholarship-slot-summary strong { font-size: 0.8rem; }
+.scholarship-slot-summary small { color: #64748b; font-size: 0.68rem; }
+.scholarship-slot-summary.is-low { border-color: #f4c66a; border-left-color: #d28a00; background: #fff9e9; color: #9a5d00; }
+.scholarship-slot-summary.is-full { border-color: #fecaca; border-left-color: #dc2626; background: #fff5f5; color: #b91c1c; }
+.grantor-announcement-card-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(86px, 1fr)); gap: 0.45rem; padding: 0.7rem 0.75rem 0.75rem; border-top: 1px solid #eef3f0; }
 .grantor-announcement-card-actions button,
 .grantor-announcement-view-modal footer button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 34px; padding: 0 0.65rem; border-radius: 4px; background: #fff; font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
 .grantor-announcement-view-btn { border: 1px solid #00633c; color: #00633c; }
+.grantor-announcement-slots-btn { border: 1px solid #15805b !important; color: #00633c !important; }
 .grantor-announcement-archive-btn,
 .grantor-announcement-view-modal footer button { border: 1px solid #dc2626; color: #dc2626; }
 .grantor-announcement-archived-note { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; border: 1px solid #cbd5e1; border-radius: 4px; color: #64748b; font-size: 0.72rem; font-weight: 600; }
@@ -1313,6 +1327,31 @@
 .grantor-announcement-view-modal { overflow-y: auto; }
 .grantor-announcement-view-modal > footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.8rem 1rem 1rem; border-top: 1px solid #e1e9e5; }
 .grantor-announcement-view-modal > footer span { display: inline-flex; align-items: center; gap: 0.4rem; color: #00633c; font-size: 0.72rem; font-weight: 500; }
+.grantor-announcement-view-actions { display: flex; align-items: center; gap: 0.5rem; }
+
+.grantor-slot-modal { width: min(460px, calc(100vw - 2rem)); overflow: visible; border: 1px solid #cddbd4; border-radius: 7px; background: #fff; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22); }
+.grantor-slot-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem; border-bottom: 1px solid #e1e9e5; }
+.grantor-slot-modal header span { color: #007a4a; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; }
+.grantor-slot-modal h3 { margin: 0.25rem 0 0; color: #17342a; font-size: 1rem; }
+.grantor-slot-modal header button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid #d6e2dc; border-radius: 50%; background: #fff; color: #52675f; cursor: pointer; }
+.grantor-slot-modal form { display: grid; gap: 0.8rem; padding: 1rem; }
+.grantor-slot-modal label { display: grid; gap: 0.35rem; color: #52675f; font-size: 0.72rem; font-weight: 600; }
+.grantor-slot-modal input { width: 100%; height: 39px; padding: 0 0.65rem; border: 1px solid #cddbd4; border-radius: 4px; background: #fff; color: #17342a; font: inherit; }
+.grantor-slot-modal form > p { margin: 0; color: #64748b; font-size: 0.7rem; line-height: 1.5; }
+.grantor-slot-modal form > footer { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; padding-top: 0.75rem; border-top: 1px solid #e1e9e5; }
+.grantor-slot-modal form > footer button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 38px; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.74rem; font-weight: 650; cursor: pointer; }
+.grantor-slot-modal form > footer button:last-child { background: #00633c; color: #fff; }
+.grantor-portal--dark .grantor-slot-modal { border-color: #334155; background: #111827; }
+.grantor-portal--dark .grantor-slot-modal > header,
+.grantor-portal--dark .grantor-slot-modal form > footer { border-color: #334155; }
+.grantor-portal--dark .grantor-slot-modal h3 { color: #f8fafc; }
+.grantor-portal--dark .grantor-slot-modal header button,
+.grantor-portal--dark .grantor-slot-modal input { border-color: #475569; background: #0f172a; color: #f8fafc; }
+.grantor-portal--dark .grantor-slot-modal label,
+.grantor-portal--dark .grantor-slot-modal form > p,
+.grantor-portal--dark .scholarship-slot-summary small { color: #94a3b8; }
+.grantor-portal--dark .scholarship-slot-badge,
+.grantor-portal--dark .scholarship-slot-summary { border-color: #285c48; background: #102a21; color: #6ee7b7; }
 
 .grantor-image-lightbox {
 	position: relative;
@@ -1458,7 +1497,7 @@
 
 @media (max-width: 520px) {
 	.grantor-announcement-history-actions { width: 100%; flex-wrap: wrap; }
-	.grantor-announcement-counts { width: 100%; justify-content: center; white-space: normal; }
+	.grantor-announcement-counts { width: max-content; max-width: 100%; justify-content: center; white-space: normal; }
 	.grantor-announcement-images label { grid-template-columns: 24px minmax(0, 1fr); }
 	.grantor-announcement-images label small { grid-column: 2; }
 	.grantor-announcement-requirements > div { grid-template-columns: 1fr; }
@@ -1485,6 +1524,19 @@
 	.grantor-announcement-entry-head,
 	.grantor-announcement-entry footer { align-items: flex-start; flex-direction: column; }
 	.grantor-announcement-compose-actions button { width: 100%; justify-content: center; }
+}
+
+@media (max-width: 340px) {
+	.grantor-announcement-counts {
+		align-items: center;
+		flex-direction: column;
+		gap: 0.2rem;
+		width: 100%;
+		padding-block: 0.5rem;
+		text-align: center;
+	}
+
+	.grantor-announcement-counts i { display: none; }
 }
 
 .grantor-scholars-panel {
@@ -2071,7 +2123,8 @@
 
 .grantor-portal--dark .grantor-form-grid--edit input,
 .grantor-portal--dark .grantor-form-grid--edit select,
-.grantor-portal--dark .grantor-form-grid--edit textarea {
+.grantor-portal--dark .grantor-form-grid--edit textarea,
+.grantor-portal--dark .grantor-edit-select {
 	border-bottom-color: #475569;
 	background: transparent;
 	color: #f1f5f9;
@@ -3046,7 +3099,8 @@
 
 .grantor-form-grid--edit input,
 .grantor-form-grid--edit select,
-.grantor-form-grid--edit textarea {
+.grantor-form-grid--edit textarea,
+.grantor-edit-select {
 	width: 100%;
 	min-height: 40px;
 	padding: 0.45rem 0.15rem;
@@ -3061,7 +3115,8 @@
 
 .grantor-form-grid--edit input:focus,
 .grantor-form-grid--edit select:focus,
-.grantor-form-grid--edit textarea:focus {
+.grantor-form-grid--edit textarea:focus,
+.grantor-edit-select:focus {
 	border-bottom-color: #00633c;
 }
 
@@ -3071,7 +3126,8 @@
 	cursor: not-allowed;
 }
 
-.grantor-form-grid--edit select:disabled {
+.grantor-form-grid--edit select:disabled,
+.grantor-edit-select:disabled {
 	color: #94a3b8;
 	cursor: not-allowed;
 }
@@ -3479,9 +3535,11 @@
 .grantor-portal--dark .grantor-profile-form-actions { background: rgba(17, 24, 39, 0.96); }
 .grantor-portal--dark .grantor-profile-form-grid label { color: #cbd5e1; }
 .grantor-portal--dark .grantor-profile-form-grid input,
-.grantor-portal--dark .grantor-profile-form-grid select { border-color: #475569; background: #0f172a; color: #f8fafc; }
+.grantor-portal--dark .grantor-profile-form-grid select,
+.grantor-portal--dark .grantor-profile-select { border-color: #475569; background: #0f172a; color: #f8fafc; }
 .grantor-portal--dark .grantor-profile-form-grid input:disabled,
-.grantor-portal--dark .grantor-profile-form-grid select:disabled { background: #1e293b; color: #94a3b8; }
+.grantor-portal--dark .grantor-profile-form-grid select:disabled,
+.grantor-portal--dark .grantor-profile-select:disabled { background: #1e293b; color: #94a3b8; }
 .grantor-portal--dark .grantor-profile-password-btn { border-color: #34d399; color: #6ee7b7; }
 .grantor-portal--dark .grantor-profile-password-btn:hover:not(:disabled) { background: rgba(0, 99, 60, 0.2); }
 .grantor-portal--dark .grantor-inbox-panel { border-color: #334155; background: #111827; }
@@ -3724,9 +3782,9 @@
 .grantor-portal--dark .grantor-calendar-clear { border-color: #475569; background: #111827; color: #cbd5e1; }
 .grantor-portal--dark .grantor-calendar-modal > header,
 .grantor-portal--dark .grantor-calendar-modal > footer { border-color: #334155; }
-.grantor-portal--dark .grantor-announcement-counts { border-color: rgba(52, 211, 153, 0.24); background: rgba(0, 99, 60, 0.18); color: #cbd5e1; }
+.grantor-portal--dark .grantor-announcement-counts { border-color: rgba(52, 211, 153, 0.28); background: #101d18; color: #cbd5e1; }
 .grantor-portal--dark .grantor-announcement-counts strong { color: #6ee7b7; }
-.grantor-portal--dark .grantor-announcement-counts i { background: rgba(52, 211, 153, 0.3); }
+.grantor-portal--dark .grantor-announcement-counts i { background: rgba(52, 211, 153, 0.32); }
 .grantor-portal--dark .grantor-calendar-cancel { border-color: #475569; background: #111827; color: #cbd5e1; }
 .grantor-portal--dark .grantor-calendar-modal > header h3,
 .grantor-portal--dark .grantor-calendar-selection strong,
@@ -4775,6 +4833,69 @@
 	color: #17342a;
 	font-size: 0.78rem;
 	font-weight: 600;
+}
+
+.grantor-invitation-offering-summary {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 12px 14px;
+	border: 1px solid #cfe4da;
+	border-radius: 6px;
+	background: #f3faf6;
+	color: #365748;
+	font-size: 0.82rem;
+}
+
+.grantor-invitation-offering-summary strong {
+	color: #006837;
+}
+
+.grantor-invitation-records {
+	max-height: 190px;
+	overflow: auto;
+	border: 1px solid #d7e4dd;
+	border-radius: 6px;
+}
+
+.grantor-invitation-records table {
+	width: 100%;
+	min-width: 620px;
+	border-collapse: collapse;
+	font-size: 0.78rem;
+}
+
+.grantor-invitation-records th,
+.grantor-invitation-records td {
+	padding: 10px 12px;
+	border-bottom: 1px solid #e2ebe6;
+	text-align: left;
+}
+
+.grantor-invitation-records th {
+	position: sticky;
+	top: 0;
+	background: #eef5f1;
+	color: #315345;
+	font-size: 0.7rem;
+	text-transform: uppercase;
+}
+
+.grantor-portal--dark .grantor-invitation-offering-summary,
+.grantor-portal--dark .grantor-invitation-records {
+	border-color: rgba(139, 180, 160, 0.28);
+	background: rgba(15, 55, 39, 0.55);
+	color: #d6e7de;
+}
+
+.grantor-portal--dark .grantor-invitation-records th {
+	background: #173f30;
+	color: #d6e7de;
+}
+
+.grantor-portal--dark .grantor-invitation-records th,
+.grantor-portal--dark .grantor-invitation-records td {
+	border-color: rgba(139, 180, 160, 0.2);
 }
 
 .grantor-reject-modal-body input,
@@ -6130,4 +6251,16 @@
 	.grantor-edit-modal-status {
 		grid-column: 2;
 	}
+}
+
+.scholarship-archive-details {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 1rem;
+}
+.scholarship-archive-details dt { font-size: 0.8rem; opacity: 0.75; }
+.scholarship-archive-details dd { margin: 0.25rem 0 0; overflow-wrap: anywhere; }
+.scholarship-archive-documents { display: flex; flex-wrap: wrap; gap: 1rem; }
+@media (max-width: 480px) {
+	.scholarship-archive-details { grid-template-columns: minmax(0, 1fr); }
 }

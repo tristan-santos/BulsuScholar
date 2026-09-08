@@ -28,12 +28,15 @@ import {
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
 import { applyScholarshipWorkflow } from "../services/workflowService"
+import { SCHOLARSHIP_CHOICE_ENABLED, hasScholarshipCommitment, getGrantorApplicationBlock } from "../services/scholarshipChoiceService"
 import {
 	getStudentAccessState,
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
 import { getArchivedGrantorApplyBlock, isScholarshipActiveOrPending } from "../services/announcementApplyEligibilityService"
 import { formatCooldownDuration, getLatestRejectedScholarship, getRejectionCooldown } from "../services/rejectionCooldownService"
+import { getScholarshipSlotState } from "../services/scholarshipSlotService"
+import { findMatchingPendingInvitation, getGrantorRejectionCooldown, markInvitationAccepted } from "../services/grantorReapplicationService"
 import "../css/StudentDashboard.css"
 import "../css/StudentPortalRefresh.css"
 
@@ -112,15 +115,16 @@ export default function StudentRecommendedScholarshipsPage() {
 		[scholarships],
 	)
 	const latestRejectedScholarship = useMemo(() => getLatestRejectedScholarship(scholarships), [scholarships])
+	const applicationEntryBlocked = SCHOLARSHIP_CHOICE_ENABLED ? hasScholarshipCommitment(user || {}) : activeOrPendingScholarships.length > 0
 	const latestRejectedCooldown = useMemo(
-		() => latestRejectedScholarship ? getRejectionCooldown(latestRejectedScholarship) : null,
+		() => !SCHOLARSHIP_CHOICE_ENABLED && latestRejectedScholarship ? getRejectionCooldown(latestRejectedScholarship) : null,
 		[latestRejectedScholarship],
 	)
 	const studentAccessState = useMemo(() => getStudentAccessState(user || {}), [user])
 	const pendingInvitations = useMemo(
 		() => (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : [])
 			.filter((item) => item?.type === "grantor_unarchive_invitation" &&
-				String(item.status || "").toLowerCase() === "pending" &&
+				["pending", "invited"].includes(String(item.status || "pending").toLowerCase()) &&
 				!archivedGrantorIds.has(String(item.grantorId || item.providerId || ""))),
 		[archivedGrantorIds, user?.scholarshipInvitations],
 	)
@@ -129,10 +133,10 @@ export default function StudentRecommendedScholarshipsPage() {
 		[studentNotices],
 	)
 	const hasMultipleScholarshipConflict = useMemo(
-		() => user?.scholarshipConflictWarning === true ||
+		() => SCHOLARSHIP_CHOICE_ENABLED ? getStudentAccessState(user || {}).multipleScholarshipConflict : user?.scholarshipConflictWarning === true ||
 			user?.scholarshipRestrictionReason === "multiple_scholarships" ||
 			studentWarnings.some(isMultipleScholarshipWarning),
-		[studentWarnings, user?.scholarshipConflictWarning, user?.scholarshipRestrictionReason],
+		[studentWarnings, user],
 	)
 	const matchedGrantorScope = useMemo(
 		() => (Array.isArray(user?.grantorMatches) ? user.grantorMatches : [])
@@ -147,14 +151,18 @@ export default function StudentRecommendedScholarshipsPage() {
 		const byScholarship = new Map()
 		const add = (item, bypassScope = false) => {
 			if (!item) return
+			if (SCHOLARSHIP_CHOICE_ENABLED && getGrantorApplicationBlock(user || {}, item)) return
 			const grantorId = String(item.grantorId || item.providerId || item.id || "").trim().toLowerCase()
 			if (archivedGrantorIds.has(String(item.grantorId || item.providerId || ""))) return
-			if (!bypassScope && allowedGrantors.size > 0 && !allowedGrantors.has(grantorId)) return
+			if (!SCHOLARSHIP_CHOICE_ENABLED && !bypassScope && allowedGrantors.size > 0 && !allowedGrantors.has(grantorId)) return
 			const key = recommendationKey(item)
 			if (key && !byScholarship.has(key)) byScholarship.set(key, item)
 		}
 
-		pendingInvitations.forEach((invitation) => add({
+		pendingInvitations.forEach((invitation) => {
+			const match = recommendations.find((item) => matchesScholarship(invitation, item))
+			add({
+			...match,
 			...invitation,
 			recommendationSource: "grantor_invitation",
 			recommendationPriority: 1,
@@ -165,7 +173,8 @@ export default function StudentRecommendedScholarshipsPage() {
 				`You are being invited to apply again in ${invitation.scholarshipName || "your previous scholarship"}.`,
 				`Sent by ${invitation.grantorName || "the grantor"}.`,
 			],
-		}, true))
+		}, true)
+		})
 
 		if (latestRejectedScholarship && !latestRejectedCooldown?.active) {
 			const match = recommendations.find((item) => matchesScholarship(latestRejectedScholarship, item))
@@ -204,7 +213,7 @@ export default function StudentRecommendedScholarshipsPage() {
 		return [...byScholarship.values()].sort((left, right) =>
 			(left.recommendationPriority || 9) - (right.recommendationPriority || 9) || Number(right.score || 0) - Number(left.score || 0),
 		)
-	}, [adminRecommendations, archivedGrantorIds, hasMultipleScholarshipConflict, latestRejectedCooldown?.active, latestRejectedScholarship, matchedGrantorScope, pendingInvitations, recommendations])
+	}, [adminRecommendations, archivedGrantorIds, hasMultipleScholarshipConflict, latestRejectedCooldown?.active, latestRejectedScholarship, matchedGrantorScope, pendingInvitations, recommendations, user])
 
 	useEffect(() => {
 		const storedType = sessionStorage.getItem("bulsuscholar_userType")
@@ -244,7 +253,7 @@ export default function StudentRecommendedScholarshipsPage() {
 
 	useEffect(() => {
 		if (!userLoaded || !user) return
-		if (activeOrPendingScholarships.length > 0 || latestRejectedCooldown?.active) {
+		if (applicationEntryBlocked) {
 			recommendationRequestKeyRef.current = ""
 			setRecommendations([])
 			setAlgorithm("")
@@ -289,7 +298,7 @@ export default function StudentRecommendedScholarshipsPage() {
 			.finally(() => {
 				if (recommendationRequestKeyRef.current === recommendationRequestKey) setLoading(false)
 			})
-	}, [activeOrPendingScholarships.length, archivedGrantorIds, latestRejectedCooldown, user, userId, userLoaded])
+	}, [applicationEntryBlocked, archivedGrantorIds, user, userId, userLoaded])
 
 	const applyRecommendation = useCallback(
 		async (recommendation) => {
@@ -302,12 +311,18 @@ export default function StudentRecommendedScholarshipsPage() {
 				toast.error(getStudentBlockedBannerMessage(user || {}))
 				return
 			}
-			if (latestRejectedCooldown?.active) {
-				toast.info(`You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}.`)
+			const grantorCooldown = getGrantorRejectionCooldown(user, recommendation)
+			if (grantorCooldown?.active) {
+				toast.info(`You can apply again after ${formatCooldownDuration(grantorCooldown.remainingMs)}.`)
 				return
 			}
-			if (activeOrPendingScholarships.length > 0) {
+			if (applicationEntryBlocked) {
 				toast.info("You already have an existing scholarship application.")
+				return
+			}
+			const slotState = getScholarshipSlotState({ ...recommendation, source: "grantor" })
+			if (!slotState.configured || slotState.full) {
+				toast.info(slotState.configured ? "This scholarship has no remaining slots." : "This scholarship is not accepting applications until the grantor configures its slots.")
 				return
 			}
 
@@ -315,7 +330,12 @@ export default function StudentRecommendedScholarshipsPage() {
 			setApplyingId(nextId)
 			try {
 				const { workflowPayload } = buildRecommendationApplyPayload(user, userId, recommendation)
-				const isInvitation = recommendation.recommendationSource === "grantor_invitation"
+				const matchingInvitation = findMatchingPendingInvitation(
+					user,
+					recommendation,
+					recommendation.recommendationSource === "grantor_invitation" ? recommendation.id : "",
+				)
+				const isInvitation = Boolean(matchingInvitation)
 				const archivedGrantorBlock = !isInvitation
 					? getArchivedGrantorApplyBlock(user, {
 							grantorId: recommendation.grantorId || recommendation.providerId || "",
@@ -332,23 +352,20 @@ export default function StudentRecommendedScholarshipsPage() {
 					return
 				}
 				const nextInvitations = isInvitation
-					? (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : []).map((item) =>
-						item.id === recommendation.id
-							? { ...item, status: "Accepted", acceptedAt: serverTimestamp(), updatedAt: serverTimestamp() }
-							: item,
-					)
+					? markInvitationAccepted(user?.scholarshipInvitations || [], matchingInvitation.id)
 					: user?.scholarshipInvitations
 				const nextPayload = isInvitation
 					? {
 						...workflowPayload,
-						allowArchivedGrantorReapply: true,
+						invitationId: matchingInvitation.id,
 						studentUpdate: { ...workflowPayload.studentUpdate, scholarshipInvitations: nextInvitations },
 					}
 					: workflowPayload
-				await applyScholarshipWorkflow(nextPayload)
+				const result = await applyScholarshipWorkflow(nextPayload)
 				setUser((prev) => ({
 					...(prev || {}),
-					scholarships: nextPayload.studentUpdate.scholarships,
+					...(result.student || {}),
+					scholarships: result.student?.scholarships || nextPayload.studentUpdate.scholarships,
 					scholarshipInvitations: nextInvitations,
 					updatedAt: serverTimestamp(),
 				}))
@@ -356,17 +373,17 @@ export default function StudentRecommendedScholarshipsPage() {
 				navigate("/student-dashboard/scholarships")
 			} catch (error) {
 				console.error("StudentRecommendedScholarshipsPage: apply failed:", error)
+				const errorMessage = String(error?.message || "")
 				toast.error(
-					String(error?.message || "").toLowerCase().includes("grantor is archived") ||
-						String(error?.message || "").toLowerCase().includes("student was archived")
-						? error.message
+					/archived|remaining slots|configures its slots|no longer open/i.test(errorMessage)
+						? errorMessage
 						: "Failed to apply for this recommendation.",
 				)
 			} finally {
 				setApplyingId("")
 			}
 		},
-		[activeOrPendingScholarships.length, applyingId, archivedGrantorIds, latestRejectedCooldown, navigate, studentAccessState.isScholarshipActionBlocked, user, userId],
+		[applicationEntryBlocked, applyingId, archivedGrantorIds, navigate, studentAccessState.isScholarshipActionBlocked, user, userId],
 	)
 
 	if (!userLoaded) {
@@ -424,16 +441,7 @@ export default function StudentRecommendedScholarshipsPage() {
 								Recommendations are temporarily unavailable. Visit the Office of the Scholarship or submit a Help Center ticket so your scholarship records can be reviewed.
 							</p>
 						</div>
-					) : latestRejectedCooldown?.active ? (
-						<div className="student-modern-recommended-empty">
-							<HiOutlineExclamation />
-							<strong>Re-application cooldown active.</strong>
-							<p>
-								You can apply again after {formatCooldownDuration(latestRejectedCooldown.remainingMs)}.
-								Your previous application was rejected and is still under the 24-hour cooldown.
-							</p>
-						</div>
-					) : activeOrPendingScholarships.length > 0 ? (
+					) : applicationEntryBlocked ? (
 						<div className="student-modern-recommended-empty">
 							<HiOutlineAcademicCap />
 							<strong>You already have a scholarship application.</strong>
@@ -456,7 +464,8 @@ export default function StudentRecommendedScholarshipsPage() {
 							{displayRecommendations.map((recommendation, index) => {
 								const itemId = recommendationKey(recommendation) || recommendation.grantorId || recommendation.id
 								const isInvitation = recommendation.recommendationSource === "grantor_invitation"
-								const initials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
+				const initials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
+				const slotState = getScholarshipSlotState({ ...recommendation, source: "grantor" })
 								return (
 									<article key={itemId} className="student-recommendation-page-card">
 										<div className="student-recommendation-rank">#{index + 1}</div>
@@ -481,7 +490,8 @@ export default function StudentRecommendedScholarshipsPage() {
 										<div className="student-recommendation-meta-grid">
 											<span><HiOutlineAcademicCap /> Minimum GWA {recommendation.minimumGwa || recommendation.minGwa || "Not set"}</span>
 											<span><HiOutlineCheckCircle /> {recommendation.rosterCount || 0} roster scholars</span>
-											<span><HiOutlineLocationMarker /> {formatDisplayText([recommendation.city, recommendation.province].filter(Boolean).join(", "), "Location not set")}</span>
+						<span><HiOutlineLocationMarker /> {formatDisplayText([recommendation.city, recommendation.province].filter(Boolean).join(", "), "Location not set")}</span>
+						<span className={`student-slot-badge ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}><HiOutlineAcademicCap /> {slotState.label}</span>
 										</div>
 										<div className="student-recommendation-reasons">
 											{(recommendation.reasons || []).slice(0, 4).map((reason) => <span key={reason}>{reason}</span>)}
@@ -490,7 +500,7 @@ export default function StudentRecommendedScholarshipsPage() {
 											type="button"
 											className="student-mini-btn student-mini-btn--primary"
 											onClick={() => applyRecommendation(recommendation)}
-											disabled={Boolean(applyingId)}
+						disabled={Boolean(applyingId) || !slotState.configured || slotState.full}
 										>
 											<HiOutlineAcademicCap />
 											{applyingId === itemId ? "Applying..." : isInvitation ? "Accept Invitation" : "Apply"}

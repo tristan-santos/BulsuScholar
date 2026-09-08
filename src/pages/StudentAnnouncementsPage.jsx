@@ -30,6 +30,7 @@ import {
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
 import { getAnnouncementApplyAvailability } from "../services/announcementApplyEligibilityService"
+import { getScholarshipSlotState } from "../services/scholarshipSlotService"
 
 function formatRelativeDate(value) {
 	const date = value?.toDate ? value.toDate() : new Date(value)
@@ -225,6 +226,7 @@ export default function StudentAnnouncementsPage() {
 				!isUnavailable &&
 				announcement.applicationEnabled === true &&
 				!applyAvailability.canApply
+			const slotState = getScholarshipSlotState(announcement)
 			return (
 				<button
 					key={announcement.id}
@@ -251,6 +253,7 @@ export default function StudentAnnouncementsPage() {
 								"No preview text provided."}
 							</p>
 					</div>
+					{slotState.managed ? <span className={`student-slot-badge ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}>{slotState.label}</span> : null}
 					<span className={`student-announcement-card-action ${isUnavailable ? "student-announcement-card-action--unavailable" : ""} ${isApplyBlocked ? "student-announcement-card-action--blocked" : ""}`}>
 						{isUnavailable ? (
 							<>

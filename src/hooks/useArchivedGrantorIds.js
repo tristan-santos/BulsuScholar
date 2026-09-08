@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { collection, onSnapshot } from "../services/supabaseDataService"
 import { db } from "../services/supabaseDataService"
+import { isAnnouncementExplicitlyArchived } from "../services/grantorService"
 
 const BLOCKED_GRANTOR_STATUSES = new Set(["archived", "inactive", "disabled"])
 
@@ -10,9 +11,14 @@ export function isArchivedGrantorRecord(record = {}) {
 }
 
 export function isAnnouncementBlockedByGrantor(announcement = {}, archivedGrantorIds = new Set()) {
+	if (isAnnouncementExplicitlyArchived(announcement)) return true
 	if (announcement.source !== "grantor") return false
 	if (announcement.grantorAccountArchived === true || announcement.hiddenFromStudents === true) return true
 	return archivedGrantorIds.has(String(announcement.grantorId || ""))
+}
+
+export function isStudentAnnouncementVisible(announcement = {}, archivedGrantorIds = new Set()) {
+	return !isAnnouncementBlockedByGrantor(announcement, archivedGrantorIds)
 }
 
 export default function useArchivedGrantorIds() {

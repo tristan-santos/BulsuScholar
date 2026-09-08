@@ -9,7 +9,7 @@ import {
 } from "react-icons/hi"
 import { listPriorityRecords, reviewLeaveRequest } from "../services/priorityOneService"
 
-const LEAVE_TABS = ["pending", "approved", "rejected", "all"]
+const LEAVE_TABS = ["all", "pending", "approved", "rejected"]
 
 function formatRequestType(type = "") {
 	return type === "loa" ? "Leave of Absence" : "Return to Study"

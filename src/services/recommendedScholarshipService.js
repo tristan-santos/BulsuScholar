@@ -16,6 +16,7 @@ import {
 	GRANTOR_PORTAL_COLLECTION,
 	GRANTOR_SUBCOLLECTIONS,
 	isAnnouncementArchived,
+	isAnnouncementExplicitlyArchived,
 	normalizeGrantorAnnouncement,
 	toGrantorDisplayName,
 } from "./grantorService"
@@ -74,6 +75,7 @@ function pickLatestOpenAnnouncement(list = []) {
 	return [...list]
 		.filter((item) =>
 			item.applicationEnabled === true &&
+			!isAnnouncementExplicitlyArchived(item) &&
 			item.grantorAccountArchived !== true &&
 			item.hiddenFromStudents !== true &&
 			!isAnnouncementArchived(item),
@@ -121,6 +123,7 @@ export async function loadRecommendedScholarships(student = {}) {
 			const openAnnouncements = (announcementsByGrantor[grantor.grantorId] || [])
 				.filter((item) =>
 					item.applicationEnabled === true &&
+					!isAnnouncementExplicitlyArchived(item) &&
 					item.grantorAccountArchived !== true &&
 					item.hiddenFromStudents !== true &&
 					!isAnnouncementArchived(item),
@@ -155,6 +158,9 @@ export async function loadRecommendedScholarships(student = {}) {
 					customApplicationProfile: announcement?.customApplicationProfile || null,
 					customApplicationForm: announcement?.customApplicationForm || grantor.customApplicationForm || null,
 					applicationEnabled: grantor.applicationEnabled && announcement?.applicationEnabled === true,
+					slotsConfigured: announcement?.slotsConfigured === true,
+					totalSlots: announcement?.totalSlots ?? null,
+					remainingSlots: announcement?.remainingSlots ?? null,
 					rosterCount: rosterCounts[grantor.grantorId] || 0,
 				}
 			})
@@ -196,6 +202,7 @@ export function buildRecommendationApplyPayload(student = {}, studentId = "", re
 			appliedViaAnnouncement: Boolean(recommendation.announcementId),
 		}),
 		grantorId: recommendation.grantorId || "",
+		grantorName: recommendation.grantorName || "",
 		providerType: recommendation.providerType || toScholarshipProviderType(recommendation.grantorName || scholarshipName),
 		minGwa: recommendation.minimumGwa,
 		minimumGrade: recommendation.minimumGwa,
@@ -233,6 +240,7 @@ export function buildRecommendationApplyPayload(student = {}, studentId = "", re
 				providerType: nextRecord.providerType,
 				providerLabel: nextRecord.provider || nextRecord.name,
 				grantorId: recommendation.grantorId || "",
+				grantorName: recommendation.grantorName || "",
 				announcementId: recommendation.announcementId || "",
 				announcementSource: recommendation.announcementId ? "grantor" : "",
 				minimumGrade: recommendation.minimumGwa,

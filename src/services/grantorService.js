@@ -76,6 +76,17 @@ export function isAnnouncementArchived(item = {}, now = new Date()) {
 	)
 }
 
+export function isAnnouncementExplicitlyArchived(item = {}) {
+	if (typeof item.explicitlyArchived === "boolean") return item.explicitlyArchived
+	const normalizedStatus = String(item.status || "").trim().toLowerCase()
+	return (
+		item.archived === true ||
+		normalizedStatus === "archived" ||
+		item.hiddenFromStudents === true ||
+		item.archivedByAccountAction === true
+	)
+}
+
 export function getGrantorPortalDoc(db, grantorId = "") {
 	return doc(db, GRANTOR_PORTAL_COLLECTION, String(grantorId || "").trim())
 }
@@ -174,6 +185,7 @@ export function normalizeGrantorScholar(raw = {}, id = "") {
 
 export function normalizeGrantorApplication(raw = {}, id = "") {
 	return {
+		...raw,
 		id: raw.id || id,
 		grantorId: raw.grantorId || raw.grantor_id || "",
 		grantorName: raw.grantorName || raw.providerLabel || raw.provider || "",
@@ -210,6 +222,7 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 		raw.providerType || raw.grantorName || raw.providerLabel || raw.title || id,
 	)
 	const archived = isAnnouncementArchived(raw)
+	const explicitlyArchived = isAnnouncementExplicitlyArchived(raw)
 	return {
 		id: raw.id || id,
 		title: raw.title || "Announcement",
@@ -221,6 +234,10 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 		previewText: raw.previewText || raw.description || "",
 		applicationWindow: raw.applicationWindow || "",
 		applicationEnabled: raw.applicationEnabled === true,
+		slotsConfigured: raw.slotsConfigured === true && raw.totalSlots != null && Number.isInteger(Number(raw.totalSlots)),
+		totalSlots: raw.totalSlots != null && Number.isInteger(Number(raw.totalSlots)) ? Number(raw.totalSlots) : null,
+		remainingSlots: raw.remainingSlots != null && Number.isFinite(Number(raw.remainingSlots)) ? Math.max(0, Number(raw.remainingSlots)) : null,
+		lowSlotNotificationSentAt: raw.lowSlotNotificationSentAt || null,
 		requiredDocuments: {
 			cog: raw.requiredDocuments?.cog === true,
 			cor: raw.requiredDocuments?.cor === true,
@@ -259,6 +276,9 @@ export function normalizeGrantorAnnouncement(raw = {}, id = "") {
 		imageUrls: Array.isArray(raw.imageUrls) ? raw.imageUrls : raw.imageUrl ? [raw.imageUrl] : [],
 		images: Array.isArray(raw.images) ? raw.images : [],
 		archived,
+		explicitlyArchived,
+		archiveSource: raw.archiveSource || "",
+		archivedByAccountAction: raw.archivedByAccountAction === true,
 		startDate: raw.startDate || raw.scheduleStart || null,
 		endDate: raw.endDate || raw.scheduleEnd || null,
 		scheduleEnd: raw.scheduleEnd || raw.endDate || null,

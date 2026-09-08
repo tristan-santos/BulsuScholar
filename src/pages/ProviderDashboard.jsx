@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
+import { matchesScholarshipApplication } from "../services/scholarshipChoiceService"
 import {
 	collection,
 	collectionGroup,
@@ -82,7 +83,13 @@ import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import useThemeMode from "../hooks/useThemeMode"
-import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
+import {
+	OTHER_PROVINCE_VALUE,
+	REGION_III_PROVINCE_OPTIONS,
+	getRegionProvinceSelection,
+	getCitiesByProvince,
+	getBarangaysByLocation,
+} from "../data/philippineLocations"
 import { uploadToStorage } from "../services/storageService"
 import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
 import { convertPdfToImage } from "../utils/pdfConverter"
@@ -94,8 +101,10 @@ import {
 } from "../services/notificationService"
 import {
 	adminReviewWorkflow,
+	configureGrantorAnnouncementSlotsWorkflow,
 	createGrantorAnnouncementWorkflow,
 	createGrantorScholarsWorkflow,
+	inviteArchivedGrantorScholarsWorkflow,
 	requestGrantorPasswordChangeWorkflow,
 	updateGrantorAnnouncementWorkflow,
 	updateGrantorProfileWorkflow,
@@ -141,6 +150,12 @@ import {
 	getPendingApplicationDecisionConfirmation,
 	isApplicationDecisionConfirmationExpired,
 } from "../services/applicationDecisionConfirmationService"
+import {
+	OTHER_SLOT_VALUE,
+	SCHOLARSHIP_SLOT_OPTIONS,
+	getScholarshipSlotState,
+	parseScholarshipSlotCount,
+} from "../services/scholarshipSlotService"
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Filler, Tooltip, Legend)
 
@@ -209,6 +224,7 @@ const SCHOLAR_FORM = {
 	street: "",
 	city: "",
 	province: "",
+	provinceSelection: "",
 	barangay: "",
 	postalCode: "",
 	course: "",
@@ -225,6 +241,7 @@ const ANNOUNCEMENT_FORM = {
 	applicationWindow: "",
 	applicationEnabled: false,
 	minimumGrade: "",
+	totalSlots: "",
 	requiredDocuments: {
 		cog: false,
 		cor: false,
@@ -434,17 +451,6 @@ function findArchivedRosterBlock(candidate = {}, rosterRows = [], currentGrantor
 	}) || null
 }
 
-function hasStudentActiveScholarship(student = {}, currentGrantorId = "") {
-	const scholarships = normalizeScholarshipList(student.scholarships || [])
-	return scholarships.some((entry) => {
-		const status = String(entry.status || "").toLowerCase()
-		if (entry.archived === true || entry.frozen === true || entry.rejected === true) return false
-		if (["archived", "frozen", "rejected", "denied", "declined", "previous"].some((keyword) => status.includes(keyword))) return false
-		const grantorId = String(entry.grantorId || entry.providerId || "").trim()
-		return !currentGrantorId || grantorId !== currentGrantorId
-	})
-}
-
 function sectionFromPath(pathname = "") {
 	if (pathname.startsWith("/provider-dashboard/profile")) return "profile"
 	if (pathname.startsWith("/provider-dashboard/inbox")) return "inbox"
@@ -621,21 +627,7 @@ function checkValidated(userData) {
 
 function findMatchingScholarshipEntry(studentRecord = {}, application = {}) {
 	const scholarships = normalizeScholarshipList(studentRecord?.scholarships || [])
-	const applicationGrantorId = String(application.grantorId || application.grantor_id || "").trim()
-	return (
-		scholarships.find((item) => {
-			if (applicationGrantorId && String(item.grantorId || "").trim() !== applicationGrantorId) {
-				return false
-			}
-			return (
-				item.id === application.scholarshipId ||
-				item.id === application.applicationNumber ||
-				item.applicationNumber === application.applicationNumber ||
-				item.requestNumber === application.requestNumber ||
-				item.providerType === application.providerType
-			)
-		}) || null
-	)
+	return scholarships.find((item) => matchesScholarshipApplication(application, item)) || null
 }
 
 function getApplicationGrantorId(application = {}) {
@@ -664,7 +656,8 @@ function pickLatestGrantorRow(rows = [], application = {}) {
 			const rowScholarshipId = normalizeKey(row.scholarshipId || row.soeSnapshot?.scholarshipId || row.requestSnapshot?.scholarshipId)
 			const rowRequestNumber = normalizeKey(row.requestNumber || row.soeSnapshot?.requestNumber || row.registrationNumber)
 			const rowProviderType = normalizeKey(row.providerType || row.soeSnapshot?.providerType || row.requestSnapshot?.providerType)
-			if (applicationNumber && rowApplicationNumber && rowApplicationNumber === applicationNumber) return true
+			if (applicationNumber && rowApplicationNumber) return rowApplicationNumber === applicationNumber
+			if (application.lifecycleVersion === 2) return false
 			if (scholarshipId && rowScholarshipId && rowScholarshipId === scholarshipId) return true
 			if (requestNumber && rowRequestNumber && rowRequestNumber === requestNumber) return true
 			return (
@@ -747,6 +740,7 @@ function scholarToForm(scholar = {}, student = {}) {
 		street: student.street || student.address || scholar.street || "",
 		city: student.city || scholar.city || "",
 		province: student.province || scholar.province || "",
+		provinceSelection: getRegionProvinceSelection(student.province || scholar.province),
 		barangay: student.barangay || scholar.barangay || "",
 		postalCode: student.postalCode || student.zipCode || scholar.postalCode || "",
 		course: student.course || student.program || scholar.course || "",
@@ -825,7 +819,10 @@ function findExistingScholarForScreening(scholars = [], student = {}, scholarshi
 }
 
 function validScholar(form) {
-	return Boolean(form.studentId.trim() && form.fname.trim() && form.lname.trim() && form.course.trim())
+	const customAddressComplete =
+		form.provinceSelection !== OTHER_PROVINCE_VALUE ||
+		Boolean(form.province.trim() && form.city.trim() && form.barangay.trim())
+	return Boolean(form.studentId.trim() && form.fname.trim() && form.lname.trim() && form.course.trim() && customAddressComplete)
 }
 
 function getGrantorCompletableStepLabel(stepId = "") {
@@ -902,6 +899,9 @@ export default function ProviderDashboard() {
 	const [createBarangayLoading, setCreateBarangayLoading] = useState(false)
 	const [createBarangayError, setCreateBarangayError] = useState("")
 	const [editForm, setEditForm] = useState(SCHOLAR_FORM)
+	const [editBarangayOptions, setEditBarangayOptions] = useState([])
+	const [editBarangayLoading, setEditBarangayLoading] = useState(false)
+	const [editBarangayError, setEditBarangayError] = useState("")
 	const [editScholarAccountExists, setEditScholarAccountExists] = useState(false)
 	const [editScholarLockedProfile, setEditScholarLockedProfile] = useState(null)
 	const [announcementForm, setAnnouncementForm] = useState(ANNOUNCEMENT_FORM)
@@ -916,6 +916,10 @@ export default function ProviderDashboard() {
 	const [announcementArchiveConfirmId, setAnnouncementArchiveConfirmId] = useState("")
 	const [announcementScholarshipChoice, setAnnouncementScholarshipChoice] = useState("")
 	const [announcementGwaChoice, setAnnouncementGwaChoice] = useState("")
+	const [announcementSlotChoice, setAnnouncementSlotChoice] = useState("")
+	const [slotCapacityAnnouncement, setSlotCapacityAnnouncement] = useState(null)
+	const [slotCapacityChoice, setSlotCapacityChoice] = useState("")
+	const [slotCapacityValue, setSlotCapacityValue] = useState("")
 	const [allAnnouncementTab, setAllAnnouncementTab] = useState("announcements")
 	const [showApplicationWindowCalendar, setShowApplicationWindowCalendar] = useState(false)
 	const [announcementWindowStart, setAnnouncementWindowStart] = useState("")
@@ -948,6 +952,7 @@ export default function ProviderDashboard() {
 		cpNumber: "",
 		minimumGwa: "",
 		province: "",
+		provinceSelection: "",
 		city: "",
 		barangay: "",
 		street: "",
@@ -980,12 +985,16 @@ export default function ProviderDashboard() {
 	const [archiveOtherReason, setArchiveOtherReason] = useState("")
 	const [archiveNotes, setArchiveNotes] = useState("")
 	const [unarchiveModalOpen, setUnarchiveModalOpen] = useState(false)
-	const [unarchiveScholarshipTitle, setUnarchiveScholarshipTitle] = useState("")
+	const [unarchiveAnnouncementId, setUnarchiveAnnouncementId] = useState("")
 	const [busy, setBusy] = useState("")
 	const [tablePages, setTablePages] = useState({})
 	const autoConfirmationResolutionRef = useRef("")
 	const grantorId = session.storedUserId || ""
 	const grantorName = useMemo(() => toGrantorDisplayName(profile, grantorId), [grantorId, profile])
+	const grantorAccountArchived = useMemo(() => {
+		const status = String(profile?.status || profile?.accountStatus || "").trim().toLowerCase()
+		return profile?.archived === true || ["archived", "inactive", "disabled"].includes(status)
+	}, [profile])
 	const grantorInitials = useMemo(() => {
 		const parts = String(grantorName || "Grantor").trim().split(/\s+/).filter(Boolean)
 		return `${parts[0]?.[0] || "G"}${parts.length > 1 ? parts[parts.length - 1][0] : ""}`.toUpperCase()
@@ -1141,12 +1150,21 @@ export default function ProviderDashboard() {
 			announcementForm.applicationEnabled &&
 			(!String(announcementForm.minimumGrade || "").trim() ||
 				Number.isNaN(Number(announcementForm.minimumGrade))),
+		totalSlots:
+			announcementForm.applicationEnabled &&
+			parseScholarshipSlotCount(announcementForm.totalSlots) === null,
 		otherRequirement:
 			announcementForm.applicationEnabled &&
 			(Array.isArray(announcementForm.otherRequirements) ? announcementForm.otherRequirements : []).some(
 				(item) => !String(item?.name || "").trim() || item?.confirmed !== true,
 			),
 	}), [announcementForm])
+
+	useEffect(() => {
+		if (!selectedAnnouncement?.id) return
+		const latest = announcements.find((item) => item.id === selectedAnnouncement.id)
+		if (latest) setSelectedAnnouncement(latest)
+	}, [announcements, selectedAnnouncement?.id])
 
 	useEffect(() => {
 		if (!session.isProvider) navigate("/", { replace: true })
@@ -1212,6 +1230,7 @@ export default function ProviderDashboard() {
 			cpNumber: profile.cpNumber || profile.contactNumber || profile.contact || "",
 			minimumGwa: profile.minimumGwa ?? profile.minGwa ?? "",
 			province: profile.province || "",
+			provinceSelection: getRegionProvinceSelection(profile.province),
 			city: profile.city || "",
 			barangay: profile.barangay || "",
 			street: profile.street || profile.address || "",
@@ -1222,7 +1241,7 @@ export default function ProviderDashboard() {
 
 	useEffect(() => {
 		let isCancelled = false
-		if (!grantorProfileForm.province || !grantorProfileForm.city) {
+		if (grantorProfileForm.provinceSelection === OTHER_PROVINCE_VALUE || !grantorProfileForm.province || !grantorProfileForm.city) {
 			setGrantorProfileBarangayOptions([])
 			setGrantorProfileBarangayError("")
 			setGrantorProfileBarangayLoading(false)
@@ -1254,7 +1273,7 @@ export default function ProviderDashboard() {
 		return () => {
 			isCancelled = true
 		}
-	}, [grantorProfileForm.province, grantorProfileForm.city])
+	}, [grantorProfileForm.province, grantorProfileForm.provinceSelection, grantorProfileForm.city])
 
 	useEffect(() => {
 		if (!grantorId) return
@@ -1370,7 +1389,8 @@ export default function ProviderDashboard() {
 
 	useEffect(() => {
 		let cancelled = false
-		const studentIds = [...new Set(applications.map((row) => row.studentId).filter(Boolean))]
+		const liveApplications = applications.filter((row) => !["selected_another_scholarship", "student_withdrawal"].includes(row.closureReason))
+		const studentIds = [...new Set(liveApplications.map((row) => row.studentId).filter(Boolean))]
 		if (studentIds.length === 0) {
 			setApplicationStudents({})
 			setApplicationMaterialRequests({})
@@ -1407,7 +1427,7 @@ export default function ProviderDashboard() {
 
 				const requestsByApplication = {}
 				const downloadsByApplication = {}
-				applications.forEach((application) => {
+				liveApplications.forEach((application) => {
 					const key = getApplicationLookupKey(application)
 					if (!key) return
 					requestsByApplication[key] = pickLatestGrantorRow(requestRows, application)
@@ -1526,10 +1546,14 @@ export default function ProviderDashboard() {
 		[enrichedApplications],
 	)
 	const rejectedApplications = useMemo(
-		() => enrichedApplications.filter((row) => isRejectedApplication(row)),
+		() => enrichedApplications.filter((row) => isRejectedApplication(row) && !row.closureReason),
 		[enrichedApplications],
 	)
-	const applicationRowsForTab = applicationArchiveTab === "rejected" ? rejectedApplications : activeApplications
+	const archivedApplications = useMemo(() => enrichedApplications.filter((row) =>
+		["selected_another_scholarship", "student_withdrawal"].includes(row.closureReason)), [enrichedApplications])
+	const [closedApplication, setClosedApplication] = useState(null)
+	const applicationRowsForTab = applicationArchiveTab === "archive" ? archivedApplications
+		: applicationArchiveTab === "rejected" ? rejectedApplications : activeApplications
 	const visibleApplications = useMemo(() => {
 		const keyword = applicationSearch.trim().toLowerCase()
 		return applicationRowsForTab.filter((row) => {
@@ -1634,6 +1658,36 @@ export default function ProviderDashboard() {
 		],
 		[availableScholarshipOptions],
 	)
+	const invitationAnnouncementOptions = useMemo(() => {
+		const now = Date.now()
+		return announcements
+			.filter((announcement) => {
+				if (announcement.applicationEnabled !== true || isAnnouncementArchived(announcement)) return false
+				if (announcement.hiddenFromStudents === true || announcement.grantorAccountArchived === true) return false
+				if (["archived", "closed", "ended", "draft"].includes(String(announcement.status || "").trim().toLowerCase())) return false
+				const startsAt = toJsDate(announcement.startDate)?.getTime()
+				const endsAt = toJsDate(announcement.endDate)?.getTime()
+				if ((startsAt && startsAt > now) || (endsAt && endsAt < now)) return false
+				const slotState = getScholarshipSlotState(announcement)
+				return slotState.configured && !slotState.full
+			})
+			.sort((left, right) => (toJsDate(right.createdAt)?.getTime() || 0) - (toJsDate(left.createdAt)?.getTime() || 0))
+			.map((announcement) => {
+				const slotState = getScholarshipSlotState(announcement)
+				const title = String(announcement.scholarshipTitle || announcement.title || announcement.scholarshipName || "Scholarship").trim()
+				return {
+					value: String(announcement.id || ""),
+					label: `${title} (${slotState.remainingSlots} slot${slotState.remainingSlots === 1 ? "" : "s"} remaining)`,
+					announcement,
+					slotState,
+				}
+			})
+			.filter((option) => option.value)
+	}, [announcements])
+	const selectedInvitationAnnouncement = useMemo(
+		() => invitationAnnouncementOptions.find((option) => option.value === unarchiveAnnouncementId) || null,
+		[invitationAnnouncementOptions, unarchiveAnnouncementId],
+	)
 	const announcementMinimumGwaOptions = useMemo(
 		() => [
 			...ANNOUNCEMENT_GWA_OPTIONS.map((grade) => ({ value: grade, label: grade })),
@@ -1656,6 +1710,12 @@ export default function ProviderDashboard() {
 		const fixed = toFixedGwaOption(announcementForm.minimumGrade)
 		return ANNOUNCEMENT_GWA_OPTIONS.includes(fixed) ? fixed : (announcementForm.minimumGrade ? ANNOUNCEMENT_CUSTOM_GWA_VALUE : "")
 	}, [announcementForm.applicationEnabled, announcementForm.minimumGrade, announcementGwaChoice])
+	const selectedAnnouncementSlotValue = useMemo(() => {
+		if (!announcementForm.applicationEnabled) return ""
+		if (announcementSlotChoice === OTHER_SLOT_VALUE) return OTHER_SLOT_VALUE
+		const totalSlots = parseScholarshipSlotCount(announcementForm.totalSlots)
+		return totalSlots && totalSlots <= 200 && totalSlots % 25 === 0 ? String(totalSlots) : ""
+	}, [announcementForm.applicationEnabled, announcementForm.totalSlots, announcementSlotChoice])
 	const createCityOptions = useMemo(() => getCitiesByProvince(createForm.province), [createForm.province])
 	const editCityOptions = useMemo(() => getCitiesByProvince(editForm.province), [editForm.province])
 
@@ -1835,7 +1895,7 @@ export default function ProviderDashboard() {
 
 	useEffect(() => {
 		if (!showCreateModal || importData) return undefined
-		if (!createForm.province || !createForm.city) {
+		if (createForm.provinceSelection === OTHER_PROVINCE_VALUE || !createForm.province || !createForm.city) {
 			setCreateBarangayOptions([])
 			setCreateBarangayError("")
 			setCreateBarangayLoading(false)
@@ -1865,11 +1925,47 @@ export default function ProviderDashboard() {
 		return () => {
 			active = false
 		}
-	}, [createForm.province, createForm.city, importData, showCreateModal])
+	}, [createForm.province, createForm.provinceSelection, createForm.city, importData, showCreateModal])
+
+	useEffect(() => {
+		if (!showEditModal || editForm.provinceSelection === OTHER_PROVINCE_VALUE || !editForm.province || !editForm.city) {
+			setEditBarangayOptions([])
+			setEditBarangayError("")
+			setEditBarangayLoading(false)
+			return undefined
+		}
+
+		let active = true
+		setEditBarangayLoading(true)
+		setEditBarangayError("")
+		getBarangaysByLocation(editForm.province, editForm.city)
+			.then((barangays) => {
+				if (!active) return
+				setEditBarangayOptions(barangays)
+				if (barangays.length === 0) {
+					setEditBarangayError("Barangays could not be found for the selected city or municipality.")
+				}
+			})
+			.catch((error) => {
+				if (!active) return
+				console.error("Failed to load scholar barangays:", error)
+				setEditBarangayOptions([])
+				setEditBarangayError("Unable to load barangays. Please check your connection and try again.")
+			})
+			.finally(() => {
+				if (active) setEditBarangayLoading(false)
+			})
+		return () => {
+			active = false
+		}
+	}, [editForm.province, editForm.provinceSelection, editForm.city, showEditModal])
 
 	const closeEditModal = () => {
 		setShowEditModal(false)
 		setEditForm(SCHOLAR_FORM)
+		setEditBarangayOptions([])
+		setEditBarangayLoading(false)
+		setEditBarangayError("")
 		setEditScholarAccountExists(false)
 		setEditScholarLockedProfile(null)
 	}
@@ -2364,10 +2460,13 @@ export default function ProviderDashboard() {
 			const scholarship = student ? findMatchingScholarshipEntry(student, application) : null
 			const documentUrls = student
 				? {
-						...getDocumentUrlsForStudent(student),
 						...(application.documentUrls || {}),
+						...getDocumentUrlsForStudent(student),
 					}
 				: application.documentUrls || {}
+			if (application.lifecycleVersion === 2) {
+				documentUrls.applicationForm = application.applicationFormFile?.url || scholarship?.applicationFormFile?.url || ""
+			}
 			const documentCheck = scholarship
 				? validateScholarshipDocuments(student || {}, scholarship.name)
 				: null
@@ -2415,6 +2514,10 @@ export default function ProviderDashboard() {
 	}
 
 	const handleCompleteGrantorStage = async () => {
+		if (applicationModalState.application?.readOnly || applicationModalState.application?.closureReason) {
+			toast.info("This application is archived and read-only.")
+			return
+		}
 		if (!applicationModalState.application || !applicationModalState.student || !applicationModalState.scholarship) {
 			return
 		}
@@ -2479,7 +2582,8 @@ export default function ProviderDashboard() {
 					? { ...nextScholarship, status: nextStatus }
 					: item,
 			)
-			const completedFinalScreening = currentStep.id === "final_screening"
+			const completedFinalScreening = currentStep.id === "final_screening" &&
+				applicationModalState.application.lifecycleVersion !== 2
 			const matchedScholar = completedFinalScreening
 				? findExistingScholarForScreening(
 						scholars,
@@ -3202,156 +3306,52 @@ export default function ProviderDashboard() {
 
 	const openUnarchiveModal = () => {
 		if (!grantorId || selectedScholarIds.length === 0 || busy) {
-			if (selectedScholarIds.length === 0) toast.info("Select one or more scholars to unarchive.")
+			if (selectedScholarIds.length === 0) toast.info("Select one or more archived scholars to invite back.")
 			return
 		}
-		const defaultScholarship = availableScholarshipOptions[0]?.value || ""
-		setUnarchiveScholarshipTitle(defaultScholarship)
+		setUnarchiveAnnouncementId(invitationAnnouncementOptions[0]?.value || "")
 		setUnarchiveModalOpen(true)
 	}
 
 	const closeUnarchiveModal = () => {
 		setUnarchiveModalOpen(false)
-		setUnarchiveScholarshipTitle("")
+		setUnarchiveAnnouncementId("")
 	}
 
 	const handleUnarchive = async () => {
 		if (!grantorId || selectedScholarIds.length === 0 || busy) {
-			if (selectedScholarIds.length === 0) toast.info("Select one or more scholars to unarchive.")
+			if (selectedScholarIds.length === 0) toast.info("Select one or more archived scholars to invite back.")
 			return
 		}
-		const scholarshipTitle = unarchiveScholarshipTitle.trim()
-		if (!scholarshipTitle) {
-			toast.error("Select the scholarship for the unarchive invitation.")
+		const selectedOffering = selectedInvitationAnnouncement
+		const scholarshipTitle = String(selectedOffering?.announcement?.scholarshipTitle || selectedOffering?.announcement?.title || "").trim()
+		if (!selectedOffering?.value || !scholarshipTitle) {
+			toast.error("Select an open scholarship announcement for this invitation.")
 			return
 		}
 		setBusy("unarchive")
 		try {
-			const selectedScholars = scholars.filter((row) => selectedScholarIds.includes(row.id))
-			const blocked = []
-			const eligible = []
-			for (const scholar of selectedScholars) {
-				const localBlock = getUnarchiveBlockedReason(scholar)
-				if (localBlock) {
-					blocked.push({ scholar, reason: localBlock })
-					continue
-				}
-				const studentId = getScholarStudentId(scholar)
-				if (studentId) {
-					const studentSnapshot = await getDoc(doc(db, "students", studentId))
-					if (studentSnapshot.exists()) {
-						const student = { id: studentSnapshot.id, ...(studentSnapshot.data() || {}) }
-						if (hasStudentActiveScholarship(student, grantorId)) {
-							blocked.push({ scholar, reason: "Student already has another active scholarship" })
-							continue
-						}
-					}
-				}
-				eligible.push(scholar)
-			}
-			if (eligible.length === 0) {
-				toast.warning(blocked[0]?.reason || "Selected archived scholars cannot be invited back because they already have another scholarship.")
-				return
-			}
-			const studentUpdates = []
-			const studentNotifications = []
-			await Promise.all(
-				eligible.map(async (scholar) => {
-					const studentId = getScholarStudentId(scholar)
-					if (!studentId) return
-					const studentSnapshot = await getDoc(doc(db, "students", studentId))
-					if (!studentSnapshot.exists()) return
-					const student = { id: studentSnapshot.id, ...(studentSnapshot.data() || {}) }
-					const existingInvitations = Array.isArray(student.scholarshipInvitations) ? student.scholarshipInvitations : []
-					const invitationId = `unarchive_${grantorId}_${scholar.id}`
-					const nextInvitations = [
-						...existingInvitations.filter((item) => item.id !== invitationId),
-						{
-							id: invitationId,
-							type: "grantor_unarchive_invitation",
-							status: "Pending",
-							grantorId,
-							grantorName,
-							scholarId: scholar.id,
-							scholarshipName: scholarshipTitle,
-							archiveReason: scholar.archiveReason || "",
-							archiveNotes: scholar.archiveNotes || "",
-							createdAt: serverTimestamp(),
-							updatedAt: serverTimestamp(),
-						},
-					]
-					studentUpdates.push({
-						table: "students",
-						id: student.id,
-						data: {
-							scholarshipInvitations: nextInvitations,
-							updatedAt: serverTimestamp(),
-						},
-					})
-					studentNotifications.push({
-						target: "student",
-						data: {
-							studentId: student.id,
-							source: "personal",
-							type: "scholarship_invitation",
-							title: "Scholarship Invitation",
-							message: `${grantorName} invited you to apply again for ${scholarshipTitle}. Open your scholarship page to accept or reject the invitation.`,
-							grantorId,
-							grantorName,
-							scholarId: scholar.id,
-							scholarshipName: scholarshipTitle,
-							authorName: grantorName,
-							authorImageUrl: grantorProfileImageUrl,
-							read: false,
-							createdAt: serverTimestamp(),
-						},
-					})
-				}),
-			)
-			await updateGrantorScholarsWorkflow({
+			const result = await inviteArchivedGrantorScholarsWorkflow({
 				grantorId,
 				actorType: "grantor",
 				actorId: grantorId,
-				scholarIds: eligible.map((scholar) => scholar.id),
-				data: {
-					archived: false,
-					status: "Pending",
-					unarchiveInvitationPending: true,
-					unarchiveInvitationAt: serverTimestamp(),
-					unarchiveInvitationScholarshipTitle: scholarshipTitle,
-					scholarshipTitle,
-					updatedAt: serverTimestamp(),
-				},
+				announcementId: selectedOffering.value,
+				scholarIds: selectedScholarIds,
 			})
-			if (studentUpdates.length || studentNotifications.length) {
-				const workflowResult = await adminReviewWorkflow({
-					updates: studentUpdates,
-					notifications: studentNotifications,
-				})
-				const failedNotifications = (workflowResult?.notifications || []).filter((item) => item?.ok === false)
-				if (failedNotifications.length > 0) {
-					console.warn("Unarchive notification delivery failed:", failedNotifications)
-					await Promise.all(studentNotifications.map((notification, index) =>
-						setDoc(doc(db, "studentWarning", `unarchive_${notification.data.studentId}_${Date.now()}_${index}`), {
-							...(notification.data || {}),
-							notificationFallbackTable: "student_warnings",
-							updatedAt: serverTimestamp(),
-						}, { merge: true }),
-					))
-					toast.info("Scholar unarchived. Student inbox notification was saved through the fallback inbox table.")
-				}
-			}
-			setSelectedScholarIds([])
-			setSelectedScholarId("")
-			closeUnarchiveModal()
-			if (blocked.length > 0) {
-				toast.warning(`${eligible.length} invitation${eligible.length === 1 ? "" : "s"} sent. ${blocked.length} selected scholar${blocked.length === 1 ? " was" : "s were"} blocked because they already have another scholarship.`)
+			const failedIds = (result.failures || []).map((item) => item.scholarId).filter(Boolean)
+			if (failedIds.length > 0) {
+				setSelectedScholarIds(failedIds)
+				const firstFailure = result.failures[0]
+				toast.warning(`${result.invitationCount || 0} invitation${result.invitationCount === 1 ? "" : "s"} sent. ${failedIds.length} failed: ${firstFailure.message || firstFailure.reason || "validation failed"}`)
 			} else {
+				setSelectedScholarIds([])
+				setSelectedScholarId("")
 				toast.success("Invitation sent. The scholar must accept before returning to the scholar list.")
+				closeUnarchiveModal()
 			}
 		} catch (error) {
 			console.error(error)
-			toast.error(getGrantorWorkflowErrorMessage(error, "Unable to unarchive scholars right now."))
+			toast.error(getGrantorWorkflowErrorMessage(error, "Unable to send invitations right now."))
 		} finally {
 			setBusy("")
 		}
@@ -3496,12 +3496,17 @@ export default function ProviderDashboard() {
 	const handlePostAnnouncement = async (event) => {
 		event.preventDefault()
 		if (!grantorId || busy) return
+		if (grantorAccountArchived) {
+			toast.error("This grantor account is archived and cannot publish announcements.")
+			return
+		}
 		setAnnouncementSubmitAttempted(true)
 		if (
 			announcementMissingFields.title ||
 			announcementMissingFields.description ||
 			announcementMissingFields.applicationWindow ||
 			announcementMissingFields.minimumGrade ||
+			announcementMissingFields.totalSlots ||
 			announcementMissingFields.otherRequirement
 		) {
 			toast.error(
@@ -3542,6 +3547,13 @@ export default function ProviderDashboard() {
 					content: announcementForm.description.trim(),
 					previewText: announcementForm.description.trim().slice(0, 150),
 					applicationEnabled: announcementForm.applicationEnabled === true,
+					slotsConfigured: announcementForm.applicationEnabled === true,
+					totalSlots: announcementForm.applicationEnabled
+						? parseScholarshipSlotCount(announcementForm.totalSlots)
+						: null,
+					remainingSlots: announcementForm.applicationEnabled
+						? parseScholarshipSlotCount(announcementForm.totalSlots)
+						: null,
 					minimumGrade: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
 					minGwa: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
 					requiredDocuments: announcementForm.applicationEnabled
@@ -3628,6 +3640,7 @@ export default function ProviderDashboard() {
 				console.error("Announcement published, but inbox notifications failed.", notificationError)
 			}
 			setAnnouncementForm(ANNOUNCEMENT_FORM)
+			setAnnouncementSlotChoice("")
 			setAnnouncementSubmitAttempted(false)
 			setAnnouncementImageFiles([])
 			setAnnouncementApplicationProfileFile(null)
@@ -3643,7 +3656,7 @@ export default function ProviderDashboard() {
 			}
 		} catch (error) {
 			console.error(error)
-			toast.error("Unable to post announcement right now.")
+			toast.error(error?.message || "Unable to post announcement right now.")
 		} finally {
 			setBusy("")
 		}
@@ -3661,6 +3674,58 @@ export default function ProviderDashboard() {
 			return
 		}
 		setAnnouncementWindowDraftEnd(iso)
+	}
+
+	const openSlotCapacityModal = (announcement) => {
+		const currentTotal = parseScholarshipSlotCount(announcement?.totalSlots)
+		setSlotCapacityAnnouncement(announcement)
+		setSlotCapacityValue(currentTotal ? String(currentTotal) : "")
+		setSlotCapacityChoice(
+			currentTotal && currentTotal <= 200 && currentTotal % 25 === 0
+				? String(currentTotal)
+				: currentTotal
+					? OTHER_SLOT_VALUE
+					: "",
+		)
+	}
+
+	const closeSlotCapacityModal = () => {
+		if (busy === "slot-capacity") return
+		setSlotCapacityAnnouncement(null)
+		setSlotCapacityChoice("")
+		setSlotCapacityValue("")
+	}
+
+	const handleSaveSlotCapacity = async (event) => {
+		event.preventDefault()
+		const totalSlots = parseScholarshipSlotCount(slotCapacityValue)
+		if (!slotCapacityAnnouncement?.id || totalSlots === null) {
+			toast.error("Slots must be a whole number from 1 to 1000.")
+			return
+		}
+		setBusy("slot-capacity")
+		try {
+			const response = await configureGrantorAnnouncementSlotsWorkflow({
+				grantorId,
+				actorType: "grantor",
+				actorId: grantorId,
+				announcementId: slotCapacityAnnouncement.id,
+				totalSlots,
+			})
+			const capacity = response?.capacity || {}
+			setSelectedAnnouncement((prev) => prev?.id === slotCapacityAnnouncement.id
+				? { ...prev, slotsConfigured: true, totalSlots: capacity.totalSlots, remainingSlots: capacity.remainingSlots }
+				: prev)
+			setSlotCapacityAnnouncement(null)
+			setSlotCapacityChoice("")
+			setSlotCapacityValue("")
+			toast.success("Scholarship slots updated.")
+		} catch (error) {
+			console.error("Unable to update scholarship slots.", error)
+			toast.error(error?.message || "Unable to update scholarship slots.")
+		} finally {
+			setBusy("")
+		}
 	}
 
 	const openAnnouncementWindowCalendar = () => {
@@ -3689,6 +3754,7 @@ export default function ProviderDashboard() {
 	const renderAnnouncementCard = (item) => {
 		const imageUrls = buildAnnouncementImageList(item)
 		const archived = isAnnouncementArchived(item)
+		const slotState = getScholarshipSlotState(item)
 		return (
 			<article key={item.id} className={`grantor-announcement-card ${archived ? "is-archived" : ""}`}>
 				<div className="grantor-announcement-card-media">
@@ -3700,9 +3766,11 @@ export default function ProviderDashboard() {
 					<h4>{item.title || "Announcement"}</h4>
 					<p>{item.subtitle || "Scholarship application notice"}</p>
 					<span className="grantor-announcement-card-window"><HiOutlineCalendar /> {item.applicationWindow || "Window not specified"}</span>
+					{slotState.managed ? <span className={`scholarship-slot-badge ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}>{slotState.full ? slotState.label : slotState.configured ? `${slotState.remainingSlots} of ${slotState.totalSlots} slots remaining` : slotState.label}</span> : null}
 				</div>
 				<footer className="grantor-announcement-card-actions">
 					<button type="button" className="grantor-announcement-view-btn" onClick={() => setSelectedAnnouncement(item)}><HiOutlineEye /> View</button>
+					{item.applicationEnabled === true && !archived ? <button type="button" className="grantor-announcement-slots-btn" onClick={() => openSlotCapacityModal(item)}><HiOutlineUsers /> {slotState.configured ? "Edit Slots" : "Set Slots"}</button> : null}
 					{archived ? <span className="grantor-announcement-archived-note">Archived</span> : <button type="button" className="grantor-announcement-archive-btn" onClick={() => handleArchiveAnnouncement(item.id)} disabled={busy === `archive-announcement-${item.id}`}><HiOutlineTrash /> Archive</button>}
 				</footer>
 			</article>
@@ -3714,6 +3782,13 @@ export default function ProviderDashboard() {
 		if (!grantorId || profileSaving) return
 		if (!grantorProfileForm.providerName.trim() || !grantorProfileForm.email.trim()) {
 			toast.error("Display name and email address are required.")
+			return
+		}
+		if (
+			grantorProfileForm.provinceSelection === OTHER_PROVINCE_VALUE &&
+			(!grantorProfileForm.province.trim() || !grantorProfileForm.city.trim() || !grantorProfileForm.barangay.trim())
+		) {
+			toast.error("Enter the province, city or municipality, and barangay for the custom address.")
 			return
 		}
 		const minimumGwaValue = String(grantorProfileForm.minimumGwa || "").trim()
@@ -3753,9 +3828,9 @@ export default function ProviderDashboard() {
 				cpNumber: normalizeContactNumber(grantorProfileForm.cpNumber),
 				minimumGwa: normalizedMinimumGwa,
 				minGwa: normalizedMinimumGwa,
-				province: grantorProfileForm.province,
-				city: grantorProfileForm.city,
-				barangay: grantorProfileForm.barangay,
+				province: grantorProfileForm.province.trim(),
+				city: grantorProfileForm.city.trim(),
+				barangay: grantorProfileForm.barangay.trim(),
 				street: grantorProfileForm.street.trim(),
 				postalCode: grantorProfileForm.postalCode.trim(),
 				customApplicationForm,
@@ -4085,9 +4160,34 @@ export default function ProviderDashboard() {
 								<section>
 									<div className="grantor-profile-section-head"><HiOutlineLocationMarker /><div><h3>Address</h3><p>Office or organization mailing address.</p></div></div>
 									<div className="grantor-profile-form-grid">
-										<label><span>Province</span><select value={grantorProfileForm.province} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, province: event.target.value, city: "", barangay: "" }))}><option value="">Select province</option>{grantorProfileForm.province && !PROVINCES.includes(grantorProfileForm.province) ? <option value={grantorProfileForm.province}>{grantorProfileForm.province}</option> : null}{PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}</select></label>
-										<label><span>City / Municipality</span><select value={grantorProfileForm.city} disabled={!grantorProfileForm.province} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, city: event.target.value, barangay: "" }))}><option value="">Select city or municipality</option>{grantorProfileForm.city && !grantorProfileCities.includes(grantorProfileForm.city) ? <option value={grantorProfileForm.city}>{grantorProfileForm.city}</option> : null}{grantorProfileCities.map((city) => <option key={city} value={city}>{city}</option>)}</select></label>
-										<label><span>Barangay</span><select value={grantorProfileForm.barangay} disabled={!grantorProfileForm.city || grantorProfileBarangayLoading || (grantorProfileBarangayOptions.length === 0 && !grantorProfileForm.barangay)} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, barangay: event.target.value }))}><option value="">{!grantorProfileForm.city ? "Select city first" : grantorProfileBarangayLoading ? "Loading barangays..." : "Select barangay"}</option>{grantorProfileForm.barangay && !grantorProfileBarangayOptions.includes(grantorProfileForm.barangay) ? <option value={grantorProfileForm.barangay}>{grantorProfileForm.barangay}</option> : null}{grantorProfileBarangayOptions.map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}</select>{grantorProfileBarangayError && !grantorProfileForm.barangay ? <small className="grantor-profile-help-text">{grantorProfileBarangayError}</small> : null}</label>
+										<label>
+											<span>Province</span>
+											<CustomSelect
+												value={grantorProfileForm.provinceSelection}
+												onChange={(nextProvince) => setGrantorProfileForm((prev) => ({ ...prev, provinceSelection: nextProvince, province: nextProvince === OTHER_PROVINCE_VALUE ? "" : nextProvince, city: "", barangay: "" }))}
+												options={REGION_III_PROVINCE_OPTIONS}
+												placeholder="Select province"
+												buttonClassName="grantor-profile-select"
+											/>
+											{grantorProfileForm.provinceSelection === OTHER_PROVINCE_VALUE ? <input type="text" value={grantorProfileForm.province} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, province: event.target.value }))} placeholder="Enter province" /> : null}
+										</label>
+										<label>
+											<span>City / Municipality</span>
+											{grantorProfileForm.provinceSelection === OTHER_PROVINCE_VALUE ? (
+												<input type="text" value={grantorProfileForm.city} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, city: event.target.value }))} placeholder="Enter city or municipality" />
+											) : (
+												<CustomSelect value={grantorProfileForm.city} disabled={!grantorProfileForm.province} onChange={(nextCity) => setGrantorProfileForm((prev) => ({ ...prev, city: nextCity, barangay: "" }))} options={[...(grantorProfileForm.city && !grantorProfileCities.includes(grantorProfileForm.city) ? [grantorProfileForm.city] : []), ...grantorProfileCities]} placeholder={grantorProfileForm.province ? "Select city or municipality" : "Select province first"} buttonClassName="grantor-profile-select" />
+											)}
+										</label>
+										<label>
+											<span>Barangay</span>
+											{grantorProfileForm.provinceSelection === OTHER_PROVINCE_VALUE ? (
+												<input type="text" value={grantorProfileForm.barangay} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, barangay: event.target.value }))} placeholder="Enter barangay" />
+											) : (
+												<CustomSelect value={grantorProfileForm.barangay} disabled={!grantorProfileForm.city || grantorProfileBarangayLoading || (grantorProfileBarangayOptions.length === 0 && !grantorProfileForm.barangay)} onChange={(nextBarangay) => setGrantorProfileForm((prev) => ({ ...prev, barangay: nextBarangay }))} options={[...(grantorProfileForm.barangay && !grantorProfileBarangayOptions.includes(grantorProfileForm.barangay) ? [grantorProfileForm.barangay] : []), ...grantorProfileBarangayOptions]} placeholder={!grantorProfileForm.city ? "Select city first" : grantorProfileBarangayLoading ? "Loading barangays..." : "Select barangay"} buttonClassName="grantor-profile-select" />
+											)}
+											{grantorProfileBarangayError && !grantorProfileForm.barangay ? <small className="grantor-profile-help-text">{grantorProfileBarangayError}</small> : null}
+										</label>
 										<label><span>Office Street / Subdivision</span><input type="text" value={grantorProfileForm.street} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, street: event.target.value }))} placeholder="Office number, street, building, or subdivision" /></label>
 										<label><span>Postal Code</span><input type="text" value={grantorProfileForm.postalCode} onChange={(event) => setGrantorProfileForm((prev) => ({ ...prev, postalCode: event.target.value }))} placeholder="e.g. 3000" /></label>
 									</div>
@@ -4300,7 +4400,7 @@ export default function ProviderDashboard() {
 								>
 									{tab === "archived" ? (
 										<>
-											<HiOutlineRefresh /> {busy === "unarchive" ? "Unarchiving..." : "Unarchive"}
+										<HiOutlineRefresh /> {busy === "unarchive" ? "Sending..." : "Invite Back"}
 										</>
 									) : (
 										<>
@@ -4390,6 +4490,7 @@ export default function ProviderDashboard() {
 							<div className="grantor-application-tabs" aria-label="Application record tabs">
 								<button type="button" className={applicationArchiveTab === "active" ? "active" : ""} onClick={() => setApplicationArchiveTab("active")}>Active <span>{activeApplications.length}</span></button>
 								<button type="button" className={applicationArchiveTab === "rejected" ? "active" : ""} onClick={() => setApplicationArchiveTab("rejected")}>Rejected <span>{rejectedApplications.length}</span></button>
+								<button type="button" className={applicationArchiveTab === "archive" ? "active" : ""} onClick={() => setApplicationArchiveTab("archive")}>Archive <span>{archivedApplications.length}</span></button>
 							</div>
 						</div>
 						<div className="grantor-applications-filters">
@@ -4422,9 +4523,9 @@ export default function ProviderDashboard() {
 												<button
 													type="button"
 													className="grantor-application-view-btn"
-													onClick={() => openApplicationModal(row)}
+													onClick={() => row.closureReason ? setClosedApplication(row) : openApplicationModal(row)}
 												>
-													<HiOutlineEye /> Review
+													<HiOutlineEye /> {row.closureReason ? "View" : "Review"}
 												</button>
 											</td>
 										</tr>
@@ -4444,7 +4545,19 @@ export default function ProviderDashboard() {
 					<section className="grantor-announcements-panel">
 						<header className="grantor-announcements-head">
 							<div className="grantor-announcements-title"><span><HiOutlineBell /></span><div><h2>Announcements</h2><p>Publish scholarship notices and application updates for students.</p></div></div>
-							<button type="button" className="grantor-create-announcement-btn" onClick={() => setShowCreateAnnouncementModal(true)}><HiOutlineCloudUpload /> Create Announcement</button>
+							<button
+								type="button"
+								className="grantor-create-announcement-btn"
+								onClick={() => {
+									if (grantorAccountArchived) {
+										toast.error("This grantor account is archived and cannot publish announcements.")
+										return
+									}
+									setShowCreateAnnouncementModal(true)
+								}}
+								disabled={grantorAccountArchived}
+								title={grantorAccountArchived ? "Archived grantor accounts cannot create announcements." : "Create announcement"}
+							><HiOutlineCloudUpload /> Create Announcement</button>
 						</header>
 						{showAllAnnouncements ? (
 							<section className="grantor-announcement-history is-all-view">
@@ -4493,14 +4606,16 @@ export default function ProviderDashboard() {
 													setAnnouncementForm((prev) => ({
 														...prev,
 														applicationEnabled: !prev.applicationEnabled,
-														applicationWindow: prev.applicationEnabled ? "" : prev.applicationWindow,
+												applicationWindow: prev.applicationEnabled ? "" : prev.applicationWindow,
+												totalSlots: prev.applicationEnabled ? "" : prev.totalSlots,
 														minimumGrade: prev.applicationEnabled
 															? ""
 															: prev.minimumGrade || grantorProfileForm.minimumGwa || profile?.minimumGwa || profile?.minGwa || "",
 													}))
-													if (announcementForm.applicationEnabled) {
-														setAnnouncementWindowStart("")
-														setAnnouncementWindowEnd("")
+											if (announcementForm.applicationEnabled) {
+												setAnnouncementWindowStart("")
+												setAnnouncementWindowEnd("")
+												setAnnouncementSlotChoice("")
 													}
 												}}
 											>
@@ -4541,8 +4656,8 @@ export default function ProviderDashboard() {
 											{announcementForm.applicationEnabled ? (
 												<>
 											<label><span>Application Window</span><button type="button" className={`grantor-announcement-calendar-btn ${announcementWindowStart ? "has-value" : ""} ${announcementSubmitAttempted && announcementMissingFields.applicationWindow ? "is-missing" : ""}`.trim()} onClick={openAnnouncementWindowCalendar}><HiOutlineCalendar /> <span>{formatAnnouncementWindow(announcementWindowStart, announcementWindowEnd)}</span></button></label>
-													<label className="grantor-announcement-select-field">
-														<span><HiOutlineAcademicCap /> Minimum GWA</span>
+											<label className="grantor-announcement-select-field">
+												<span><HiOutlineAcademicCap /> Minimum GWA</span>
 														<CustomSelect
 															value={selectedAnnouncementGwaValue}
 															onChange={(nextValue) => {
@@ -4557,8 +4672,25 @@ export default function ProviderDashboard() {
 															buttonClassName={`grantor-announcement-custom-select ${announcementSubmitAttempted && announcementMissingFields.minimumGrade ? "is-missing" : ""}`}
 															menuClassName="grantor-announcement-custom-select-menu"
 														/>
-													</label>
-													{selectedAnnouncementGwaValue === ANNOUNCEMENT_CUSTOM_GWA_VALUE ? (
+											</label>
+											<label className="grantor-announcement-select-field">
+												<span><HiOutlineUsers /> Slots</span>
+												<CustomSelect
+													value={selectedAnnouncementSlotValue}
+													onChange={(nextValue) => {
+														setAnnouncementSlotChoice(nextValue)
+														setAnnouncementForm((prev) => ({
+															...prev,
+															totalSlots: nextValue === OTHER_SLOT_VALUE ? "" : nextValue,
+														}))
+													}}
+													options={SCHOLARSHIP_SLOT_OPTIONS}
+													placeholder="Select slots"
+													buttonClassName={`grantor-announcement-custom-select ${announcementSubmitAttempted && announcementMissingFields.totalSlots ? "is-missing" : ""}`}
+													menuClassName="grantor-announcement-custom-select-menu"
+												/>
+											</label>
+											{selectedAnnouncementGwaValue === ANNOUNCEMENT_CUSTOM_GWA_VALUE ? (
 														<label>
 															<span>Custom GWA</span>
 															<input type="number" min="1" max="3" step="0.01" className={announcementSubmitAttempted && announcementMissingFields.minimumGrade ? "is-missing" : ""} placeholder="Example: 1.99" value={announcementForm.minimumGrade} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, minimumGrade: event.target.value }))} />
@@ -4625,6 +4757,12 @@ export default function ProviderDashboard() {
 																{announcementApplicationProfileFile ? <span className="grantor-announcement-profile-file" title={announcementApplicationProfileFile.name}>{announcementApplicationProfileFile.name}<button type="button" onClick={() => setAnnouncementApplicationProfileFile(null)} aria-label="Remove custom grantor application form"><HiX /></button></span> : null}
 													</div>
 												</>
+											) : null}
+											{announcementSlotChoice === OTHER_SLOT_VALUE ? (
+												<label>
+													<span>Custom Slots</span>
+													<input type="number" min="1" max="1000" step="1" className={announcementSubmitAttempted && announcementMissingFields.totalSlots ? "is-missing" : ""} placeholder="Enter 1 to 1000" value={announcementForm.totalSlots} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, totalSlots: event.target.value }))} />
+												</label>
 											) : null}
 										</div>
 										<label className="grantor-announcement-message"><span>Message</span><textarea className={announcementSubmitAttempted && announcementMissingFields.description ? "is-missing" : ""} placeholder="Describe the scholarship opening, deadlines, requirements, and next steps." value={announcementForm.description} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, description: event.target.value }))} /></label>
@@ -4794,14 +4932,50 @@ export default function ProviderDashboard() {
 							</div>
 						) : null}
 						<p className="grantor-announcement-view-message">{selectedAnnouncement.description || selectedAnnouncement.content || "-"}</p>
+						{selectedAnnouncement.applicationEnabled === true ? (() => {
+							const slotState = getScholarshipSlotState(selectedAnnouncement)
+							return <div className={`scholarship-slot-summary ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}><HiOutlineUsers /><span><strong>{slotState.label}</strong>{slotState.configured ? <small>{slotState.totalSlots} total scholarship slots</small> : <small>Set capacity before accepting applications.</small>}</span></div>
+						})() : null}
 						<footer>
 							<span><HiOutlineCalendar /> {selectedAnnouncement.applicationWindow || "Window not specified"}</span>
 							{isAnnouncementArchived(selectedAnnouncement) ? (
 								<i className="grantor-announcement-archived-note">Archived</i>
 							) : (
-								<button type="button" onClick={() => handleArchiveAnnouncement(selectedAnnouncement.id)} disabled={busy === `archive-announcement-${selectedAnnouncement.id}`}><HiOutlineTrash /> Archive</button>
+								<div className="grantor-announcement-view-actions">
+									{selectedAnnouncement.applicationEnabled === true ? <button type="button" className="grantor-announcement-slots-btn" onClick={() => openSlotCapacityModal(selectedAnnouncement)}><HiOutlineUsers /> {selectedAnnouncement.slotsConfigured ? "Edit Slots" : "Set Slots"}</button> : null}
+									<button type="button" onClick={() => handleArchiveAnnouncement(selectedAnnouncement.id)} disabled={busy === `archive-announcement-${selectedAnnouncement.id}`}><HiOutlineTrash /> Archive</button>
+								</div>
 							)}
 						</footer>
+					</section>
+				</div>
+			) : null}
+			{slotCapacityAnnouncement ? (
+				<div className="admin-detail-backdrop" role="presentation" onClick={closeSlotCapacityModal}>
+					<section className="grantor-slot-modal" role="dialog" aria-modal="true" aria-label="Configure scholarship slots" onClick={(event) => event.stopPropagation()}>
+						<header>
+							<div><span>Scholarship Capacity</span><h3>{slotCapacityAnnouncement.title || "Scholarship"}</h3></div>
+							<button type="button" onClick={closeSlotCapacityModal} aria-label="Close slot settings"><HiX /></button>
+						</header>
+						<form onSubmit={handleSaveSlotCapacity}>
+							<label>
+								<span>Total Slots</span>
+								<CustomSelect
+									value={slotCapacityChoice}
+									onChange={(nextValue) => {
+										setSlotCapacityChoice(nextValue)
+										setSlotCapacityValue(nextValue === OTHER_SLOT_VALUE ? "" : nextValue)
+									}}
+									options={SCHOLARSHIP_SLOT_OPTIONS}
+									placeholder="Select slots"
+									buttonClassName="grantor-announcement-custom-select"
+									menuClassName="grantor-announcement-custom-select-menu"
+								/>
+							</label>
+							{slotCapacityChoice === OTHER_SLOT_VALUE ? <label><span>Custom Slots</span><input type="number" min="1" max="1000" step="1" value={slotCapacityValue} onChange={(event) => setSlotCapacityValue(event.target.value)} placeholder="Enter 1 to 1000" /></label> : null}
+							<p>Current applications continue occupying slots. Capacity cannot be reduced below that number.</p>
+							<footer><button type="button" onClick={closeSlotCapacityModal} disabled={busy === "slot-capacity"}>Cancel</button><button type="submit" disabled={busy === "slot-capacity"}><HiOutlineSave /> {busy === "slot-capacity" ? "Saving..." : "Save Slots"}</button></footer>
+						</form>
 					</section>
 				</div>
 			) : null}
@@ -4866,6 +5040,30 @@ export default function ProviderDashboard() {
 					</div>
 				</div>
 			) : null}
+			{closedApplication ? (
+				<div className="admin-detail-backdrop" role="presentation" onClick={() => setClosedApplication(null)}>
+					<div className="admin-detail-shell grantor-application-modal" role="dialog" aria-modal="true"
+						aria-label="Archived application" onClick={(event) => event.stopPropagation()}>
+						<button type="button" className="admin-detail-close" aria-label="Close" onClick={() => setClosedApplication(null)}><HiX /></button>
+						<h2>{closedApplication.scholarshipName}</h2>
+						<p>{closedApplication.closureReason === "student_withdrawal" ? "Student withdrew their application" : "Student selected another scholarship"}</p>
+						<dl className="scholarship-archive-details">
+							<div><dt>Student</dt><dd>{closedApplication.fullName}</dd></div>
+							<div><dt>Student Number</dt><dd>{closedApplication.studentNumber || closedApplication.studentId}</dd></div>
+							<div><dt>Application Number</dt><dd>{closedApplication.applicationNumber}</dd></div>
+							<div><dt>Applied On</dt><dd>{formatRelativeDate(closedApplication.appliedAt || closedApplication.createdAt)}</dd></div>
+							<div><dt>Closed On</dt><dd>{formatRelativeDate(closedApplication.closedAt)}</dd></div>
+							<div><dt>Status</dt><dd>Archived</dd></div>
+						</dl>
+						<div className="scholarship-archive-documents">
+							{Object.entries(closedApplication.documentUrls || {}).filter(([, url]) => typeof url === "string" && /^https?:\/\//i.test(url)).map(([label, url]) => (
+								<a key={label} href={url} target="_blank" rel="noreferrer"><HiOutlineDocumentText /> {label}</a>
+							))}
+						</div>
+					</div>
+				</div>
+			) : null}
+
 			{applicationModalState.open ? (
 				<div className="admin-detail-backdrop" role="presentation" onClick={closeApplicationModal}>
 					<div className="admin-detail-shell admin-detail-shell--student" onClick={(event) => event.stopPropagation()}>
@@ -4960,7 +5158,9 @@ export default function ProviderDashboard() {
 														{ ...(applicationModalState.student?.corFile || applicationModalState.student?.corDocument || {}), id: "cor", label: "COR", title: "Certificate of Registration" },
 														{ ...(applicationModalState.student?.rogFile || applicationModalState.student?.cogFile || applicationModalState.student?.rogDocument || applicationModalState.student?.cogDocument || {}), id: "cog", label: "ROG", title: "Report of Grades" },
 														{ ...(applicationModalState.student?.schoolIdFile || applicationModalState.student?.studentIdFile || applicationModalState.student?.validIdFile || {}), id: "schoolId", label: "School ID", title: "School ID" },
-																{ ...(applicationModalState.student?.scholarshipApplicationFile || applicationModalState.student?.applicationFormFile || {}), id: "applicationForm", label: "Student Application Profile", title: "Student Application Profile" },
+														{ ...(applicationModalState.application?.lifecycleVersion === 2
+															? applicationModalState.application.applicationFormFile || applicationModalState.scholarship?.applicationFormFile || {}
+															: applicationModalState.student?.scholarshipApplicationFile || applicationModalState.student?.applicationFormFile || {}), id: "applicationForm", label: "Student Application Profile", title: "Student Application Profile" },
 													].map((document) => {
 														const url = document.url || document.publicUrl || applicationModalState.documentUrls?.[document.id] || ""
 														const previewDocument = { ...document, url }
@@ -5242,24 +5442,36 @@ export default function ProviderDashboard() {
 							<label>
 								Scholarship
 								<CustomSelect
-									value={unarchiveScholarshipTitle}
-									onChange={setUnarchiveScholarshipTitle}
-									options={availableScholarshipOptions}
-									placeholder={availableScholarshipOptions.length > 0 ? "Select scholarship" : "No active scholarship announcements"}
-									disabled={availableScholarshipOptions.length === 0}
+									value={unarchiveAnnouncementId}
+									onChange={setUnarchiveAnnouncementId}
+									options={invitationAnnouncementOptions}
+									placeholder={invitationAnnouncementOptions.length > 0 ? "Select scholarship announcement" : "No eligible scholarship announcements"}
+									disabled={invitationAnnouncementOptions.length === 0}
 									buttonClassName="grantor-create-select"
 								/>
 							</label>
+							{selectedInvitationAnnouncement ? (
+								<div className="grantor-invitation-offering-summary">
+									<span><strong>{selectedInvitationAnnouncement.slotState.remainingSlots}</strong> slots remaining</span>
+									<span>{formatDateTime(selectedInvitationAnnouncement.announcement.startDate)} to {formatDateTime(selectedInvitationAnnouncement.announcement.endDate)}</span>
+								</div>
+							) : null}
+							<div className="grantor-invitation-records">
+								<table>
+									<thead><tr><th>Student Number</th><th>Student Name</th><th>Course</th><th>Year</th></tr></thead>
+									<tbody>{scholars.filter((row) => selectedScholarIds.includes(row.id)).map((row) => <tr key={row.id}><td>{getScholarStudentId(row) || "-"}</td><td>{row.fullName || "-"}</td><td>{row.course || "-"}</td><td>{row.yearLevel || "-"}</td></tr>)}</tbody>
+								</table>
+							</div>
 							<div className="grantor-archive-warning">
 								<HiOutlineExclamationCircle aria-hidden />
-								<span>Selected rows with another active scholarship are skipped to prevent multiple scholarships.</span>
+								<span>Eligibility, announcement availability, cooldown, duplicate applications, and slots are checked again when the student accepts.</span>
 							</div>
 						</div>
 						<footer className="grantor-reject-modal-actions">
 							<button type="button" className="grantor-reject-cancel-btn" onClick={closeUnarchiveModal} disabled={busy === "unarchive"}>
 								<HiX /> Cancel
 							</button>
-							<button type="button" className="grantor-reject-confirm-btn" onClick={handleUnarchive} disabled={busy === "unarchive" || availableScholarshipOptions.length === 0}>
+							<button type="button" className="grantor-reject-confirm-btn" onClick={handleUnarchive} disabled={busy === "unarchive" || invitationAnnouncementOptions.length === 0}>
 								<HiOutlineRefresh /> {busy === "unarchive" ? "Sending..." : "Send Invitation"}
 							</button>
 						</footer>
@@ -5475,9 +5687,9 @@ export default function ProviderDashboard() {
 											<label className="grantor-create-field"><span>First Name</span><input type="text" placeholder="First Name" value={createForm.fname} onChange={(event) => setCreateForm((prev) => ({ ...prev, fname: event.target.value }))} /></label>
 											<label className="grantor-create-field"><span>Middle Name</span><input type="text" placeholder="Middle Name" value={createForm.mname} onChange={(event) => setCreateForm((prev) => ({ ...prev, mname: event.target.value }))} /></label>
 											<label className="grantor-create-field"><span>Last Name</span><input type="text" placeholder="Last Name" value={createForm.lname} onChange={(event) => setCreateForm((prev) => ({ ...prev, lname: event.target.value }))} /></label>
-											<label className="grantor-create-field"><span>Province</span><CustomSelect value={createForm.province} onChange={(nextProvince) => setCreateForm((prev) => ({ ...prev, province: nextProvince, city: "", barangay: "" }))} options={PROVINCES} placeholder="Select province" buttonClassName="grantor-create-select" /></label>
-											<label className="grantor-create-field"><span>City / Municipality</span><CustomSelect value={createForm.city} onChange={(nextCity) => setCreateForm((prev) => ({ ...prev, city: nextCity, barangay: "" }))} options={createForm.province ? createCityOptions : []} placeholder={createForm.province ? "Select city or municipality" : "Select province first"} disabled={!createForm.province} buttonClassName="grantor-create-select" /></label>
-											<label className="grantor-create-field"><span>Barangay</span><CustomSelect value={createForm.barangay} onChange={(nextBarangay) => setCreateForm((prev) => ({ ...prev, barangay: nextBarangay }))} options={[...(createForm.barangay && !createBarangayOptions.includes(createForm.barangay) ? [createForm.barangay] : []), ...createBarangayOptions]} placeholder={!createForm.city ? "Select city first" : createBarangayLoading ? "Loading barangays..." : "Select barangay"} disabled={!createForm.city || createBarangayLoading || (createBarangayOptions.length === 0 && !createForm.barangay)} buttonClassName="grantor-create-select" />{createBarangayError && !createForm.barangay ? <small>{createBarangayError}</small> : null}</label>
+											<label className="grantor-create-field"><span>Province</span><CustomSelect value={createForm.provinceSelection} onChange={(nextProvince) => setCreateForm((prev) => ({ ...prev, provinceSelection: nextProvince, province: nextProvince === OTHER_PROVINCE_VALUE ? "" : nextProvince, city: "", barangay: "" }))} options={REGION_III_PROVINCE_OPTIONS} placeholder="Select province" buttonClassName="grantor-create-select" />{createForm.provinceSelection === OTHER_PROVINCE_VALUE ? <input type="text" placeholder="Enter province" value={createForm.province} onChange={(event) => setCreateForm((prev) => ({ ...prev, province: event.target.value }))} /> : null}</label>
+											<label className="grantor-create-field"><span>City / Municipality</span>{createForm.provinceSelection === OTHER_PROVINCE_VALUE ? <input type="text" placeholder="Enter city or municipality" value={createForm.city} onChange={(event) => setCreateForm((prev) => ({ ...prev, city: event.target.value }))} /> : <CustomSelect value={createForm.city} onChange={(nextCity) => setCreateForm((prev) => ({ ...prev, city: nextCity, barangay: "" }))} options={createForm.province ? createCityOptions : []} placeholder={createForm.province ? "Select city or municipality" : "Select province first"} disabled={!createForm.province} buttonClassName="grantor-create-select" />}</label>
+											<label className="grantor-create-field"><span>Barangay</span>{createForm.provinceSelection === OTHER_PROVINCE_VALUE ? <input type="text" placeholder="Enter barangay" value={createForm.barangay} onChange={(event) => setCreateForm((prev) => ({ ...prev, barangay: event.target.value }))} /> : <CustomSelect value={createForm.barangay} onChange={(nextBarangay) => setCreateForm((prev) => ({ ...prev, barangay: nextBarangay }))} options={[...(createForm.barangay && !createBarangayOptions.includes(createForm.barangay) ? [createForm.barangay] : []), ...createBarangayOptions]} placeholder={!createForm.city ? "Select city first" : createBarangayLoading ? "Loading barangays..." : "Select barangay"} disabled={!createForm.city || createBarangayLoading || (createBarangayOptions.length === 0 && !createForm.barangay)} buttonClassName="grantor-create-select" />}{createBarangayError && !createForm.barangay ? <small>{createBarangayError}</small> : null}</label>
 											<label className="grantor-create-field"><span>Street / Subdivision</span><input type="text" placeholder="Street or subdivision" value={createForm.street} onChange={(event) => setCreateForm((prev) => ({ ...prev, street: event.target.value }))} /></label>
 											<label className="grantor-create-field"><span>Postal Code</span><input type="text" placeholder="Postal Code" value={createForm.postalCode} onChange={(event) => setCreateForm((prev) => ({ ...prev, postalCode: event.target.value }))} /></label>
 											<label className="grantor-create-field"><span>Course</span><CustomSelect value={createForm.course} onChange={(nextCourse) => setCreateForm((prev) => ({ ...prev, course: nextCourse }))} options={COURSE_OPTIONS} placeholder="Select course" buttonClassName="grantor-create-select" /></label>
@@ -5545,9 +5757,9 @@ export default function ProviderDashboard() {
 								<section className="grantor-edit-form-section">
 									<div className="grantor-edit-section-head"><h4><HiOutlineLocationMarker /> Address</h4><span>Current residential information</span></div>
 									<div className="grantor-form-grid grantor-form-grid--edit">
-										<label><span>Province</span><select value={editForm.province} disabled={editScholarAccountExists} onChange={(event) => setEditForm((prev) => ({ ...prev, province: event.target.value, city: "" }))}><option value="">Select province</option>{editForm.province && !PROVINCES.includes(editForm.province) ? <option value={editForm.province}>{editForm.province}</option> : null}{PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}</select></label>
-										<label><span>City / Municipality</span><select value={editForm.city} disabled={editScholarAccountExists || !editForm.province} onChange={(event) => setEditForm((prev) => ({ ...prev, city: event.target.value }))}><option value="">Select city or municipality</option>{editForm.city && !editCityOptions.includes(editForm.city) ? <option value={editForm.city}>{editForm.city}</option> : null}{editCityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</select></label>
-										<label><span>Barangay</span><input type="text" placeholder="Barangay" value={editForm.barangay} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, barangay: event.target.value })) }} /></label>
+										<label><span>Province</span><CustomSelect value={editForm.provinceSelection} disabled={editScholarAccountExists} onChange={(nextProvince) => setEditForm((prev) => ({ ...prev, provinceSelection: nextProvince, province: nextProvince === OTHER_PROVINCE_VALUE ? "" : nextProvince, city: "", barangay: "" }))} options={REGION_III_PROVINCE_OPTIONS} placeholder="Select province" buttonClassName="grantor-edit-select" />{editForm.provinceSelection === OTHER_PROVINCE_VALUE ? <input type="text" placeholder="Enter province" value={editForm.province} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, province: event.target.value })) }} /> : null}</label>
+										<label><span>City / Municipality</span>{editForm.provinceSelection === OTHER_PROVINCE_VALUE ? <input type="text" placeholder="Enter city or municipality" value={editForm.city} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, city: event.target.value })) }} /> : <CustomSelect value={editForm.city} disabled={editScholarAccountExists || !editForm.province} onChange={(nextCity) => setEditForm((prev) => ({ ...prev, city: nextCity, barangay: "" }))} options={[...(editForm.city && !editCityOptions.includes(editForm.city) ? [editForm.city] : []), ...editCityOptions]} placeholder={editForm.province ? "Select city or municipality" : "Select province first"} buttonClassName="grantor-edit-select" />}</label>
+										<label><span>Barangay</span>{editForm.provinceSelection === OTHER_PROVINCE_VALUE ? <input type="text" placeholder="Enter barangay" value={editForm.barangay} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, barangay: event.target.value })) }} /> : <CustomSelect value={editForm.barangay} disabled={editScholarAccountExists || !editForm.city || editBarangayLoading || (editBarangayOptions.length === 0 && !editForm.barangay)} onChange={(nextBarangay) => setEditForm((prev) => ({ ...prev, barangay: nextBarangay }))} options={[...(editForm.barangay && !editBarangayOptions.includes(editForm.barangay) ? [editForm.barangay] : []), ...editBarangayOptions]} placeholder={!editForm.city ? "Select city first" : editBarangayLoading ? "Loading barangays..." : "Select barangay"} buttonClassName="grantor-edit-select" />}{editBarangayError && !editForm.barangay ? <small className="grantor-edit-field-note">{editBarangayError}</small> : null}</label>
 										<label><span>Street / Subdivision</span><input type="text" placeholder="House number, street, or subdivision" value={editForm.street} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, street: event.target.value })) }} /></label>
 										<label><span>Postal Code</span><input type="text" placeholder="e.g. 3000" value={editForm.postalCode} readOnly={editScholarAccountExists} onChange={(event) => { if (!editScholarAccountExists) setEditForm((prev) => ({ ...prev, postalCode: event.target.value })) }} /></label>
 									</div>

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { SCHOLARSHIP_CHOICE_ENABLED } from "../services/scholarshipChoiceService"
+import { getAnnouncementApplyAvailability } from "../services/announcementApplyEligibilityService"
 import { useNavigate, useParams } from "react-router-dom"
 import {
 	HiOutlineAcademicCap,
@@ -50,9 +52,9 @@ import {
 import { applyScholarshipWorkflow } from "../services/workflowService"
 import {
 	formatCooldownDuration,
-	getLatestRejectedScholarship,
-	getRejectionCooldown,
 } from "../services/rejectionCooldownService"
+import { getScholarshipSlotState } from "../services/scholarshipSlotService"
+import { findMatchingPendingInvitation, getGrantorRejectionCooldown, markInvitationAccepted } from "../services/grantorReapplicationService"
 
 function buildAnnouncementImageList(item = {}) {
 	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
@@ -293,6 +295,7 @@ export default function StudentAnnouncementDetailPage() {
 	const imageUrls = buildAnnouncementImageList(announcement)
 	const isPreviousAnnouncement = announcement ? isPreviousStudentAnnouncement(announcement) : false
 	const isAnnouncementApplication = announcement?.applicationEnabled === true
+	const slotState = getScholarshipSlotState(announcement || {})
 	const grantorProfile =
 		announcement?.source === "grantor" && announcement?.grantorId
 			? grantorProfiles[announcement.grantorId] || {}
@@ -346,18 +349,27 @@ export default function StudentAnnouncementDetailPage() {
 				.filter(Boolean)
 				.join(" "),
 		)
-	const posterProfile =
+	const posterProfile = useMemo(() =>
 		announcement?.source === "grantor" && announcement?.grantorId
 			? grantorProfiles[announcement.grantorId] || {}
-			: {}
+			: {}, [announcement?.source, announcement?.grantorId, grantorProfiles])
 	const isPosterApplicationsClosed = posterProfile?.applicationsBlocked === true
 	const applyAvailability = useMemo(() => {
+		if (SCHOLARSHIP_CHOICE_ENABLED) return getAnnouncementApplyAvailability({
+			announcement, user, studentAccessState, posterProfile, isPreviousAnnouncement, grantorDisplayName,
+		})
 		if (!announcement || !user) return { canApply: false, reason: "" }
 		if (isPreviousAnnouncement) {
 			return { canApply: false, reason: "This announcement is already archived or past its application window." }
 		}
 		if (!isAnnouncementApplication) {
 			return { canApply: false, reason: "This announcement is for information only and is not open for applications." }
+		}
+		if (slotState.managed && !slotState.configured) {
+			return { canApply: false, reason: "This scholarship is not accepting applications until the grantor configures its slots." }
+		}
+		if (slotState.full) {
+			return { canApply: false, reason: "This scholarship has no remaining slots." }
 		}
 
 		const scholarships = normalizeScholarshipList(user?.scholarships || [])
@@ -370,8 +382,7 @@ export default function StudentAnnouncementDetailPage() {
 		const hasActiveOrPendingScholarship = scholarships.some(
 			(item) => !item.isLocked && isScholarshipActiveOrPending(item.status),
 		)
-		const latestRejected = getLatestRejectedScholarship(scholarships)
-		const latestRejectedCooldown = latestRejected ? getRejectionCooldown(latestRejected) : null
+		const latestRejectedCooldown = getGrantorRejectionCooldown(user, announcement)
 
 		if (studentAccessState.isScholarshipActionBlocked) {
 			return { canApply: false, reason: getScholarshipActionBlockMessage(user || {}) }
@@ -388,10 +399,10 @@ export default function StudentAnnouncementDetailPage() {
 		if (hasLockedScholarship) {
 			return { canApply: false, reason: "Your scholarship selection is already locked for this semester." }
 		}
-		if (hasSameActiveApplication) {
+		if (!SCHOLARSHIP_CHOICE_ENABLED && hasSameActiveApplication) {
 			return { canApply: false, reason: "You already have an active application for this scholarship." }
 		}
-		if (hasActiveOrPendingScholarship) {
+		if (!SCHOLARSHIP_CHOICE_ENABLED && hasActiveOrPendingScholarship) {
 			return { canApply: false, reason: "You already have an existing scholarship application. You cannot apply for another until the current one is resolved." }
 		}
 		if (announcementMinimumGrade !== null) {
@@ -421,7 +432,11 @@ export default function StudentAnnouncementDetailPage() {
 		isAnnouncementApplication,
 		isPosterApplicationsClosed,
 		isPreviousAnnouncement,
-		studentAccessState.isScholarshipActionBlocked,
+		posterProfile,
+		studentAccessState,
+		slotState.configured,
+		slotState.full,
+		slotState.managed,
 		user,
 	])
 
@@ -507,12 +522,12 @@ export default function StudentAnnouncementDetailPage() {
 			toast.info("Your scholarship selection is already locked for this semester.")
 			return
 		}
-		if (hasSameActiveApplication) {
+		if (!SCHOLARSHIP_CHOICE_ENABLED && hasSameActiveApplication) {
 			toast.info("You already have an active application for this scholarship.")
 			navigate("/student-dashboard/scholarships")
 			return
 		}
-		if (hasActiveOrPendingScholarship) {
+		if (!SCHOLARSHIP_CHOICE_ENABLED && hasActiveOrPendingScholarship) {
 			toast.info("You already have an existing scholarship application. You cannot apply for another until the current one is resolved.")
 			return
 		}
@@ -542,6 +557,7 @@ export default function StudentAnnouncementDetailPage() {
 				announcementId: announcement.id,
 				announcementSource: announcement.source || source || "admin",
 				grantorId: announcement.grantorId || "",
+				grantorName: announcement.grantorName || announcement.sourceLabel || "",
 				minimumGrade: announcementMinimumGrade,
 				requiredDocuments: announcement.requiredDocuments || {},
 				otherRequirements: announcement.otherRequirements || [],
@@ -567,6 +583,7 @@ export default function StudentAnnouncementDetailPage() {
 				providerType: nextRecord.providerType,
 				providerLabel: nextRecord.provider || nextRecord.name,
 				grantorId: announcement.grantorId || "",
+				grantorName: announcement.grantorName || announcement.sourceLabel || "",
 				announcementId: announcement.id,
 				announcementSource: announcement.source || source || "admin",
 				minimumGrade: announcementMinimumGrade,
@@ -582,10 +599,16 @@ export default function StudentAnnouncementDetailPage() {
 				documentUrls: nextRecord.documentUrls,
 				academicYear: getCurrentAcademicYear(),
 			}
-			await applyScholarshipWorkflow({
+			const matchingInvitation = findMatchingPendingInvitation(user, announcement)
+			const nextInvitations = matchingInvitation
+				? markInvitationAccepted(user.scholarshipInvitations || [], matchingInvitation.id)
+				: user.scholarshipInvitations
+			const result = await applyScholarshipWorkflow({
 				studentId,
+				invitationId: matchingInvitation?.id || "",
 				studentUpdate: {
 					scholarships: nextScholarships,
+					...(matchingInvitation ? { scholarshipInvitations: nextInvitations } : {}),
 					updatedAt: serverTimestamp(),
 				},
 				application: applicationPayload,
@@ -626,14 +649,20 @@ export default function StudentAnnouncementDetailPage() {
 				},
 			})
 
-			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
+			setUser((prev) => ({
+				...(prev || {}),
+				...(result.student || {}),
+				scholarships: result.student?.scholarships || nextScholarships,
+				...(matchingInvitation ? { scholarshipInvitations: result.student?.scholarshipInvitations || nextInvitations } : {}),
+			}))
 			toast.success(`${scholarshipName} application recorded. Upload the required documents next to continue.`)
 			navigate("/student-dashboard/scholarships")
 		} catch (error) {
 			console.error("Failed to apply from announcement:", error)
+			const errorMessage = String(error?.message || "")
 			toast.error(
-				String(error?.message || "").toLowerCase().includes("grantor is archived")
-					? error.message
+				/archived|remaining slots|configures its slots|no longer open/i.test(errorMessage)
+					? errorMessage
 					: "Failed to apply scholarship. Please try again.",
 			)
 		} finally {
@@ -793,7 +822,7 @@ export default function StudentAnnouncementDetailPage() {
 											<strong>{formatAnnouncementDateRange(announcement)}</strong>
 										</div>
 									</section>
-									{isAnnouncementApplication && announcementMinimumGrade !== null ? (
+								{isAnnouncementApplication && announcementMinimumGrade !== null ? (
 										<section className="student-announcement-detail-summary-card">
 											<HiOutlineAcademicCap aria-hidden />
 											<div>
@@ -801,7 +830,13 @@ export default function StudentAnnouncementDetailPage() {
 												<strong>{announcementMinimumGrade}</strong>
 											</div>
 										</section>
-									) : null}
+								) : null}
+								{isAnnouncementApplication && slotState.managed ? (
+									<section className={`student-announcement-detail-summary-card student-slot-summary-card ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}>
+										<HiOutlineAcademicCap aria-hidden />
+										<div><span>Availability</span><strong>{slotState.label}</strong></div>
+									</section>
+								) : null}
 									{isAnnouncementApplication && requiredDocumentLabels.length > 0 ? (
 										<section className="student-announcement-detail-summary-card student-announcement-detail-summary-card--wrapping">
 											<HiOutlineDocumentText aria-hidden />

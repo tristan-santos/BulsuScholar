@@ -71,14 +71,21 @@ import {
 	GRANTOR_PORTAL_COLLECTION,
 	normalizeGrantorPortalSettings,
 } from "../services/grantorService"
-import { applyScholarshipWorkflow, materialRequestWorkflow } from "../services/workflowService"
+import { applyScholarshipWorkflow, materialRequestWorkflow, chooseScholarshipWorkflow, rejectScholarshipInvitationWorkflow, withdrawScholarshipWorkflow, updateScholarshipDocumentsWorkflow } from "../services/workflowService"
+import { SCHOLARSHIP_CHOICE_ENABLED, getGrantorApplicationBlock, hasScholarshipCommitment, isClosedApplication } from "../services/scholarshipChoiceService"
 import { syncStudentGrantorRosterMatches } from "../services/studentGrantorMatchService"
 import {
 	buildRecommendationApplyPayload,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
-import { createStudentNotification } from "../services/notificationService"
 import { uploadToStorage } from "../services/storageService"
+import {
+	findMatchingPendingInvitation,
+	getGrantorRejectionCooldown,
+	isManualGrantorArchive,
+	isManualArchiveForGrantor,
+	markInvitationAccepted,
+} from "../services/grantorReapplicationService"
 import {
 	getOtherRequirementUploadEntry,
 	normalizeOtherRequirements,
@@ -130,6 +137,7 @@ function isScholarshipActiveOrPending(status = "") {
 		"resolved",
 		"completed",
 		"expired",
+		"archived",
 	].some((keyword) => normalized.includes(keyword))
 }
 
@@ -270,32 +278,7 @@ function matchesScholarshipTarget(rejectedEntry = {}, target = {}) {
 }
 
 function matchesArchivedGrantorTarget(entry = {}, target = {}) {
-	const status = String(entry?.status || "").toLowerCase()
-	const isArchived =
-		entry?.archived === true ||
-		entry?.frozen === true ||
-		status.includes("archived") ||
-		status.includes("frozen") ||
-		status.includes("previous")
-	if (!isArchived) return false
-	const entryKeys = [
-		entry?.blockedGrantorId,
-		entry?.archivedBy,
-		entry?.grantorId,
-		entry?.providerId,
-		entry?.providerType,
-	]
-		.filter(Boolean)
-		.map((value) => String(value).trim().toLowerCase())
-	const targetKeys = [
-		target?.grantorId,
-		target?.providerId,
-		target?.providerType,
-		target?.id,
-	]
-		.filter(Boolean)
-		.map((value) => String(value).trim().toLowerCase())
-	return entryKeys.length > 0 && targetKeys.length > 0 && entryKeys.some((key) => targetKeys.includes(key))
+	return isManualArchiveForGrantor(entry, target)
 }
 
 function formatApplicationStatus(status = "") {
@@ -479,8 +462,11 @@ export default function StudentScholarshipsPage() {
 	const availableProgramsRef = useRef(null)
 	const rosterSyncRef = useRef("")
 	const recommendationRequestKeyRef = useRef("")
+	const invitationRouteActionRef = useRef("")
+	const acceptInvitationRef = useRef(null)
 
 	const scholarshipCatalog = useMemo(() => getScholarshipCatalog(), [])
+	const [withdrawTarget, setWithdrawTarget] = useState(null)
 	const scholarships = useMemo(
 		() => normalizeScholarshipList(user?.scholarships || []),
 		[user?.scholarships],
@@ -489,13 +475,14 @@ export default function StudentScholarshipsPage() {
 		() => scholarships.filter((item) => !isScholarshipRejected(item)),
 		[scholarships],
 	)
-	const hasMultipleScholarshipChoices = scholarshipChoices.length >= 2
+	const hasMultipleScholarshipChoices = !SCHOLARSHIP_CHOICE_ENABLED && scholarshipChoices.length >= 2
 	const hasLockedScholarship = scholarships.some((item) => item.isLocked && !isScholarshipRejected(item))
 	const lockedScholarship = scholarships.find((item) => item.isLocked && !isScholarshipRejected(item)) || null
 	const activeOrPendingScholarships = scholarships.filter((item) =>
 		!item.isLocked && !isScholarshipRejected(item) && isScholarshipActiveOrPending(item.status),
 	)
-	const hasActiveOrPendingScholarship = activeOrPendingScholarships.length > 0
+	const hasActiveOrPendingScholarship = SCHOLARSHIP_CHOICE_ENABLED
+		? hasScholarshipCommitment(user || {}) : activeOrPendingScholarships.length > 0
 	const activeOrPendingProviderTypes = useMemo(
 		() => new Set(activeOrPendingScholarships.map((item) => item.providerType)),
 		[activeOrPendingScholarships],
@@ -516,11 +503,12 @@ export default function StudentScholarshipsPage() {
 	}, [scholarships, studentApplications])
 	const latestRejectedApplication = rejectedApplications[0] || null
 	const latestRejectedCooldown = useMemo(
-		() => getRejectionCooldown(latestRejectedApplication || {}),
+		() => SCHOLARSHIP_CHOICE_ENABLED ? { active: false, remainingMs: 0 } : getRejectionCooldown(latestRejectedApplication || {}),
 		[latestRejectedApplication],
 	)
 	useEffect(() => {
 		if (!user || !userId || scholarships.length === 0) return
+		if (SCHOLARSHIP_CHOICE_ENABLED) return
 		const expiredRejected = scholarships.filter((entry) => isScholarshipRejected(entry) && !getRejectionCooldown(entry).active)
 		if (expiredRejected.length === 0) return
 
@@ -592,11 +580,11 @@ export default function StudentScholarshipsPage() {
 	}, [scholarships, user, userId])
 	const getRejectedCooldownForTarget = useCallback(
 		(target = {}) => {
-			const rejected = rejectedApplications.find((item) => matchesScholarshipTarget(item, target))
-			if (!rejected) return null
+			const cooldown = getGrantorRejectionCooldown({ scholarships: rejectedApplications }, target)
+			if (!cooldown) return null
 			return {
-				record: rejected,
-				cooldown: getRejectionCooldown(rejected),
+				record: cooldown.record,
+				cooldown,
 			}
 		},
 		[rejectedApplications],
@@ -605,10 +593,7 @@ export default function StudentScholarshipsPage() {
 		return [
 			...(Array.isArray(user?.scholarships) ? user.scholarships : []),
 			...(Array.isArray(user?.previousScholars) ? user.previousScholars : []),
-		].filter((entry) => {
-			const status = String(entry?.status || "").toLowerCase()
-			return entry?.archived === true || entry?.frozen === true || status.includes("archived") || status.includes("frozen") || status.includes("previous")
-		})
+		].filter(isManualGrantorArchive)
 	}, [user?.previousScholars, user?.scholarships])
 	const getArchivedGrantorBlockForTarget = useCallback(
 		(target = {}) => archivedGrantorBlocks.find((entry) => matchesArchivedGrantorTarget(entry, target)) || null,
@@ -616,7 +601,7 @@ export default function StudentScholarshipsPage() {
 	)
 	const pendingScholarshipInvitations = useMemo(
 		() => (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : [])
-			.filter((item) => item?.type === "grantor_unarchive_invitation" && String(item.status || "").toLowerCase() === "pending"),
+			.filter((item) => item?.type === "grantor_unarchive_invitation" && ["pending", "invited"].includes(String(item.status || "pending").toLowerCase())),
 		[user?.scholarshipInvitations],
 	)
 	const adminScholarshipRecommendations = useMemo(
@@ -626,10 +611,10 @@ export default function StudentScholarshipsPage() {
 		[studentScholarshipNotices],
 	)
 	const hasMultipleScholarshipConflict =
-		user?.scholarshipConflictWarning === true ||
-		(user?.scholarshipRestrictionReason === "multiple_scholarships" && scholarships.length > 1)
+		SCHOLARSHIP_CHOICE_ENABLED ? getStudentAccessState(user || {}).multipleScholarshipConflict :
+		user?.scholarshipConflictWarning === true || (user?.scholarshipRestrictionReason === "multiple_scholarships" && scholarships.length > 1)
 	const warningRecommendationBlock = useMemo(
-		() => studentWarningNotices.some(isMultipleScholarshipWarning) || hasMultipleScholarshipConflict,
+		() => (!SCHOLARSHIP_CHOICE_ENABLED && studentWarningNotices.some(isMultipleScholarshipWarning)) || hasMultipleScholarshipConflict,
 		[hasMultipleScholarshipConflict, studentWarningNotices],
 	)
 	const matchedGrantorScope = useMemo(() => {
@@ -842,7 +827,7 @@ export default function StudentScholarshipsPage() {
 
 	useEffect(() => {
 		if (!userLoaded || !user || !userId) return
-		if (hasActiveOrPendingScholarship || latestRejectedCooldown?.active || warningRecommendationBlock) {
+		if (hasActiveOrPendingScholarship || warningRecommendationBlock) {
 			recommendationRequestKeyRef.current = ""
 			setRecommendedScholarships([])
 			setRecommendationAlgorithm("")
@@ -886,7 +871,7 @@ export default function StudentScholarshipsPage() {
 			.finally(() => {
 				if (recommendationRequestKeyRef.current === recommendationRequestKey) setRecommendationsLoading(false)
 			})
-	}, [archivedGrantorIds, hasActiveOrPendingScholarship, latestRejectedCooldown?.active, user, userId, userLoaded, warningRecommendationBlock])
+	}, [archivedGrantorIds, hasActiveOrPendingScholarship, user, userId, userLoaded, warningRecommendationBlock])
 
 	useEffect(() => {
 		if (location.state?.fromAnnouncement !== true) return
@@ -998,6 +983,7 @@ export default function StudentScholarshipsPage() {
 
 	const syncWarnings = useCallback(
 		async (scholarshipList) => {
+			if (SCHOLARSHIP_CHOICE_ENABLED) return
 			if (!userId || !user) return
 
 			const warningsRef = collection(db, "studentWarning")
@@ -1256,16 +1242,6 @@ export default function StudentScholarshipsPage() {
 		)
 	}, [lockedScholarship, scholarships])
 
-	const kwspCatalogItem = useMemo(() => {
-		const trackedProviderType = kwspEntry?.providerType || "kuya_win"
-		return scholarshipCatalog.find((item) => item.providerType === trackedProviderType) || null
-	}, [scholarshipCatalog, kwspEntry])
-
-	const kwspDocumentCheck = useMemo(
-		() => validateScholarshipDocuments(user || {}, kwspCatalogItem?.name || "Kuya Win Scholarship Program"),
-		[kwspCatalogItem, user],
-	)
-
 	const getTrackingProgressForScholarship = useCallback(
 		(entry = null) => {
 			if (!entry) {
@@ -1290,7 +1266,9 @@ export default function StudentScholarshipsPage() {
 		[getLatestMaterialRequest, getLatestSoeDownloadForScholarship, isValidated, user],
 	)
 
-	const kwspTracking = useMemo(() => {
+	const buildTrackingSummary = useCallback((kwspEntry) => {
+		const kwspCatalogItem = scholarshipCatalog.find((item) => item.providerType === kwspEntry?.providerType) || null
+		const kwspDocumentCheck = validateScholarshipDocuments(user || {}, kwspEntry?.name || "Scholarship")
 		const trackedScholarshipLabel = getScholarshipGrantorDisplayLabel(
 			kwspEntry || {},
 			kwspCatalogItem || {},
@@ -1469,19 +1447,30 @@ export default function StudentScholarshipsPage() {
 		hasActiveOrPendingScholarship,
 		hasScholarshipActionBlock,
 		grantorDisplayLabels,
-		kwspCatalogItem,
-		kwspDocumentCheck,
-		kwspEntry,
+		scholarshipCatalog,
+		user,
 		portalAccessBlockMessage,
 		scholarshipActionBlockMessage,
 		studentAccessState.isPortalAccessBlocked,
 		getTrackingProgressForScholarship,
 	])
+	const kwspTracking = buildTrackingSummary(kwspEntry)
 	const shouldShowScholarshipWorkspace =
 		!kwspEntry ||
 		hasMultipleScholarshipChoices
 
 	const persistScholarships = async (nextScholarships, message = "") => {
+		if (SCHOLARSHIP_CHOICE_ENABLED) {
+			for (const entry of nextScholarships) {
+				const current = scholarships.find((item) => item.id === entry.id)
+				if (JSON.stringify(entry.otherRequirementUploads) === JSON.stringify(current?.otherRequirementUploads)) continue
+				const result = await updateScholarshipDocumentsWorkflow({ studentId: userId, applicationId: entry.applicationId,
+					actorType: "student", actorId: userId, field: "otherRequirementUploads", value: entry.otherRequirementUploads })
+				setUser((prev) => ({ ...(prev || {}), ...result.student }))
+			}
+			if (message) toast.success(message)
+			return
+		}
 		await materialRequestWorkflow({
 			updates: [
 				{
@@ -1666,17 +1655,13 @@ export default function StudentScholarshipsPage() {
 
 	const applyRecommendedScholarship = async (recommendation) => {
 		if (!user || !userId || isMutating || applyingRecommendationId) return
+		const applicationBlock = SCHOLARSHIP_CHOICE_ENABLED && getGrantorApplicationBlock(user, recommendation)
+		if (applicationBlock) return toast.info(applicationBlock)
 		if (archivedGrantorIds.has(String(recommendation.grantorId || recommendation.providerId || ""))) {
 			toast.error("This grantor is archived and is not accepting scholarship applications.")
 			return
 		}
 		if (isScholarshipActionBlocked()) return
-		if (latestRejectedCooldown?.active) {
-			toast.info(
-				`You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}. Your previous application was rejected and is still under the 24-hour cooldown.`,
-			)
-			return
-		}
 		if (hasLockedScholarship || hasActiveOrPendingScholarship) {
 			toast.info(applicationLockTooltip)
 			return
@@ -1690,7 +1675,8 @@ export default function StudentScholarshipsPage() {
 			)
 			return
 		}
-		const archivedBlock = getArchivedGrantorBlockForTarget(recommendation)
+		const matchingInvitation = findMatchingPendingInvitation(user, recommendation)
+		const archivedBlock = matchingInvitation ? null : getArchivedGrantorBlockForTarget(recommendation)
 		if (archivedBlock) {
 			toast.info(`You cannot apply to ${recommendation.grantorName || "this grantor"} again unless they invite you back.`)
 			return
@@ -1707,13 +1693,26 @@ export default function StudentScholarshipsPage() {
 				userId,
 				recommendation,
 			)
-			await applyScholarshipWorkflow(workflowPayload)
+			const nextInvitations = matchingInvitation
+				? markInvitationAccepted(user.scholarshipInvitations || [], matchingInvitation.id)
+				: user.scholarshipInvitations
+			const nextPayload = {
+				...workflowPayload,
+				invitationId: matchingInvitation?.id || "",
+				studentUpdate: {
+					...workflowPayload.studentUpdate,
+					...(matchingInvitation ? { scholarshipInvitations: nextInvitations } : {}),
+				},
+			}
+			const result = await applyScholarshipWorkflow(nextPayload)
 			setUser((prev) => ({
 				...(prev || {}),
-				scholarships: workflowPayload.studentUpdate.scholarships,
+				...(result.student || {}),
+				scholarships: result.student?.scholarships || nextPayload.studentUpdate.scholarships,
+				...(matchingInvitation ? { scholarshipInvitations: result.student?.scholarshipInvitations || nextInvitations } : {}),
 				updatedAt: serverTimestamp(),
 			}))
-			await syncWarnings(workflowPayload.studentUpdate.scholarships)
+			await syncWarnings(nextPayload.studentUpdate.scholarships)
 			toast.success(`Application sent to ${recommendation.grantorName || "the grantor"}. Upload the required documents next to continue.`)
 		} catch (error) {
 			console.error("Failed to apply recommended scholarship:", error)
@@ -1731,12 +1730,6 @@ export default function StudentScholarshipsPage() {
 	const _applyScholarship = async (catalogItem) => {
 		if (!user || !userId || isMutating) return
 		if (isScholarshipActionBlocked()) return
-		if (latestRejectedCooldown?.active) {
-			toast.info(
-				`You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}. Your previous application was rejected and is still under the 24-hour cooldown.`,
-			)
-			return
-		}
 		const rejectedMatch = getRejectedCooldownForTarget(catalogItem)
 		if (rejectedMatch?.cooldown?.active) {
 			toast.info(
@@ -1744,7 +1737,8 @@ export default function StudentScholarshipsPage() {
 			)
 			return
 		}
-		const archivedBlock = getArchivedGrantorBlockForTarget(catalogItem)
+		const matchingInvitation = findMatchingPendingInvitation(user, catalogItem)
+		const archivedBlock = matchingInvitation ? null : getArchivedGrantorBlockForTarget(catalogItem)
 		if (archivedBlock) {
 			toast.info(`You cannot apply to ${catalogItem.name || "this grantor"} again unless they invite you back.`)
 			return
@@ -1792,10 +1786,15 @@ export default function StudentScholarshipsPage() {
 			)
 			const nextScholarships = [...reapplyScholarships, nextRecord]
 
+			const nextInvitations = matchingInvitation
+				? markInvitationAccepted(user.scholarshipInvitations || [], matchingInvitation.id)
+				: user.scholarshipInvitations
 			await applyScholarshipWorkflow({
 				studentId: userId,
+				invitationId: matchingInvitation?.id || "",
 				studentUpdate: {
 					scholarships: nextScholarships,
+					...(matchingInvitation ? { scholarshipInvitations: nextInvitations } : {}),
 					updatedAt: serverTimestamp(),
 				},
 				application: {
@@ -1822,7 +1821,11 @@ export default function StudentScholarshipsPage() {
 				academicYear: getCurrentAcademicYear(),
 				},
 			})
-			setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
+			setUser((prev) => ({
+				...(prev || {}),
+				scholarships: nextScholarships,
+				...(matchingInvitation ? { scholarshipInvitations: nextInvitations } : {}),
+			}))
 			await syncWarnings(nextScholarships)
 			toast.success(`${catalogItem.name} application recorded. Upload the required documents next to continue.`)
 		} catch (error) {
@@ -1836,9 +1839,10 @@ export default function StudentScholarshipsPage() {
 	const acceptScholarshipInvitation = async (invitation = {}) => {
 		if (!user || !userId || isMutating || !invitation?.id) return
 		if (isScholarshipActionBlocked()) return
-		if (latestRejectedCooldown?.active) {
+		const invitationCooldown = getGrantorRejectionCooldown(user, invitation)
+		if (invitationCooldown?.active) {
 			toast.info(
-				`You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}. Your previous application was rejected and is still under the 24-hour cooldown.`,
+				`You can apply again after ${formatCooldownDuration(invitationCooldown.remainingMs)}. Your previous application from this grantor is still under the 24-hour cooldown.`,
 			)
 			return
 		}
@@ -1849,6 +1853,7 @@ export default function StudentScholarshipsPage() {
 
 		const invitationTarget = {
 			id: invitation.id,
+			announcementId: invitation.announcementId || "",
 			grantorId: invitation.grantorId || "",
 			grantorName: invitation.grantorName || "Grantor",
 			providerLabel: invitation.scholarshipName || invitation.grantorName || "Scholarship",
@@ -1858,17 +1863,13 @@ export default function StudentScholarshipsPage() {
 			requiredDocuments: invitation.requiredDocuments || {},
 			otherRequirements: invitation.otherRequirements || [],
 		}
+		const matchingInvitation = findMatchingPendingInvitation(user, invitationTarget, invitation.id)
+		if (!matchingInvitation) {
+			toast.error("This invitation no longer matches the selected scholarship.")
+			return
+		}
 		const retainedScholarships = scholarships.filter((item) => !matchesArchivedGrantorTarget(item, invitationTarget))
-		const nextInvitations = (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : []).map((item) =>
-			item.id === invitation.id
-				? {
-						...item,
-						status: "Accepted",
-						acceptedAt: serverTimestamp(),
-						updatedAt: serverTimestamp(),
-					}
-				: item,
-		)
+		const nextInvitations = markInvitationAccepted(user.scholarshipInvitations || [], matchingInvitation.id)
 
 		setIsMutating(true)
 		try {
@@ -1880,32 +1881,18 @@ export default function StudentScholarshipsPage() {
 				userId,
 				invitationTarget,
 			)
-			await applyScholarshipWorkflow({
+			const result = await applyScholarshipWorkflow({
 				...workflowPayload,
-				allowArchivedGrantorReapply: true,
+				invitationId: matchingInvitation.id,
 				studentUpdate: {
 					...workflowPayload.studentUpdate,
 					scholarshipInvitations: nextInvitations,
 				},
 			})
-			if (invitation.grantorId && invitation.scholarId) {
-				await setDoc(
-					doc(db, GRANTOR_PORTAL_COLLECTION, invitation.grantorId, GRANTOR_SUBCOLLECTIONS.scholars, invitation.scholarId),
-					{
-						status: "Pending",
-						archived: false,
-						frozen: false,
-						unarchiveInvitationPending: false,
-						invitationAcceptedAt: serverTimestamp(),
-						scholarshipTitle: invitation.scholarshipName || invitationTarget.providerLabel,
-						updatedAt: serverTimestamp(),
-					},
-					{ merge: true },
-				)
-			}
 			setUser((prev) => ({
 				...(prev || {}),
-				scholarships: workflowPayload.studentUpdate.scholarships,
+				...(result.student || {}),
+				scholarships: result.student?.scholarships || workflowPayload.studentUpdate.scholarships,
 				scholarshipInvitations: nextInvitations,
 				updatedAt: serverTimestamp(),
 			}))
@@ -1913,11 +1900,39 @@ export default function StudentScholarshipsPage() {
 			toast.success(`Invitation accepted. Your application for ${invitationTarget.providerLabel} was submitted.`)
 		} catch (error) {
 			console.error("Failed to accept scholarship invitation:", error)
-			toast.error("Failed to accept the scholarship invitation. Please try again.")
+			const messages = {
+				grantor_archived: "This grantor account is archived and cannot accept invitations.",
+				announcement_not_open_for_applications: "This scholarship announcement is closed or no longer available.",
+				slots_not_configured: "This scholarship is not accepting applications until its slots are configured.",
+				scholarship_full: "This scholarship has no remaining slots.",
+				scholarship_ineligible: "You no longer meet this scholarship's eligibility requirements.",
+				grantor_application_exists: "You already have an active application with this grantor.",
+				reapply_cooldown_active: "The 24-hour reapplication cooldown for this grantor has not finished.",
+				archived_grantor_block: "This invitation is missing or no longer valid for the archived application.",
+			}
+			toast.error(messages[error?.reason] || error?.message || "Failed to accept the scholarship invitation. Please try again.")
 		} finally {
 			setIsMutating(false)
 		}
 	}
+	acceptInvitationRef.current = acceptScholarshipInvitation
+
+	useEffect(() => {
+		const params = new URLSearchParams(location.search)
+		const invitationId = params.get("invitation") || ""
+		const action = params.get("action") || ""
+		const actionKey = `${invitationId}:${action}`
+		if (!invitationId || !action || invitationRouteActionRef.current === actionKey || !userLoaded) return
+		const invitation = pendingScholarshipInvitations.find((item) => String(item.id) === invitationId)
+		if (!invitation) {
+			invitationRouteActionRef.current = actionKey
+			toast.info("This scholarship invitation is no longer pending.")
+			return
+		}
+		invitationRouteActionRef.current = actionKey
+		if (action === "accept") void acceptInvitationRef.current?.(invitation)
+		if (action === "reject") setInvitationDecision(invitation)
+	}, [location.search, pendingScholarshipInvitations, userLoaded])
 
 	const rejectScholarshipInvitation = async () => {
 		const invitation = invitationDecision
@@ -1925,56 +1940,18 @@ export default function StudentScholarshipsPage() {
 		const reason = invitationRejectReason === "Other"
 			? invitationRejectNotes.trim() || "Other reason"
 			: invitationRejectReason
-		const nextInvitations = (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : []).map((item) =>
-			item.id === invitation.id
-				? {
-						...item,
-						status: "Rejected",
-						rejectedAt: serverTimestamp(),
-						rejectionReason: reason,
-						rejectionNotes: invitationRejectNotes.trim(),
-						updatedAt: serverTimestamp(),
-					}
-				: item,
-		)
-
 		setIsMutating(true)
 		try {
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					scholarshipInvitations: nextInvitations,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
-			if (invitation.grantorId && invitation.scholarId) {
-				await setDoc(
-					doc(db, GRANTOR_PORTAL_COLLECTION, invitation.grantorId, GRANTOR_SUBCOLLECTIONS.scholars, invitation.scholarId),
-					{
-						status: "Archived",
-						archived: true,
-						frozen: true,
-						unarchiveInvitationPending: false,
-						invitationRejectedAt: serverTimestamp(),
-						invitationRejectionReason: reason,
-						invitationRejectionNotes: invitationRejectNotes.trim(),
-						updatedAt: serverTimestamp(),
-					},
-					{ merge: true },
-				)
-			}
-			await createStudentNotification({
+			const result = await rejectScholarshipInvitationWorkflow({
 				studentId: userId,
-				source: "personal",
-				type: "scholarship_invitation_rejected",
-				title: "Scholarship Invitation Rejected",
-				message: `You rejected the invitation from ${invitation.grantorName || "the grantor"} for ${invitation.scholarshipName || "their scholarship"}. Reason: ${reason}${invitationRejectNotes.trim() ? ` - ${invitationRejectNotes.trim()}` : ""}`,
-				grantorId: invitation.grantorId || "",
-				authorName: invitation.grantorName || "Grantor",
-				read: false,
-				createdAt: serverTimestamp(),
-			}).catch((error) => console.warn("Student invitation rejection inbox notification failed:", error))
+				invitationId: invitation.id,
+				reason,
+				notes: invitationRejectNotes.trim(),
+				actorId: userId,
+				actorType: "student",
+			})
+			const nextInvitations = (Array.isArray(user?.scholarshipInvitations) ? user.scholarshipInvitations : []).map((item) =>
+				item.id === invitation.id ? { ...item, ...(result.invitation || {}), status: "Rejected" } : item)
 			setUser((prev) => ({
 				...(prev || {}),
 				scholarshipInvitations: nextInvitations,
@@ -1993,6 +1970,10 @@ export default function StudentScholarshipsPage() {
 	}
 
 	const chooseScholarship = async (target) => {
+		if (SCHOLARSHIP_CHOICE_ENABLED) {
+			await requestMaterial(target, "soe")
+			return
+		}
 		if (!user || !userId || isMutating || !target) return
 		if (isScholarshipActionBlocked({ allowConflictResolution: true })) return
 
@@ -2079,6 +2060,18 @@ export default function StudentScholarshipsPage() {
 		const materialConfig = getMaterialRequestType(materialKey)
 		setIsMutating(true)
 		try {
+			if (SCHOLARSHIP_CHOICE_ENABLED) {
+				const applicationId = target.applicationId || studentApplications.find((app) =>
+					app.applicationNumber === target.applicationNumber && app.grantorId === target.grantorId)?.id
+				const result = await chooseScholarshipWorkflow({ studentId: userId, applicationId,
+					actorId: userId, actorType: "student", confirmed: true })
+				setUser((prev) => ({ ...(prev || {}), ...result.student }))
+				if (result.materialRequest) setStudentSoeRequests((prev) => [
+					normalizeMaterialRequest(result.materialRequest), ...prev.filter((item) => item.id !== result.materialRequest.id),
+				])
+				toast.success("Scholarship selected and SOE request submitted.")
+				return
+			}
 			const selected = scholarships.find((item) => item.id === target.id)
 			if (!selected) {
 				toast.error("Scholarship record not found.")
@@ -2320,7 +2313,7 @@ export default function StudentScholarshipsPage() {
 			)
 		} catch (error) {
 			console.error(`Failed to request ${materialKey}:`, error)
-			toast.error(`${materialConfig?.label || "Material"} request failed. Please try again.`)
+			toast.error(error.message || `${materialConfig?.label || "Material"} request failed. Please try again.`)
 		} finally {
 			setIsMutating(false)
 			setConfirmTarget(null)
@@ -2369,7 +2362,7 @@ export default function StudentScholarshipsPage() {
 			)
 			return
 		}
-		if (scholarships.length >= 2) {
+		if ((SCHOLARSHIP_CHOICE_ENABLED && !hasScholarshipCommitment(user || {})) || scholarships.length >= 2) {
 			setConfirmTarget(target)
 			return
 		}
@@ -2892,12 +2885,17 @@ export default function StudentScholarshipsPage() {
 		}
 
 		pendingScholarshipInvitations.forEach((invitation) => {
+			const matchingRecommendation = recommendedScholarships.find((recommendation) =>
+				findMatchingPendingInvitation({ scholarshipInvitations: [invitation] }, recommendation, invitation.id),
+			)
 			pushRecommendation({
+				...(matchingRecommendation || {}),
 				...invitation,
 				recommendationSource: "grantor_invitation",
 				recommendationPriority: 1,
 				label: "Apply again",
-				announcementTitle: invitation.scholarshipName || invitation.announcementTitle || "Scholarship Invitation",
+				announcementId: invitation.announcementId || matchingRecommendation?.announcementId || "",
+				announcementTitle: invitation.scholarshipName || invitation.announcementTitle || matchingRecommendation?.announcementTitle || "Scholarship Invitation",
 				providerLabel: invitation.scholarshipName || invitation.grantorName || "Scholarship",
 				reasons: [
 					`You are being invited to apply again in your previous scholarship ${invitation.scholarshipName || "scholarship"}.`,
@@ -3020,6 +3018,12 @@ export default function StudentScholarshipsPage() {
 								Track your current application, request approved materials, and review available scholarship programs in one place.
 							</p>
 						</div>
+						{SCHOLARSHIP_CHOICE_ENABLED && !hasScholarshipCommitment(user || {}) ? (
+							<button type="button" className="student-mini-btn student-mini-btn--secondary"
+								onClick={() => navigate("/student-dashboard/recommended-scholarships")}>
+								<HiOutlineAcademicCap /> Recommended Scholarships
+							</button>
+						) : null}
 					</section>
 
 					{hasBlockedScholarshipBanner ? (
@@ -3072,8 +3076,15 @@ export default function StudentScholarshipsPage() {
 						</section>
 					) : null}
 
-					{kwspEntry && !hasMultipleScholarshipChoices ? (
+					{(SCHOLARSHIP_CHOICE_ENABLED ? scholarships.filter((entry) => !isClosedApplication(entry))
+						: kwspEntry && !hasMultipleScholarshipChoices ? [kwspEntry] : []).map((kwspEntry) => {
+						const kwspTracking = buildTrackingSummary(kwspEntry)
+						const trackerStats = scholarshipControlStats.map((stat, index) => ({ ...stat,
+							value: [kwspEntry.name, kwspTracking.applicationStatus, kwspTracking.materialStatus][index],
+						}))
+						return (
 						<section
+							key={kwspEntry.applicationId || kwspEntry.id}
 							className="student-kwsp-tracker-shell"
 							aria-label={kwspTracking.trackerAriaLabel}
 						>
@@ -3083,8 +3094,9 @@ export default function StudentScholarshipsPage() {
 										<p className="student-kwsp-tracker-eyebrow">Student Tracking</p>
 										<h3 className="student-kwsp-tracker-title">
 											<span>Applying for: </span>
-											<strong>{kwspTracking.trackedScholarshipLabel}</strong>
+											<strong>{kwspEntry.name || kwspTracking.trackedScholarshipLabel}</strong>
 										</h3>
+										{SCHOLARSHIP_CHOICE_ENABLED && kwspEntry.grantorName ? <p className="student-kwsp-tracker-copy">{kwspEntry.grantorName}</p> : null}
 										<p className="student-kwsp-tracker-copy">{kwspTracking.trackerCopy}</p>
 									</div>
 									<span
@@ -3102,7 +3114,7 @@ export default function StudentScholarshipsPage() {
 											<p className="student-kwsp-next-help">{kwspTracking.nextActionHelp}</p>
 										) : null}
 										<div className="student-kwsp-next-meta">
-											{scholarshipControlStats.map((item) => {
+											{trackerStats.map((item) => {
 												const Icon = item.icon
 												return (
 													<div className="student-kwsp-next-meta-card" key={item.label}>
@@ -3204,7 +3216,36 @@ export default function StudentScholarshipsPage() {
 																		: soeDownloadGate.label}
 														</button>
 													</div>
+													{SCHOLARSHIP_CHOICE_ENABLED ? (
+														<label className="scholarship-application-form-upload">
+															<span><HiOutlineCloudUpload /> Student Application Profile</span>
+															{entry.applicationFormFile?.name ? <span>{entry.applicationFormFile.name}</span> : null}
+															<input type="file" accept="application/pdf" disabled={isMutating || entryFrozen || entryRejected}
+																onChange={async (event) => {
+																	const file = event.target.files?.[0]
+																	event.target.value = ""
+																	if (!file) return
+																	if (file.type !== "application/pdf" || file.size > 10 * 1024 * 1024) return toast.error("Select a PDF no larger than 10 MB.")
+																	setIsMutating(true)
+																	try {
+																		const uploaded = await uploadToStorage(file, { folder: `students/${userId}/applications/${entry.applicationId}` })
+																		const result = await updateScholarshipDocumentsWorkflow({ studentId: userId, applicationId: entry.applicationId,
+																			actorId: userId, actorType: "student", field: "applicationFormFile",
+																			value: { url: uploaded.url, name: file.name, uploadedAt: new Date().toISOString() } })
+																		setUser((prev) => ({ ...(prev || {}), ...result.student }))
+																		toast.success("Application profile uploaded.")
+																	} catch (error) { toast.error(error.message || "Unable to upload application profile.") }
+																	finally { setIsMutating(false) }
+																	}} />
+														</label>
+													) : null}
 													{renderOtherRequirementUploads(entry)}
+													{SCHOLARSHIP_CHOICE_ENABLED && !hasScholarshipCommitment(user || {}) ? (
+														<button type="button" className="student-mini-btn student-mini-btn--secondary"
+															disabled={isMutating} onClick={() => setWithdrawTarget(entry)}>
+															<HiX aria-hidden /> Withdraw Application
+														</button>
+													) : null}
 												</div>
 											)
 										})() : null}
@@ -3241,7 +3282,7 @@ export default function StudentScholarshipsPage() {
 								</div>
 							</div>
 						</section>
-					) : null}
+					)})}
 
 					{shouldShowScholarshipWorkspace ? (
 						<section className="student-scholarship-workspace">
@@ -3437,7 +3478,7 @@ export default function StudentScholarshipsPage() {
 							)}
 						</div>
 
-						{!hasActiveOrPendingScholarship && !latestRejectedCooldown?.active ? (
+						{!hasActiveOrPendingScholarship ? (
 							<div className="student-scholarship-board" ref={availableProgramsRef}>
 								<div className="student-scholarship-board-head">
 									<div>
@@ -3496,8 +3537,8 @@ export default function StudentScholarshipsPage() {
 											const grantorInitials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
 											const rejectedMatch = getRejectedCooldownForTarget(recommendation)
 											const hasActiveCooldown = rejectedMatch?.cooldown?.active === true
-											const archivedBlock = getArchivedGrantorBlockForTarget(recommendation)
 											const isInvitation = recommendation.recommendationSource === "grantor_invitation"
+											const archivedBlock = isInvitation ? null : getArchivedGrantorBlockForTarget(recommendation)
 											const isApplying = applyingRecommendationId === recommendationId
 											return (
 											<article
@@ -3686,9 +3727,11 @@ export default function StudentScholarshipsPage() {
 						</button>
 						<h3>Choose Scholarship</h3>
 						<p>
-							Choosing [{confirmTarget.name}] will keep only this scholarship in your list and remove the others, based on the one scholarship per student policy. {hasMultipleScholarshipConflict ? "This will also clear your current multiple scholarship warning. " : ""}Do you want to continue?
+							Select <strong>{confirmTarget.name}</strong> from {confirmTarget.grantorName || confirmTarget.provider}? Your SOE request will commit you to this scholarship. Other pending applications will close and their slots will be returned. You cannot withdraw after confirming.
 						</p>
 						<div className="student-soe-modal-actions">
+							<button type="button" className="student-mini-btn student-mini-btn--secondary"
+								disabled={isMutating} onClick={() => setConfirmTarget(null)}>Cancel</button>
 							<button
 								type="button"
 								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
@@ -3701,6 +3744,34 @@ export default function StudentScholarshipsPage() {
 					</div>
 				</div>
 			)}
+
+			{withdrawTarget ? (
+				<div className="student-soe-modal-backdrop" role="presentation" onClick={() => setWithdrawTarget(null)}>
+					<div className="student-soe-modal" role="dialog" aria-modal="true" aria-label="Withdraw application"
+						onClick={(event) => event.stopPropagation()}>
+						<h3>Withdraw Application</h3>
+						<p>Withdraw your application for <strong>{withdrawTarget.name}</strong>? Your slot will be returned. You can apply to this grantor again after 24 hours. Your other applications will remain active.</p>
+						<div className="student-soe-modal-actions">
+							<button type="button" className="student-mini-btn student-mini-btn--secondary" disabled={isMutating}
+								onClick={() => setWithdrawTarget(null)}>Cancel</button>
+							<button type="button" className="student-mini-btn student-mini-btn--primary" disabled={isMutating}
+								onClick={async () => {
+									setIsMutating(true)
+									try {
+										const applicationId = withdrawTarget.applicationId || studentApplications.find((app) =>
+											app.applicationNumber === withdrawTarget.applicationNumber && app.grantorId === withdrawTarget.grantorId)?.id
+										const result = await withdrawScholarshipWorkflow({ studentId: userId, applicationId,
+											actorId: userId, actorType: "student", confirmed: true })
+										setUser((prev) => ({ ...(prev || {}), ...result.student }))
+										setWithdrawTarget(null)
+										toast.success("Application withdrawn.")
+									} catch (error) { toast.error(error.message || "Unable to withdraw this application.") }
+									finally { setIsMutating(false) }
+								}}><HiX aria-hidden /> Withdraw</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 
 			{invitationDecision ? (
 				<div

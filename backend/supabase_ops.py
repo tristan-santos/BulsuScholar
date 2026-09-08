@@ -189,6 +189,67 @@ def supabase_rest_upsert_many(table: str, rows: list[dict[str, Any]]) -> dict[st
         return {"ok": False, "status": error.code, "reason": reason, "table": table, "detail": detail}
 
 
+def supabase_rpc(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not service_key:
+        return {"ok": False, "reason": "missing_supabase_server_config"}
+
+    request = urllib.request.Request(
+        f"{supabase_url}/rest/v1/rpc/{urllib.parse.quote(function_name)}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8") or "null")
+            return {"ok": True, "data": data}
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8")
+        reason = "supabase_rpc_error"
+        try:
+            parsed = json.loads(detail)
+            message = str(parsed.get("message") or parsed.get("details") or "")
+            known_reasons = {
+                "announcement_not_found",
+                "announcement_not_open_for_applications",
+                "invalid_slot_capacity",
+                "slots_not_configured",
+                "scholarship_full",
+                "capacity_below_occupied",
+                "student_not_found",
+                "student_already_has_active_scholarship",
+                "application_not_found",
+                "application_closed",
+                "scholarship_already_committed",
+                "commitment_requires_resolution",
+                "document_review_required",
+                "document_versions_changed",
+                "grantor_archived",
+                "student_account_blocked",
+                "slot_reservation_missing",
+                "grantor_application_exists",
+                "reapply_cooldown_active",
+                "scholarship_ineligible",
+                "archived_grantor_block",
+                "application_workflow_required",
+                "application_history_required",
+                "scholarship_choice_required",
+                "invalid_application_documents",
+                "material_approval_required",
+            }
+            if message in known_reasons:
+                reason = message
+        except (TypeError, ValueError):
+            pass
+        return {"ok": False, "status": error.code, "reason": reason, "detail": detail}
+
+
 def supabase_admin_create_user(email: str, password: str, user_metadata: dict[str, Any] | None = None, email_confirm: bool = False) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")

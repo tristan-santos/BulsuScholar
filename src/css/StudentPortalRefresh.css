@@ -954,3 +954,21 @@
 		padding-top: calc(var(--student-topbar-height, 72px) + 1rem);
 	}
 }
+.scholarship-application-form-upload {
+	display: grid;
+	gap: 0.5rem;
+	margin-block: 1rem;
+	font-size: 0.85rem;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.scholarship-application-form-upload input { width: 100%; min-width: 0; font: inherit; }
+.scholarship-application-form-upload input::file-selector-button {
+	padding: 0.5rem 0.75rem;
+	border: 1px solid #c6dfd4;
+	border-radius: 5px;
+	background: #f2faf6;
+	color: #075b38;
+	font: inherit;
+	cursor: pointer;
+}

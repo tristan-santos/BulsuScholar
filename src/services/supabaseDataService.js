@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient"
 import { invalidateReferenceData } from "./referenceDataCache"
+import { adminReviewWorkflow } from "./workflowService"
 
 export const TABLES = {
 	admins: "admins",
@@ -368,6 +369,18 @@ export async function setDoc(ref, payload = {}, options = {}) {
 		const current = await getDoc(ref)
 		data = deepMerge(current.data?.() || {}, nextData)
 		delete data.id
+	}
+	// Versioned applications must pass the server's ownership and lifecycle guards.
+	if (ref.table === "scholarship_applications" && data.lifecycleVersion === 2) {
+		const storedType = sessionStorage.getItem("bulsuscholar_userType") || ""
+		const actorType = storedType === "provider" ? "grantor" : storedType
+		if (!["admin", "grantor"].includes(actorType)) throw new Error("application_workflow_required")
+		await adminReviewWorkflow({
+			actorId: sessionStorage.getItem("bulsuscholar_userId") || "",
+			actorType,
+			updates: [{ table: ref.table, id: ref.id, data: nextData }],
+		})
+		return
 	}
 	const row = buildRow(ref.table, ref.id, data, ref.parentId || null)
 	const { error } = await supabase.from(ref.table).upsert(row, {

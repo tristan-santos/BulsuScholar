@@ -76,6 +76,7 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 	const [profileMenuOpen, setProfileMenuOpen] = useState(false)
 	const [studentNotifications, setStudentNotifications] = useState([])
 	const [announcements, setAnnouncements] = useState([])
+	const [visibleAnnouncementIds, setVisibleAnnouncementIds] = useState(() => new Set())
 	const [readAnnouncementIds, setReadAnnouncementIds] = useState(() => loadReadAnnouncementIds(studentId))
 	const profileMenuRef = useRef(null)
 
@@ -139,13 +140,10 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 		let grantorRows = []
 
 		const updateAnnouncements = () => {
-			setAnnouncements(
-				sortStudentAnnouncements([...adminRows, ...grantorRows])
-					.filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds))
-					.filter(
-					(item) => !isPreviousStudentAnnouncement(item),
-				),
-			)
+			const visibleRows = sortStudentAnnouncements([...adminRows, ...grantorRows])
+				.filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds))
+			setVisibleAnnouncementIds(new Set(visibleRows.map((item) => String(item.id || "")).filter(Boolean)))
+			setAnnouncements(visibleRows.filter((item) => !isPreviousStudentAnnouncement(item)))
 		}
 
 		const unsubscribeAdminAnnouncements = onSnapshot(
@@ -199,11 +197,14 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 	const unreadStudentNotifications = useMemo(
 		() => studentNotifications.filter((item) => {
 			if (item.read === true) return false
-			const isGrantorAnnouncement = String(item.type || "").toLowerCase().includes("announcement")
+			const notificationType = String(item.type || "").toLowerCase()
+			const isGrantorAnnouncement = notificationType.includes("announcement") || notificationType.includes("low_slots")
 			const grantorId = String(item.grantorId || item.providerId || "")
-			return !(isGrantorAnnouncement && archivedGrantorIds.has(grantorId))
+			if (isGrantorAnnouncement && archivedGrantorIds.has(grantorId)) return false
+			if (isGrantorAnnouncement && item.announcementId && !visibleAnnouncementIds.has(String(item.announcementId))) return false
+			return true
 		}),
-		[archivedGrantorIds, studentNotifications],
+		[archivedGrantorIds, studentNotifications, visibleAnnouncementIds],
 	)
 	const unreadAnnouncementCount = useMemo(
 		() => {

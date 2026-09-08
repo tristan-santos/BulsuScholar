@@ -7,9 +7,10 @@ import {
 import { getScholarshipActionBlockMessage } from "./studentAccessService"
 import {
 	formatCooldownDuration,
-	getLatestRejectedScholarship,
-	getRejectionCooldown,
 } from "./rejectionCooldownService"
+import { getScholarshipSlotState } from "./scholarshipSlotService"
+import { SCHOLARSHIP_CHOICE_ENABLED, getGrantorApplicationBlock, sameApplicationGrantor } from "./scholarshipChoiceService"
+import { findMatchingPendingInvitation, getGrantorRejectionCooldown, isManualArchiveForGrantor } from "./grantorReapplicationService"
 
 export function isScholarshipActiveOrPending(status = "") {
 	const normalized = String(status).toLowerCase()
@@ -24,6 +25,7 @@ export function isScholarshipActiveOrPending(status = "") {
 		"resolved",
 		"completed",
 		"expired",
+		"archived",
 	].some((keyword) => normalized.includes(keyword))
 }
 
@@ -68,22 +70,7 @@ export function getAnnouncementMinimumGrade(announcement = {}) {
 }
 
 function matchesGrantorArchiveBlock(entry = {}, announcement = {}, providerType = "") {
-	const status = String(entry?.status || "").toLowerCase()
-	const isArchived =
-		entry?.archived === true ||
-		entry?.frozen === true ||
-		status.includes("archived") ||
-		status.includes("frozen") ||
-		status.includes("previous")
-	if (!isArchived) return false
-	const announcementGrantorId = String(announcement?.grantorId || announcement?.providerId || "").trim().toLowerCase()
-	const announcementProviderType = String(providerType || announcement?.providerType || "").trim().toLowerCase()
-	const blockedGrantorId = String(entry?.blockedGrantorId || entry?.archivedBy || entry?.grantorId || entry?.providerId || "").trim().toLowerCase()
-	const entryProviderType = String(entry?.providerType || "").trim().toLowerCase()
-	return Boolean(
-		(announcementGrantorId && blockedGrantorId && announcementGrantorId === blockedGrantorId) ||
-			(announcementProviderType && entryProviderType && announcementProviderType === entryProviderType),
-	)
+	return isManualArchiveForGrantor(entry, { ...announcement, providerType: providerType || announcement.providerType })
 }
 
 export function getArchivedGrantorApplyBlock(user = {}, announcement = {}) {
@@ -115,19 +102,26 @@ export function getAnnouncementApplyAvailability({
 	if (announcement.applicationEnabled !== true) {
 		return { canApply: false, reason: "This announcement is for information only and is not open for applications." }
 	}
+	const slotState = getScholarshipSlotState(announcement)
+	if (slotState.managed && !slotState.configured) {
+		return { canApply: false, reason: "This scholarship is not accepting applications until the grantor configures its slots." }
+	}
+	if (slotState.full) {
+		return { canApply: false, reason: "This scholarship has no remaining slots." }
+	}
 
 	const providerType = getAnnouncementProviderType(announcement)
 	const scholarships = normalizeScholarshipList(user?.scholarships || [])
 	const hasLockedScholarship = scholarships.some((item) => item.isLocked)
 	const hasSameActiveApplication = scholarships.some(
-		(item) => item.providerType === providerType && isScholarshipActiveOrPending(item.status),
+		(item) => (SCHOLARSHIP_CHOICE_ENABLED ? sameApplicationGrantor(item, announcement) : item.providerType === providerType) && isScholarshipActiveOrPending(item.status),
 	)
 	const hasActiveOrPendingScholarship = scholarships.some(
 		(item) => !item.isLocked && isScholarshipActiveOrPending(item.status),
 	)
-	const latestRejected = getLatestRejectedScholarship(scholarships)
-	const latestRejectedCooldown = latestRejected ? getRejectionCooldown(latestRejected) : null
+	const latestRejectedCooldown = getGrantorRejectionCooldown(user, announcement)
 	const archivedGrantorBlock = getArchivedGrantorApplyBlock(user, announcement)
+	const matchingInvitation = findMatchingPendingInvitation(user, announcement)
 
 	if (studentAccessState.isScholarshipActionBlocked) {
 		return { canApply: false, reason: getScholarshipActionBlockMessage(user || {}) }
@@ -138,7 +132,7 @@ export function getAnnouncementApplyAvailability({
 			reason: `You can apply again after ${formatCooldownDuration(latestRejectedCooldown.remainingMs)}. Your previous application was rejected and is still under the 24-hour cooldown.`,
 		}
 	}
-	if (archivedGrantorBlock) {
+	if (archivedGrantorBlock && !matchingInvitation) {
 		return {
 			canApply: false,
 			reason: `You were archived by ${archivedGrantorBlock.archivedByName || archivedGrantorBlock.blockedGrantorName || announcement.sourceLabel || grantorDisplayName || "this grantor"}. You cannot apply to this grantor again unless they invite you back.`,
@@ -153,8 +147,12 @@ export function getAnnouncementApplyAvailability({
 	if (hasSameActiveApplication) {
 		return { canApply: false, reason: "You already have an active application for this scholarship." }
 	}
-	if (hasActiveOrPendingScholarship) {
+	if (!SCHOLARSHIP_CHOICE_ENABLED && hasActiveOrPendingScholarship) {
 		return { canApply: false, reason: "You already have an existing scholarship application. You cannot apply for another until the current one is resolved." }
+	}
+	if (SCHOLARSHIP_CHOICE_ENABLED) {
+		const reason = getGrantorApplicationBlock(user, announcement)
+		if (reason) return { canApply: false, reason }
 	}
 
 	const minimumGrade = getAnnouncementMinimumGrade(announcement)

@@ -3137,7 +3137,7 @@
 .admin-student-detail-grid .admin-detail-meta {
 	display: grid;
 	grid-template-columns: minmax(110px, 0.42fr) minmax(0, 1fr);
-	gap: 0.75rem;
+	gap: 0.5rem;
 	align-items: start;
 	padding: 0.62rem 0.75rem;
 	border-bottom: 1px solid #eef3f0;
@@ -8681,34 +8681,41 @@
 .admin-announcement-counts {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.65rem;
+	justify-content: center;
+	gap: 0.5rem;
 	width: max-content;
-	min-height: 38px;
-	padding: 0 0.85rem;
-	border: 1px solid rgba(0, 99, 60, 0.2);
+	max-width: 100%;
+	min-height: 40px;
+	padding: 0 0.7rem;
+	border: 1px solid #c9ddd3;
 	border-radius: 5px;
-	background: rgba(0, 99, 60, 0.045);
-	color: #315549;
-	font-size: 0.74rem;
-	font-weight: 500;
+	background: #f8fbf9;
+	color: #52675f;
+	font-size: 0.72rem;
+	font-weight: 550;
+	line-height: 1.25;
+	letter-spacing: 0;
 	white-space: nowrap;
 }
 
-.admin-announcement-counts span {
+.admin-announcement-counts > span {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.25rem;
+	gap: 0.2rem;
 }
 
-.admin-announcement-counts strong {
+.admin-announcement-counts > span > strong {
 	color: #00633c;
+	font-size: 0.76rem;
 	font-weight: 700;
 }
 
 .admin-announcement-counts i {
+	display: block;
+	flex: 0 0 auto;
 	width: 1px;
-	height: 18px;
-	background: rgba(0, 99, 60, 0.28);
+	height: 16px;
+	background: #b4cfc2;
 }
 
 .admin-announcement-section--cards {
@@ -8731,7 +8738,7 @@
 	gap: 0.75rem;
 }
 
-.admin-announcement-history-actions span {
+.admin-announcement-history-actions > span {
 	color: #06231b;
 	font-size: 0.95rem;
 	font-weight: 500;
@@ -9591,7 +9598,7 @@
 	color: #94a3b8;
 }
 
-.admin-portal--dark .admin-announcement-history-actions span,
+.admin-portal--dark .admin-announcement-history-actions > span,
 .admin-portal--dark .admin-announcement-empty strong {
 	color: #f8fafc;
 }
@@ -9620,13 +9627,13 @@
 }
 
 .admin-portal--dark .admin-announcement-counts {
-	border-color: rgba(52, 211, 153, 0.24);
-	background: rgba(0, 99, 60, 0.18);
+	border-color: rgba(52, 211, 153, 0.28);
+	background: #101d18;
 	color: #cbd5e1;
 }
 
 .admin-portal--dark .admin-announcement-counts strong { color: #6ee7b7; }
-.admin-portal--dark .admin-announcement-counts i { background: rgba(52, 211, 153, 0.3); }
+.admin-portal--dark .admin-announcement-counts i { background: rgba(52, 211, 153, 0.32); }
 .admin-portal--dark .admin-calendar-modal-actions { border-color: #334155; }
 .admin-portal--dark .admin-calendar-cancel-btn { border-color: #475569; background: #111827; color: #cbd5e1; }
 
@@ -9659,7 +9666,7 @@
 		width: 100%;
 	}
 
-	.admin-announcement-counts { width: 100%; justify-content: center; white-space: normal; }
+	.admin-announcement-counts { width: max-content; max-width: 100%; justify-content: center; white-space: normal; }
 	.admin-calendar-modal-actions { grid-template-columns: 1fr; }
 
 	.admin-announcement-card-actions,
@@ -9685,6 +9692,19 @@
 		min-height: 260px;
 		max-height: 62vh;
 	}
+}
+
+@media (max-width: 340px) {
+	.admin-announcement-counts {
+		align-items: center;
+		flex-direction: column;
+		gap: 0.2rem;
+		width: 100%;
+		padding-block: 0.5rem;
+		text-align: center;
+	}
+
+	.admin-announcement-counts i { display: none; }
 }
 
 .admin-table-toolbar {
@@ -18451,6 +18471,13 @@
 	border-radius: 10px !important;
 	overflow-x: auto !important;
 	overflow-y: auto !important;
+}
+
+.admin-portal .admin-table-wrap--grantors {
+	max-width: 100%;
+	overflow-x: auto !important;
+	overflow-y: hidden !important;
+	-webkit-overflow-scrolling: touch;
 }
 
 .admin-portal .admin-management-table thead th,

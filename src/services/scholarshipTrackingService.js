@@ -39,6 +39,7 @@ function isStepCompletedByAuthority(tracking = {}, stepId = "", authorities = []
 }
 
 function shouldResetToMaterialRequestForCurrentCycle(scholarship = {}, currentSemesterTag = getCurrentSemesterTag()) {
+	if (scholarship.lifecycleVersion === 2 && !scholarship.isLocked && !scholarship.committedAt) return false
 	const scholarshipSemesterTag = String(scholarship.semesterTag || "").trim()
 	if (!scholarshipSemesterTag || scholarshipSemesterTag === currentSemesterTag) return false
 	const status = String(scholarship.status || "").toLowerCase()
@@ -422,9 +423,9 @@ export function getScholarshipTrackingProgress({
 		...(documentCheck?.documentUrls || {}),
 	}
 	const hasApplicationForm =
-		Boolean(documentUrls.applicationForm) ||
-		Boolean(scholarship.applicationFormUrl) ||
-		Boolean(scholarship.applicationFormFile?.url)
+		Number(scholarship.lifecycleVersion) === 2
+			? Boolean(scholarship.applicationFormFile?.url)
+			: Boolean(documentUrls.applicationForm) || Boolean(scholarship.applicationFormUrl) || Boolean(scholarship.applicationFormFile?.url)
 
 	const requestSemesterTag = String(latestMaterialRequest?.semesterTag || "").trim()
 	const isCurrentCycleMaterialRequest =

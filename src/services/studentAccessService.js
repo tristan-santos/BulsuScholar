@@ -1,9 +1,12 @@
+import { SCHOLARSHIP_CHOICE_ENABLED, hasScholarshipCommitment } from "./scholarshipChoiceService"
+
 export function getStudentAccessState(student = {}) {
 	const isArchived = student?.archived === true
 	
-	const multipleScholarshipConflict =
-		student?.scholarshipConflictWarning === true ||
-		student?.scholarshipRestrictionReason === "multiple_scholarships"
+	const multipleScholarshipConflict = SCHOLARSHIP_CHOICE_ENABLED
+		? student.commitmentRequiresResolution === true || (hasScholarshipCommitment(student) &&
+			(student?.scholarshipConflictWarning === true || student?.scholarshipRestrictionReason === "multiple_scholarships"))
+		: student?.scholarshipConflictWarning === true || student?.scholarshipRestrictionReason === "multiple_scholarships"
 
 	const scholarshipEligibilityBlocked = multipleScholarshipConflict
 

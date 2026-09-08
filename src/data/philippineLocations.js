@@ -1807,6 +1807,31 @@ const PHILIPPINE_LOCATIONS = {
 
 export const PROVINCES = Object.keys(PHILIPPINE_LOCATIONS).sort()
 
+export const REGION_III_PROVINCES = [
+	"Aurora",
+	"Bataan",
+	"Bulacan",
+	"Nueva Ecija",
+	"Pampanga",
+	"Tarlac",
+	"Zambales",
+]
+
+export const OTHER_PROVINCE_VALUE = "__other__"
+
+export const REGION_III_PROVINCE_OPTIONS = [
+	...REGION_III_PROVINCES,
+	{ value: OTHER_PROVINCE_VALUE, label: "Other" },
+]
+
+export function getRegionProvinceSelection(province = "") {
+	const normalizedProvince = String(province || "").trim()
+	if (!normalizedProvince) return ""
+	return REGION_III_PROVINCES.includes(normalizedProvince)
+		? normalizedProvince
+		: OTHER_PROVINCE_VALUE
+}
+
 export function getCitiesByProvince(province = "") {
 	return PHILIPPINE_LOCATIONS[province] || []
 }

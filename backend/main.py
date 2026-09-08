@@ -20,6 +20,7 @@ if load_dotenv:
 try:
     from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from .access_control import enforce_material_update_scope, enforce_portal_scope
+    from .scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from .email_service import send_email_notification
     from .grantor_algorithms import (
         check_student_table_duplicates,
@@ -71,11 +72,15 @@ try:
     )
     from .workflow_service import (
         apply_scholarship,
+        configure_grantor_announcement_slots,
         create_grantor_announcement,
         create_grantor_scholars,
         request_grantor_password_change,
         update_admin_review,
         update_grantor_announcement,
+        update_grantor_archive_state,
+        invite_archived_grantor_scholars,
+        reject_scholarship_invitation,
         update_grantor_profile,
         update_grantor_scholar,
         update_grantor_scholars,
@@ -84,6 +89,7 @@ try:
 except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backend/
     from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from access_control import enforce_material_update_scope, enforce_portal_scope
+    from scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from email_service import send_email_notification
     from grantor_algorithms import (
         check_student_table_duplicates,
@@ -135,11 +141,15 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     )
     from workflow_service import (
         apply_scholarship,
+        configure_grantor_announcement_slots,
         create_grantor_announcement,
         create_grantor_scholars,
         request_grantor_password_change,
         update_admin_review,
         update_grantor_announcement,
+        update_grantor_archive_state,
+        invite_archived_grantor_scholars,
+        reject_scholarship_invitation,
         update_grantor_profile,
         update_grantor_scholar,
         update_grantor_scholars,
@@ -534,6 +544,42 @@ def admin_review_endpoint(request: Request, payload: dict[str, Any] = Body(...))
     return update_admin_review(payload)
 
 
+@app.post("/workflows/scholarship/choose")
+def choose_scholarship_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
+    return mutate_scholarship_choice(payload)
+
+
+@app.post("/workflows/scholarship/withdraw")
+def withdraw_scholarship_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
+    return mutate_scholarship_choice(payload, withdraw=True)
+
+
+@app.post("/workflows/scholarship/documents")
+def scholarship_documents_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
+    return update_scholarship_documents(payload)
+
+
+@app.post("/workflows/admin/grantors/archive-state")
+def update_grantor_archive_state_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin"})
+    return update_grantor_archive_state(payload)
+
+
+@app.post("/workflows/grantor/scholars/invite-back")
+def invite_archived_grantor_scholars_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
+    return invite_archived_grantor_scholars(payload)
+
+
+@app.post("/workflows/scholarship/invitation/reject")
+def reject_scholarship_invitation_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
+    return reject_scholarship_invitation(payload)
+
+
 @app.post("/workflows/materials/update")
 def material_request_update_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student", "admin", "grantor"})
@@ -569,6 +615,12 @@ def create_grantor_announcement_endpoint(request: Request, payload: dict[str, An
 def update_grantor_announcement_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return update_grantor_announcement(payload)
+
+
+@app.post("/workflows/grantor/announcements/slots")
+def configure_grantor_announcement_slots_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
+    return configure_grantor_announcement_slots(payload)
 
 
 @app.post("/workflows/grantor/password/request")

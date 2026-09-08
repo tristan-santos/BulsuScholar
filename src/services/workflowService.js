@@ -19,8 +19,32 @@ export function applyScholarshipWorkflow(payload = {}) {
 	return postWorkflow("/workflows/scholarship/apply", payload)
 }
 
+export function chooseScholarshipWorkflow(payload = {}) {
+	return postWorkflow("/workflows/scholarship/choose", payload)
+}
+
+export function withdrawScholarshipWorkflow(payload = {}) {
+	return postWorkflow("/workflows/scholarship/withdraw", payload)
+}
+
+export function updateScholarshipDocumentsWorkflow(payload = {}) {
+	return postWorkflow("/workflows/scholarship/documents", payload)
+}
+
 export function adminReviewWorkflow(payload = {}) {
 	return postWorkflow("/workflows/admin/review", payload)
+}
+
+export function updateGrantorArchiveStateWorkflow(payload = {}) {
+	return postWorkflow("/workflows/admin/grantors/archive-state", payload)
+}
+
+export function inviteArchivedGrantorScholarsWorkflow(payload = {}) {
+	return postWorkflow("/workflows/grantor/scholars/invite-back", payload)
+}
+
+export function rejectScholarshipInvitationWorkflow(payload = {}) {
+	return postWorkflow("/workflows/scholarship/invitation/reject", payload)
 }
 
 export function materialRequestWorkflow(payload = {}) {
@@ -57,6 +81,10 @@ export function createGrantorAnnouncementWorkflow(payload = {}) {
 
 export function updateGrantorAnnouncementWorkflow(payload = {}) {
 	return postWorkflow("/workflows/grantor/announcements/update", payload)
+}
+
+export function configureGrantorAnnouncementSlotsWorkflow(payload = {}) {
+	return postWorkflow("/workflows/grantor/announcements/slots", payload)
 }
 
 export function requestGrantorPasswordChangeWorkflow(payload = {}) {

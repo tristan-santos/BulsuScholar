@@ -61,13 +61,20 @@ import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import CustomSelect from "../components/CustomSelect"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
-import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
+import {
+	OTHER_PROVINCE_VALUE,
+	REGION_III_PROVINCE_OPTIONS,
+	getCitiesByProvince,
+	getBarangaysByLocation,
+} from "../data/philippineLocations"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
 import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
 import { broadcastStudentNotification, createAdminNotification, createGrantorNotification, createStudentNotification } from "../services/notificationService"
 import { createGrantorScholarsWorkflow, materialRequestWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
+import { updateGrantorArchiveStateWithFallback } from "../services/grantorArchiveCompatibilityService"
+import { matchesScholarshipApplication } from "../services/scholarshipChoiceService"
 import {
 	buildApplicationDecisionConfirmation,
 	canUseGrantorConfirmationForStep,
@@ -155,6 +162,7 @@ const ADMIN_SCHOLAR_FORM = {
 	street: "",
 	city: "",
 	province: "",
+	provinceSelection: "",
 	barangay: "",
 	postalCode: "",
 	course: "",
@@ -191,7 +199,9 @@ const DEFAULT_ADMIN_PROFILE = {
 }
 
 const normalizeAdminProfileSettings = (settings = {}) => {
-	const { systemMode, accountVerification, ...profileSettings } = settings || {}
+	const profileSettings = { ...(settings || {}) }
+	delete profileSettings.systemMode
+	delete profileSettings.accountVerification
 	return { ...DEFAULT_ADMIN_PROFILE, ...profileSettings }
 }
 
@@ -1390,7 +1400,7 @@ export default function AdminDashboard() {
 	useEffect(() => {
 		if (!adminScholarModalOpen || adminScholarImportRows.length > 0) return undefined
 		let isCancelled = false
-		if (!adminScholarForm.province || !adminScholarForm.city) {
+		if (adminScholarForm.provinceSelection === OTHER_PROVINCE_VALUE || !adminScholarForm.province || !adminScholarForm.city) {
 			setAdminScholarBarangayOptions([])
 			setAdminScholarBarangayError("")
 			setAdminScholarBarangayLoading(false)
@@ -1418,7 +1428,7 @@ export default function AdminDashboard() {
 		return () => {
 			isCancelled = true
 		}
-	}, [adminScholarForm.city, adminScholarForm.province, adminScholarImportRows.length, adminScholarModalOpen])
+	}, [adminScholarForm.city, adminScholarForm.province, adminScholarForm.provinceSelection, adminScholarImportRows.length, adminScholarModalOpen])
 
 	useEffect(() => {
 		const handleOutsideClick = (event) => {
@@ -2042,7 +2052,7 @@ export default function AdminDashboard() {
 			})),
 		[activeGrantorRows],
 	)
-	const adminScholarProvinceOptions = useMemo(() => PROVINCES.map((province) => ({ value: province, label: province })), [])
+	const adminScholarProvinceOptions = REGION_III_PROVINCE_OPTIONS
 	const adminScholarCityOptions = useMemo(
 		() => getCitiesByProvince(adminScholarForm.province).map((city) => ({ value: city, label: city })),
 		[adminScholarForm.province],
@@ -4733,6 +4743,9 @@ export default function AdminDashboard() {
 	const selectedSoeReviewDocuments = useMemo(() => {
 		const documentUrls = getDocumentUrlsForStudent(selectedSoeReviewStudent || {})
 		const student = selectedSoeReviewStudent || {}
+		const applicationForm = selectedSoeReviewScholarship?.lifecycleVersion === 2
+			? selectedSoeReviewScholarship.applicationFormFile || {}
+			: student.scholarshipApplicationFile || student.applicationFormFile || {}
 		return [
 			{
 				key: "cor",
@@ -4766,15 +4779,12 @@ export default function AdminDashboard() {
 				key: "application_form",
 				label: "Student Application Profile",
 				title: "Student Application Profile",
-				url: documentUrls.applicationForm,
-				name:
-					student.scholarshipApplicationFile?.name ||
-					student.applicationFormFile?.name ||
-					"Student Application Profile",
-				...(student.scholarshipApplicationFile || student.applicationFormFile || {}),
+				url: selectedSoeReviewScholarship?.lifecycleVersion === 2 ? applicationForm.url || "" : documentUrls.applicationForm,
+				name: applicationForm.name || "Student Application Profile",
+				...applicationForm,
 			},
 		]
-	}, [selectedSoeReviewStudent])
+	}, [selectedSoeReviewStudent, selectedSoeReviewScholarship])
 	const selectedSoeReviewOtherDocuments = useMemo(
 		() => collectOtherRequirementDocuments(selectedSoeReviewScholarship || {}),
 		[selectedSoeReviewScholarship],
@@ -5122,6 +5132,8 @@ export default function AdminDashboard() {
 			const next = { ...prev, [field]: value }
 			if (field === "grantorId") next.scholarshipTitle = ""
 			if (field === "province") {
+				next.provinceSelection = value
+				next.province = value === OTHER_PROVINCE_VALUE ? "" : value
 				next.city = ""
 				next.barangay = ""
 			}
@@ -5170,6 +5182,11 @@ export default function AdminDashboard() {
 		}
 		if (adminScholarForm.cpNumber && !isValidContactNumber(adminScholarForm.cpNumber)) {
 			errors.cpNumber = CONTACT_NUMBER_RULE_MESSAGE
+		}
+		if (adminScholarForm.provinceSelection === OTHER_PROVINCE_VALUE) {
+			if (!adminScholarForm.province.trim()) errors.province = "Province is required."
+			if (!adminScholarForm.city.trim()) errors.city = "City or municipality is required."
+			if (!adminScholarForm.barangay.trim()) errors.barangay = "Barangay is required."
 		}
 		if (!adminScholarForm.course.trim()) errors.course = "Course is required."
 		if (!adminScholarForm.yearLevel) errors.yearLevel = "Year level is required."
@@ -5609,16 +5626,7 @@ export default function AdminDashboard() {
 					)?.getTime() || 0
 				return rightDate - leftDate
 			})
-			.find((application) => {
-				return (
-					application.scholarshipId === selectedScholarshipTrackingRow.scholarshipEntry.id ||
-					application.applicationNumber ===
-						selectedScholarshipTrackingRow.scholarshipEntry.applicationNumber ||
-					application.requestNumber === selectedScholarshipTrackingRow.scholarshipEntry.requestNumber ||
-					application.providerType ===
-						selectedScholarshipTrackingRow.scholarshipEntry.providerType
-				)
-			})
+			.find((application) => matchesScholarshipApplication(application, selectedScholarshipTrackingRow.scholarshipEntry))
 
 		if (canUseGrantorConfirmationForStep(currentStep.id) && matchingApplication?.grantorId) {
 			await runAction(async () => {
@@ -5781,10 +5789,7 @@ export default function AdminDashboard() {
 			const matchingApplications = applicationsRaw.filter((application) => {
 				return (
 					application.studentId === trackingRow.studentId &&
-					(application.scholarshipId === trackingRow.scholarshipEntry.id ||
-						application.applicationNumber === trackingRow.scholarshipEntry.applicationNumber ||
-						application.requestNumber === trackingRow.scholarshipEntry.requestNumber ||
-						application.providerType === trackingRow.scholarshipEntry.providerType)
+					matchesScholarshipApplication(application, trackingRow.scholarshipEntry)
 				)
 			})
 
@@ -6234,33 +6239,23 @@ export default function AdminDashboard() {
 		const targetIds = [...selectedGrantorIds]
 		setAdminConfirmDialog(null)
 		await runAction(async () => {
-			const batch = writeBatch(db)
-			targetIds.forEach((id) => {
-				const archivePayload = {
-					archived: true,
-					archivedAt: serverTimestamp(),
-					status: "Archived",
-					updatedAt: serverTimestamp(),
-				}
-				batch.set(doc(db, "providers", id), archivePayload, { merge: true })
-				batch.set(doc(db, "grantorPortals", id), archivePayload, { merge: true })
-				grantorAnnouncementsRaw
-					.filter((announcement) => String(announcement.grantorId || "") === String(id))
-					.forEach((announcement) => {
-						batch.set(
-							doc(db, "grantorPortals", id, GRANTOR_SUBCOLLECTIONS.announcements, announcement.id),
-							{
-								grantorAccountArchived: true,
-								hiddenFromStudents: true,
-								updatedAt: serverTimestamp(),
-							},
-							{ merge: true },
-						)
-					})
+			const result = await updateGrantorArchiveStateWithFallback({
+				actorType: "admin",
+				actorId: sessionStorage.getItem("bulsuscholar_userId") || "admin",
+				grantorIds: targetIds,
+				archived: true,
 			})
-			await batch.commit()
+			if (result.partial) {
+				setSelectedGrantorIds([...new Set((result.failures || []).map((item) => item.grantorId).filter(Boolean))])
+				console.error("[BulsuScholar] Some grantor archive operations failed.", result.failures)
+				toast.warning(result.compatibilityFallback
+					? `The backend archive route is not deployed, and the compatibility update failed for ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"}. Check admin database permissions and retry.`
+					: `Archived with ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"} requiring retry.`)
+				return
+			}
 			setSelectedGrantorIds([])
-		}, `Successfully archived ${targetIds.length} grantors.`)
+			toast.success(`Successfully archived ${targetIds.length} grantors and ${result.announcementCount || 0} announcements.`)
+		})
 	}
 
 	const resolveStudentArchiveTarget = (studentId) => {
@@ -6357,9 +6352,12 @@ export default function AdminDashboard() {
 		setAdminConfirmDialog(null)
 		await runAction(async () => {
 			const encryptedPassword = await encryptPasswordAES256(GRANTOR_DEFAULT_PASSWORD)
-			const batch = writeBatch(db)
-			targetIds.forEach((id) => {
-				const restorePayload = {
+			const result = await updateGrantorArchiveStateWithFallback({
+				actorType: "admin",
+				actorId: sessionStorage.getItem("bulsuscholar_userId") || "admin",
+				grantorIds: targetIds,
+				archived: false,
+				restoreData: {
 					archived: false,
 					archivedAt: null,
 					status: "Active",
@@ -6368,33 +6366,20 @@ export default function AdminDashboard() {
 					passwordChangeRequested: false,
 					passwordChangeRequestStatus: "reset_by_admin",
 					passwordResetBy: "admin",
-					passwordResetAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
-				}
-				batch.set(doc(db, "providers", id), restorePayload, { merge: true })
-				batch.set(doc(db, "grantorPortals", id), {
-					archived: false,
-					archivedAt: null,
-					status: "Active",
-					updatedAt: serverTimestamp(),
-				}, { merge: true })
-				grantorAnnouncementsRaw
-					.filter((announcement) => String(announcement.grantorId || "") === String(id))
-					.forEach((announcement) => {
-						batch.set(
-							doc(db, "grantorPortals", id, GRANTOR_SUBCOLLECTIONS.announcements, announcement.id),
-							{
-								grantorAccountArchived: false,
-								hiddenFromStudents: false,
-								updatedAt: serverTimestamp(),
-							},
-							{ merge: true },
-						)
-					})
+					passwordResetAt: new Date().toISOString(),
+				},
 			})
-			await batch.commit()
+			if (result.partial) {
+				setSelectedGrantorIds([...new Set((result.failures || []).map((item) => item.grantorId).filter(Boolean))])
+				console.error("[BulsuScholar] Some grantor restore operations failed.", result.failures)
+				toast.warning(result.compatibilityFallback
+					? `The backend restore route is not deployed, and the compatibility update failed for ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"}. Check admin database permissions and retry.`
+					: `Restored with ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"} requiring retry.`)
+				return
+			}
 			setSelectedGrantorIds([])
-		}, `Successfully unarchived ${targetIds.length} grantors. Default password restored.`)
+			toast.success(`Successfully unarchived ${targetIds.length} grantors. Previous announcements remain archived.`)
+		})
 	}
 
 	const handleScholarshipScholarBatchArchive = async () => {
@@ -10773,15 +10758,29 @@ export default function AdminDashboard() {
 											<label className="admin-scholar-manual-field">
 												<span>Province</span>
 												<CustomSelect
-													value={adminScholarForm.province}
+													value={adminScholarForm.provinceSelection}
 													onChange={(value) => updateAdminScholarFormField("province", value)}
 													options={adminScholarProvinceOptions}
 													placeholder="Select province"
 													buttonClassName="admin-scholar-manual-select"
 												/>
+												{adminScholarForm.provinceSelection === OTHER_PROVINCE_VALUE ? (
+													<input
+														className={getAdminScholarFieldClass("province")}
+														placeholder="Enter province"
+														value={adminScholarForm.province}
+														onChange={(event) => {
+															setAdminScholarForm((prev) => ({ ...prev, province: event.target.value }))
+															setAdminScholarFormErrors((prev) => ({ ...prev, province: undefined }))
+														}}
+													/>
+												) : null}
 											</label>
 											<label className="admin-scholar-manual-field">
 												<span>City / Municipality</span>
+												{adminScholarForm.provinceSelection === OTHER_PROVINCE_VALUE ? (
+													<input placeholder="Enter city or municipality" value={adminScholarForm.city} onChange={(event) => updateAdminScholarFormField("city", event.target.value)} />
+												) : (
 												<CustomSelect
 													value={adminScholarForm.city}
 													onChange={(value) => updateAdminScholarFormField("city", value)}
@@ -10790,9 +10789,13 @@ export default function AdminDashboard() {
 													disabled={!adminScholarForm.province || adminScholarCityOptions.length === 0}
 													buttonClassName="admin-scholar-manual-select"
 												/>
+												)}
 											</label>
 											<label className="admin-scholar-manual-field">
 												<span>Barangay</span>
+												{adminScholarForm.provinceSelection === OTHER_PROVINCE_VALUE ? (
+													<input placeholder="Enter barangay" value={adminScholarForm.barangay} onChange={(event) => updateAdminScholarFormField("barangay", event.target.value)} />
+												) : (
 												<CustomSelect
 													value={adminScholarForm.barangay}
 													onChange={(value) => updateAdminScholarFormField("barangay", value)}
@@ -10801,6 +10804,7 @@ export default function AdminDashboard() {
 													disabled={!adminScholarForm.city || adminScholarBarangayLoading || (adminScholarBarangaySelectOptions.length === 0 && !adminScholarForm.barangay)}
 													buttonClassName="admin-scholar-manual-select"
 												/>
+												)}
 												{adminScholarBarangayError && !adminScholarForm.barangay ? <small>{adminScholarBarangayError}</small> : null}
 											</label>
 											<label className="admin-scholar-manual-field">
@@ -11049,6 +11053,9 @@ export default function AdminDashboard() {
 											const documentUrls = getDocumentUrlsForStudent(
 												selectedScholarshipTrackingRow.studentSnapshot,
 											)
+											if (selectedScholarshipTrackingRow.scholarshipEntry.lifecycleVersion === 2) {
+												documentUrls.applicationForm = selectedScholarshipTrackingRow.scholarshipEntry.applicationFormFile?.url || ""
+											}
 											return [
 												{ label: "COR", title: "Certificate of Registration", url: documentUrls.cor },
 												{ label: "ROG", title: "Report of Grades", url: documentUrls.cog },

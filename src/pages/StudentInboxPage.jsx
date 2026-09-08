@@ -117,6 +117,10 @@ function normalizeStudentNotification(row = {}, id = "", sourceTable = "studentN
 		scholarshipName: row.scholarshipName || row.providerLabel || row.provider || "",
 		grantorName: row.grantorName || row.authorName || row.senderName || "",
 		grantorId: String(row.grantorId || row.providerId || ""),
+		invitationId: String(row.invitationId || ""),
+		startDate: row.startDate || null,
+		endDate: row.endDate || null,
+		remainingSlots: row.remainingSlots,
 		reason: row.reason || row.rejectionReason || "",
 		notes: row.notes || row.rejectionNotes || "",
 		readAt: row.readAt || row.read_at || null,
@@ -198,6 +202,7 @@ export default function StudentInboxPage() {
 	const [userLoaded, setUserLoaded] = useState(() => !sessionState.isStudent)
 	const [notifications, setNotifications] = useState([])
 	const [announcements, setAnnouncements] = useState([])
+	const [visibleAnnouncementIds, setVisibleAnnouncementIds] = useState(() => new Set())
 	const [readAnnouncementIds, setReadAnnouncementIds] = useState(() =>
 		loadReadAnnouncementIds(sessionStorage.getItem("bulsuscholar_userId")),
 	)
@@ -297,11 +302,11 @@ export default function StudentInboxPage() {
 		let grantorRows = []
 
 		const updateAnnouncements = () => {
+			const visibleRows = sortStudentAnnouncements([...adminRows, ...grantorRows])
+				.filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds))
+			setVisibleAnnouncementIds(new Set(visibleRows.map((item) => String(item.id || "")).filter(Boolean)))
 			setAnnouncements(
-				sortStudentAnnouncements([...adminRows, ...grantorRows])
-					.filter((item) => !isAnnouncementBlockedByGrantor(item, archivedGrantorIds))
-					.filter((item) => !isPreviousStudentAnnouncement(item))
-					.slice(0, 8),
+				visibleRows.filter((item) => !isPreviousStudentAnnouncement(item)).slice(0, 8),
 			)
 		}
 
@@ -353,18 +358,23 @@ export default function StudentInboxPage() {
 	}, [profileMenuOpen])
 
 	const inboxItems = useMemo(() => {
+		const visibleNotifications = notifications.filter((item) => {
+			const notificationType = String(item.type || "").toLowerCase()
+			const isAnnouncementNotification = notificationType.includes("announcement") || notificationType.includes("low_slots")
+			return !isAnnouncementNotification || !item.announcementId || visibleAnnouncementIds.has(String(item.announcementId))
+		})
 		const notifiedAnnouncementIds = new Set(
-			notifications
+			visibleNotifications
 				.filter((item) => item.announcementId)
 				.map((item) => String(item.announcementId)),
 		)
 		const announcementItems = announcements
 			.filter((announcement) => !notifiedAnnouncementIds.has(String(announcement.id || "")))
 			.map((announcement) => announcementToInboxItem(announcement, readAnnouncementIds))
-		return [...notifications, ...announcementItems].sort(
+		return [...visibleNotifications, ...announcementItems].sort(
 			(a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
 		)
-	}, [announcements, notifications, readAnnouncementIds])
+	}, [announcements, notifications, readAnnouncementIds, visibleAnnouncementIds])
 	const unreadItems = useMemo(() => inboxItems.filter((item) => item.read !== true), [inboxItems])
 	const groupedInboxItems = useMemo(() => {
 		const groups = new Map()
@@ -384,6 +394,9 @@ export default function StudentInboxPage() {
 			["reason", "Reason"],
 			["notes", "Notes"],
 			["announcementId", "Announcement ID"],
+			["remainingSlots", "Remaining Slots"],
+			["startDate", "Application Opens"],
+			["endDate", "Application Closes"],
 		]
 		return detailKeys
 			.map(([key, label]) => {
@@ -393,6 +406,7 @@ export default function StudentInboxPage() {
 			})
 			.filter(Boolean)
 	}, [selectedNotification])
+	const selectedNotificationIsInvitation = String(selectedNotification?.type || "").toLowerCase() === "scholarship_invitation" && Boolean(selectedNotification?.invitationId)
 	const markNotificationRead = async (notification) => {
 		if (notification.source !== "personal" || !notification?.id || notification.read === true) return
 		try {
@@ -574,6 +588,16 @@ export default function StudentInboxPage() {
 							))}
 						</div>
 						<footer className="student-inbox-detail-actions">
+							{selectedNotificationIsInvitation ? (
+								<>
+									<button type="button" className="student-inbox-detail-delete" onClick={() => navigate(`/student-dashboard/scholarships?invitation=${encodeURIComponent(selectedNotification.invitationId)}&action=reject`)}>
+										<HiOutlineX aria-hidden /> Reject Invitation
+									</button>
+									<button type="button" className="student-inbox-detail-close" onClick={() => navigate(`/student-dashboard/scholarships?invitation=${encodeURIComponent(selectedNotification.invitationId)}&action=accept`)}>
+										<HiCheck aria-hidden /> Accept Invitation
+									</button>
+								</>
+							) : null}
 							<button type="button" className="student-inbox-detail-delete" onClick={async () => { await deleteNotification(selectedNotification) }}>
 								<HiOutlineTrash aria-hidden /> Delete Message
 							</button>

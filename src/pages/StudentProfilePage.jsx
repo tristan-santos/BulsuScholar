@@ -31,7 +31,13 @@ import {
 import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
 import { isPdf, convertPdfToImage, convertPdfToImageFile } from "../utils/pdfConverter"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
-import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
+import {
+	OTHER_PROVINCE_VALUE,
+	REGION_III_PROVINCE_OPTIONS,
+	getRegionProvinceSelection,
+	getCitiesByProvince,
+	getBarangaysByLocation,
+} from "../data/philippineLocations"
 import StudentTopbar from "../components/StudentTopbar"
 import CustomSelect from "../components/CustomSelect"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
@@ -256,6 +262,7 @@ export default function StudentProfilePage() {
 		street: "",
 		city: "",
 		province: "",
+		provinceSelection: "",
 		barangay: "",
 		postalCode: "",
 		course: "",
@@ -720,6 +727,7 @@ export default function StudentProfilePage() {
 			street: user.street || "",
 			city: user.city || "",
 			province: user.province || "",
+			provinceSelection: getRegionProvinceSelection(user.province),
 			barangay: user.barangay || "",
 			postalCode: user.postalCode || "",
 			course: user.course || "",
@@ -734,7 +742,7 @@ export default function StudentProfilePage() {
 		setBarangayOptions([])
 		setBarangayError("")
 
-		if (!formData.province || !formData.city) {
+		if (formData.provinceSelection === OTHER_PROVINCE_VALUE || !formData.province || !formData.city) {
 			setBarangayLoading(false)
 			return undefined
 		}
@@ -760,7 +768,7 @@ export default function StudentProfilePage() {
 		return () => {
 			isCancelled = true
 		}
-	}, [formData.province, formData.city])
+	}, [formData.province, formData.provinceSelection, formData.city])
 
 	const handleSaveProfile = async () => {
 		if (!userId) {
@@ -962,23 +970,36 @@ export default function StudentProfilePage() {
 								<div className="student-profile-form-grid">
 									<label className="student-profile-label student-profile-label--full">
 										Province
-										<CustomSelect
-											buttonClassName="student-profile-input"
+									<CustomSelect
+										buttonClassName="student-profile-input"
+										value={formData.provinceSelection}
+										onChange={(nextProvince) =>
+											setFormData((prev) => ({
+												...prev,
+												provinceSelection: nextProvince,
+												province: nextProvince === OTHER_PROVINCE_VALUE ? "" : nextProvince,
+												city: "",
+												barangay: "",
+											}))
+										}
+										options={REGION_III_PROVINCE_OPTIONS}
+										placeholder="Select province"
+									/>
+									{formData.provinceSelection === OTHER_PROVINCE_VALUE ? (
+										<input
+											type="text"
+											className="student-profile-input"
+											placeholder="Enter province"
 											value={formData.province}
-											onChange={(nextProvince) =>
-												setFormData((prev) => ({
-													...prev,
-													province: nextProvince,
-													city: "",
-													barangay: "",
-												}))
-											}
-											options={PROVINCES}
-											placeholder="Select province"
+											onChange={(event) => setFormData((prev) => ({ ...prev, province: event.target.value }))}
 										/>
-									</label>
-									<label className="student-profile-label">
-										City / Municipality
+									) : null}
+								</label>
+								<label className="student-profile-label">
+									City / Municipality
+									{formData.provinceSelection === OTHER_PROVINCE_VALUE ? (
+										<input type="text" className="student-profile-input" placeholder="Enter city or municipality" value={formData.city} onChange={(event) => setFormData((prev) => ({ ...prev, city: event.target.value }))} />
+									) : (
 										<CustomSelect
 											buttonClassName="student-profile-input"
 											value={formData.city}
@@ -990,13 +1011,20 @@ export default function StudentProfilePage() {
 												}))
 											}
 											disabled={!formData.province}
-											options={formData.province ? getCitiesByProvince(formData.province) : []}
+											options={formData.province ? [
+												...(formData.city && !getCitiesByProvince(formData.province).includes(formData.city) ? [formData.city] : []),
+												...getCitiesByProvince(formData.province),
+											] : []}
 											placeholder={formData.province ? "Select city" : "Select province first"}
 										/>
-									</label>
-									<label className="student-profile-label">
-										Barangay
-										<CustomSelect
+									)}
+								</label>
+								<label className="student-profile-label">
+									Barangay
+									{formData.provinceSelection === OTHER_PROVINCE_VALUE ? (
+										<input type="text" className="student-profile-input" placeholder="Enter barangay" value={formData.barangay} onChange={(event) => setFormData((prev) => ({ ...prev, barangay: event.target.value }))} />
+									) : (
+									<CustomSelect
 											buttonClassName="student-profile-input"
 											value={formData.barangay}
 											onChange={(nextBarangay) =>
@@ -1019,7 +1047,8 @@ export default function StudentProfilePage() {
 														? "Loading barangays..."
 														: "Select barangay"
 											}
-										/>
+									/>
+									)}
 										{barangayError && !formData.barangay ? <span className="student-profile-help-text">{barangayError}</span> : null}
 									</label>
 									<label className="student-profile-label student-profile-label--street">

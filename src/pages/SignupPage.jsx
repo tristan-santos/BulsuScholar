@@ -31,7 +31,12 @@ import {
 } from "../services/scholarshipService"
 import { scanStudentDocument } from "../services/documentScanService"
 import { finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
-import { PROVINCES, getCitiesByProvince, getBarangaysByLocation } from "../data/philippineLocations"
+import {
+	OTHER_PROVINCE_VALUE,
+	REGION_III_PROVINCE_OPTIONS,
+	getCitiesByProvince,
+	getBarangaysByLocation,
+} from "../data/philippineLocations"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber } from "../utils/contactNumber"
 import { isPdf, convertPdfToImage } from "../utils/pdfConverter"
 import CustomSelect from "../components/CustomSelect"
@@ -267,6 +272,7 @@ export default function SignupPage() {
 	const [street, setStreet] = useState("")
 	const [city, setCity] = useState("")
 	const [province, setProvince] = useState("")
+	const [provinceSelection, setProvinceSelection] = useState("")
 	const [barangay, setBarangay] = useState("")
 	const [barangayOptions, setBarangayOptions] = useState([])
 	const [barangayLoading, setBarangayLoading] = useState(false)
@@ -310,7 +316,7 @@ export default function SignupPage() {
 			setBarangayError("")
 		}, 0)
 
-		if (!province || !city) {
+		if (provinceSelection === OTHER_PROVINCE_VALUE || !province || !city) {
 			const stopLoading = window.setTimeout(() => setBarangayLoading(false), 0)
 			return () => {
 				window.clearTimeout(resetBarangayState)
@@ -341,7 +347,7 @@ export default function SignupPage() {
 			window.clearTimeout(resetBarangayState)
 			window.clearTimeout(startLoading)
 		}
-	}, [province, city])
+	}, [province, provinceSelection, city])
 
 	useEffect(() => {
 		let isMounted = true
@@ -2506,53 +2512,78 @@ export default function SignupPage() {
 								<CustomSelect
 									id="signup-province"
 									buttonClassName="login-select"
-									value={province}
+									value={provinceSelection}
 									onChange={(nextProvince) => {
-										setProvince(nextProvince)
+										setProvinceSelection(nextProvince)
+										setProvince(nextProvince === OTHER_PROVINCE_VALUE ? "" : nextProvince)
 										setCity("")
 										setBarangay("")
 									}}
-									options={PROVINCES}
+									options={REGION_III_PROVINCE_OPTIONS}
 									placeholder="Select province"
 								/>
+								{provinceSelection === OTHER_PROVINCE_VALUE ? (
+									<div className="login-input-wrap">
+										<input
+											id="signup-other-province"
+											type="text"
+											className="login-input"
+											placeholder="Enter province"
+											value={province}
+											onChange={(event) => setProvince(event.target.value)}
+										/>
+									</div>
+								) : null}
 
 								<div className="signup-row">
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-city">
 											City / Municipality <span className="required">*</span>
 										</label>
-										<CustomSelect
-											id="signup-city"
-											buttonClassName="login-select"
-											value={city}
-											onChange={(nextCity) => {
-												setCity(nextCity)
-												setBarangay("")
-											}}
-											disabled={!province}
-											options={province ? getCitiesByProvince(province) : []}
-											placeholder={province ? "Select city" : "Select province first"}
-										/>
+										{provinceSelection === OTHER_PROVINCE_VALUE ? (
+											<div className="login-input-wrap">
+												<input id="signup-city" type="text" className="login-input" placeholder="Enter city or municipality" value={city} onChange={(event) => setCity(event.target.value)} />
+											</div>
+										) : (
+											<CustomSelect
+												id="signup-city"
+												buttonClassName="login-select"
+												value={city}
+												onChange={(nextCity) => {
+													setCity(nextCity)
+													setBarangay("")
+												}}
+												disabled={!province}
+												options={province ? getCitiesByProvince(province) : []}
+												placeholder={province ? "Select city" : "Select province first"}
+											/>
+										)}
 									</div>
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-barangay">
 											Barangay <span className="required">*</span>
 										</label>
-										<CustomSelect
-											id="signup-barangay"
-											buttonClassName="login-select"
-											value={barangay}
-											onChange={setBarangay}
-											disabled={!city || barangayLoading || barangayOptions.length === 0}
-											options={barangayOptions}
-											placeholder={
-												!city
-													? "Select city first"
-													: barangayLoading
-														? "Loading barangays..."
-														: "Select barangay"
-											}
-										/>
+										{provinceSelection === OTHER_PROVINCE_VALUE ? (
+											<div className="login-input-wrap">
+												<input id="signup-barangay" type="text" className="login-input" placeholder="Enter barangay" value={barangay} onChange={(event) => setBarangay(event.target.value)} />
+											</div>
+										) : (
+											<CustomSelect
+												id="signup-barangay"
+												buttonClassName="login-select"
+												value={barangay}
+												onChange={setBarangay}
+												disabled={!city || barangayLoading || barangayOptions.length === 0}
+												options={barangayOptions}
+												placeholder={
+													!city
+														? "Select city first"
+														: barangayLoading
+															? "Loading barangays..."
+															: "Select barangay"
+												}
+											/>
+										)}
 										{barangayError ? (
 											<p className="signup-upload-error-message">{barangayError}</p>
 										) : null}

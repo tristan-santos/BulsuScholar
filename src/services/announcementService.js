@@ -1,4 +1,4 @@
-import { isAnnouncementArchived, normalizeGrantorAnnouncement, toJsDate } from "./grantorService"
+import { isAnnouncementArchived, isAnnouncementExplicitlyArchived, normalizeGrantorAnnouncement, toJsDate } from "./grantorService"
 import { toScholarshipProviderType } from "./scholarshipService"
 
 function toAnnouncementPreviewText(raw = {}) {
@@ -23,6 +23,7 @@ export function normalizeStudentAnnouncement(raw = {}, id = "", source = "admin"
 	}
 
 	const archived = isAnnouncementArchived(raw)
+	const explicitlyArchived = isAnnouncementExplicitlyArchived(raw)
 	return {
 		id: raw.id || id,
 		title: raw.title || "Announcement",
@@ -37,6 +38,10 @@ export function normalizeStudentAnnouncement(raw = {}, id = "", source = "admin"
 		startDate: raw.startDate || null,
 		endDate: raw.endDate || raw.scheduleEnd || null,
 		applicationEnabled: raw.applicationEnabled === true,
+		slotsConfigured: raw.slotsConfigured === true && raw.totalSlots != null && Number.isInteger(Number(raw.totalSlots)),
+		totalSlots: raw.totalSlots != null && Number.isInteger(Number(raw.totalSlots)) ? Number(raw.totalSlots) : null,
+		remainingSlots: raw.remainingSlots != null && Number.isFinite(Number(raw.remainingSlots)) ? Math.max(0, Number(raw.remainingSlots)) : null,
+		lowSlotNotificationSentAt: raw.lowSlotNotificationSentAt || null,
 		requiredDocuments: {
 			cog: raw.requiredDocuments?.cog === true,
 			cor: raw.requiredDocuments?.cor === true,
@@ -64,6 +69,7 @@ export function normalizeStudentAnnouncement(raw = {}, id = "", source = "admin"
 					? Number(raw.minimumGrade)
 					: null,
 		archived,
+		explicitlyArchived,
 		status: archived ? "Archived" : raw.status || "Published",
 		createdAt: raw.createdAt || raw.date || null,
 		updatedAt: raw.updatedAt || null,

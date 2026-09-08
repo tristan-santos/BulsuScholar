@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 try:
     from .supabase_ops import (
@@ -11,6 +12,7 @@ try:
         supabase_document_insert,
         supabase_document_update,
         supabase_document_upsert,
+        supabase_rpc,
         supabase_select,
         utc_now_iso,
     )
@@ -24,6 +26,7 @@ except ImportError:  # pragma: no cover
         supabase_document_insert,
         supabase_document_update,
         supabase_document_upsert,
+        supabase_rpc,
         supabase_select,
         utc_now_iso,
     )
@@ -35,6 +38,126 @@ TERMINAL_SCHOLARSHIP_STATUSES = {
     "archived", "cancelled", "declined", "denied", "frozen",
     "rejected", "resolved", "withdrawn",
 }
+
+SLOT_RELEASE_STATUSES = {
+    "archived", "cancelled", "canceled", "declined", "denied", "rejected", "withdrawn",
+}
+
+
+def _to_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if str(value).strip() not in {str(parsed), f"{parsed}.0"}:
+        return None
+    return parsed if 1 <= parsed <= 1000 else None
+
+
+def _document_url(student: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = student.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict) and str(value.get("url") or "").strip():
+            return str(value.get("url")).strip()
+    return ""
+
+
+def _eligible_low_slot_students(announcement: dict[str, Any], exclude_student_id: str = "") -> list[str]:
+    import os
+    choice_enabled = os.getenv("ENABLE_SCHOLARSHIP_CHOICE", "false").lower() == "true"
+    students_result = supabase_select("students", limit=0)
+    applications_result = supabase_select("scholarship_applications", limit=0)
+    if not students_result.get("ok") or not applications_result.get("ok"):
+        return []
+
+    active_applicants = {
+        _normalize_student_id((row.get("data") or {}).get("studentId"))
+        for row in applications_result.get("rows") or []
+        if isinstance(row.get("data"), dict) and _is_active_scholarship_record(row.get("data") or {})
+        and (not choice_enabled or _record_grantor_id(row.get("data") or {}) == _record_grantor_id(announcement))
+    }
+    required = announcement.get("requiredDocuments") or {}
+    minimum_grade = announcement.get("minimumGrade") or announcement.get("minGwa")
+    try:
+        minimum_grade_number = float(minimum_grade) if minimum_grade not in (None, "") else None
+    except (TypeError, ValueError):
+        minimum_grade_number = None
+
+    recipients: list[str] = []
+    excluded = _normalize_student_id(exclude_student_id)
+    for row in students_result.get("rows") or []:
+        student = row.get("data") if isinstance(row.get("data"), dict) else {}
+        student_id = str(student.get("studentnumber") or student.get("studentId") or row.get("id") or "").strip()
+        normalized_id = _normalize_student_id(student_id)
+        status = str(student.get("status") or student.get("accountStatus") or "").strip().lower()
+        if not normalized_id or normalized_id == excluded or row.get("id", "").lower().startswith("roster_"):
+            continue
+        if student.get("archived") is True or status in {"archived", "inactive", "disabled", "frozen"}:
+            continue
+        if normalized_id in active_applicants:
+            continue
+        if student.get("scholarshipCommitment") or any(
+            _is_active_scholarship_record(item) and (not choice_enabled or item.get("isLocked") is True
+                or item.get("requestedSoeAt") or _normalized_status(item) in {"awarded", "accepted", "finalized"})
+            for item in student.get("scholarships") or [] if isinstance(item, dict)):
+            continue
+        if _archived_grantor_block(student, announcement.get("grantorId") or "", announcement.get("providerType") or ""):
+            continue
+        if minimum_grade_number is not None:
+            try:
+                if float(student.get("gwa") or student.get("currentGwa") or student.get("generalWeightedAverage")) > minimum_grade_number:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        if required.get("cog") is True and not _document_url(student, ("rogFile", "cogFile", "rogDocument", "cogDocument", "rog", "cog")):
+            continue
+        if required.get("cor") is True and not _document_url(student, ("corFile", "corDocument", "cor")):
+            continue
+        recipients.append(student_id)
+    return list(dict.fromkeys(recipients))
+
+
+def _send_low_slot_notifications(announcement_id: str, announcement: dict[str, Any], exclude_student_id: str = "") -> dict[str, Any]:
+    remaining = _to_positive_int(announcement.get("remainingSlots"))
+    if remaining is None or remaining >= 10 or announcement.get("lowSlotNotificationSentAt"):
+        return {"ok": True, "skipped": True}
+
+    scholarship_name = str(announcement.get("scholarshipTitle") or announcement.get("title") or "Scholarship").strip()
+    grantor_name = str(announcement.get("grantorName") or announcement.get("providerLabel") or "Grantor").strip()
+    results = []
+    for student_id in _eligible_low_slot_students(announcement, exclude_student_id):
+        notification_id = f"low_slots_{announcement_id}_{_normalize_student_id(student_id)}"
+        results.append(supabase_document_upsert("studentNotifications", notification_id, {
+            "studentId": student_id,
+            "source": "personal",
+            "type": "scholarship_low_slots",
+            "title": "Scholarship Slots Almost Full",
+            "message": f"Only {remaining} slots remain for {scholarship_name}. Apply soon if you are interested.",
+            "announcementId": announcement_id,
+            "announcementSource": "grantor",
+            "route": f"/student-dashboard/announcements/grantor/{announcement_id}",
+            "grantorId": announcement.get("grantorId") or "",
+            "grantorName": grantor_name,
+            "scholarshipName": scholarship_name,
+            "remainingSlots": remaining,
+            "read": False,
+            "createdAt": utc_now_iso(),
+        }, merge=False))
+
+    if not all(item.get("ok") for item in results):
+        return {"ok": False, "results": results}
+    sent_at = utc_now_iso()
+    marked = supabase_document_update(
+        "grantor_portal_announcements",
+        announcement_id,
+        {"lowSlotNotificationSentAt": sent_at},
+        parent_id=str(announcement.get("grantorId") or ""),
+    )
+    return {"ok": marked.get("ok", False), "recipients": len(results), "marked": marked}
 
 
 def _normalize_student_id(value: Any) -> str:
@@ -124,8 +247,9 @@ def _parse_datetime(value: Any) -> datetime | None:
 
 def _is_rejected_scholarship(entry: dict[str, Any]) -> bool:
     status = str(entry.get("status") or entry.get("reviewStatus") or "").lower()
-    return entry.get("rejected") is True or any(
-        keyword in status for keyword in ("rejected", "denied", "declined")
+    closure_reason = str(entry.get("closureReason") or "").lower()
+    return entry.get("rejected") is True or bool(entry.get("rejectedAt")) or any(
+        keyword in f"{status} {closure_reason}" for keyword in ("rejected", "denied", "declined")
     )
 
 
@@ -150,13 +274,32 @@ def _rejection_cooldown(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _latest_active_rejection_cooldown(student_data: dict[str, Any]) -> dict[str, Any] | None:
-    scholarships = student_data.get("scholarships")
-    if not isinstance(scholarships, list):
-        return None
+def _normalize_identity(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _same_grantor_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_id = _normalize_identity(left.get("blockedGrantorId") or left.get("grantorId") or left.get("providerId"))
+    right_id = _normalize_identity(right.get("blockedGrantorId") or right.get("grantorId") or right.get("providerId"))
+    if left_id or right_id:
+        return bool(left_id and right_id and left_id == right_id)
+    left_type = _normalize_identity(left.get("providerType"))
+    right_type = _normalize_identity(right.get("providerType"))
+    if left_type and right_type:
+        return left_type == right_type
+    left_name = _normalize_identity(left.get("blockedGrantorName") or left.get("grantorName") or left.get("providerLabel") or left.get("provider"))
+    right_name = _normalize_identity(right.get("blockedGrantorName") or right.get("grantorName") or right.get("providerLabel") or right.get("provider"))
+    return bool(left_name and right_name and left_name == right_name)
+
+
+def _latest_active_rejection_cooldown(student_data: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:
+    scholarships: list[Any] = []
+    for key in ("scholarships", "scholarshipApplicationHistory"):
+        if isinstance(student_data.get(key), list):
+            scholarships.extend(student_data.get(key) or [])
     rejected_entries = [
         entry for entry in scholarships
-        if isinstance(entry, dict) and _is_rejected_scholarship(entry)
+        if isinstance(entry, dict) and _is_rejected_scholarship(entry) and _same_grantor_identity(entry, target)
     ]
     cooldowns = [
         {**_rejection_cooldown(entry), "entry": entry}
@@ -168,40 +311,74 @@ def _latest_active_rejection_cooldown(student_data: dict[str, Any]) -> dict[str,
     return sorted(active, key=lambda item: item.get("remainingSeconds", 0), reverse=True)[0]
 
 
-def _entry_matches_archived_grantor(entry: dict[str, Any], grantor_id: str = "", provider_type: str = "") -> bool:
-    status = str(entry.get("status") or "").lower()
+def _entry_matches_archived_grantor(
+    entry: dict[str, Any], grantor_id: str = "", provider_type: str = "", grantor_name: str = ""
+) -> bool:
+    closure_reason = _normalize_identity(entry.get("closureReason"))
+    status = _normalize_identity(entry.get("status"))
+    if closure_reason in {
+        "selected_another_scholarship", "student_withdrawal", "withdrawn",
+        "rejected", "denied", "declined",
+    } or any(keyword in status for keyword in ("withdrawn", "cancelled", "canceled")):
+        return False
+    if _is_rejected_scholarship(entry):
+        return False
     if not (
         entry.get("archived") is True
         or entry.get("frozen") is True
         or "archived" in status
         or "frozen" in status
-        or "previous" in status
     ):
         return False
-    entry_grantor = str(
-        entry.get("blockedGrantorId")
-        or entry.get("archivedBy")
-        or entry.get("grantorId")
-        or entry.get("providerId")
-        or ""
-    ).strip().lower()
-    entry_provider = str(entry.get("providerType") or "").strip().lower()
-    expected_grantor = str(grantor_id or "").strip().lower()
-    expected_provider = str(provider_type or "").strip().lower()
-    return bool(
-        (expected_grantor and entry_grantor and expected_grantor == entry_grantor)
-        or (expected_provider and entry_provider and expected_provider == entry_provider)
+    return _same_grantor_identity(entry, {
+        "grantorId": grantor_id, "providerType": provider_type, "grantorName": grantor_name,
+    })
+
+
+def _find_pending_scholarship_invitation(
+    student_data: dict[str, Any], application: dict[str, Any], invitation_id: str = ""
+) -> dict[str, Any] | None:
+    invitations = student_data.get("scholarshipInvitations")
+    if not isinstance(invitations, list):
+        return None
+    requested_id = _normalize_identity(invitation_id)
+    announcement_id = _normalize_identity(application.get("announcementId"))
+    scholarship_name = _normalize_identity(
+        application.get("scholarshipName") or application.get("scholarshipTitle")
+        or application.get("announcementTitle") or application.get("providerLabel")
     )
+    for invitation in invitations:
+        if not isinstance(invitation, dict):
+            continue
+        if _normalize_identity(invitation.get("status") or "pending") not in {"pending", "invited"}:
+            continue
+        if requested_id and _normalize_identity(invitation.get("id")) != requested_id:
+            continue
+        if not _same_grantor_identity(invitation, application):
+            continue
+        invitation_announcement_id = _normalize_identity(invitation.get("announcementId"))
+        if invitation_announcement_id:
+            if announcement_id and invitation_announcement_id == announcement_id:
+                return invitation
+            continue
+        invitation_name = _normalize_identity(
+            invitation.get("scholarshipName") or invitation.get("announcementTitle") or invitation.get("providerLabel")
+        )
+        if invitation_name and scholarship_name and invitation_name == scholarship_name:
+            return invitation
+    return None
 
 
-def _archived_grantor_block(student_data: dict[str, Any], grantor_id: str = "", provider_type: str = "") -> dict[str, Any] | None:
+def _archived_grantor_block(
+    student_data: dict[str, Any], grantor_id: str = "", provider_type: str = "", grantor_name: str = ""
+) -> dict[str, Any] | None:
     entries: list[Any] = []
     if isinstance(student_data.get("scholarships"), list):
         entries.extend(student_data.get("scholarships") or [])
     if isinstance(student_data.get("previousScholars"), list):
         entries.extend(student_data.get("previousScholars") or [])
     for entry in entries:
-        if isinstance(entry, dict) and _entry_matches_archived_grantor(entry, grantor_id, provider_type):
+        if isinstance(entry, dict) and _entry_matches_archived_grantor(entry, grantor_id, provider_type, grantor_name):
             return entry
     return None
 
@@ -223,6 +400,21 @@ def _archived_grantor_account(grantor_id: str) -> dict[str, Any] | None:
 
 
 def apply_scholarship(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from .scholarship_choice_service import reserve_scholarship_application, scholarship_choice_enabled
+    except ImportError:
+        from scholarship_choice_service import reserve_scholarship_application, scholarship_choice_enabled
+    if scholarship_choice_enabled() and payload.get("actorType") == "student":
+        result = reserve_scholarship_application(payload)
+        if result.get("ok") and not result.get("idempotent"):
+            application = payload.get("application") or {}
+            announcement_id = str(application.get("announcementId") or "")
+            grantor_id = str(application.get("grantorId") or application.get("providerId") or "")
+            announcement = supabase_document_get("grantor_portal_announcements", announcement_id, parent_id=grantor_id)
+            if announcement.get("ok"):
+                result["lowSlotNotifications"] = _send_low_slot_notifications(announcement_id,
+                    {**(announcement.get("data") or {}), "grantorId": grantor_id}, str(payload.get("studentId") or ""))
+        return result
     student_id = payload.get("studentId") or payload.get("student", {}).get("id")
     if not student_id:
         return {"ok": False, "reason": "missing_student_id"}
@@ -251,7 +443,10 @@ def apply_scholarship(payload: dict[str, Any]) -> dict[str, Any]:
     current_student_data: dict[str, Any] = {}
     if current_student.get("ok"):
         current_student_data = current_student.get("data") or {}
-        active_cooldown = _latest_active_rejection_cooldown(current_student_data)
+        matching_invitation = _find_pending_scholarship_invitation(
+            current_student_data, application, str(payload.get("invitationId") or "")
+        )
+        active_cooldown = _latest_active_rejection_cooldown(current_student_data, application)
         if active_cooldown:
             return {
                 "ok": False,
@@ -260,11 +455,12 @@ def apply_scholarship(payload: dict[str, Any]) -> dict[str, Any]:
                 "readyAt": active_cooldown.get("readyAt"),
                 "remainingSeconds": active_cooldown.get("remainingSeconds"),
             }
-        if not payload.get("allowArchivedGrantorReapply"):
+        if not matching_invitation:
             archived_block = _archived_grantor_block(
                 current_student_data,
                 application.get("grantorId") or application.get("providerId") or "",
                 application.get("providerType") or "",
+                application.get("grantorName") or application.get("providerLabel") or "",
             )
             if archived_block:
                 return {
@@ -273,6 +469,17 @@ def apply_scholarship(payload: dict[str, Any]) -> dict[str, Any]:
                     "message": "Student was archived by this grantor and cannot apply again unless invited back.",
                     "entry": archived_block,
                 }
+        authoritative_invitations = current_student_data.get("scholarshipInvitations")
+        if isinstance(authoritative_invitations, list):
+            student_update["scholarshipInvitations"] = [
+                {
+                    **invitation,
+                    **({"status": "Accepted", "acceptedAt": utc_now_iso(), "updatedAt": utc_now_iso()}
+                       if matching_invitation and invitation.get("id") == matching_invitation.get("id") else {}),
+                }
+                if isinstance(invitation, dict) else invitation
+                for invitation in authoritative_invitations
+            ]
 
     active_commitments = _active_student_commitments(student_id, current_student_data)
     conflicting_commitments = [
@@ -298,12 +505,49 @@ def apply_scholarship(payload: dict[str, Any]) -> dict[str, Any]:
             "results": {},
         }
 
-    if student_update:
+    announcement_id = str(application.get("announcementId") or "").strip()
+    slot_managed = bool(announcement_id and grantor_id)
+    if slot_managed:
+        application_id = str(application.get("id") or uuid4())
+        application = {**application, "id": application_id}
+        slot_result = supabase_rpc("apply_scholarship_with_slot", {
+            "p_announcement_id": announcement_id,
+            "p_grantor_id": grantor_id,
+            "p_student_id": student_id,
+            "p_application_id": application_id,
+            "p_application_data": application,
+            "p_student_update": student_update,
+        })
+        if not slot_result.get("ok"):
+            return {
+                "ok": False,
+                "reason": slot_result.get("reason") or "slot_reservation_failed",
+                "message": {
+                    "slots_not_configured": "This scholarship is not accepting applications until the grantor configures its slots.",
+                    "scholarship_full": "This scholarship has no remaining slots.",
+                    "announcement_not_open_for_applications": "This scholarship is no longer open for applications.",
+                    "student_already_has_active_scholarship": "This student already has an active scholarship application.",
+                }.get(slot_result.get("reason"), "Unable to reserve a scholarship slot."),
+                "result": slot_result,
+            }
+        results["slotReservation"] = slot_result
+        results["application"] = {"ok": True, "id": application_id, "data": slot_result.get("data")}
+        slot_data = slot_result.get("data") if isinstance(slot_result.get("data"), dict) else {}
+        if slot_data.get("idempotent"):
+            return {
+                "ok": True,
+                "idempotent": True,
+                "message": "The student is already attached to this scholarship.",
+                "remainingSlots": slot_data.get("remainingSlots"),
+                "results": results,
+            }
+
+    if student_update and not slot_managed:
         results["student"] = supabase_document_upsert("students", student_id, student_update, merge=True)
         if not results["student"].get("ok"):
             return {"ok": False, "step": "student_update", "result": results["student"]}
 
-    if application:
+    if application and not slot_managed:
         results["application"] = supabase_document_insert("scholarship_applications", application)
         if not results["application"].get("ok"):
             return {"ok": False, "step": "application_insert", "result": results["application"]}
@@ -379,7 +623,26 @@ def apply_scholarship(payload: dict[str, Any]) -> dict[str, Any]:
             "createdAt": utc_now_iso(),
         })
 
-    return {"ok": True, "results": results}
+    remaining_slots = None
+    if slot_managed:
+        slot_data = (results.get("slotReservation") or {}).get("data") or {}
+        remaining_slots = slot_data.get("remainingSlots")
+        announcement_result = supabase_document_get("grantor_portal_announcements", announcement_id, parent_id=grantor_id)
+        if announcement_result.get("ok"):
+            announcement_data = announcement_result.get("data") or {}
+            low_slot_result = _send_low_slot_notifications(announcement_id, announcement_data, exclude_student_id=student_id)
+            results["lowSlotNotification"] = low_slot_result
+            if not low_slot_result.get("ok"):
+                create_log({
+                    "action": "low_slot_notification_failed",
+                    "actorId": student_id,
+                    "actorType": "student",
+                    "target": announcement_id,
+                    "details": {"remainingSlots": remaining_slots, "result": low_slot_result},
+                    "createdAt": utc_now_iso(),
+                })
+
+    return {"ok": True, "remainingSlots": remaining_slots, "results": results}
 
 
 def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
@@ -388,6 +651,31 @@ def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
     actor_type = str(payload.get("actorType") or "admin").strip().lower()
     actor_id = str(payload.get("actorId") or "").strip()
     results = []
+
+    # Preflight every application before any side effects in the legacy batch.
+    for update in updates:
+        if update.get("table") not in {"scholarship_applications", "scholarshipApplications"}:
+            continue
+        current = supabase_document_get("scholarship_applications", str(update.get("id") or ""))
+        if not current.get("ok"):
+            return {"ok": False, "reason": "application_not_found"}
+        current_data = current.get("data") or {}
+        if current_data.get("closureReason") in {"selected_another_scholarship", "student_withdrawal"}:
+            return {"ok": False, "reason": "application_closed", "message": "This application is archived and read-only."}
+        if current_data.get("lifecycleVersion") == 2:
+            for key in ("studentId", "grantorId", "announcementId", "applicationNumber"):
+                if key in (update.get("data") or {}) and update["data"][key] != current_data.get(key):
+                    return {"ok": False, "reason": "application_identity_immutable"}
+            # Reviews cannot rewrite reservations, uploaded files, or commitment metadata.
+            protected_keys = {
+                "id", "studentId", "grantorId", "announcementId", "applicationNumber", "scholarshipId",
+                "lifecycleVersion", "slotReserved", "slotReservedAt", "slotReleasedAt",
+                "closureReason", "closedAt", "readOnly", "cooldownUntil", "committedAt", "isLocked",
+                "applicationFormFile", "otherRequirementUploads", "reviewedDocumentVersions",
+                "reviewedApplicationFormVersion", "reviewedOtherRequirementVersions", "documentUrls",
+            }
+            update["data"] = {key: value for key, value in (update.get("data") or {}).items()
+                              if key not in protected_keys}
 
     if actor_type == "grantor":
         for update in updates:
@@ -422,7 +710,24 @@ def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
         if not table or not record_id:
             results.append({"ok": False, "reason": "missing_table_or_id", "update": update})
             continue
-        results.append(supabase_document_update(table, record_id, data))
+        normalized_status = str(data.get("status") or data.get("applicationStatus") or "").strip().lower()
+        releases_slot = table in {"scholarship_applications", "scholarshipApplications"} and (
+            normalized_status in SLOT_RELEASE_STATUSES
+            or data.get("rejected") is True
+            or (data.get("archived") is True and normalized_status != "approved")
+        )
+        if releases_slot:
+            current_application = supabase_document_get("scholarship_applications", record_id)
+            current_data = current_application.get("data") or {}
+            if current_application.get("ok") and current_data.get("slotReserved") is True:
+                results.append(supabase_rpc("release_scholarship_slot_for_application", {
+                    "p_application_id": record_id,
+                    "p_application_patch": data,
+                }))
+            else:
+                results.append(supabase_document_update(table, record_id, data))
+        else:
+            results.append(supabase_document_update(table, record_id, data))
 
     notification_results = []
     for notification in notifications:
@@ -483,6 +788,38 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
     actor_type = str(payload.get("actorType") or "student").strip().lower()
     actor_id = str(payload.get("actorId") or "").strip()
     results = []
+    if actor_type == "student":
+        current_student = supabase_document_get("students", actor_id)
+        if (current_student.get("data") or {}).get("scholarshipLifecycleVersion") == 2:
+            student = current_student.get("data") or {}
+            commitment = student.get("scholarshipCommitment") or {}
+            for change in [*inserts, *updates]:
+                table = change.get("table")
+                if table not in {"students", "soe_requests", "soe_downloads"}:
+                    return {"ok": False, "reason": "application_workflow_required"}
+                if table == "students":
+                    if change.get("id") != actor_id:
+                        return {"ok": False, "reason": "portal_record_owner_mismatch"}
+                    continue
+                if not commitment.get("applicationId"):
+                    return {"ok": False, "reason": "scholarship_choice_required"}
+                if table == "soe_requests":
+                    current = supabase_document_get(table, str(change.get("id") or ""))
+                    request_data = current.get("data") or {}
+                    if not current.get("ok") or request_data.get("studentId") != actor_id:
+                        return {"ok": False, "reason": "scholarship_choice_required"}
+                    if request_data.get("applicationNumber") != commitment.get("applicationNumber"):
+                        return {"ok": False, "reason": "application_closed"}
+                    if str((request_data.get("materials") or {}).get("soe", {}).get("status") or request_data.get("status") or "").lower() != "approved":
+                        return {"ok": False, "reason": "material_approval_required"}
+                    allowed = {"materials.soe.downloadedAt", "downloadStatus", "downloadedAt", "updatedAt"}
+                    change["data"] = {key: value for key, value in (change.get("data") or {}).items() if key in allowed}
+                else:
+                    data = change.get("data") or {}
+                    if data.get("applicationNumber") != commitment.get("applicationNumber"):
+                        return {"ok": False, "reason": "application_closed"}
+                    data.update({"studentId": actor_id, "grantorId": commitment.get("grantorId"),
+                                 "applicationId": commitment.get("applicationId"), "status": "Pending", "reviewState": "incoming"})
     for insert in inserts:
         table = insert.get("table")
         data = insert.get("data") or {}
@@ -803,7 +1140,26 @@ def create_grantor_announcement(payload: dict[str, Any]) -> dict[str, Any]:
             "grantorId": grantor_id,
         }
     data = dict(announcement)
+    if data.get("applicationEnabled") is True:
+        total_slots = _to_positive_int(data.get("totalSlots"))
+        if total_slots is None:
+            return {
+                "ok": False,
+                "reason": "invalid_slot_capacity",
+                "message": "Slots must be a whole number from 1 to 1000.",
+            }
+        data["slotsConfigured"] = True
+        data["totalSlots"] = total_slots
+        data["remainingSlots"] = total_slots
+        data["lowSlotNotificationSentAt"] = None
+    else:
+        data["slotsConfigured"] = False
+        data["totalSlots"] = None
+        data["remainingSlots"] = None
     data.setdefault("grantorId", grantor_id)
+    data.setdefault("archived", False)
+    data.setdefault("grantorAccountArchived", False)
+    data.setdefault("hiddenFromStudents", False)
     data.setdefault("createdAt", utc_now_iso())
     data.setdefault("updatedAt", utc_now_iso())
     result = supabase_document_insert("grantor_portal_announcements", data, parent_id=grantor_id)
@@ -840,6 +1196,7 @@ def create_grantor_announcement(payload: dict[str, Any]) -> dict[str, Any]:
             "details": {"title": data.get("title") or "Announcement"},
             "createdAt": utc_now_iso(),
         })
+        low_slot_notification = _send_low_slot_notifications(announcement_id, {**data, "grantorId": grantor_id})
         return {
             "ok": True,
             "id": announcement_id,
@@ -847,6 +1204,7 @@ def create_grantor_announcement(payload: dict[str, Any]) -> dict[str, Any]:
             "notification": notification,
             "adminNotification": admin_notification,
             "log": log_result,
+            "lowSlotNotification": low_slot_notification,
         }
     return result
 
@@ -861,6 +1219,22 @@ def update_grantor_announcement(payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "reason": "missing_grantor_or_announcement_id"}
     if actor_type == "grantor" and actor_id != grantor_id:
         return {"ok": False, "reason": "cross_grantor_announcement_update_blocked"}
+    if _archived_grantor_account(grantor_id):
+        return {
+            "ok": False,
+            "reason": "grantor_archived",
+            "message": "This grantor account is archived and cannot modify announcements.",
+            "grantorId": grantor_id,
+        }
+    current_result = supabase_document_get("grantor_portal_announcements", announcement_id, parent_id=grantor_id)
+    current_announcement = current_result.get("data") or {}
+    current_status = str(current_announcement.get("status") or "").strip().lower()
+    if current_announcement.get("archived") is True or current_status == "archived":
+        return {
+            "ok": False,
+            "reason": "announcement_permanently_archived",
+            "message": "Archived announcements cannot be restored or modified. Create a new announcement instead.",
+        }
     data.setdefault("updatedAt", utc_now_iso())
     result = supabase_document_update("grantor_portal_announcements", announcement_id, data, parent_id=grantor_id)
     if not result.get("ok"):
@@ -878,6 +1252,496 @@ def update_grantor_announcement(payload: dict[str, Any]) -> dict[str, Any]:
             "createdAt": utc_now_iso(),
         })
     return {"ok": True, "result": result, "notification": notification}
+
+
+def configure_grantor_announcement_slots(payload: dict[str, Any]) -> dict[str, Any]:
+    grantor_id = str(payload.get("grantorId") or "").strip()
+    actor_type = str(payload.get("actorType") or "grantor").strip().lower()
+    actor_id = str(payload.get("actorId") or grantor_id).strip()
+    announcement_id = str(payload.get("announcementId") or "").strip()
+    total_slots = _to_positive_int(payload.get("totalSlots"))
+    if not grantor_id or not announcement_id:
+        return {"ok": False, "reason": "missing_grantor_or_announcement_id"}
+    if actor_type == "grantor" and actor_id != grantor_id:
+        return {"ok": False, "reason": "cross_grantor_announcement_update_blocked"}
+    if _archived_grantor_account(grantor_id):
+        return {
+            "ok": False,
+            "reason": "grantor_archived",
+            "message": "This grantor account is archived and cannot modify scholarship slots.",
+            "grantorId": grantor_id,
+        }
+    if total_slots is None:
+        return {"ok": False, "reason": "invalid_slot_capacity", "message": "Slots must be a whole number from 1 to 1000."}
+
+    announcement_result = supabase_document_get("grantor_portal_announcements", announcement_id, parent_id=grantor_id)
+    announcement = announcement_result.get("data") or {}
+    if announcement.get("archived") is True or str(announcement.get("status") or "").strip().lower() == "archived":
+        return {
+            "ok": False,
+            "reason": "announcement_permanently_archived",
+            "message": "Archived announcements cannot be modified. Create a new announcement instead.",
+        }
+
+    result = supabase_rpc("configure_scholarship_slots", {
+        "p_announcement_id": announcement_id,
+        "p_grantor_id": grantor_id,
+        "p_total_slots": total_slots,
+    })
+    if not result.get("ok"):
+        message = "Unable to update scholarship slots."
+        if result.get("reason") == "capacity_below_occupied":
+            message = "Total slots cannot be lower than the number of current applications."
+        return {"ok": False, "reason": result.get("reason"), "message": message, "result": result}
+
+    announcement_result = supabase_document_get("grantor_portal_announcements", announcement_id, parent_id=grantor_id)
+    low_slot_notification = {"ok": True, "skipped": True}
+    if announcement_result.get("ok"):
+        low_slot_notification = _send_low_slot_notifications(announcement_id, announcement_result.get("data") or {})
+    return {
+        "ok": True,
+        "capacity": result.get("data"),
+        "lowSlotNotification": low_slot_notification,
+    }
+
+
+def update_grantor_archive_state(payload: dict[str, Any]) -> dict[str, Any]:
+    grantor_ids = [str(item or "").strip() for item in payload.get("grantorIds") or []]
+    grantor_ids = list(dict.fromkeys(item for item in grantor_ids if item))
+    archived = payload.get("archived") is True
+    restore_data = payload.get("restoreData") if isinstance(payload.get("restoreData"), dict) else {}
+    actor_id = str(payload.get("actorId") or "admin").strip() or "admin"
+    if not grantor_ids:
+        return {"ok": False, "reason": "missing_grantor_ids", "message": "Select at least one grantor."}
+
+    now = utc_now_iso()
+    results = []
+    failures = []
+    announcement_count = 0
+    invitation_count = 0
+    notification_count = 0
+
+    for grantor_id in grantor_ids:
+        if archived:
+            account_data = {
+                "archived": True,
+                "archivedAt": now,
+                "status": "Archived",
+                "updatedAt": now,
+            }
+            portal_data = account_data
+        else:
+            account_data = {
+                **restore_data,
+                "archived": False,
+                "archivedAt": None,
+                "status": "Active",
+                "updatedAt": now,
+            }
+            portal_data = {
+                "archived": False,
+                "archivedAt": None,
+                "status": "Active",
+                "updatedAt": now,
+            }
+
+        provider_result = supabase_document_upsert("providers", grantor_id, account_data, merge=True)
+        portal_result = supabase_document_upsert("grantor_portals", grantor_id, portal_data, merge=True)
+        grantor_failures = []
+        if not provider_result.get("ok"):
+            grantor_failures.append({"step": "provider", "detail": provider_result})
+        if not portal_result.get("ok"):
+            grantor_failures.append({"step": "portal", "detail": portal_result})
+
+        archived_announcements = 0
+        cancelled_invitations = 0
+        sent_notifications = 0
+        if archived:
+            announcement_rows = supabase_select(
+                "grantor_portal_announcements",
+                {"parent_id": grantor_id},
+                limit=0,
+            )
+            if not announcement_rows.get("ok"):
+                grantor_failures.append({"step": "announcement_lookup", "detail": announcement_rows})
+            else:
+                for row in announcement_rows.get("rows") or []:
+                    announcement_id = str(row.get("id") or "").strip()
+                    if not announcement_id:
+                        continue
+                    existing_announcement = row.get("data") if isinstance(row.get("data"), dict) else {}
+                    already_archived = (
+                        existing_announcement.get("archived") is True
+                        or str(existing_announcement.get("status") or "").strip().lower() == "archived"
+                    )
+                    archive_data = {
+                        "archived": True,
+                        "status": "Archived",
+                        "grantorAccountArchived": True,
+                        "hiddenFromStudents": True,
+                        "updatedAt": now,
+                    }
+                    if not already_archived:
+                        archive_data.update({
+                            "archivedAt": now,
+                            "archivedBy": actor_id,
+                            "archiveSource": "grantor_account",
+                            "archivedByAccountAction": True,
+                        })
+                    archive_result = supabase_document_update(
+                        "grantor_portal_announcements",
+                        announcement_id,
+                        archive_data,
+                        parent_id=grantor_id,
+                    )
+                    if archive_result.get("ok"):
+                        archived_announcements += 1
+                        announcement_count += 1
+                    else:
+                        grantor_failures.append({
+                            "step": "announcement_archive",
+                            "announcementId": announcement_id,
+                            "detail": archive_result,
+                        })
+
+            students_result = supabase_select("students", limit=0)
+            if not students_result.get("ok"):
+                grantor_failures.append({"step": "invitation_lookup", "detail": students_result})
+            else:
+                for student_row in students_result.get("rows") or []:
+                    student_id = str(student_row.get("id") or "").strip()
+                    student_data = student_row.get("data") if isinstance(student_row.get("data"), dict) else {}
+                    invitations = student_data.get("scholarshipInvitations")
+                    if not student_id or not isinstance(invitations, list):
+                        continue
+                    cancelled_ids = []
+                    next_invitations = []
+                    for invitation in invitations:
+                        if not isinstance(invitation, dict):
+                            next_invitations.append(invitation)
+                            continue
+                        same_grantor = _same_grantor_identity(invitation, {"grantorId": grantor_id})
+                        pending = _normalize_identity(invitation.get("status") or "pending") in {"pending", "invited"}
+                        if same_grantor and pending:
+                            invitation_id = str(invitation.get("id") or "").strip()
+                            cancelled_ids.append(invitation_id or str(uuid4()))
+                            next_invitations.append({
+                                **invitation,
+                                "status": "Cancelled",
+                                "cancelledAt": now,
+                                "cancellationReason": "grantor_account_archived",
+                                "cancelledBy": actor_id,
+                                "updatedAt": now,
+                            })
+                        else:
+                            next_invitations.append(invitation)
+                    if not cancelled_ids:
+                        continue
+                    student_update = supabase_document_upsert("students", student_id, {
+                        "scholarshipInvitations": next_invitations,
+                        "updatedAt": now,
+                    }, merge=True)
+                    if not student_update.get("ok"):
+                        grantor_failures.append({
+                            "step": "invitation_cancel",
+                            "studentId": student_id,
+                            "detail": student_update,
+                        })
+                        continue
+                    cancelled_invitations += len(cancelled_ids)
+                    invitation_count += len(cancelled_ids)
+                    notification_id = str(uuid5(
+                        NAMESPACE_URL,
+                        f"bulsuscholar:grantor-archive:{grantor_id}:{student_id}:{','.join(sorted(cancelled_ids))}",
+                    ))
+                    notification_result = supabase_document_upsert("studentNotifications", notification_id, {
+                        "studentId": student_id,
+                        "source": "personal",
+                        "type": "scholarship_invitation_cancelled",
+                        "title": "Scholarship Invitation Cancelled",
+                        "message": "A scholarship invitation was cancelled because the grantor account was archived. Restoring the account will not restore this invitation.",
+                        "grantorId": grantor_id,
+                        "reason": "grantor_account_archived",
+                        "route": "/student-dashboard/scholarships",
+                        "read": False,
+                        "createdAt": now,
+                        "updatedAt": now,
+                    }, merge=True)
+                    if notification_result.get("ok"):
+                        sent_notifications += 1
+                        notification_count += 1
+                    else:
+                        grantor_failures.append({
+                            "step": "invitation_cancel_notification",
+                            "studentId": student_id,
+                            "detail": notification_result,
+                        })
+
+            scholar_rows = supabase_select("grantor_portal_scholars", {"parent_id": grantor_id}, limit=0)
+            if not scholar_rows.get("ok"):
+                grantor_failures.append({"step": "invitation_roster_lookup", "detail": scholar_rows})
+            else:
+                for scholar_row in scholar_rows.get("rows") or []:
+                    scholar_data = scholar_row.get("data") if isinstance(scholar_row.get("data"), dict) else {}
+                    if scholar_data.get("unarchiveInvitationPending") is not True:
+                        continue
+                    scholar_result = supabase_document_update(
+                        "grantor_portal_scholars",
+                        str(scholar_row.get("id") or ""),
+                        {
+                            "archived": True,
+                            "status": "Archived",
+                            "unarchiveInvitationPending": False,
+                            "invitationStatus": "Cancelled",
+                            "invitationCancelledAt": now,
+                            "invitationCancellationReason": "grantor_account_archived",
+                            "updatedAt": now,
+                        },
+                        parent_id=grantor_id,
+                    )
+                    if not scholar_result.get("ok"):
+                        grantor_failures.append({
+                            "step": "invitation_roster_cancel",
+                            "scholarId": scholar_row.get("id"),
+                            "detail": scholar_result,
+                        })
+
+        result = {
+            "grantorId": grantor_id,
+            "archived": archived,
+            "announcementCount": archived_announcements,
+            "invitationCount": cancelled_invitations,
+            "notificationCount": sent_notifications,
+            "ok": len(grantor_failures) == 0,
+            "failures": grantor_failures,
+        }
+        results.append(result)
+        if grantor_failures:
+            failures.extend({"grantorId": grantor_id, **failure} for failure in grantor_failures)
+
+    create_log({
+        "action": "grantors_archived" if archived else "grantors_unarchived",
+        "actorId": actor_id,
+        "actorType": "admin",
+        "target": ",".join(grantor_ids),
+        "details": {
+            "grantorCount": len(grantor_ids),
+            "announcementCount": announcement_count,
+            "invitationCount": invitation_count,
+            "notificationCount": notification_count,
+            "failureCount": len(failures),
+        },
+        "createdAt": now,
+    })
+    return {
+        "ok": True,
+        "partial": len(failures) > 0,
+        "grantorCount": len(grantor_ids),
+        "announcementCount": announcement_count,
+        "invitationCount": invitation_count,
+        "notificationCount": notification_count,
+        "results": results,
+        "failures": failures,
+    }
+
+
+def invite_archived_grantor_scholars(payload: dict[str, Any]) -> dict[str, Any]:
+    grantor_id = str(payload.get("grantorId") or "").strip()
+    announcement_id = str(payload.get("announcementId") or "").strip()
+    scholar_ids = list(dict.fromkeys(str(item or "").strip() for item in payload.get("scholarIds") or [] if str(item or "").strip()))
+    if not grantor_id or not announcement_id or not scholar_ids:
+        return {"ok": False, "reason": "missing_invitation_identity", "message": "Select archived scholars and a scholarship announcement."}
+    if _archived_grantor_account(grantor_id):
+        return {"ok": False, "reason": "grantor_archived", "message": "Archived grantors cannot send scholarship invitations."}
+
+    announcement_result = supabase_document_get("grantor_portal_announcements", announcement_id, parent_id=grantor_id)
+    if not announcement_result.get("ok") or not announcement_result.get("row"):
+        return {"ok": False, "reason": "announcement_not_found", "message": "The selected scholarship announcement no longer exists."}
+    announcement = announcement_result.get("data") or {}
+    now = datetime.now(timezone.utc)
+    starts_at = _parse_datetime(announcement.get("startDate"))
+    ends_at = _parse_datetime(announcement.get("endDate"))
+    status = _normalize_identity(announcement.get("status"))
+    if (announcement.get("applicationEnabled") is not True or announcement.get("archived") is True
+            or announcement.get("hiddenFromStudents") is True or status in {"archived", "closed", "ended", "draft"}
+            or (starts_at and starts_at > now) or (ends_at and ends_at < now)):
+        return {"ok": False, "reason": "announcement_not_open_for_applications", "message": "The selected scholarship announcement is no longer open."}
+    if announcement.get("slotsConfigured") is not True:
+        return {"ok": False, "reason": "slots_not_configured", "message": "Configure scholarship slots before sending invitations."}
+    try:
+        remaining_slots = max(0, int(announcement.get("remainingSlots") or 0))
+        total_slots = max(0, int(announcement.get("totalSlots") or 0))
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "slots_not_configured", "message": "The scholarship slot configuration is invalid."}
+    if remaining_slots < 1:
+        return {"ok": False, "reason": "scholarship_full", "message": "This scholarship has no remaining slots."}
+
+    scholarship_name = str(announcement.get("scholarshipTitle") or announcement.get("scholarshipName") or announcement.get("title") or "Scholarship").strip()
+    grantor_result = supabase_document_get("grantor_portals", grantor_id)
+    grantor_data = grantor_result.get("data") or {}
+    grantor_name = str(grantor_data.get("name") or grantor_data.get("grantorName") or grantor_data.get("organizationName") or announcement.get("grantorName") or "Grantor").strip()
+    minimum_grade = announcement.get("minimumGrade") or announcement.get("minimumGwa") or announcement.get("minGwa")
+    try:
+        minimum_grade_value = float(minimum_grade) if minimum_grade not in (None, "") else None
+    except (TypeError, ValueError):
+        minimum_grade_value = None
+
+    results = []
+    failures = []
+    for scholar_id in scholar_ids:
+        scholar_result = supabase_document_get("grantor_portal_scholars", scholar_id, parent_id=grantor_id)
+        scholar = scholar_result.get("data") or {}
+        if not scholar_result.get("ok") or not scholar_result.get("row") or scholar.get("archived") is not True:
+            failure = {"scholarId": scholar_id, "reason": "archived_scholar_not_found", "message": "The selected archived scholar record is unavailable."}
+            results.append({"ok": False, **failure})
+            failures.append(failure)
+            continue
+        student_id = str(scholar.get("studentId") or scholar.get("studentNumber") or scholar.get("studentnumber") or "").strip()
+        student_result = supabase_document_get("students", student_id) if student_id else {"ok": False}
+        student = student_result.get("data") or {}
+        if not student_result.get("ok") or not student_result.get("row"):
+            failure = {"scholarId": scholar_id, "studentId": student_id, "reason": "student_not_found", "message": "The student account could not be found."}
+            results.append({"ok": False, **failure})
+            failures.append(failure)
+            continue
+        if student.get("archived") is True or student.get("disabled") is True or student.get("adminBlocked") is True:
+            failure = {"scholarId": scholar_id, "studentId": student_id, "reason": "student_account_blocked", "message": "The student account is inactive or blocked."}
+            results.append({"ok": False, **failure})
+            failures.append(failure)
+            continue
+        committed = bool(student.get("scholarshipCommitment", {}).get("applicationId")) or any(
+            isinstance(entry, dict) and _is_active_scholarship_record(entry) and (
+                entry.get("isLocked") is True or entry.get("committedAt") or entry.get("requestedSoeAt")
+                or _normalized_status(entry) in {"awarded", "accepted", "finalized", "active"}
+            ) for entry in student.get("scholarships") or []
+        )
+        if committed:
+            failure = {"scholarId": scholar_id, "studentId": student_id, "reason": "student_already_has_active_scholarship", "message": "The student already has an active scholarship."}
+            results.append({"ok": False, **failure})
+            failures.append(failure)
+            continue
+        try:
+            student_grade = float(student.get("gwa") or student.get("currentGwa"))
+        except (TypeError, ValueError):
+            student_grade = None
+        if minimum_grade_value is not None and (student_grade is None or student_grade < 1 or student_grade > minimum_grade_value):
+            failure = {"scholarId": scholar_id, "studentId": student_id, "reason": "scholarship_ineligible", "message": "The student does not meet the scholarship GWA requirement."}
+            results.append({"ok": False, **failure})
+            failures.append(failure)
+            continue
+
+        invitation_id = f"invite_{grantor_id}_{announcement_id}_{scholar_id}"
+        current_invitations = student.get("scholarshipInvitations") if isinstance(student.get("scholarshipInvitations"), list) else []
+        invitation = {
+            "id": invitation_id,
+            "type": "grantor_unarchive_invitation",
+            "status": "Pending",
+            "grantorId": grantor_id,
+            "grantorName": grantor_name,
+            "scholarId": scholar_id,
+            "announcementId": announcement_id,
+            "scholarshipName": scholarship_name,
+            "providerType": announcement.get("providerType") or "",
+            "minimumGwa": minimum_grade,
+            "requiredDocuments": announcement.get("requiredDocuments") or {},
+            "otherRequirements": announcement.get("otherRequirements") or [],
+            "startDate": announcement.get("startDate"),
+            "endDate": announcement.get("endDate"),
+            "totalSlots": total_slots,
+            "remainingSlots": remaining_slots,
+            "archiveReason": scholar.get("archiveReason") or "",
+            "archiveNotes": scholar.get("archiveNotes") or "",
+            "createdAt": utc_now_iso(),
+            "updatedAt": utc_now_iso(),
+        }
+        next_invitations = [item for item in current_invitations if not isinstance(item, dict) or item.get("id") != invitation_id] + [invitation]
+        student_update = supabase_document_upsert("students", student_id, {"scholarshipInvitations": next_invitations, "updatedAt": utc_now_iso()}, merge=True)
+        if not student_update.get("ok"):
+            failure = {"scholarId": scholar_id, "studentId": student_id, "reason": "invitation_save_failed", "detail": student_update}
+            results.append({"ok": False, **failure})
+            failures.append(failure)
+            continue
+        roster_update = supabase_document_update("grantor_portal_scholars", scholar_id, {
+            "archived": True,
+            "status": "Archived",
+            "unarchiveInvitationPending": True,
+            "unarchiveInvitationAt": utc_now_iso(),
+            "unarchiveInvitationId": invitation_id,
+            "unarchiveInvitationAnnouncementId": announcement_id,
+            "unarchiveInvitationScholarshipTitle": scholarship_name,
+            "updatedAt": utc_now_iso(),
+        }, parent_id=grantor_id)
+        notification = supabase_document_upsert("studentNotifications", invitation_id, {
+            "studentId": student_id,
+            "source": "personal",
+            "type": "scholarship_invitation",
+            "title": "Scholarship Invitation",
+            "message": f"{grantor_name} invited you to apply again for {scholarship_name}.",
+            "grantorId": grantor_id,
+            "grantorName": grantor_name,
+            "scholarId": scholar_id,
+            "invitationId": invitation_id,
+            "announcementId": announcement_id,
+            "scholarshipName": scholarship_name,
+            "startDate": announcement.get("startDate"),
+            "endDate": announcement.get("endDate"),
+            "totalSlots": total_slots,
+            "remainingSlots": remaining_slots,
+            "route": "/student-dashboard/scholarships",
+            "read": False,
+            "createdAt": utc_now_iso(),
+            "updatedAt": utc_now_iso(),
+        }, merge=True)
+        row_result = {"ok": roster_update.get("ok") and notification.get("ok"), "scholarId": scholar_id, "studentId": student_id, "invitationId": invitation_id}
+        if not row_result["ok"]:
+            row_result.update({"reason": "invitation_delivery_failed", "detail": {"roster": roster_update, "notification": notification}})
+            failures.append(row_result)
+        results.append(row_result)
+
+    return {
+        "ok": any(item.get("ok") for item in results),
+        "partial": bool(failures),
+        "invitationCount": sum(1 for item in results if item.get("ok")),
+        "results": results,
+        "failures": failures,
+    }
+
+
+def reject_scholarship_invitation(payload: dict[str, Any]) -> dict[str, Any]:
+    student_id = str(payload.get("studentId") or "").strip()
+    invitation_id = str(payload.get("invitationId") or "").strip()
+    reason = str(payload.get("reason") or "Not interested").strip()
+    notes = str(payload.get("notes") or "").strip()
+    if not student_id or not invitation_id:
+        return {"ok": False, "reason": "missing_invitation_identity"}
+    student_result = supabase_document_get("students", student_id)
+    student = student_result.get("data") or {}
+    invitations = student.get("scholarshipInvitations") if isinstance(student.get("scholarshipInvitations"), list) else []
+    matching = next((item for item in invitations if isinstance(item, dict) and str(item.get("id") or "") == invitation_id
+                     and _normalize_identity(item.get("status") or "pending") in {"pending", "invited"}), None)
+    if not matching:
+        return {"ok": False, "reason": "invitation_not_pending", "message": "This invitation is no longer pending."}
+    now = utc_now_iso()
+    next_invitations = [{**item, "status": "Rejected", "rejectedAt": now, "rejectionReason": reason,
+                         "rejectionNotes": notes, "updatedAt": now} if item is matching else item for item in invitations]
+    update_result = supabase_document_upsert("students", student_id, {"scholarshipInvitations": next_invitations, "updatedAt": now}, merge=True)
+    if not update_result.get("ok"):
+        return {"ok": False, "reason": "invitation_reject_failed", "detail": update_result}
+    grantor_id = str(matching.get("grantorId") or "").strip()
+    scholar_id = str(matching.get("scholarId") or "").strip()
+    if grantor_id and scholar_id:
+        supabase_document_update("grantor_portal_scholars", scholar_id, {
+            "archived": True, "status": "Archived", "unarchiveInvitationPending": False,
+            "invitationStatus": "Rejected", "invitationRejectedAt": now,
+            "invitationRejectionReason": reason, "invitationRejectionNotes": notes, "updatedAt": now,
+        }, parent_id=grantor_id)
+    create_student_notification({
+        "studentId": student_id, "source": "personal", "type": "scholarship_invitation_rejected",
+        "title": "Scholarship Invitation Rejected",
+        "message": f"You rejected the invitation from {matching.get('grantorName') or 'the grantor'} for {matching.get('scholarshipName') or 'their scholarship'}. Reason: {reason}",
+        "grantorId": grantor_id, "read": False, "createdAt": now,
+    })
+    return {"ok": True, "invitation": next(item for item in next_invitations if isinstance(item, dict) and item.get("id") == invitation_id)}
 
 
 def request_grantor_password_change(payload: dict[str, Any]) -> dict[str, Any]:
