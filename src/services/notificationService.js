@@ -5,7 +5,7 @@ const BACKEND_API_URL = (
 ).replace(/\/$/, "")
 
 async function postNotification(path, payload = {}) {
-	return postPortalJson(BACKEND_API_URL, path, payload, "Notification")
+	return postPortalJson(BACKEND_API_URL, path, payload, "Notification", { timeoutMs: 15000 })
 }
 
 export function createStudentNotification(payload = {}) {
@@ -36,8 +36,16 @@ export function updateStudentNotification(id = "", data = {}) {
 	return postNotification("/notifications/student/update", { id, data })
 }
 
+export function updateStudentNotifications(ids = [], data = {}) {
+	return postNotification("/notifications/student/update-many", { ids, data })
+}
+
 export function updateGrantorNotification(id = "", data = {}) {
 	return postNotification("/notifications/grantor/update", { id, data })
+}
+
+export function updateGrantorNotifications(ids = [], data = {}) {
+	return postNotification("/notifications/grantor/update-many", { ids, data })
 }
 
 export function deleteStudentNotification(id = "") {

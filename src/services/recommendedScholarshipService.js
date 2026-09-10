@@ -23,6 +23,97 @@ import {
 import { recommendScholarshipsWorkflow } from "./workflowService"
 import { getCachedReferenceData } from "./referenceDataCache"
 
+function normalizeText(value = "") {
+	return String(value || "")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim()
+}
+
+function getLocationScore(student = {}, grantor = {}) {
+	const studentProvince = normalizeText(student.province)
+	const studentCity = normalizeText(student.city)
+	const studentBarangay = normalizeText(student.barangay)
+	const grantorProvince = normalizeText(grantor.province)
+	const grantorCity = normalizeText(grantor.city)
+	const grantorBarangay = normalizeText(grantor.barangay)
+
+	if (![studentProvince, studentCity, studentBarangay, grantorProvince, grantorCity, grantorBarangay].some(Boolean)) {
+		return 8
+	}
+
+	let score = 0
+	if (studentProvince && grantorProvince && studentProvince === grantorProvince) score += 10
+	else if (studentProvince === "pampanga" && grantorProvince === "bulacan") score += 4
+	else if (grantorProvince) score += 2
+	if (studentCity && grantorCity && studentCity === grantorCity) score += 10
+	if (studentBarangay && grantorBarangay && studentBarangay === grantorBarangay) score += 5
+	return Math.min(score, 25)
+}
+
+function getRecommendationLabel(score, reasons = []) {
+	if (score >= 78) return "Best Scholarship Match For You"
+	if (reasons.some((reason) => reason.includes("Nearest"))) return "Recommended Near Your Location"
+	if (reasons.some((reason) => reason.includes("roster"))) return "Popular Grantor Match"
+	if (reasons.some((reason) => reason.includes("Strong GWA"))) return "Strong GWA Match"
+	return "Available Scholarship Match"
+}
+
+function rankRecommendationsLocally(student = {}, candidates = []) {
+	const studentGwa = toNumber(student.gwa ?? student.currentGwa ?? student.generalWeightedAverage)
+	const maxRoster = Math.max(0, ...candidates.map((item) => Number.parseInt(item.rosterCount, 10) || 0))
+	const popularityWeight = studentGwa != null && studentGwa <= 1.75 ? 30 : 22
+	const recommendations = []
+
+	for (const item of candidates) {
+		if (item.applicationsBlocked === true) continue
+		if (item.applicationEnabled === false && item.applyOpen !== true) continue
+		const minimumGwa = toNumber(item.minimumGwa ?? item.minGwa ?? item.minimumGrade, 2.25)
+		if (studentGwa == null || studentGwa > minimumGwa) continue
+
+		const reasons = []
+		const gradeMargin = Math.max(0, minimumGwa - studentGwa)
+		const gradeScore = Math.min(40, 24 + (gradeMargin * 12))
+		reasons.push(gradeMargin >= 0.5 ? "Strong GWA match" : "Meets minimum GWA")
+
+		const rosterCount = Number.parseInt(item.rosterCount, 10) || 0
+		const popularityScore = maxRoster > 0 ? (rosterCount / maxRoster) * popularityWeight : 0
+		if (rosterCount > 0) reasons.push(`${rosterCount} scholar roster`)
+
+		const locationScore = getLocationScore(student, item)
+		if (locationScore >= 22) reasons.push("Nearest location match")
+		else if (locationScore >= 12) reasons.push("Same province area")
+		else if (normalizeText(student.province) === "pampanga" && normalizeText(item.province) === "bulacan") {
+			reasons.push("Bulacan grantor, lower location priority")
+		}
+
+		const completenessScore = 8 + (item.profileImageUrl || item.authorImageUrl || item.imageUrl ? 2 : 0)
+		const score = gradeScore + popularityScore + locationScore + completenessScore
+		recommendations.push({
+			item,
+			score: Number(score.toFixed(4)),
+			label: getRecommendationLabel(score, reasons),
+			reasons: reasons.slice(0, 4),
+			criteria: {
+				gwa: studentGwa,
+				minimumGwa,
+				rosterCount,
+				gradeScore: Number(gradeScore.toFixed(2)),
+				popularityScore: Number(popularityScore.toFixed(2)),
+				locationScore: Number(locationScore.toFixed(2)),
+			},
+		})
+	}
+
+	recommendations.sort((left, right) => right.score - left.score)
+	return {
+		ok: true,
+		degraded: true,
+		algorithm: "Weighted Recommendation Scoring (local fallback)",
+		recommendations,
+	}
+}
+
 function toNumber(value, fallback = null) {
 	const parsed = Number.parseFloat(value)
 	return Number.isNaN(parsed) ? fallback : parsed
@@ -167,10 +258,16 @@ export async function loadRecommendedScholarships(student = {}) {
 		})
 		.filter((item) => item.grantorId && item.applicationEnabled && item.applicationsBlocked !== true)
 
-	const ranked = await recommendScholarshipsWorkflow({
-		student,
-		grantors: candidates,
-	})
+	let ranked
+	try {
+		ranked = await recommendScholarshipsWorkflow({
+			student,
+			grantors: candidates,
+		})
+	} catch (error) {
+		if (!["backend_unavailable", "request_timeout"].includes(error?.reason)) throw error
+		ranked = rankRecommendationsLocally(student, candidates)
+	}
 
 	return {
 		...ranked,

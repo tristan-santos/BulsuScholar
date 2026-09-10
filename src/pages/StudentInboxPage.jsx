@@ -36,6 +36,7 @@ import {
 import {
 	deleteStudentNotification,
 	updateStudentNotification,
+	updateStudentNotifications,
 } from "../services/notificationService"
 import StudentTopbar from "../components/StudentTopbar"
 import "../css/StudentDashboard.css"
@@ -431,17 +432,15 @@ export default function StudentInboxPage() {
 		if (personalUnread.length === 0 && announcementUnread.length === 0) return
 		try {
 			if (personalUnread.length > 0) {
-				await Promise.all(personalUnread.map((item) =>
-					item.sourceTable === "studentWarning"
-						? setDoc(doc(db, "studentWarning", item.id), {
-								read: true,
-								readAt: serverTimestamp(),
-							}, { merge: true })
-						: updateStudentNotification(item.id, {
-								read: true,
-								readAt: serverTimestamp(),
-							}),
-				))
+				const readAt = serverTimestamp()
+				const warnings = personalUnread.filter((item) => item.sourceTable === "studentWarning")
+				const notifications = personalUnread.filter((item) => item.sourceTable !== "studentWarning")
+				await Promise.all([
+					...warnings.map((item) => setDoc(doc(db, "studentWarning", item.id), { read: true, readAt }, { merge: true })),
+					notifications.length > 0
+						? updateStudentNotifications(notifications.map((item) => item.id), { read: true, readAt })
+						: Promise.resolve(),
+				])
 			}
 			if (announcementUnread.length > 0) {
 				const nextIds = [...readAnnouncementIds, ...announcementUnread.map((item) => item.announcementId)]

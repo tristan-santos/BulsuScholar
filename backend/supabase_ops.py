@@ -654,8 +654,78 @@ def update_student_notification(notification_id: str, payload: dict[str, Any]) -
     return supabase_document_update("studentNotifications", notification_id, payload)
 
 
+def update_student_notifications(notification_ids: list[str], payload: dict[str, Any], student_id: str = "") -> dict[str, Any]:
+    unique_ids = list(dict.fromkeys(str(item or "").strip() for item in notification_ids if str(item or "").strip()))
+    if not unique_ids:
+        return {"ok": True, "updated": 0, "results": []}
+    if len(unique_ids) > 250:
+        return {"ok": False, "reason": "too_many_notification_ids"}
+
+    results = []
+    failures = []
+    for notification_id in unique_ids:
+        existing = supabase_select("studentNotifications", {"id": notification_id}, limit=1)
+        rows = existing.get("rows") or []
+        stored = rows[0].get("data") if rows and isinstance(rows[0].get("data"), dict) else {}
+        stored_student_id = str(stored.get("studentId") or "").strip()
+        if not existing.get("ok") or not rows:
+            failures.append({"id": notification_id, "reason": existing.get("reason") or "notification_not_found"})
+            continue
+        if student_id and stored_student_id != student_id:
+            failures.append({"id": notification_id, "reason": "student_notification_owner_mismatch"})
+            continue
+        result = update_student_notification(notification_id, payload)
+        if result.get("ok"):
+            results.append({"id": notification_id})
+        else:
+            failures.append({"id": notification_id, "reason": result.get("reason") or "notification_update_failed"})
+
+    return {
+        "ok": len(failures) == 0,
+        "partial": bool(results) and bool(failures),
+        "updated": len(results),
+        "results": results,
+        "failures": failures,
+    }
+
+
 def update_grantor_notification(notification_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return supabase_document_update("grantorNotifications", notification_id, payload)
+
+
+def update_grantor_notifications(notification_ids: list[str], payload: dict[str, Any], grantor_id: str = "") -> dict[str, Any]:
+    unique_ids = list(dict.fromkeys(str(item or "").strip() for item in notification_ids if str(item or "").strip()))
+    if not unique_ids:
+        return {"ok": True, "updated": 0, "results": []}
+    if len(unique_ids) > 250:
+        return {"ok": False, "reason": "too_many_notification_ids"}
+
+    results = []
+    failures = []
+    for notification_id in unique_ids:
+        existing = supabase_select("grantorNotifications", {"id": notification_id}, limit=1)
+        rows = existing.get("rows") or []
+        stored = rows[0].get("data") if rows and isinstance(rows[0].get("data"), dict) else {}
+        stored_grantor_id = str(stored.get("grantorId") or stored.get("providerId") or "").strip()
+        if not existing.get("ok") or not rows:
+            failures.append({"id": notification_id, "reason": existing.get("reason") or "notification_not_found"})
+            continue
+        if grantor_id and stored_grantor_id != grantor_id:
+            failures.append({"id": notification_id, "reason": "grantor_notification_owner_mismatch"})
+            continue
+        result = update_grantor_notification(notification_id, payload)
+        if result.get("ok"):
+            results.append({"id": notification_id})
+        else:
+            failures.append({"id": notification_id, "reason": result.get("reason") or "notification_update_failed"})
+
+    return {
+        "ok": len(failures) == 0,
+        "partial": bool(results) and bool(failures),
+        "updated": len(results),
+        "results": results,
+        "failures": failures,
+    }
 
 
 def update_admin_notification(notification_id: str, payload: dict[str, Any]) -> dict[str, Any]:

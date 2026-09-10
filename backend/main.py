@@ -67,8 +67,10 @@ try:
         delete_student_notification,
         supabase_table_status,
         update_grantor_notification,
+        update_grantor_notifications,
         update_admin_notification,
         update_student_notification,
+        update_student_notifications,
     )
     from .workflow_service import (
         apply_scholarship,
@@ -137,8 +139,10 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         delete_student_notification,
         supabase_table_status,
         update_grantor_notification,
+        update_grantor_notifications,
         update_admin_notification,
         update_student_notification,
+        update_student_notifications,
     )
     from workflow_service import (
         apply_scholarship,
@@ -469,6 +473,16 @@ def update_student_notification_endpoint(request: Request, payload: dict[str, An
     return update_student_notification(payload.get("id") or "", payload.get("data") or {})
 
 
+@app.post("/notifications/student/update-many")
+def update_student_notifications_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "admin"})
+    student_id = str(payload.get("actorId") or "") if payload.get("actorType") == "student" else ""
+    result = update_student_notifications(payload.get("ids") or [], payload.get("data") or {}, student_id)
+    if not result.get("ok") and not result.get("partial"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
+
+
 @app.post("/notifications/student/delete")
 def delete_student_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student", "admin"})
@@ -496,6 +510,16 @@ def create_grantor_notification_endpoint(request: Request, payload: dict[str, An
 def update_grantor_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"grantor", "admin"})
     return update_grantor_notification(payload.get("id") or "", payload.get("data") or {})
+
+
+@app.post("/notifications/grantor/update-many")
+def update_grantor_notifications_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor", "admin"})
+    grantor_id = str(payload.get("actorId") or "") if payload.get("actorType") == "grantor" else ""
+    result = update_grantor_notifications(payload.get("ids") or [], payload.get("data") or {}, grantor_id)
+    if not result.get("ok") and not result.get("partial"):
+        raise HTTPException(status_code=400, detail=result)
+    return result
 
 
 @app.post("/notifications/grantor/delete")

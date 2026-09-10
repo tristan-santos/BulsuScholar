@@ -98,6 +98,7 @@ import {
 	createStudentNotification,
 	deleteGrantorNotification as deleteGrantorNotificationRecord,
 	updateGrantorNotification,
+	updateGrantorNotifications,
 } from "../services/notificationService"
 import {
 	adminReviewWorkflow,
@@ -4043,17 +4044,15 @@ export default function ProviderDashboard() {
 	const markAllGrantorNotificationsRead = async () => {
 		if (unreadPersonalNotifications.length === 0) return
 		try {
-			await Promise.all(unreadPersonalNotifications.map((notification) =>
-				notification.sourceTable === "systemLogs"
-					? setDoc(doc(db, "systemLogs", notification.id), {
-							read: true,
-							readAt: serverTimestamp(),
-						}, { merge: true })
-					: updateGrantorNotification(notification.id, {
-							read: true,
-							readAt: serverTimestamp(),
-						}),
-			))
+			const readAt = serverTimestamp()
+			const systemLogs = unreadPersonalNotifications.filter((notification) => notification.sourceTable === "systemLogs")
+			const notifications = unreadPersonalNotifications.filter((notification) => notification.sourceTable !== "systemLogs")
+			await Promise.all([
+				...systemLogs.map((notification) => setDoc(doc(db, "systemLogs", notification.id), { read: true, readAt }, { merge: true })),
+				notifications.length > 0
+					? updateGrantorNotifications(notifications.map((notification) => notification.id), { read: true, readAt })
+					: Promise.resolve(),
+			])
 		} catch (error) {
 			console.error("Unable to mark all grantor notifications as read.", error)
 			toast.error("Unable to update all inbox messages.")
