@@ -28,16 +28,28 @@ export async function buildPortalRequestHeaders(overrides = {}) {
 
 export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "Request", options = {}) {
 	let response
+	const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Math.max(1000, Number(options.timeoutMs)) : 0
+	const controller = timeoutMs > 0 ? new AbortController() : null
+	const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
 	try {
 		response = await fetch(`${baseUrl}${path}`, {
 			method: "POST",
 			headers: await buildPortalRequestHeaders(options.actor || {}),
 			body: JSON.stringify(payload),
+			...(controller ? { signal: controller.signal } : {}),
 		})
 	} catch (error) {
+		if (error?.name === "AbortError") {
+			throw new PortalApiError(`${errorLabel} timed out. Please try again.`, {
+				status: 408,
+				reason: "request_timeout",
+			})
+		}
 		throw new PortalApiError(`${errorLabel} backend is unavailable at ${baseUrl}. ${error?.message || ""}`.trim(), {
 			reason: "backend_unavailable",
 		})
+	} finally {
+		if (timeoutId) clearTimeout(timeoutId)
 	}
 
 	const data = await response.json().catch(() => ({}))

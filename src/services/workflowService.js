@@ -6,12 +6,13 @@ const BACKEND_API_URL = (
 	"https://bulsuscholar.onrender.com"
 ).replace(/\/$/, "")
 
-async function postWorkflow(path, payload = {}) {
+async function postWorkflow(path, payload = {}, options = {}) {
 	return postPortalJson(BACKEND_API_URL, path, payload, "Workflow", {
 		actor: {
 			actorId: payload.actorId,
 			actorType: payload.actorType,
 		},
+		...options,
 	})
 }
 
@@ -76,7 +77,7 @@ export function updateGrantorScholarsWorkflow(payload = {}) {
 }
 
 export function createGrantorAnnouncementWorkflow(payload = {}) {
-	return postWorkflow("/workflows/grantor/announcements/create", payload)
+	return postWorkflow("/workflows/grantor/announcements/create", payload, { timeoutMs: 45000 })
 }
 
 export function updateGrantorAnnouncementWorkflow(payload = {}) {

@@ -125,21 +125,50 @@ function buildAnnouncementImageList(item = {}) {
 	return [...new Set([item.imageUrl, ...imageUrls, ...imageObjects].filter(Boolean))]
 }
 
-function buildScholarshipPreviewTracking(entry = {}, user = {}, isValidated = false) {
+function buildScholarshipPreviewTracking(
+	entry = {},
+	user = {},
+	isValidated = false,
+	latestMaterialRequest = null,
+	latestSoeDownload = null,
+) {
 	const documentCheck = validateScholarshipDocuments(user || {})
 	const progress = getScholarshipTrackingProgress({
 		scholarship: entry,
 		isValidated,
 		documentCheck,
+		latestMaterialRequest,
+		latestSoeDownload,
 	})
 	const steps = Array.isArray(progress.steps) ? progress.steps : []
-	const completedCount = steps.filter((step) => step.state === "completed").length
+	const completedCount = steps.filter((step) => step.state === "complete").length
 	const totalCount = steps.length || 1
 	return {
 		label: getScholarshipTrackingStatusLabel(progress),
 		count: `${completedCount}/${totalCount}`,
 		percent: Math.min(100, Math.max(0, Math.round((completedCount / totalCount) * 100))),
 	}
+}
+
+function toRecordTimestamp(record = {}) {
+	const raw = record.updatedAt || record.downloadedAt || record.createdAt || record.timestamp || record.dateRequested
+	const value = raw?.toDate ? raw.toDate() : new Date(raw || 0)
+	return Number.isNaN(value.getTime()) ? 0 : value.getTime()
+}
+
+function recordMatchesScholarship(record = {}, scholarship = {}) {
+	const compare = (left, right) => String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase()
+	if (record.applicationId && scholarship.applicationId) return compare(record.applicationId, scholarship.applicationId)
+	if (record.applicationNumber && scholarship.applicationNumber) return compare(record.applicationNumber, scholarship.applicationNumber)
+	if (record.scholarshipId && scholarship.id) return compare(record.scholarshipId, scholarship.id)
+	if (record.requestNumber && scholarship.requestNumber) return compare(record.requestNumber, scholarship.requestNumber)
+	return false
+}
+
+function findLatestScholarshipRecord(records = [], scholarship = {}) {
+	return records
+		.filter((record) => recordMatchesScholarship(record, scholarship))
+		.sort((left, right) => toRecordTimestamp(right) - toRecordTimestamp(left))[0] || null
 }
 
 function getReadAnnouncementStorageKey(studentId = "") {
@@ -182,6 +211,8 @@ export default function StudentDashboard() {
 	const [announcements, setAnnouncements] = useState([])
 	const [allAnnouncements, setAllAnnouncements] = useState([])
 	const [studentNotifications, setStudentNotifications] = useState([])
+	const [studentMaterialRequests, setStudentMaterialRequests] = useState([])
+	const [studentSoeDownloads, setStudentSoeDownloads] = useState([])
 	const [recommendedScholarships, setRecommendedScholarships] = useState([])
 	const [recommendationAlgorithm, setRecommendationAlgorithm] = useState("")
 	const [recommendationsLoading, setRecommendationsLoading] = useState(false)
@@ -226,6 +257,30 @@ export default function StudentDashboard() {
 			() => setUserLoaded(true),
 		)
 	}, [navigate, sessionState.isStudent, sessionState.storedUserId])
+
+	useEffect(() => {
+		const studentId = sessionState.storedUserId
+		if (!studentId) {
+			setStudentMaterialRequests([])
+			setStudentSoeDownloads([])
+			return undefined
+		}
+
+		const unsubscribeRequests = onSnapshot(
+			query(collection(db, "soeRequests"), where("studentId", "==", studentId)),
+			(snapshot) => setStudentMaterialRequests(snapshot.docs.map((row) => ({ id: row.id, ...(row.data() || {}) }))),
+			() => setStudentMaterialRequests([]),
+		)
+		const unsubscribeDownloads = onSnapshot(
+			query(collection(db, "soeDownloads"), where("studentId", "==", studentId)),
+			(snapshot) => setStudentSoeDownloads(snapshot.docs.map((row) => ({ id: row.id, ...(row.data() || {}) }))),
+			() => setStudentSoeDownloads([]),
+		)
+		return () => {
+			unsubscribeRequests()
+			unsubscribeDownloads()
+		}
+	}, [sessionState.storedUserId])
 
 	useEffect(() => {
 		if (userLoaded && !user) {
@@ -375,6 +430,19 @@ export default function StudentDashboard() {
 		() => scholarships.filter((item) => !item.isLocked && isScholarshipActiveOrPending(item.status)),
 		[scholarships],
 	)
+	const activeApplicationCount = useMemo(() => {
+		const applicationKeys = new Set()
+		scholarships.forEach((item) => {
+			const status = String(item?.status || "").trim().toLowerCase()
+			const isApplication = Number(item?.lifecycleVersion) === 2 || Boolean(
+				item?.applicationId || item?.applicationNumber || item?.requestNumber || item?.appliedAt || item?.appliedViaAnnouncement,
+			)
+			if (!isApplication || status === "saved" || !isScholarshipActiveOrPending(status)) return
+			const key = item.applicationId || item.applicationNumber || item.id
+			if (key) applicationKeys.add(String(key).trim().toLowerCase())
+		})
+		return applicationKeys.size
+	}, [scholarships])
 	const applicationEntryBlocked = SCHOLARSHIP_CHOICE_ENABLED ? hasScholarshipCommitment(user || {}) : activeOrPendingScholarships.length > 0
 	useEffect(() => {
 		if (!user || !sessionState.storedUserId || scholarships.length === 0) return
@@ -537,13 +605,6 @@ export default function StudentDashboard() {
 	const studentContactNumber = user?.cpNumber || user?.contactNumber || user?.phoneNumber || "Not set"
 	const studentIdNumber = user?.studentId || user?.studentNumber || sessionState.storedUserId || "Not set"
 	const currentGwa = user?.gwa || user?.currentGwa || user?.generalWeightedAverage || "Not set"
-	const activeScholarshipName =
-		activeOrPendingScholarships.find((item) => String(item?.status || "").toLowerCase() !== "saved")?.name ||
-		activeOrPendingScholarships[0]?.name ||
-		activeOrPendingScholarships[0]?.providerLabel ||
-		activeOrPendingScholarships[0]?.provider ||
-		""
-
 	useEffect(() => {
 		if (!userLoaded || !user) return
 		if (applicationEntryBlocked) {
@@ -1020,7 +1081,7 @@ export default function StudentDashboard() {
 								</div>
 							</div>
 							<div className="student-detail-metrics">
-								<article><span><HiOutlineAcademicCap /></span><div><strong className={activeOrPendingScholarships.length > 0 ? "student-detail-scholarship-value" : ""}>{activeOrPendingScholarships.length > 0 ? activeScholarshipName : availableRecommendedScholarships.length}</strong><p>{activeOrPendingScholarships.length > 0 ? "Active Scholar" : "Recommended Scholarships"}</p></div></article>
+								<article><span><HiOutlineAcademicCap /></span><div><strong>{activeApplicationCount}</strong><p>Number of Applications</p></div></article>
 								<article><span><HiOutlineCheckCircle /></span><div><strong>{currentGwa}</strong><p>Current GWA</p></div></article>
 								<article><span><HiOutlineDocumentText /></span><div><strong>{needsDocumentRenewal ? "Not Complied Yet" : "Complied"}</strong><p>Document Status</p></div></article>
 							</div>
@@ -1175,7 +1236,15 @@ export default function StudentDashboard() {
 							) : (
 								<div className="student-modern-scholarship-list">
 									{scholarshipPreview.map((entry) => {
-										const previewTracking = buildScholarshipPreviewTracking(entry, user, isValidated)
+										const latestMaterialRequest = findLatestScholarshipRecord(studentMaterialRequests, entry)
+										const latestSoeDownload = findLatestScholarshipRecord(studentSoeDownloads, entry)
+										const previewTracking = buildScholarshipPreviewTracking(
+											entry,
+											user,
+											isValidated,
+											latestMaterialRequest,
+											latestSoeDownload,
+										)
 										return (
 											<article key={entry.id} className={`student-modern-scholarship-item ${entry.adminBlocked === true || hasBlockedScholarshipBanner ? "is-blocked" : ""}`}>
 												<span><HiOutlineAcademicCap /></span>

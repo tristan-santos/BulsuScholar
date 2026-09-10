@@ -12,6 +12,7 @@ try:
         supabase_document_insert,
         supabase_document_update,
         supabase_document_upsert,
+        supabase_rest_upsert_many,
         supabase_rpc,
         supabase_select,
         utc_now_iso,
@@ -26,6 +27,7 @@ except ImportError:  # pragma: no cover
         supabase_document_insert,
         supabase_document_update,
         supabase_document_upsert,
+        supabase_rest_upsert_many,
         supabase_rpc,
         supabase_select,
         utc_now_iso,
@@ -121,35 +123,102 @@ def _eligible_low_slot_students(announcement: dict[str, Any], exclude_student_id
     return list(dict.fromkeys(recipients))
 
 
-def _send_low_slot_notifications(announcement_id: str, announcement: dict[str, Any], exclude_student_id: str = "") -> dict[str, Any]:
+def _bulk_student_notifications(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    result = supabase_rest_upsert_many("studentNotifications", rows)
+    if result.get("reason") != "missing_or_unloaded_supabase_table":
+        return result
+    fallback_rows = [
+        {
+            **row,
+            "data": {
+                **(row.get("data") or {}),
+                "notificationFallbackTable": "student_warnings",
+            },
+        }
+        for row in rows
+    ]
+    fallback = supabase_rest_upsert_many("student_warnings", fallback_rows)
+    return {**fallback, "fallback": True, "table": "student_warnings"}
+
+
+def _send_announcement_publication_notifications(
+    announcement_id: str,
+    announcement: dict[str, Any],
+    recipients: list[str] | None = None,
+) -> dict[str, Any]:
+    recipients = recipients if recipients is not None else _eligible_low_slot_students(announcement)
+    grantor_name = str(announcement.get("grantorName") or announcement.get("providerLabel") or "Grantor").strip()
+    rows = []
+    for student_id in recipients:
+        notification_id = f"grantor_announcement_{uuid5(NAMESPACE_URL, f'{announcement_id}:{_normalize_student_id(student_id)}').hex}"
+        rows.append({
+            "id": notification_id,
+            "data": {
+                "studentId": student_id,
+                "source": "personal",
+                "type": "announcement",
+                "title": f"New announcement from {grantor_name}",
+                "message": str(announcement.get("description") or announcement.get("content") or "A grantor posted a new scholarship announcement.").strip()[:180],
+                "announcementId": announcement_id,
+                "announcementSource": "grantor",
+                "route": f"/student-dashboard/announcements/grantor/{announcement_id}",
+                "grantorId": announcement.get("grantorId") or "",
+                "grantorName": grantor_name,
+                "authorName": grantor_name,
+                "authorImageUrl": announcement.get("authorImageUrl") or "",
+                "read": False,
+                "createdAt": utc_now_iso(),
+            },
+            "updated_at": utc_now_iso(),
+        })
+    result = _bulk_student_notifications(rows)
+    return {
+        **result,
+        "recipients": len(recipients),
+        "delivered": len(result.get("data") or []) if result.get("ok") else 0,
+    }
+
+
+def _send_low_slot_notifications(
+    announcement_id: str,
+    announcement: dict[str, Any],
+    exclude_student_id: str = "",
+    recipients: list[str] | None = None,
+) -> dict[str, Any]:
     remaining = _to_positive_int(announcement.get("remainingSlots"))
     if remaining is None or remaining >= 10 or announcement.get("lowSlotNotificationSentAt"):
         return {"ok": True, "skipped": True}
 
     scholarship_name = str(announcement.get("scholarshipTitle") or announcement.get("title") or "Scholarship").strip()
     grantor_name = str(announcement.get("grantorName") or announcement.get("providerLabel") or "Grantor").strip()
-    results = []
-    for student_id in _eligible_low_slot_students(announcement, exclude_student_id):
+    recipient_ids = recipients if recipients is not None else _eligible_low_slot_students(announcement, exclude_student_id)
+    rows = []
+    for student_id in recipient_ids:
         notification_id = f"low_slots_{announcement_id}_{_normalize_student_id(student_id)}"
-        results.append(supabase_document_upsert("studentNotifications", notification_id, {
-            "studentId": student_id,
-            "source": "personal",
-            "type": "scholarship_low_slots",
-            "title": "Scholarship Slots Almost Full",
-            "message": f"Only {remaining} slots remain for {scholarship_name}. Apply soon if you are interested.",
-            "announcementId": announcement_id,
-            "announcementSource": "grantor",
-            "route": f"/student-dashboard/announcements/grantor/{announcement_id}",
-            "grantorId": announcement.get("grantorId") or "",
-            "grantorName": grantor_name,
-            "scholarshipName": scholarship_name,
-            "remainingSlots": remaining,
-            "read": False,
-            "createdAt": utc_now_iso(),
-        }, merge=False))
+        rows.append({
+            "id": notification_id,
+            "data": {
+                "studentId": student_id,
+                "source": "personal",
+                "type": "scholarship_low_slots",
+                "title": "Scholarship Slots Almost Full",
+                "message": f"Only {remaining} slots remain for {scholarship_name}. Apply soon if you are interested.",
+                "announcementId": announcement_id,
+                "announcementSource": "grantor",
+                "route": f"/student-dashboard/announcements/grantor/{announcement_id}",
+                "grantorId": announcement.get("grantorId") or "",
+                "grantorName": grantor_name,
+                "scholarshipName": scholarship_name,
+                "remainingSlots": remaining,
+                "read": False,
+                "createdAt": utc_now_iso(),
+            },
+            "updated_at": utc_now_iso(),
+        })
 
-    if not all(item.get("ok") for item in results):
-        return {"ok": False, "results": results}
+    notification_result = _bulk_student_notifications(rows)
+    if not notification_result.get("ok"):
+        return {**notification_result, "recipients": len(recipient_ids), "delivered": 0}
     sent_at = utc_now_iso()
     marked = supabase_document_update(
         "grantor_portal_announcements",
@@ -157,7 +226,12 @@ def _send_low_slot_notifications(announcement_id: str, announcement: dict[str, A
         {"lowSlotNotificationSentAt": sent_at},
         parent_id=str(announcement.get("grantorId") or ""),
     )
-    return {"ok": marked.get("ok", False), "recipients": len(results), "marked": marked}
+    return {
+        "ok": marked.get("ok", False),
+        "recipients": len(recipient_ids),
+        "delivered": len(notification_result.get("data") or rows),
+        "marked": marked,
+    }
 
 
 def _normalize_student_id(value: Any) -> str:
@@ -1132,10 +1206,92 @@ def update_grantor_scholars(payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": all(item.get("ok") for item in results), "results": results}
 
 
-def create_grantor_announcement(payload: dict[str, Any]) -> dict[str, Any]:
+def deliver_grantor_announcement_notifications(
+    announcement_id: str,
+    data: dict[str, Any],
+    grantor_id: str,
+    duplicate: bool = False,
+) -> dict[str, Any]:
+    notification = {"ok": True, "skipped": True, "idempotent": True} if duplicate else create_grantor_notification({
+        "grantorId": grantor_id,
+        "type": "announcement_published",
+        "title": "Announcement Published",
+        "message": f'You published "{data.get("title") or "an announcement"}".',
+        "announcementId": announcement_id,
+        "read": False,
+        "createdAt": utc_now_iso(),
+    })
+    admin_notification = {"ok": True, "skipped": True, "idempotent": True} if duplicate else create_admin_notification({
+        "type": "grantor_announcement",
+        "title": "Grantor Published an Announcement",
+        "message": f'{data.get("authorName") or data.get("grantorName") or grantor_id} published "{data.get("title") or "an announcement"}".',
+        "grantorId": grantor_id,
+        "announcementId": announcement_id,
+        "route": "/admin/announcements",
+        "actorType": "grantor",
+        "actorId": grantor_id,
+        "read": False,
+        "archived": False,
+        "createdAt": utc_now_iso(),
+    })
+    log_result = {"ok": True, "skipped": True, "idempotent": True} if duplicate else create_log({
+        "action": "grantor_announcement_created",
+        "actorId": grantor_id,
+        "actorType": "grantor",
+        "target": announcement_id,
+        "details": {"title": data.get("title") or "Announcement"},
+        "createdAt": utc_now_iso(),
+    })
+    notification_announcement = {**data, "grantorId": grantor_id}
+    eligible_recipients = _eligible_low_slot_students(notification_announcement)
+    student_notification = _send_announcement_publication_notifications(
+        announcement_id,
+        notification_announcement,
+        eligible_recipients,
+    )
+    low_slot_notification = _send_low_slot_notifications(
+        announcement_id,
+        notification_announcement,
+        recipients=eligible_recipients,
+    )
+    delivery_failed = any(
+        item.get("ok") is False
+        for item in (notification, admin_notification, student_notification, log_result, low_slot_notification)
+        if isinstance(item, dict)
+    )
+    supabase_document_update(
+        "grantor_portal_announcements",
+        announcement_id,
+        {
+            "notificationDeliveryStatus": "failed" if delivery_failed else "complete",
+            "notificationDeliveryUpdatedAt": utc_now_iso(),
+        },
+        parent_id=grantor_id,
+    )
+    if delivery_failed:
+        create_grantor_notification({
+            "grantorId": grantor_id,
+            "type": "announcement_notification_warning",
+            "title": "Announcement Published With Delivery Issues",
+            "message": "Your announcement is published, but some inbox notifications could not be delivered.",
+            "announcementId": announcement_id,
+            "read": False,
+            "createdAt": utc_now_iso(),
+        })
+    return {
+        "notification": notification,
+        "adminNotification": admin_notification,
+        "studentNotification": student_notification,
+        "log": log_result,
+        "lowSlotNotification": low_slot_notification,
+    }
+
+
+def create_grantor_announcement(payload: dict[str, Any], defer_notifications: bool = False) -> dict[str, Any]:
     grantor_id = payload.get("grantorId") or ""
     actor_type = str(payload.get("actorType") or "grantor").strip().lower()
     actor_id = str(payload.get("actorId") or grantor_id).strip()
+    client_request_id = str(payload.get("clientRequestId") or "").strip()
     announcement = payload.get("announcement") or {}
     if not grantor_id:
         return {"ok": False, "reason": "missing_grantor_id"}
@@ -1171,49 +1327,44 @@ def create_grantor_announcement(payload: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("hiddenFromStudents", False)
     data.setdefault("createdAt", utc_now_iso())
     data.setdefault("updatedAt", utc_now_iso())
-    result = supabase_document_insert("grantor_portal_announcements", data, parent_id=grantor_id)
+    if client_request_id:
+        announcement_id = f"grantor_announcement_{uuid5(NAMESPACE_URL, f'{grantor_id}:{client_request_id}').hex}"
+        data["clientRequestId"] = client_request_id
+        data["id"] = announcement_id
+        existing = supabase_document_get("grantor_portal_announcements", announcement_id, parent_id=grantor_id)
+        existing_data = existing.get("data") if existing.get("row") else None
+    else:
+        announcement_id = ""
+        existing_data = None
+
+    duplicate = isinstance(existing_data, dict) and bool(existing_data)
+    if duplicate:
+        data = existing_data
+        result = {"ok": True, "data": [existing.get("row")], "idempotent": True}
+    else:
+        result = supabase_document_insert("grantor_portal_announcements", data, parent_id=grantor_id)
     if result.get("ok") and result.get("data"):
         inserted = result["data"][0] if isinstance(result["data"], list) and result["data"] else {}
-        announcement_id = inserted.get("id") or ""
-        notification = create_grantor_notification({
-            "grantorId": grantor_id,
-            "type": "announcement_published",
-            "title": "Announcement Published",
-            "message": f'You published "{data.get("title") or "an announcement"}".',
-            "announcementId": announcement_id,
-            "read": False,
-            "createdAt": utc_now_iso(),
-        })
-        admin_notification = create_admin_notification({
-            "type": "grantor_announcement",
-            "title": "Grantor Published an Announcement",
-            "message": f'{data.get("authorName") or data.get("grantorName") or grantor_id} published "{data.get("title") or "an announcement"}".',
-            "grantorId": grantor_id,
-            "announcementId": announcement_id,
-            "route": "/admin/announcements",
-            "actorType": "grantor",
-            "actorId": grantor_id,
-            "read": False,
-            "archived": False,
-            "createdAt": utc_now_iso(),
-        })
-        log_result = create_log({
-            "action": "grantor_announcement_created",
-            "actorId": grantor_id,
-            "actorType": "grantor",
-            "target": announcement_id,
-            "details": {"title": data.get("title") or "Announcement"},
-            "createdAt": utc_now_iso(),
-        })
-        low_slot_notification = _send_low_slot_notifications(announcement_id, {**data, "grantorId": grantor_id})
+        announcement_id = inserted.get("id") or announcement_id
+        delivery = {
+            "notification": {"ok": True, "queued": True},
+            "adminNotification": {"ok": True, "queued": True},
+            "studentNotification": {"ok": True, "queued": True},
+            "log": {"ok": True, "queued": True},
+            "lowSlotNotification": {"ok": True, "queued": True},
+        } if defer_notifications else deliver_grantor_announcement_notifications(
+            announcement_id,
+            data,
+            grantor_id,
+            duplicate,
+        )
         return {
             "ok": True,
             "id": announcement_id,
+            "duplicate": duplicate,
             "result": result,
-            "notification": notification,
-            "adminNotification": admin_notification,
-            "log": log_result,
-            "lowSlotNotification": low_slot_notification,
+            **delivery,
+            **({"_announcementData": data} if defer_notifications else {}),
         }
     return result
 

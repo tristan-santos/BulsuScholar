@@ -7,7 +7,7 @@ try:
 except ImportError:  # pragma: no cover - dependency is installed from requirements.txt
     load_dotenv = None
 
-from fastapi import Body, FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -74,6 +74,7 @@ try:
         apply_scholarship,
         configure_grantor_announcement_slots,
         create_grantor_announcement,
+        deliver_grantor_announcement_notifications,
         create_grantor_scholars,
         request_grantor_password_change,
         update_admin_review,
@@ -143,6 +144,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         apply_scholarship,
         configure_grantor_announcement_slots,
         create_grantor_announcement,
+        deliver_grantor_announcement_notifications,
         create_grantor_scholars,
         request_grantor_password_change,
         update_admin_review,
@@ -606,9 +608,23 @@ def update_many_grantor_scholars_endpoint(request: Request, payload: dict[str, A
 
 
 @app.post("/workflows/grantor/announcements/create")
-def create_grantor_announcement_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def create_grantor_announcement_endpoint(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    payload: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
-    return create_grantor_announcement(payload)
+    result = create_grantor_announcement(payload, defer_notifications=True)
+    announcement_data = result.pop("_announcementData", None)
+    if result.get("ok") and result.get("id") and isinstance(announcement_data, dict):
+        background_tasks.add_task(
+            deliver_grantor_announcement_notifications,
+            result["id"],
+            announcement_data,
+            str(payload.get("grantorId") or ""),
+            result.get("duplicate") is True,
+        )
+    return result
 
 
 @app.post("/workflows/grantor/announcements/update")

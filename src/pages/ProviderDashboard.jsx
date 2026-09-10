@@ -248,6 +248,18 @@ const ANNOUNCEMENT_FORM = {
 	},
 	otherRequirements: [],
 }
+
+function withPublishTimeout(operation, timeoutMs = 45000) {
+	let timeoutId
+	const timeout = new Promise((_, reject) => {
+		timeoutId = setTimeout(() => {
+			const error = new Error("The announcement upload timed out.")
+			error.reason = "upload_timeout"
+			reject(error)
+		}, timeoutMs)
+	})
+	return Promise.race([operation, timeout]).finally(() => clearTimeout(timeoutId))
+}
 const ADD_CUSTOM_IMPORT_FIELD = "__add_custom_import_field__"
 
 const MAPPABLE_FIELDS = [
@@ -989,6 +1001,7 @@ export default function ProviderDashboard() {
 	const [busy, setBusy] = useState("")
 	const [tablePages, setTablePages] = useState({})
 	const autoConfirmationResolutionRef = useRef("")
+	const announcementPublishRequestRef = useRef({ fingerprint: "", id: "" })
 	const grantorId = session.storedUserId || ""
 	const grantorName = useMemo(() => toGrantorDisplayName(profile, grantorId), [grantorId, profile])
 	const grantorAccountArchived = useMemo(() => {
@@ -2402,6 +2415,7 @@ export default function ProviderDashboard() {
 				data: {
 					grantorId,
 					grantorName,
+					authorImageUrl: grantorProfileImageUrl,
 					providerType: grantorProviderType,
 					applicationsBlocked: nextBlockedState,
 					updatedAt: serverTimestamp(),
@@ -3518,17 +3532,35 @@ export default function ProviderDashboard() {
 		}
 		setBusy("announcement")
 		try {
-			const uploads = await Promise.all(announcementImageFiles.map((file) => uploadToStorage(file, { folder: `grantor-announcements/${grantorId}` })))
+			const requestFingerprint = JSON.stringify({
+				form: announcementForm,
+				windowStart: announcementWindowStart,
+				windowEnd: announcementWindowEnd,
+				images: announcementImageFiles.map((file) => [file.name, file.size, file.lastModified]),
+				applicationForm: announcementApplicationProfileFile
+					? [announcementApplicationProfileFile.name, announcementApplicationProfileFile.size, announcementApplicationProfileFile.lastModified]
+					: null,
+			})
+			if (announcementPublishRequestRef.current.fingerprint !== requestFingerprint) {
+				announcementPublishRequestRef.current = {
+					fingerprint: requestFingerprint,
+					id: globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+				}
+			}
+			const uploads = await withPublishTimeout(
+				Promise.all(announcementImageFiles.map((file) => uploadToStorage(file, { folder: `grantor-announcements/${grantorId}` }))),
+			)
 			const imageUrls = uploads.map((item) => item.url).filter(Boolean)
 			const applicationProfileUpload = announcementApplicationProfileFile
-				? await uploadToStorage(announcementApplicationProfileFile, {
-						folder: `grantor-application-profiles/${grantorId}`,
-					})
+				? await withPublishTimeout(uploadToStorage(announcementApplicationProfileFile, {
+					folder: `grantor-application-profiles/${grantorId}`,
+				}))
 				: null
 			const announcementResult = await createGrantorAnnouncementWorkflow({
 				grantorId,
 				actorType: "grantor",
 				actorId: grantorId,
+				clientRequestId: announcementPublishRequestRef.current.id,
 				announcement: {
 					...announcementForm,
 					title: announcementForm.title.trim(),
@@ -3611,34 +3643,14 @@ export default function ProviderDashboard() {
 				},
 			})
 			const announcementId = announcementResult?.id || announcementResult?.result?.data?.[0]?.id || ""
-			let notificationFailed = announcementResult?.notification?.ok === false
-			const notificationCreatedAt = new Date().toISOString()
-			try {
-				const studentsSnapshot = await getDocs(collection(db, "students"))
-				const studentNotificationResults = await Promise.allSettled(studentsSnapshot.docs.map((studentDoc) =>
-					createStudentNotification({
-						studentId: studentDoc.id,
-						source: "personal",
-						type: "announcement",
-						title: `New announcement from ${grantorName}`,
-						message: announcementForm.description.trim().slice(0, 180) || "A grantor posted a new scholarship announcement.",
-						announcementId,
-						announcementSource: "grantor",
-						grantorId,
-						authorName: grantorName,
-						authorImageUrl: grantorProfileImageUrl,
-						read: false,
-						createdAt: notificationCreatedAt,
-					}),
-				))
-				notificationFailed = studentNotificationResults.some((result) => result.status === "rejected")
-				if (notificationFailed) {
-					console.error("Some student announcement notifications failed.", studentNotificationResults.filter((result) => result.status === "rejected"))
-				}
-			} catch (notificationError) {
-				notificationFailed = true
-				console.error("Announcement published, but inbox notifications failed.", notificationError)
-			}
+			if (!announcementId) throw new Error("The announcement could not be confirmed after publishing.")
+			const notificationFailed = [
+				announcementResult?.notification,
+				announcementResult?.adminNotification,
+				announcementResult?.studentNotification,
+				announcementResult?.lowSlotNotification,
+			].some((result) => result?.ok === false)
+			announcementPublishRequestRef.current = { fingerprint: "", id: "" }
 			setAnnouncementForm(ANNOUNCEMENT_FORM)
 			setAnnouncementSlotChoice("")
 			setAnnouncementSubmitAttempted(false)
@@ -3656,7 +3668,19 @@ export default function ProviderDashboard() {
 			}
 		} catch (error) {
 			console.error(error)
-			toast.error(error?.message || "Unable to post announcement right now.")
+			const reason = String(error?.reason || "")
+			const message = reason === "request_timeout"
+				? "Publishing timed out. You can retry safely without creating a duplicate announcement."
+				: reason === "upload_timeout"
+					? "The announcement file upload timed out. Check your connection and try again."
+				: reason === "backend_unavailable"
+						? "The publishing service is currently unavailable. Please try again shortly."
+						: reason === "grantor_archived"
+							? "This grantor account is archived and cannot publish announcements."
+							: reason === "invalid_slot_capacity"
+								? "Slots must be a whole number from 1 to 1000."
+								: error?.message || "Unable to post announcement right now."
+			toast.error(message)
 		} finally {
 			setBusy("")
 		}
