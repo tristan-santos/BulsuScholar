@@ -1341,17 +1341,51 @@
 .grantor-slot-modal form > footer { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; padding-top: 0.75rem; border-top: 1px solid #e1e9e5; }
 .grantor-slot-modal form > footer button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 38px; border: 1px solid #00633c; border-radius: 4px; background: #fff; color: #00633c; font: inherit; font-size: 0.74rem; font-weight: 650; cursor: pointer; }
 .grantor-slot-modal form > footer button:last-child { background: #00633c; color: #fff; }
+.grantor-announcement-readonly-slots { display: flex; align-items: center; justify-content: space-between; gap: 0.65rem; width: 100%; min-height: 42px; padding: 0 0.75rem; border: 1px solid #a9cfc0; border-radius: 5px; background: #f6fbf8; color: #174b39; font: inherit; font-size: 0.76rem; font-weight: 650; text-align: left; cursor: pointer; }
+.grantor-announcement-readonly-slots:hover,
+.grantor-announcement-readonly-slots:focus-visible { border-color: #007a4a; background: #eef8f3; outline: none; }
+.grantor-announcement-readonly-slots.is-missing { border-color: #dc2626; background: #fff7f7; }
+.grantor-announcement-readonly-slots svg { flex: 0 0 auto; width: 1rem; height: 1rem; color: #007a4a; }
+.grantor-composer-slot-backdrop { z-index: 1300; }
+.grantor-composer-slot-modal { max-height: calc(100vh - 2rem); overflow-x: hidden; overflow-y: auto; }
+.grantor-composer-slot-summary { display: grid; gap: 0.65rem; padding: 0.75rem; border: 1px solid #d8e6df; border-radius: 5px; background: #f7fbf9; }
+.grantor-composer-slot-summary > strong { color: #17342a; font-size: 0.84rem; }
+.grantor-composer-slot-summary > p { margin: 0; color: #64748b; font-size: 0.72rem; line-height: 1.5; }
+.grantor-composer-slot-summary > div,
+.grantor-composer-slot-result { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.grantor-composer-slot-summary span,
+.grantor-composer-slot-result span { display: grid; gap: 0.15rem; min-width: 0; padding: 0.55rem; border: 1px solid #dce8e2; border-radius: 4px; background: #fff; }
+.grantor-composer-slot-summary small,
+.grantor-composer-slot-result small { overflow-wrap: anywhere; color: #64748b; font-size: 0.64rem; font-weight: 600; }
+.grantor-composer-slot-summary b,
+.grantor-composer-slot-result strong { color: #00633c; font-size: 0.9rem; }
+.grantor-composer-slot-result { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grantor-composer-slot-result span { border-color: #b9d8ca; background: #eff9f4; }
 .grantor-portal--dark .grantor-slot-modal { border-color: #334155; background: #111827; }
 .grantor-portal--dark .grantor-slot-modal > header,
 .grantor-portal--dark .grantor-slot-modal form > footer { border-color: #334155; }
 .grantor-portal--dark .grantor-slot-modal h3 { color: #f8fafc; }
 .grantor-portal--dark .grantor-slot-modal header button,
 .grantor-portal--dark .grantor-slot-modal input { border-color: #475569; background: #0f172a; color: #f8fafc; }
+.grantor-portal--dark .grantor-announcement-readonly-slots { border-color: #285c48; background: #102a21; color: #d1fae5; }
+.grantor-portal--dark .grantor-announcement-readonly-slots:hover,
+.grantor-portal--dark .grantor-announcement-readonly-slots:focus-visible { border-color: #34d399; background: #133529; }
+.grantor-portal--dark .grantor-composer-slot-summary { border-color: #334155; background: #0f172a; }
+.grantor-portal--dark .grantor-composer-slot-summary > strong { color: #f8fafc; }
+.grantor-portal--dark .grantor-composer-slot-summary span,
+.grantor-portal--dark .grantor-composer-slot-result span { border-color: #334155; background: #111827; }
+.grantor-portal--dark .grantor-composer-slot-summary b,
+.grantor-portal--dark .grantor-composer-slot-result strong { color: #6ee7b7; }
 .grantor-portal--dark .grantor-slot-modal label,
 .grantor-portal--dark .grantor-slot-modal form > p,
 .grantor-portal--dark .scholarship-slot-summary small { color: #94a3b8; }
 .grantor-portal--dark .scholarship-slot-badge,
 .grantor-portal--dark .scholarship-slot-summary { border-color: #285c48; background: #102a21; color: #6ee7b7; }
+
+@media (max-width: 430px) {
+	.grantor-composer-slot-summary > div { grid-template-columns: 1fr; }
+	.grantor-composer-slot-result { grid-template-columns: 1fr 1fr; }
+}
 
 .grantor-image-lightbox {
 	position: relative;

@@ -44,9 +44,12 @@ Make sure these routes still work on Railway:
 
 - Create a new Railway project.
 - Connect the GitHub repository.
-- Set the backend service root to the backend folder if Railway asks for it.
-- Prefer Docker deployment so OCR dependencies work.
-- Confirm Railway uses the backend Dockerfile or root Dockerfile correctly.
+- Keep the backend service root at the repository root (`/`).
+- Use the root `Dockerfile` so OCR dependencies and report template assets are included.
+- Leave Railway build and start commands empty so the Dockerfile command remains authoritative.
+- Use one replica in the Singapore/Southeast Asia region.
+- Set the health-check path to `/health`, timeout to 300 seconds, and restart policy to `ON_FAILURE`.
+- Do not enable serverless sleeping and do not add Railway Postgres or a volume.
 
 ## Railway Environment Variables
 
@@ -62,13 +65,13 @@ VITE_APP_URL=https://bulsu-scholar.vercel.app
 VITE_PUBLIC_SITE_URL=https://bulsu-scholar.vercel.app
 DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
 DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
+ENFORCE_PORTAL_ACTOR_HEADERS=true
+ENABLE_SCHOLARSHIP_CHOICE=true
+WEB_CONCURRENCY=1
+UVICORN_KEEP_ALIVE=30
 ```
 
-Optional if used by backend:
-
-```env
-PORT=8000
-```
+Do not set `PORT`; Railway injects the service port automatically.
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY` in Vercel frontend variables.
 
@@ -79,6 +82,7 @@ After Railway deploys successfully, update Vercel:
 ```env
 VITE_BACKEND_API_URL=https://your-railway-backend-url.up.railway.app
 VITE_DOCUMENT_SCAN_API_URL=https://your-railway-backend-url.up.railway.app
+VITE_RESEND_API_ENDPOINT=https://your-railway-backend-url.up.railway.app/email/send
 ```
 
 Keep these unchanged unless needed:
@@ -147,6 +151,7 @@ If Railway fails:
 ```env
 VITE_BACKEND_API_URL=https://bulsuscholar.onrender.com
 VITE_DOCUMENT_SCAN_API_URL=https://bulsuscholar.onrender.com
+VITE_RESEND_API_ENDPOINT=https://bulsuscholar.onrender.com/email/send
 ```
 
 - Redeploy Vercel.

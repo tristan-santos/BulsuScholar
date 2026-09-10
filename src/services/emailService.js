@@ -1,9 +1,8 @@
-const BACKEND_API_URL = (
-	import.meta.env.VITE_BACKEND_API_URL ||
-	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
-	"https://bulsuscholar.onrender.com"
+import { BACKEND_API_URL } from "../config/backendApi"
+
+const RESEND_ENDPOINT = String(
+  import.meta.env.VITE_RESEND_API_ENDPOINT || (BACKEND_API_URL ? `${BACKEND_API_URL}/email/send` : ""),
 ).replace(/\/$/, "")
-const RESEND_ENDPOINT = import.meta.env.VITE_RESEND_API_ENDPOINT || `${BACKEND_API_URL}/email/send`
 const APP_URL = (import.meta.env.VITE_APP_URL || import.meta.env.VITE_PUBLIC_SITE_URL || "https://bulsu-scholar.vercel.app").replace(/\/$/, "")
 
 /**
@@ -19,7 +18,7 @@ export const sendEmailNotification = async (toEmail, toName, subject, messageBod
   const normalizedSubject = String(subject || "").trim();
 
   if (!RESEND_ENDPOINT) {
-    console.warn('Resend endpoint missing. Email not sent.');
+    console.warn('Email endpoint is not configured. Set VITE_RESEND_API_ENDPOINT or VITE_BACKEND_API_URL.');
     return { sent: false, reason: "missing_config" };
   }
 

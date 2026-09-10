@@ -116,7 +116,7 @@ def ocr_image(image: Image.Image) -> str:
     except pytesseract.pytesseract.TesseractNotFoundError as error:
         raise RuntimeError(
             "tesseract_not_installed: Tesseract OCR is required for image-based PDFs and image uploads. "
-            "Redeploy the Render backend with Docker so tesseract-ocr and poppler-utils are installed."
+            "Redeploy the backend using the repository Dockerfile so tesseract-ocr and poppler-utils are installed."
         ) from error
 
 

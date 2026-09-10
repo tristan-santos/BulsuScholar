@@ -1,6 +1,6 @@
 import { supabase } from "./supabaseClient"
+import { requireBackendApiUrl } from "../config/backendApi"
 
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_API_URL || "https://bulsuscholar.onrender.com").replace(/\/$/, "")
 const PRIORITY_ONE_READ_TABLES = new Set(["leave_requests", "support_feedback", "unifast_records"])
 const PRIORITY_ONE_FILTER_FIELDS = {
 	leave_requests: new Set(["studentId", "grantorId", "requestType", "status"]),
@@ -9,7 +9,7 @@ const PRIORITY_ONE_FILTER_FIELDS = {
 }
 
 async function postPriorityOne(path, payload = {}) {
-	const response = await fetch(`${BACKEND_URL}${path}`, {
+	const response = await fetch(`${requireBackendApiUrl("Portal backend")}${path}`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(payload),
@@ -66,7 +66,7 @@ export async function listPriorityRecords(table, filters = {}) {
 export const importUnifastRecords = (payload) => postPriorityOne("/unifast/import", payload)
 
 export async function downloadPriorityOneReport(format, payload) {
-	const response = await fetch(`${BACKEND_URL}/reports/${format}`, {
+	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/${format}`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(payload),

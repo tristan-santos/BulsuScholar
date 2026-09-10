@@ -1,11 +1,6 @@
 import { collection, collectionGroup, doc, getDocs } from "./supabaseDataService"
 import { getScholarshipPolicy } from "./scholarshipService"
-
-const PYTHON_BACKEND_API_URL = (
-	import.meta.env.VITE_BACKEND_API_URL ||
-	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
-	"https://bulsuscholar.onrender.com"
-).replace(/\/$/, "")
+import { requireBackendApiUrl } from "../config/backendApi"
 
 export const GRANTOR_PORTAL_COLLECTION = "grantorPortals"
 export const GRANTOR_SUBCOLLECTIONS = {
@@ -406,7 +401,7 @@ function _comparableSimilarity(left, right, normalizer = normalizeMatchValue) {
 }
 
 async function postGrantorAlgorithm(path, payload) {
-	const response = await fetch(`${PYTHON_BACKEND_API_URL}${path}`, {
+	const response = await fetch(`${requireBackendApiUrl("Grantor backend")}${path}`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(payload),

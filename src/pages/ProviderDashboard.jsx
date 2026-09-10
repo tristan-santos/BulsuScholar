@@ -106,6 +106,7 @@ import {
 	createGrantorAnnouncementWorkflow,
 	createGrantorScholarsWorkflow,
 	inviteArchivedGrantorScholarsWorkflow,
+	republishGrantorAnnouncementWorkflow,
 	requestGrantorPasswordChangeWorkflow,
 	updateGrantorAnnouncementWorkflow,
 	updateGrantorProfileWorkflow,
@@ -182,6 +183,21 @@ const ANNOUNCEMENT_GWA_OPTIONS = [
 	"2.75",
 	"3.00",
 ]
+
+function getAnnouncementScholarshipTitle(announcement = {}) {
+	return String(announcement.scholarshipTitle || announcement.title || announcement.scholarshipName || "").trim()
+}
+
+function isActiveScholarshipOffering(announcement = {}, now = Date.now()) {
+	if (announcement.applicationEnabled !== true || isAnnouncementArchived(announcement)) return false
+	if (announcement.hiddenFromStudents === true || announcement.grantorAccountArchived === true) return false
+	if (["archived", "closed", "ended", "draft"].includes(String(announcement.status || "").trim().toLowerCase())) return false
+	const startsAt = toJsDate(announcement.startDate)?.getTime()
+	const endsAt = toJsDate(announcement.endDate)?.getTime()
+	if ((startsAt && startsAt > now) || (endsAt && endsAt < now)) return false
+	const slotState = getScholarshipSlotState(announcement)
+	return slotState.configured
+}
 const toFixedGwaOption = (value) => {
 	const numeric = Number(value)
 	if (!Number.isFinite(numeric)) return ""
@@ -930,6 +946,10 @@ export default function ProviderDashboard() {
 	const [announcementScholarshipChoice, setAnnouncementScholarshipChoice] = useState("")
 	const [announcementGwaChoice, setAnnouncementGwaChoice] = useState("")
 	const [announcementSlotChoice, setAnnouncementSlotChoice] = useState("")
+	const [composerSlotModalOpen, setComposerSlotModalOpen] = useState(false)
+	const [composerSlotChoice, setComposerSlotChoice] = useState("")
+	const [composerSlotValue, setComposerSlotValue] = useState("")
+	const [composerSlotDraft, setComposerSlotDraft] = useState(null)
 	const [slotCapacityAnnouncement, setSlotCapacityAnnouncement] = useState(null)
 	const [slotCapacityChoice, setSlotCapacityChoice] = useState("")
 	const [slotCapacityValue, setSlotCapacityValue] = useState("")
@@ -1153,6 +1173,25 @@ export default function ProviderDashboard() {
 		() => announcements.filter((item) => isAnnouncementArchived(item)),
 		[announcements],
 	)
+	const selectedExistingScholarshipTitle = useMemo(() => {
+		if (!announcementForm.applicationEnabled || announcementScholarshipChoice === ANNOUNCEMENT_NEW_SCHOLARSHIP_VALUE) return ""
+		const title = String(announcementForm.title || "").trim()
+		if (!title) return ""
+		return announcements.some((item) =>
+			item.applicationEnabled === true && getAnnouncementScholarshipTitle(item).toLowerCase() === title.toLowerCase(),
+		) ? title : ""
+	}, [announcementForm.applicationEnabled, announcementForm.title, announcementScholarshipChoice, announcements])
+	const selectedActiveScholarshipOffering = useMemo(() => {
+		if (!selectedExistingScholarshipTitle) return null
+		return announcements
+			.filter((item) =>
+				getAnnouncementScholarshipTitle(item).toLowerCase() === selectedExistingScholarshipTitle.toLowerCase() &&
+				isActiveScholarshipOffering(item),
+			)
+			.sort((left, right) =>
+				(toJsDate(right.updatedAt || right.createdAt)?.getTime() || 0) - (toJsDate(left.updatedAt || left.createdAt)?.getTime() || 0),
+			)[0] || null
+	}, [announcements, selectedExistingScholarshipTitle])
 	const compactAnnouncements = useMemo(() => publishedAnnouncements.slice(0, 6), [publishedAnnouncements])
 	const allAnnouncementRows = allAnnouncementTab === "archived" ? archivedAnnouncements : publishedAnnouncements
 	const shouldShowAllAnnouncementsButton = publishedAnnouncements.length > compactAnnouncements.length || archivedAnnouncements.length > 0
@@ -1166,13 +1205,14 @@ export default function ProviderDashboard() {
 				Number.isNaN(Number(announcementForm.minimumGrade))),
 		totalSlots:
 			announcementForm.applicationEnabled &&
+			!selectedActiveScholarshipOffering &&
 			parseScholarshipSlotCount(announcementForm.totalSlots) === null,
 		otherRequirement:
 			announcementForm.applicationEnabled &&
 			(Array.isArray(announcementForm.otherRequirements) ? announcementForm.otherRequirements : []).some(
 				(item) => !String(item?.name || "").trim() || item?.confirmed !== true,
 			),
-	}), [announcementForm])
+	}), [announcementForm, selectedActiveScholarshipOffering])
 
 	useEffect(() => {
 		if (!selectedAnnouncement?.id) return
@@ -1327,7 +1367,7 @@ export default function ProviderDashboard() {
 	useEffect(() => {
 		if (!grantorId) return
 		return onSnapshot(getGrantorAnnouncementsCollection(db, grantorId), (snap) => {
-			setAnnouncements(snap.docs.map((row) => normalizeGrantorAnnouncement(row.data() || {}, row.id)).sort((a, b) => (toJsDate(b.createdAt)?.getTime() || 0) - (toJsDate(a.createdAt)?.getTime() || 0)))
+			setAnnouncements(snap.docs.map((row) => normalizeGrantorAnnouncement(row.data() || {}, row.id)).sort((a, b) => (toJsDate(b.updatedAt || b.createdAt)?.getTime() || 0) - (toJsDate(a.updatedAt || a.createdAt)?.getTime() || 0)))
 		}, () => setAnnouncements([]))
 	}, [grantorId])
 
@@ -1656,7 +1696,7 @@ export default function ProviderDashboard() {
 				const leftOpen = left.applicationEnabled === true ? 1 : 0
 				const rightOpen = right.applicationEnabled === true ? 1 : 0
 				if (leftOpen !== rightOpen) return rightOpen - leftOpen
-				return (toJsDate(right.createdAt)?.getTime() || 0) - (toJsDate(left.createdAt)?.getTime() || 0)
+				return (toJsDate(right.updatedAt || right.createdAt)?.getTime() || 0) - (toJsDate(left.updatedAt || left.createdAt)?.getTime() || 0)
 			})
 			.map((announcement) => String(announcement.title || announcement.scholarshipName || "").trim())
 			.filter((title) => {
@@ -1730,6 +1770,22 @@ export default function ProviderDashboard() {
 		const totalSlots = parseScholarshipSlotCount(announcementForm.totalSlots)
 		return totalSlots && totalSlots <= 200 && totalSlots % 25 === 0 ? String(totalSlots) : ""
 	}, [announcementForm.applicationEnabled, announcementForm.totalSlots, announcementSlotChoice])
+	const selectedOfferingSlotState = useMemo(
+		() => selectedActiveScholarshipOffering ? getScholarshipSlotState(selectedActiveScholarshipOffering) : null,
+		[selectedActiveScholarshipOffering],
+	)
+	const composerSlotDisplay = useMemo(() => {
+		if (!selectedExistingScholarshipTitle) return ""
+		if (!selectedOfferingSlotState?.configured) {
+			const assigned = composerSlotDraft?.mode === "assign" ? parseScholarshipSlotCount(composerSlotDraft.value) : null
+			return assigned ? `${assigned} slots assigned` : "No active slots - assign capacity"
+		}
+		const additional = composerSlotDraft?.mode === "add" ? Number(composerSlotDraft.value || 0) : 0
+		const remaining = composerSlotDraft?.mode === "add"
+			? Number(composerSlotDraft.expectedRemaining || 0) + additional
+			: selectedOfferingSlotState.remainingSlots
+		return `${remaining} slot${remaining === 1 ? "" : "s"} remaining${additional > 0 ? ` (+${additional} pending)` : ""}`
+	}, [composerSlotDraft, selectedExistingScholarshipTitle, selectedOfferingSlotState])
 	const createCityOptions = useMemo(() => getCitiesByProvince(createForm.province), [createForm.province])
 	const editCityOptions = useMemo(() => getCitiesByProvince(editForm.province), [editForm.province])
 
@@ -3469,6 +3525,56 @@ export default function ProviderDashboard() {
 		setAnnouncementScholarshipChoice("")
 		setAnnouncementGwaChoice("")
 		setAnnouncementApplicationProfileFile(null)
+		setComposerSlotModalOpen(false)
+		setComposerSlotChoice("")
+		setComposerSlotValue("")
+		setComposerSlotDraft(null)
+	}
+
+	const openComposerSlotModal = () => {
+		if (!selectedExistingScholarshipTitle) return
+		const savedValue = String(composerSlotDraft?.value || "")
+		setComposerSlotValue(savedValue)
+		setComposerSlotChoice(
+			savedValue && Number(savedValue) <= 200 && Number(savedValue) % 25 === 0
+				? savedValue
+				: savedValue
+					? OTHER_SLOT_VALUE
+					: "",
+		)
+		setComposerSlotModalOpen(true)
+	}
+
+	const closeComposerSlotModal = () => {
+		setComposerSlotModalOpen(false)
+		setComposerSlotChoice("")
+		setComposerSlotValue("")
+	}
+
+	const confirmComposerSlotChange = (event) => {
+		event.preventDefault()
+		const value = parseScholarshipSlotCount(composerSlotValue)
+		if (value === null) {
+			toast.error("Slots must be a whole number from 1 to 1000.")
+			return
+		}
+		if (selectedActiveScholarshipOffering && selectedOfferingSlotState?.configured) {
+			if (selectedOfferingSlotState.totalSlots + value > 1000) {
+				toast.error(`You can add up to ${1000 - selectedOfferingSlotState.totalSlots} more slots.`)
+				return
+			}
+			setComposerSlotDraft({
+				mode: "add",
+				value: String(value),
+				announcementId: selectedActiveScholarshipOffering.id,
+				expectedTotal: selectedOfferingSlotState.totalSlots,
+				expectedRemaining: selectedOfferingSlotState.remainingSlots,
+			})
+		} else {
+			setComposerSlotDraft({ mode: "assign", value: String(value) })
+			setAnnouncementForm((prev) => ({ ...prev, totalSlots: String(value) }))
+		}
+		closeComposerSlotModal()
 	}
 
 	const handleArchiveAnnouncement = (announcementId) => {
@@ -3535,6 +3641,8 @@ export default function ProviderDashboard() {
 		try {
 			const requestFingerprint = JSON.stringify({
 				form: announcementForm,
+				republishAnnouncementId: selectedActiveScholarshipOffering?.id || "",
+				composerSlotDraft,
 				windowStart: announcementWindowStart,
 				windowEnd: announcementWindowEnd,
 				images: announcementImageFiles.map((file) => [file.name, file.size, file.lastModified]),
@@ -3557,7 +3665,7 @@ export default function ProviderDashboard() {
 					folder: `grantor-application-profiles/${grantorId}`,
 				}))
 				: null
-			const announcementResult = await createGrantorAnnouncementWorkflow({
+			const announcementRequest = {
 				grantorId,
 				actorType: "grantor",
 				actorId: grantorId,
@@ -3582,10 +3690,10 @@ export default function ProviderDashboard() {
 					applicationEnabled: announcementForm.applicationEnabled === true,
 					slotsConfigured: announcementForm.applicationEnabled === true,
 					totalSlots: announcementForm.applicationEnabled
-						? parseScholarshipSlotCount(announcementForm.totalSlots)
+						? selectedOfferingSlotState?.totalSlots || parseScholarshipSlotCount(announcementForm.totalSlots)
 						: null,
 					remainingSlots: announcementForm.applicationEnabled
-						? parseScholarshipSlotCount(announcementForm.totalSlots)
+						? selectedOfferingSlotState?.remainingSlots || parseScholarshipSlotCount(announcementForm.totalSlots)
 						: null,
 					minimumGrade: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
 					minGwa: announcementForm.applicationEnabled ? Number(announcementForm.minimumGrade) : null,
@@ -3621,7 +3729,7 @@ export default function ProviderDashboard() {
 								size: applicationProfileUpload.size || announcementApplicationProfileFile?.size || 0,
 								uploadedAt: new Date().toISOString(),
 							}
-						: profile?.customApplicationForm || null,
+						: selectedActiveScholarshipOffering?.customApplicationForm || profile?.customApplicationForm || null,
 					applicationWindow: announcementForm.applicationEnabled ? announcementForm.applicationWindow.trim() : "",
 					startDate: announcementForm.applicationEnabled && announcementWindowStart ? new Date(`${announcementWindowStart}T00:00:00`).toISOString() : null,
 					endDate: announcementForm.applicationEnabled && announcementWindowEnd ? new Date(`${announcementWindowEnd}T23:59:59`).toISOString() : null,
@@ -3642,7 +3750,24 @@ export default function ProviderDashboard() {
 					createdAt: serverTimestamp(),
 					updatedAt: serverTimestamp(),
 				},
-			})
+			}
+			const isRepublish = Boolean(selectedActiveScholarshipOffering?.id && selectedOfferingSlotState?.configured)
+			const stagedAddition = composerSlotDraft?.mode === "add" && composerSlotDraft.announcementId === selectedActiveScholarshipOffering?.id
+				? parseScholarshipSlotCount(composerSlotDraft.value) || 0
+				: 0
+			const announcementResult = isRepublish
+				? await republishGrantorAnnouncementWorkflow({
+						...announcementRequest,
+						announcementId: selectedActiveScholarshipOffering.id,
+						expectedTotalSlots: composerSlotDraft?.mode === "add"
+							? composerSlotDraft.expectedTotal
+							: selectedOfferingSlotState.totalSlots,
+						expectedRemainingSlots: composerSlotDraft?.mode === "add"
+							? composerSlotDraft.expectedRemaining
+							: selectedOfferingSlotState.remainingSlots,
+						additionalSlots: stagedAddition,
+					})
+				: await createGrantorAnnouncementWorkflow(announcementRequest)
 			const announcementId = announcementResult?.id || announcementResult?.result?.data?.[0]?.id || ""
 			if (!announcementId) throw new Error("The announcement could not be confirmed after publishing.")
 			const notificationFailed = [
@@ -3654,6 +3779,8 @@ export default function ProviderDashboard() {
 			announcementPublishRequestRef.current = { fingerprint: "", id: "" }
 			setAnnouncementForm(ANNOUNCEMENT_FORM)
 			setAnnouncementSlotChoice("")
+			setComposerSlotDraft(null)
+			setComposerSlotModalOpen(false)
 			setAnnouncementSubmitAttempted(false)
 			setAnnouncementImageFiles([])
 			setAnnouncementApplicationProfileFile(null)
@@ -3670,6 +3797,7 @@ export default function ProviderDashboard() {
 		} catch (error) {
 			console.error(error)
 			const reason = String(error?.reason || "")
+			if (reason === "stale_slot_capacity") setComposerSlotDraft(null)
 			const message = reason === "request_timeout"
 				? "Publishing timed out. You can retry safely without creating a duplicate announcement."
 				: reason === "upload_timeout"
@@ -3678,6 +3806,10 @@ export default function ProviderDashboard() {
 						? "The publishing service is currently unavailable. Please try again shortly."
 						: reason === "grantor_archived"
 							? "This grantor account is archived and cannot publish announcements."
+							: reason === "stale_slot_capacity"
+								? "Scholarship availability changed. Review the latest remaining slots and confirm your addition again."
+								: reason === "scholarship_not_active"
+									? "This scholarship is no longer active. Select it again to assign fresh capacity."
 							: reason === "invalid_slot_capacity"
 								? "Slots must be a whole number from 1 to 1000."
 								: error?.message || "Unable to post announcement right now."
@@ -4638,8 +4770,10 @@ export default function ProviderDashboard() {
 											if (announcementForm.applicationEnabled) {
 												setAnnouncementWindowStart("")
 												setAnnouncementWindowEnd("")
-												setAnnouncementSlotChoice("")
-													}
+			setAnnouncementSlotChoice("")
+			setComposerSlotDraft(null)
+			setComposerSlotModalOpen(false)
+											}
 												}}
 											>
 												<i />
@@ -4652,12 +4786,16 @@ export default function ProviderDashboard() {
 														<span><HiOutlineTag /> Scholarship Title</span>
 														<CustomSelect
 															value={selectedAnnouncementScholarshipValue}
-															onChange={(nextValue) => {
-																setAnnouncementScholarshipChoice(nextValue)
-																setAnnouncementForm((prev) => ({
-																	...prev,
-																	title: nextValue === ANNOUNCEMENT_NEW_SCHOLARSHIP_VALUE ? "" : nextValue,
-																}))
+													onChange={(nextValue) => {
+														setAnnouncementScholarshipChoice(nextValue)
+														setAnnouncementSlotChoice("")
+														setComposerSlotDraft(null)
+														setComposerSlotModalOpen(false)
+														setAnnouncementForm((prev) => ({
+															...prev,
+															title: nextValue === ANNOUNCEMENT_NEW_SCHOLARSHIP_VALUE ? "" : nextValue,
+															totalSlots: "",
+														}))
 															}}
 															options={announcementScholarshipOptions}
 															placeholder="Select scholarship"
@@ -4698,20 +4836,31 @@ export default function ProviderDashboard() {
 											</label>
 											<label className="grantor-announcement-select-field">
 												<span><HiOutlineUsers /> Slots</span>
-												<CustomSelect
-													value={selectedAnnouncementSlotValue}
-													onChange={(nextValue) => {
-														setAnnouncementSlotChoice(nextValue)
-														setAnnouncementForm((prev) => ({
-															...prev,
-															totalSlots: nextValue === OTHER_SLOT_VALUE ? "" : nextValue,
-														}))
-													}}
-													options={SCHOLARSHIP_SLOT_OPTIONS}
-													placeholder="Select slots"
-													buttonClassName={`grantor-announcement-custom-select ${announcementSubmitAttempted && announcementMissingFields.totalSlots ? "is-missing" : ""}`}
-													menuClassName="grantor-announcement-custom-select-menu"
-												/>
+												{selectedExistingScholarshipTitle ? (
+													<button
+														type="button"
+														className={`grantor-announcement-readonly-slots ${announcementSubmitAttempted && announcementMissingFields.totalSlots ? "is-missing" : ""}`.trim()}
+														onClick={openComposerSlotModal}
+													>
+														<span>{composerSlotDisplay}</span>
+														<HiOutlinePencil aria-hidden="true" />
+													</button>
+												) : (
+													<CustomSelect
+														value={selectedAnnouncementSlotValue}
+														onChange={(nextValue) => {
+															setAnnouncementSlotChoice(nextValue)
+															setAnnouncementForm((prev) => ({
+																...prev,
+																totalSlots: nextValue === OTHER_SLOT_VALUE ? "" : nextValue,
+															}))
+														}}
+														options={SCHOLARSHIP_SLOT_OPTIONS}
+														placeholder="Select slots"
+														buttonClassName={`grantor-announcement-custom-select ${announcementSubmitAttempted && announcementMissingFields.totalSlots ? "is-missing" : ""}`}
+														menuClassName="grantor-announcement-custom-select-menu"
+													/>
+												)}
 											</label>
 											{selectedAnnouncementGwaValue === ANNOUNCEMENT_CUSTOM_GWA_VALUE ? (
 														<label>
@@ -4781,7 +4930,7 @@ export default function ProviderDashboard() {
 													</div>
 												</>
 											) : null}
-											{announcementSlotChoice === OTHER_SLOT_VALUE ? (
+											{!selectedExistingScholarshipTitle && announcementSlotChoice === OTHER_SLOT_VALUE ? (
 												<label>
 													<span>Custom Slots</span>
 													<input type="number" min="1" max="1000" step="1" className={announcementSubmitAttempted && announcementMissingFields.totalSlots ? "is-missing" : ""} placeholder="Enter 1 to 1000" value={announcementForm.totalSlots} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, totalSlots: event.target.value }))} />
@@ -4970,6 +5119,59 @@ export default function ProviderDashboard() {
 								</div>
 							)}
 						</footer>
+					</section>
+				</div>
+			) : null}
+			{composerSlotModalOpen ? (
+				<div className="admin-detail-backdrop grantor-composer-slot-backdrop" role="presentation" onClick={closeComposerSlotModal}>
+					<section className="grantor-slot-modal grantor-composer-slot-modal" role="dialog" aria-modal="true" aria-label={selectedActiveScholarshipOffering ? "Add scholarship slots" : "Assign scholarship slots"} onClick={(event) => event.stopPropagation()}>
+						<header>
+							<div>
+								<span>Confirmation Required</span>
+								<h3>{selectedActiveScholarshipOffering ? "Add Scholarship Slots" : "Assign Scholarship Slots"}</h3>
+							</div>
+							<button type="button" onClick={closeComposerSlotModal} aria-label="Close slot confirmation"><HiX /></button>
+						</header>
+						<form onSubmit={confirmComposerSlotChange}>
+							<div className="grantor-composer-slot-summary">
+								<strong>{selectedExistingScholarshipTitle}</strong>
+								{selectedOfferingSlotState?.configured ? (
+									<div>
+										<span><small>Current Total</small><b>{selectedOfferingSlotState.totalSlots}</b></span>
+										<span><small>Occupied</small><b>{selectedOfferingSlotState.totalSlots - selectedOfferingSlotState.remainingSlots}</b></span>
+										<span><small>Remaining</small><b>{selectedOfferingSlotState.remainingSlots}</b></span>
+									</div>
+								) : <p>No active slot pool exists. Assign fresh capacity for the new announcement.</p>}
+							</div>
+							<label>
+								<span>{selectedActiveScholarshipOffering ? "Slots to Add" : "Fresh Capacity"}</span>
+								<CustomSelect
+									value={composerSlotChoice}
+									onChange={(nextValue) => {
+										setComposerSlotChoice(nextValue)
+										setComposerSlotValue(nextValue === OTHER_SLOT_VALUE ? "" : nextValue)
+									}}
+									options={SCHOLARSHIP_SLOT_OPTIONS}
+									placeholder={selectedActiveScholarshipOffering ? "Select slots to add" : "Select capacity"}
+									buttonClassName="grantor-announcement-custom-select"
+									menuClassName="grantor-announcement-custom-select-menu"
+								/>
+							</label>
+							{composerSlotChoice === OTHER_SLOT_VALUE ? (
+								<label><span>Custom Slots</span><input type="number" min="1" max="1000" step="1" value={composerSlotValue} onChange={(event) => setComposerSlotValue(event.target.value)} placeholder="Enter 1 to 1000" /></label>
+							) : null}
+							{selectedOfferingSlotState?.configured && parseScholarshipSlotCount(composerSlotValue) ? (
+								<div className="grantor-composer-slot-result">
+									<span><small>New Total</small><strong>{selectedOfferingSlotState.totalSlots + Number(composerSlotValue)}</strong></span>
+									<span><small>New Remaining</small><strong>{selectedOfferingSlotState.remainingSlots + Number(composerSlotValue)}</strong></span>
+								</div>
+							) : null}
+							<p>The slot change is staged and will only be saved when this announcement is published.</p>
+							<footer>
+								<button type="button" onClick={closeComposerSlotModal}>Cancel</button>
+								<button type="submit"><HiOutlineCheckCircle /> Confirm {selectedActiveScholarshipOffering ? "Addition" : "Capacity"}</button>
+							</footer>
+						</form>
 					</section>
 				</div>
 			) : null}

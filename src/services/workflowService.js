@@ -1,13 +1,8 @@
 import { postPortalJson } from "./portalApi"
-
-const BACKEND_API_URL = (
-	import.meta.env.VITE_BACKEND_API_URL ||
-	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
-	"https://bulsuscholar.onrender.com"
-).replace(/\/$/, "")
+import { requireBackendApiUrl } from "../config/backendApi"
 
 async function postWorkflow(path, payload = {}, options = {}) {
-	return postPortalJson(BACKEND_API_URL, path, payload, "Workflow", {
+	return postPortalJson(requireBackendApiUrl("Workflow backend"), path, payload, "Workflow", {
 		actor: {
 			actorId: payload.actorId,
 			actorType: payload.actorType,
@@ -78,6 +73,10 @@ export function updateGrantorScholarsWorkflow(payload = {}) {
 
 export function createGrantorAnnouncementWorkflow(payload = {}) {
 	return postWorkflow("/workflows/grantor/announcements/create", payload, { timeoutMs: 45000 })
+}
+
+export function republishGrantorAnnouncementWorkflow(payload = {}) {
+	return postWorkflow("/workflows/grantor/announcements/republish", payload, { timeoutMs: 45000 })
 }
 
 export function updateGrantorAnnouncementWorkflow(payload = {}) {

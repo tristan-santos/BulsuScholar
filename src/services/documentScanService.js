@@ -1,9 +1,8 @@
-const DOCUMENT_SCAN_API_URL = (
-	import.meta.env.VITE_DOCUMENT_SCAN_API_URL || "https://bulsuscholar.onrender.com"
-).replace(/\/$/, "")
+import { requireDocumentScanApiUrl } from "../config/backendApi"
 
 export async function scanStudentDocument(file, documentType = "cor") {
 	if (!file) return null
+	const documentScanApiUrl = requireDocumentScanApiUrl()
 
 	const formData = new FormData()
 	formData.append("file", file)
@@ -11,7 +10,7 @@ export async function scanStudentDocument(file, documentType = "cor") {
 	let response
 	try {
 		response = await fetch(
-			`${DOCUMENT_SCAN_API_URL}/scan-document?document_type=${encodeURIComponent(documentType)}`,
+			`${documentScanApiUrl}/scan-document?document_type=${encodeURIComponent(documentType)}`,
 			{
 				method: "POST",
 				body: formData,
@@ -19,7 +18,7 @@ export async function scanStudentDocument(file, documentType = "cor") {
 		)
 	} catch (error) {
 		throw new Error(
-			`Document scanner is unavailable at ${DOCUMENT_SCAN_API_URL}. Check Render deployment and CORS. ${error?.message || ""}`.trim(),
+			`Document scanner is unavailable at ${documentScanApiUrl}. Check the backend deployment and CORS settings. ${error?.message || ""}`.trim(),
 		)
 	}
 
@@ -28,7 +27,7 @@ export async function scanStudentDocument(file, documentType = "cor") {
 		const fallbackMessage = await response.text().catch(() => "")
 		if (errorPayload?.detail?.error === "ocr_dependency_missing") {
 			throw new Error(
-				"Tesseract OCR is not installed on the deployed backend. Redeploy the Render service using the Dockerfile so COR/ROG scanned PDFs can be read.",
+				"Tesseract OCR is not installed on the deployed backend. Redeploy the backend using the repository Dockerfile so COR/ROG scanned PDFs can be read.",
 			)
 		}
 		const detail =

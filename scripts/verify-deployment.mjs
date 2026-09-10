@@ -1,5 +1,10 @@
 const frontendUrl = String(process.env.FRONTEND_URL || process.env.VITE_APP_URL || "https://bulsu-scholar.vercel.app").replace(/\/$/, "")
-const backendUrl = String(process.env.BACKEND_URL || process.env.VITE_BACKEND_API_URL || "https://bulsuscholar.onrender.com").replace(/\/$/, "")
+const backendUrl = String(process.env.BACKEND_URL || process.env.VITE_BACKEND_API_URL || "").replace(/\/$/, "")
+
+if (!backendUrl) {
+	console.error("Set BACKEND_URL or VITE_BACKEND_API_URL to the deployed Railway backend before running this check.")
+	process.exit(1)
+}
 
 const requiredFrontend = ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY", "VITE_BACKEND_API_URL", "VITE_APP_URL"]
 const missing = requiredFrontend.filter((key) => !process.env[key])

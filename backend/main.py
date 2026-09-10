@@ -79,6 +79,7 @@ try:
         deliver_grantor_announcement_notifications,
         create_grantor_scholars,
         request_grantor_password_change,
+        republish_grantor_announcement,
         update_admin_review,
         update_grantor_announcement,
         update_grantor_archive_state,
@@ -151,6 +152,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         deliver_grantor_announcement_notifications,
         create_grantor_scholars,
         request_grantor_password_change,
+        republish_grantor_announcement,
         update_admin_review,
         update_grantor_announcement,
         update_grantor_archive_state,
@@ -318,7 +320,7 @@ def deployment_health() -> dict[str, Any]:
         "tables": table_results,
         "missingTables": missing_tables,
         "failedTables": failed_tables,
-        "nextStep": "Run supabase/security-hardening.sql if tables are missing. Redeploy Render with Docker if scannerDependencies.tesseractInstalled is false.",
+        "nextStep": "Run supabase/security-hardening.sql if tables are missing. Redeploy the backend using the repository Dockerfile if scannerDependencies.tesseractInstalled is false.",
     }
 
 
@@ -328,7 +330,7 @@ def scan_document_health() -> dict[str, Any]:
     return {
         "status": "ok" if dependencies["tesseractInstalled"] else "needs_attention",
         "dependencies": dependencies,
-        "nextStep": "Use the Docker deployment on Render so tesseract-ocr and poppler-utils are installed.",
+        "nextStep": "Use the repository Dockerfile so tesseract-ocr and poppler-utils are installed.",
     }
 
 
@@ -651,6 +653,26 @@ def create_grantor_announcement_endpoint(
     return result
 
 
+@app.post("/workflows/grantor/announcements/republish")
+def republish_grantor_announcement_endpoint(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    payload: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
+    result = republish_grantor_announcement(payload, defer_notifications=True)
+    announcement_data = result.pop("_announcementData", None)
+    if result.get("ok") and result.get("id") and isinstance(announcement_data, dict):
+        background_tasks.add_task(
+            deliver_grantor_announcement_notifications,
+            result["id"],
+            announcement_data,
+            str(payload.get("grantorId") or ""),
+            result.get("duplicate") is True,
+        )
+    return result
+
+
 @app.post("/workflows/grantor/announcements/update")
 def update_grantor_announcement_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
@@ -845,7 +867,7 @@ async def scan_document(
                 "error": "ocr_dependency_missing" if status_code == 503 else "document_scan_failed",
                 "message": message,
                 "scannerDependencies": get_scanner_dependency_status(),
-                "nextStep": "Redeploy the Render backend with Docker so tesseract-ocr and poppler-utils are installed.",
+                "nextStep": "Redeploy the backend using the repository Dockerfile so tesseract-ocr and poppler-utils are installed.",
             },
         ) from error
 

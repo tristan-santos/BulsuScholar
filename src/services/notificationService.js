@@ -1,11 +1,8 @@
-const BACKEND_API_URL = (
-	import.meta.env.VITE_BACKEND_API_URL ||
-	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
-	"https://bulsuscholar.onrender.com"
-).replace(/\/$/, "")
+import { requireBackendApiUrl } from "../config/backendApi"
+import { postPortalJson } from "./portalApi"
 
 async function postNotification(path, payload = {}) {
-	return postPortalJson(BACKEND_API_URL, path, payload, "Notification", { timeoutMs: 15000 })
+	return postPortalJson(requireBackendApiUrl("Notification backend"), path, payload, "Notification", { timeoutMs: 15000 })
 }
 
 export function createStudentNotification(payload = {}) {
@@ -55,4 +52,3 @@ export function deleteStudentNotification(id = "") {
 export function deleteGrantorNotification(id = "") {
 	return postNotification("/notifications/grantor/delete", { id })
 }
-import { postPortalJson } from "./portalApi"

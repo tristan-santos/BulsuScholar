@@ -1,6 +1,6 @@
 # BulsuScholar Deployment Checklist
 
-Use this after every Vercel or Render redeploy.
+Use this after every Vercel or Railway redeploy.
 
 ## 1. Vercel Environment Variables
 
@@ -12,19 +12,19 @@ VITE_SUPABASE_ANON_KEY=
 VITE_SUPABASE_STORAGE_BUCKET=bulsuscholar
 VITE_APP_URL=https://bulsu-scholar.vercel.app
 VITE_PUBLIC_SITE_URL=https://bulsu-scholar.vercel.app
-VITE_BACKEND_API_URL=https://bulsuscholar.onrender.com
-VITE_DOCUMENT_SCAN_API_URL=https://bulsuscholar.onrender.com
-VITE_RESEND_API_ENDPOINT=https://bulsuscholar.onrender.com/email/send
+VITE_BACKEND_API_URL=https://your-service.up.railway.app
+VITE_DOCUMENT_SCAN_API_URL=https://your-service.up.railway.app
+VITE_RESEND_API_ENDPOINT=https://your-service.up.railway.app/email/send
 VITE_PASSWORD_SECRET=
 VITE_PASSWORD_LEGACY_SECRETS=
 ```
 
 Expected:
-- Frontend calls Render, not localhost.
+- Frontend calls Railway, not localhost.
 - Supabase login/signup can initialize.
 - Existing grantor/admin encrypted passwords can still be checked.
 
-## 2. Render Environment Variables
+## 2. Railway Environment Variables
 
 Required backend variables:
 
@@ -36,6 +36,12 @@ RESEND_FROM_EMAIL=BulsuScholar <onboarding@resend.dev>
 DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
 DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
 FRONTEND_URL=https://bulsu-scholar.vercel.app
+ENFORCE_PORTAL_ACTOR_HEADERS=true
+ENABLE_SCHOLARSHIP_CHOICE=true
+WEB_CONCURRENCY=1
+UVICORN_KEEP_ALIVE=30
+OPENAI_API_KEY=
+OPENAI_HELP_MODEL=gpt-5-mini
 ```
 
 Use `BulsuScholar <onboarding@resend.dev>` only for testing. For production, verify your domain in Resend first, then change this to something like `BulsuScholar <noreply@your-verified-domain.com>`.
@@ -45,10 +51,12 @@ Expected:
 - Vercel production and preview deployments pass CORS.
 - Email endpoint can use Resend.
 
-Render runtime:
-- Use the Docker runtime for the backend service.
-- If Render root directory is the repository root, use `Dockerfile`.
-- If Render root directory is `backend`, use `backend/Dockerfile`.
+Railway runtime:
+- Connect the repository root and use the root `Dockerfile`.
+- Keep the Railway build and start commands empty so the Dockerfile command is used.
+- Use one replica in the Singapore/Southeast Asia region.
+- Set the deployment health-check path to `/health` and restart policy to `ON_FAILURE`.
+- Do not set `PORT`; Railway injects it at runtime.
 - The Dockerfile installs `tesseract-ocr` for PNG/JPG OCR and `poppler-utils` for scanned PDF fallback.
 
 Expected:
@@ -108,10 +116,10 @@ Expected:
 Open:
 
 ```txt
-https://bulsuscholar.onrender.com/
-https://bulsuscholar.onrender.com/health
-https://bulsuscholar.onrender.com/deployment/health
-https://bulsuscholar.onrender.com/email/health
+https://your-service.up.railway.app/
+https://your-service.up.railway.app/health
+https://your-service.up.railway.app/deployment/health
+https://your-service.up.railway.app/email/health
 ```
 
 Expected:
@@ -133,7 +141,7 @@ From the deployed Vercel frontend:
 
 Expected:
 - Browser does not show CORS errors.
-- Requests go to `https://bulsuscholar.onrender.com/scan-document`.
+- Requests go to `https://your-service.up.railway.app/scan-document`.
 
 ## 7. Student Signup
 
@@ -200,13 +208,13 @@ Expected:
 ## 11. Common Production Errors
 
 `CORS policy`
-- Check Render `DOCUMENT_SCAN_ALLOWED_ORIGINS`.
-- Check Render `DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX`.
-- Redeploy Render.
+- Check Railway `DOCUMENT_SCAN_ALLOWED_ORIGINS`.
+- Check Railway `DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX`.
+- Redeploy Railway.
 
 `missing_supabase_server_config`
-- Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Render.
-- Redeploy Render.
+- Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Railway.
+- Redeploy Railway.
 
 `PGRST205`
 - Run missing Supabase SQL.
@@ -218,7 +226,7 @@ Expected:
 - If old accounts used another key, add it to `VITE_PASSWORD_LEGACY_SECRETS`.
 
 `Backend is unavailable`
-- Check Render is awake and deployed.
+- Check the Railway deployment and service logs.
 - Open `/deployment/health`.
 - Confirm Vercel `VITE_BACKEND_API_URL`.
 
@@ -226,7 +234,7 @@ Expected:
 
 1. Run `supabase/priority-two-four.sql` once in the Supabase SQL Editor. It is idempotent and may be rerun after schema changes.
 2. Confirm Vercel has `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_STORAGE_BUCKET`, `VITE_BACKEND_API_URL`, `VITE_DOCUMENT_SCAN_API_URL`, `VITE_APP_URL`, and `VITE_PUBLIC_SITE_URL`.
-3. Confirm Render/Railway has `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_URL`, `DOCUMENT_SCAN_ALLOWED_ORIGINS`, `ENFORCE_PORTAL_ACTOR_HEADERS=true`, email settings, and optional OpenAI settings.
+3. Confirm Railway has `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_URL`, `DOCUMENT_SCAN_ALLOWED_ORIGINS`, `ENFORCE_PORTAL_ACTOR_HEADERS=true`, email settings, and optional OpenAI settings.
 4. Keep `WEB_CONCURRENCY=1` until workflow concurrency has been load-tested. Raise it only when the hosting memory limit and Supabase connection usage are known.
 5. In Supabase Auth, set the site URL and redirect allow-list to `https://bulsu-scholar.vercel.app`, including `/confirm-email` and `/reset-password`.
 6. Confirm the `bulsuscholar` bucket policies permit authenticated uploads and the application-required preview/download reads. Match the application limit of 10 MB and the supported PDF/image/spreadsheet MIME types.

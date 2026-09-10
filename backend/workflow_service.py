@@ -1465,6 +1465,78 @@ def configure_grantor_announcement_slots(payload: dict[str, Any]) -> dict[str, A
     }
 
 
+def republish_grantor_announcement(payload: dict[str, Any], defer_notifications: bool = False) -> dict[str, Any]:
+    grantor_id = str(payload.get("grantorId") or "").strip()
+    actor_type = str(payload.get("actorType") or "grantor").strip().lower()
+    actor_id = str(payload.get("actorId") or grantor_id).strip()
+    announcement_id = str(payload.get("announcementId") or "").strip()
+    client_request_id = str(payload.get("clientRequestId") or "").strip()
+    announcement_patch = payload.get("announcement") if isinstance(payload.get("announcement"), dict) else {}
+    try:
+        expected_total = int(payload.get("expectedTotalSlots"))
+        expected_remaining = int(payload.get("expectedRemainingSlots"))
+        additional_slots = int(payload.get("additionalSlots") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "reason": "invalid_slot_capacity", "message": "The scholarship slot values are invalid."}
+
+    if not grantor_id or not announcement_id or not client_request_id:
+        return {"ok": False, "reason": "missing_republish_identity", "message": "The scholarship republish request is incomplete."}
+    if actor_type == "grantor" and actor_id != grantor_id:
+        return {"ok": False, "reason": "cross_grantor_announcement_update_blocked"}
+    if expected_total < 1 or expected_remaining < 0 or additional_slots < 0 or expected_total + additional_slots > 1000:
+        return {"ok": False, "reason": "invalid_slot_capacity", "message": "Total slots must remain between 1 and 1000."}
+    if _archived_grantor_account(grantor_id):
+        return {
+            "ok": False,
+            "reason": "grantor_archived",
+            "message": "This grantor account is archived and cannot republish scholarships.",
+        }
+
+    result = supabase_rpc("republish_grantor_scholarship", {
+        "p_announcement_id": announcement_id,
+        "p_grantor_id": grantor_id,
+        "p_expected_total_slots": expected_total,
+        "p_expected_remaining_slots": expected_remaining,
+        "p_additional_slots": additional_slots,
+        "p_announcement_patch": announcement_patch,
+        "p_client_request_id": client_request_id,
+    })
+    if not result.get("ok"):
+        reason = result.get("reason") or "scholarship_republish_failed"
+        message = {
+            "stale_slot_capacity": "Scholarship availability changed. Review the latest slot count and confirm again.",
+            "scholarship_not_active": "Only an active scholarship announcement can be republished.",
+            "grantor_archived": "This grantor account is archived and cannot republish scholarships.",
+            "grantor_not_found": "The grantor account could not be found.",
+            "invalid_slot_capacity": "Total slots must remain between 1 and 1000.",
+        }.get(reason, "Unable to republish this scholarship.")
+        return {"ok": False, "reason": reason, "message": message, "result": result}
+
+    capacity = result.get("data") if isinstance(result.get("data"), dict) else {}
+    announcement_data = capacity.get("announcement") if isinstance(capacity.get("announcement"), dict) else {}
+    duplicate = capacity.get("idempotent") is True
+    delivery = {
+        "notification": {"ok": True, "queued": True},
+        "adminNotification": {"ok": True, "queued": True},
+        "studentNotification": {"ok": True, "queued": True},
+        "log": {"ok": True, "queued": True},
+        "lowSlotNotification": {"ok": True, "queued": True},
+    } if defer_notifications else deliver_grantor_announcement_notifications(
+        announcement_id,
+        announcement_data,
+        grantor_id,
+        duplicate,
+    )
+    return {
+        "ok": True,
+        "id": announcement_id,
+        "duplicate": duplicate,
+        "capacity": capacity,
+        **delivery,
+        **({"_announcementData": announcement_data} if defer_notifications else {}),
+    }
+
+
 def update_grantor_archive_state(payload: dict[str, Any]) -> dict[str, Any]:
     grantor_ids = [str(item or "").strip() for item in payload.get("grantorIds") or []]
     grantor_ids = list(dict.fromkeys(item for item in grantor_ids if item))

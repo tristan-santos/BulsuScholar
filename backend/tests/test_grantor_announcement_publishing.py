@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from backend.workflow_service import create_grantor_announcement, _send_low_slot_notifications
+from backend.workflow_service import create_grantor_announcement, republish_grantor_announcement, _send_low_slot_notifications
 
 
 class GrantorAnnouncementPublishingTests(unittest.TestCase):
@@ -95,6 +95,63 @@ class GrantorAnnouncementPublishingTests(unittest.TestCase):
         self.assertTrue(result["studentNotification"]["queued"])
         self.assertIn("_announcementData", result)
         delivery.assert_not_called()
+
+    @patch("backend.workflow_service._archived_grantor_account", return_value=False)
+    @patch("backend.workflow_service.supabase_rpc")
+    def test_republish_preserves_pool_and_stages_addition_atomically(self, rpc, _archived):
+        rpc.return_value = {
+            "ok": True,
+            "data": {
+                "announcementId": "announcement-a",
+                "totalSlots": 50,
+                "remainingSlots": 43,
+                "additionalSlots": 25,
+                "idempotent": False,
+                "announcement": {"id": "announcement-a", "title": "Scholarship A", "remainingSlots": 43},
+            },
+        }
+
+        result = republish_grantor_announcement({
+            "grantorId": "grantor-a",
+            "actorId": "grantor-a",
+            "actorType": "grantor",
+            "announcementId": "announcement-a",
+            "clientRequestId": "republish-a",
+            "expectedTotalSlots": 25,
+            "expectedRemainingSlots": 18,
+            "additionalSlots": 25,
+            "announcement": {"title": "Scholarship A", "description": "Applications reopened."},
+        }, defer_notifications=True)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["capacity"]["remainingSlots"], 43)
+        rpc.assert_called_once_with("republish_grantor_scholarship", {
+            "p_announcement_id": "announcement-a",
+            "p_grantor_id": "grantor-a",
+            "p_expected_total_slots": 25,
+            "p_expected_remaining_slots": 18,
+            "p_additional_slots": 25,
+            "p_announcement_patch": {"title": "Scholarship A", "description": "Applications reopened."},
+            "p_client_request_id": "republish-a",
+        })
+
+    @patch("backend.workflow_service._archived_grantor_account", return_value=False)
+    @patch("backend.workflow_service.supabase_rpc", return_value={"ok": False, "reason": "stale_slot_capacity"})
+    def test_republish_reports_stale_capacity(self, _rpc, _archived):
+        result = republish_grantor_announcement({
+            "grantorId": "grantor-a",
+            "actorId": "grantor-a",
+            "actorType": "grantor",
+            "announcementId": "announcement-a",
+            "clientRequestId": "republish-a",
+            "expectedTotalSlots": 25,
+            "expectedRemainingSlots": 18,
+            "additionalSlots": 25,
+            "announcement": {},
+        })
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "stale_slot_capacity")
 
 
 if __name__ == "__main__":

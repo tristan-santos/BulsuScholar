@@ -1,8 +1,4 @@
-const BACKEND_API_URL = (
-	import.meta.env.VITE_BACKEND_API_URL ||
-	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
-	"https://bulsuscholar.onrender.com"
-).replace(/\/$/, "")
+import { requireBackendApiUrl } from "../config/backendApi"
 
 export function formatDate(value) {
 	const date = value?.toDate ? value.toDate() : new Date(value)
@@ -145,7 +141,7 @@ async function readBackendError(response) {
 }
 
 export async function fetchStudentReportPreview(filters = {}, rows = []) {
-	const response = await fetch(`${BACKEND_API_URL}/reports/students/preview`, {
+	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/students/preview`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ filters, rows }),
@@ -164,7 +160,7 @@ export async function fetchStudentReportPreview(filters = {}, rows = []) {
 
 export async function downloadStudentReport(format = "pdf", filters = {}, rows = []) {
 	const normalizedFormat = format === "excel" ? "excel" : "pdf"
-	const response = await fetch(`${BACKEND_API_URL}/reports/students/${normalizedFormat}`, {
+	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/students/${normalizedFormat}`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ filters, rows }),
@@ -187,7 +183,7 @@ async function exportTemplateReportPdf({
 	logoUrl = "",
 	groupedPages = null,
 }) {
-	const response = await fetch(`${BACKEND_API_URL}/reports/pdf`, {
+	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/pdf`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
@@ -358,7 +354,7 @@ export async function exportComplianceReportPdf(rows = [], filterLabel = "", log
 
 export async function downloadCsvReport(filename, headers = [], rows = []) {
 	try {
-		const response = await fetch(`${BACKEND_API_URL}/reports/csv`, {
+		const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/csv`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ filename, headers, rows }),
@@ -394,7 +390,7 @@ export async function downloadCsvReport(filename, headers = [], rows = []) {
 
 export async function downloadExcelReport(filename, title, filterLabel = "", headers = [], rows = []) {
 	const normalizedFilename = String(filename || `report-${Date.now()}.xlsx`).replace(/\.csv$/i, ".xlsx")
-	const response = await fetch(`${BACKEND_API_URL}/reports/excel`, {
+	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/excel`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({

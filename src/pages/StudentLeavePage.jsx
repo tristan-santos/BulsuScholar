@@ -16,6 +16,7 @@ import {
   createLeaveRequest,
   listPriorityRecords,
 } from "../services/priorityOneService";
+import { BACKEND_API_URL } from "../config/backendApi";
 import StudentTopbar from "../components/StudentTopbar";
 import useThemeMode from "../hooks/useThemeMode";
 import "../css/StudentDashboard.css";
@@ -48,7 +49,7 @@ export default function StudentLeavePage() {
     if (!studentId) return;
     console.log("[BulsuScholar] Loading student LOA page", {
       studentId,
-      backendUrl: import.meta.env.VITE_BACKEND_API_URL || "https://bulsuscholar.onrender.com",
+      backendUrl: BACKEND_API_URL || "not configured",
     });
 
     const [activeStudentResult, pendingStudentResult, leaveRecordsResult] =

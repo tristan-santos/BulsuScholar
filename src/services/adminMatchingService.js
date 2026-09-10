@@ -1,11 +1,7 @@
-const BACKEND_API_URL = (
-	import.meta.env.VITE_BACKEND_API_URL ||
-	import.meta.env.VITE_DOCUMENT_SCAN_API_URL ||
-	"https://bulsuscholar.onrender.com"
-).replace(/\/$/, "")
+import { requireBackendApiUrl } from "../config/backendApi"
 
 export async function matchAdminGrantorStudents(students = [], grantorScholars = []) {
-	const response = await fetch(`${BACKEND_API_URL}/admin/match-grantor-students`, {
+	const response = await fetch(`${requireBackendApiUrl("Admin matching backend")}/admin/match-grantor-students`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ students, grantorScholars }),
@@ -18,7 +14,7 @@ export async function matchAdminGrantorStudents(students = [], grantorScholars =
 }
 
 export async function checkAdminStudentDuplicates(records = [], options = {}) {
-	const response = await fetch(`${BACKEND_API_URL}/admin/check-student-duplicates`, {
+	const response = await fetch(`${requireBackendApiUrl("Admin matching backend")}/admin/check-student-duplicates`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ records, options }),
