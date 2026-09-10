@@ -96,7 +96,13 @@ update public.soe_requests
 set data = data,
     updated_at = updated_at
 where id like 'choice_%'
-  and nullif(data->>'applicationId', '') is not null;
+  and nullif(data->>'applicationId', '') is not null
+  and exists (
+    select 1
+    from public.students as student
+    where student.id = public.soe_requests.data->>'studentId'
+      and student.data#>>'{scholarshipCommitment,applicationId}' = public.soe_requests.data->>'applicationId'
+  );
 
 create or replace function public.normalize_choice_material_notification()
 returns trigger

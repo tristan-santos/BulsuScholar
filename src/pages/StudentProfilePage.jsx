@@ -43,6 +43,8 @@ import CustomSelect from "../components/CustomSelect"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import { downloadStudentApplicationProfile } from "../services/applicationFormService"
 import { scanStudentDocument } from "../services/documentScanService"
+import { updateScholarshipDocumentsWorkflow } from "../services/workflowService"
+import { isClosedApplication } from "../services/scholarshipChoiceService"
 import "../css/StudentDashboard.css"
 import "../css/StudentPortalRefresh.css"
 import useThemeMode from "../hooks/useThemeMode"
@@ -395,7 +397,27 @@ export default function StudentProfilePage() {
 		if (!userId || !studentSnapshot) return
 
 		const scholarships = normalizeScholarshipList(studentSnapshot.scholarships || [])
-		if (scholarships.length === 0) return
+		if (scholarships.length === 0) return studentSnapshot
+
+		let syncedStudent = studentSnapshot
+		const activeLifecycleApplications = scholarships.filter((scholarship) =>
+			Number(scholarship.lifecycleVersion) === 2 && scholarship.applicationId && !isClosedApplication(scholarship),
+		)
+		if (type === "applicationForm" && activeLifecycleApplications.length > 0) {
+			for (const scholarship of activeLifecycleApplications) {
+				const result = await updateScholarshipDocumentsWorkflow({
+					studentId: userId,
+					applicationId: scholarship.applicationId,
+					actorId: userId,
+					actorType: "student",
+					field: "applicationFormFile",
+					value: nextFileValue,
+				})
+				if (result.student) syncedStudent = result.student
+			}
+		}
+		const legacyScholarships = scholarships.filter((scholarship) => Number(scholarship.lifecycleVersion) !== 2)
+		if (legacyScholarships.length === 0) return syncedStudent
 
 		const documentUrls = getDocumentUrlsForStudent(studentSnapshot)
 		const applicationCollection = collection(db, "scholarshipApplications")
@@ -414,7 +436,7 @@ export default function StudentProfilePage() {
 			}
 		})
 
-		const syncJobs = scholarships.map((scholarship) => {
+		const syncJobs = legacyScholarships.map((scholarship) => {
 			const scholarshipKey = String(
 				scholarship.id || scholarship.applicationNumber || scholarship.requestNumber || "",
 			)
@@ -467,6 +489,7 @@ export default function StudentProfilePage() {
 		})
 
 		await Promise.all(syncJobs)
+		return syncedStudent
 	}
 
 	const handlePhotoChange = async (event) => {
@@ -592,13 +615,13 @@ export default function StudentProfilePage() {
 			)
 
 			const nextStudentSnapshot = { ...(user || {}), [fieldName]: nextFileValue }
-			await syncScholarshipApplicationDocuments({
+			const syncedStudent = await syncScholarshipApplicationDocuments({
 				type,
 				studentSnapshot: nextStudentSnapshot,
 				nextFileValue,
 			})
 
-			setUser((prev) => ({ ...(prev || {}), [fieldName]: nextFileValue }))
+			setUser((prev) => ({ ...(prev || {}), ...(syncedStudent || {}), [fieldName]: nextFileValue }))
 			toast.success(
 				type === "cor"
 					? "COR uploaded successfully."
