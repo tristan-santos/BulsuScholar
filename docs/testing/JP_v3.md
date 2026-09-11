@@ -26,10 +26,10 @@ Use this file for the final/V3 end-to-end process test. This is less detailed th
 
 - Confirm Recommended Scholarships are based on GWA, grantor availability, roster strength, location, admin recommendation, and apply-again state.
 - Confirm a student can choose from recommendations unless admin/grantor roster rules restrict the grantor list.
-- Move a student through lifecycle states: account created, applying, document upload/profile setup, document review, requesting materials, signing/cooldown, rejection, archive, LOA, and returning.
+- Move a student through lifecycle states: account created, applying, document upload/profile setup, document review, requesting materials, signing/cooldown, rejection, archive, and invitation-based reapplication.
 - Confirm inbox notifications are used for routine lifecycle changes instead of email.
 - Confirm COR/ROG/GWA data supports eligibility and academic checks.
-- Confirm reports provide useful summaries for student records, grantors, scholarships, material requests, UNIFAST, and top students per grantor.
+- Confirm reports provide useful summaries for student records, grantors, scholarships, material requests, and top students per grantor.
 
 ## Test Case Scenario #26: Final Process Regression
 
@@ -39,4 +39,4 @@ Use this file for the final/V3 end-to-end process test. This is less detailed th
 - Confirm mobile student/grantor flows work and admin remains usable on laptop/desktop.
 - Confirm every important action creates the correct inbox notification for the correct role.
 - Confirm no routine SOE/material update email is sent.
-- Confirm final smoke tests pass: account creation, login, forgot password, announcement, recommendation, application, review, rejection, archive, unarchive, SOE, LOA, report export, FAQ/About/Help.
+- Confirm final smoke tests pass: account creation, login, forgot password, announcement, recommendation, application, review, rejection, archive, unarchive, SOE, report export, FAQ/About/Help.

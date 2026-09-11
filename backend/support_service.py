@@ -8,8 +8,8 @@ from typing import Any
 
 SUPPORT_KNOWLEDGE = """
 BulsuScholar is the BulSU scholarship management portal for students, grantors, and administrators.
-Students can create an account, upload a current COR or Advising Slip and the required previous-semester ROG, review announcements, choose one scholarship, track an application, upload required documents, request materials/SOE, and read inbox decisions.
-Only one active non-UNIFAST scholarship is allowed. A rejected application has a 24-hour reapplication cooldown. Archived or frozen records cannot progress.
+Students can create an account, upload a current COR or Advising Slip and the required previous-semester ROG, review announcements, apply to eligible scholarships, track applications, upload required documents, request materials/SOE, and read inbox decisions.
+Students may keep multiple eligible applications until requesting materials commits them to one scholarship. A rejected application has a grantor-specific 24-hour reapplication cooldown. Archived or frozen records cannot progress.
 The COR or Advising Slip must match the current academic cycle. A first-year student in the first semester may submit ROG optionally; otherwise the ROG must be from the immediately previous semester.
 Grantors manage only their own roster, scholarships, announcements, applicants, and decisions. Administrators manage system-wide records and review workflows.
 Routine status updates are delivered through the portal inbox. Authentication confirmation and password recovery use email.
@@ -21,12 +21,9 @@ Never request or expose passwords, API keys, private database fields, or another
 FAQ_FALLBACK = [
     (("cor", "registration", "advising"), "Upload a PDF whose title identifies it as a Certificate of Registration or Advising Slip for the current semester."),
     (("rog", "grade", "report"), "ROG means Report of Grades. Except for eligible first-year first-semester students, upload the ROG from the immediately previous semester."),
-    (("duplicate", "multiple scholarship"), "BulsuScholar permits only one active non-UNIFAST scholarship. Visit the Office of the Scholarship if your record is frozen or appears under multiple grantors."),
+    (("duplicate", "multiple scholarship"), "You may apply to multiple eligible grantors before commitment, but requesting materials commits you to one scholarship and closes competing applications. Contact the Office of the Scholarship if your record is frozen or incorrectly duplicated."),
     (("soe", "material"), "Request the SOE from My Scholarships. After approval, download it and bring it to the Office of the Scholarship for signing."),
     (("password", "login"), "Use Forgot Password on the login page. Grantors must first request a password change and wait for administrator approval."),
-    (("loa", "leave of absence"), "Submit an LOA request with its reason and supporting PDF from the student Leave and Return page. The administrator reviews the request."),
-    (("return", "returning"), "An approved LOA student can submit a return request. Once approved, the account is reactivated and the previous scholarship is recommended again."),
-    (("unifast",), "UNIFAST is tracked separately from the one-scholarship rule and is available for up to five study years, subject to administrator records."),
 ]
 
 

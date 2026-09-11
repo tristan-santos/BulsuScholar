@@ -27,7 +27,6 @@ import {
 	HiOutlineMail,
 	HiOutlineMenu,
 	HiOutlineMoon,
-	HiOutlineRefresh,
 	HiOutlineSun,
 	HiOutlineUser,
 } from "react-icons/hi"
@@ -1274,7 +1273,6 @@ export default function StudentDashboard() {
 								<button type="button" onClick={() => navigate("/student-dashboard/scholarships")}><HiOutlineAcademicCap /><span>Scholarships</span><small>View records and applications</small></button>
 								<button type="button" onClick={() => navigate("/student-dashboard/profile")}><HiOutlineUser /><span>My Profile</span><small>Update personal details</small></button>
 								<button type="button" onClick={() => navigate("/student-dashboard/announcements")}><HiOutlineBell /><span>Announcements</span><small>Read latest notices</small></button>
-								<button type="button" onClick={() => navigate("/student-dashboard/leave")}><HiOutlineRefresh /><span>Leave & Return</span><small>Request LOA or return to study</small></button>
 								<button type="button" onClick={handleContactSupport}><HiOutlineMail /><span>Support</span><small>Contact scholarship office</small></button>
 							</div>
 						</section>

@@ -76,14 +76,11 @@ Use this file for the final/V3 student-side test pass. Record `Pass`, `Fail`, or
 - Confirm applying to an archived or unavailable announcement is impossible.
 - Confirm See All Announcements shows current and previous announcements correctly.
 
-## Test Case Scenario #22: Student Materials, SOE, LOA, Returning, UNIFAST, Help, FAQ, and About
+## Test Case Scenario #22: Student Materials, SOE, Help, FAQ, and About
 
 - Request SOE/materials and confirm admin/grantor inbox notifications are created.
 - Confirm approved material request moves tracking forward and student receives inbox notification only, not routine email.
 - Confirm student can download multiple SOEs until admin signs one.
 - Confirm after SOE signing, cooldown prevents another SOE until the next cycle.
-- Submit LOA with reason, supporting PDF, notes, and Other reason input.
-- Reload LOA page and confirm student session and data are preserved.
-- Confirm LOA approval freezes scholarship correctly and returning flow is available when applicable.
 - Open Help and Support, FAQ, and About pages and confirm design, send button, and links work.
 - Test all student pages on mobile and confirm no major overlap, cut headers, or broken modals.

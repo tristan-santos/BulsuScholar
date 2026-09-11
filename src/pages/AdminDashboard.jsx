@@ -59,6 +59,7 @@ import "../css/StudentDashboard.css"
 import TablePagination from "../components/TablePagination"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import CustomSelect from "../components/CustomSelect"
+import NotFoundPage from "./NotFoundPage"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
 import {
@@ -117,8 +118,6 @@ import {
 	getScholarshipTrackingStatusLabel,
 } from "../services/scholarshipTrackingService"
 import { convertPdfToImage } from "../utils/pdfConverter"
-import AdminLeaveManagement from "../components/AdminLeaveManagement"
-import AdminUnifastManagement from "../components/AdminUnifastManagement"
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip, Legend)
 
@@ -132,8 +131,6 @@ const ADMIN_SECTIONS = [
 	{ id: "grantors", label: "Grantor Management", icon: HiOutlineUserGroup, path: "/admin/grantors" },
 	{ id: "scholarships", label: "Scholarship Programs", icon: HiOutlineDocumentText, path: "/admin/scholarships" },
 	{ id: "requirements", label: "Requirements", icon: HiOutlineCheckCircle, path: "/admin/requirements" },
-	{ id: "leave", label: "Leave & Return", icon: HiOutlineClock, path: "/admin/leave-requests" },
-	{ id: "unifast", label: "UNIFAST", icon: HiOutlineAcademicCap, path: "/admin/unifast" },
 	{ id: "announcements", label: "Announcements", icon: HiOutlineBell, path: "/admin/announcements" },
 	{ id: "reports", label: "Report Generation", icon: HiOutlineChartBar, path: "/admin/reports" },
 ]
@@ -291,7 +288,7 @@ function mergeGrantorScholarRows(rows = []) {
 function toSectionFromPath(pathname) {
 	if (pathname.startsWith("/admin/soe-requests") || pathname.startsWith("/admin/soe-checking")) return "requirements"
 	const match = ADMIN_SECTIONS.find((item) => pathname.startsWith(item.path))
-	return match?.id || "dashboard"
+	return match?.id || null
 }
 
 function toProviderType(value = "") {
@@ -7760,8 +7757,6 @@ export default function AdminDashboard() {
 	}
 
 	const renderSection = () => {
-		if (activeSection === "leave") return <AdminLeaveManagement />
-		if (activeSection === "unifast") return <AdminUnifastManagement students={allStudentsRaw} />
 		if (activeSection === "inbox") {
 			return (
 				<section className="admin-inbox-page admin-inbox-overview">
@@ -9784,6 +9779,8 @@ export default function AdminDashboard() {
 			</section>
 		)
 	}
+
+	if (!activeSection) return <NotFoundPage />
 
 	return (
 		<div className={`admin-portal ${theme === "dark" ? "admin-portal--dark" : ""}`}>

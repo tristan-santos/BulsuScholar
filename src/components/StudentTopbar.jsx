@@ -6,7 +6,6 @@ import {
 	HiOutlineHome,
 	HiOutlineInbox,
 	HiOutlineLogout,
-	HiOutlineRefresh,
 	HiOutlineMenu,
 	HiOutlineMoon,
 	HiOutlineSun,
@@ -304,10 +303,6 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/scholarships") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/scholarships") ? "page" : undefined} onClick={() => goTo("/student-dashboard/scholarships")}>
 										<HiOutlineAcademicCap className="student-verified-dropdown-item-icon" />
 										Scholarships
-									</button>
-									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/leave") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/leave") ? "page" : undefined} onClick={() => goTo("/student-dashboard/leave")}>
-										<HiOutlineRefresh className="student-verified-dropdown-item-icon" />
-										Leave & Return
 									</button>
 								</nav>
 								<div className="student-verified-dropdown-theme">

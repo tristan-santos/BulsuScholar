@@ -73,16 +73,13 @@ Use this file for the final/V3 admin-side test pass. Record `Pass`, `Fail`, or `
 - Confirm the student is unfrozen and only the selected scholarship remains.
 - Confirm admin and affected grantors receive inbox notifications.
 
-## Test Case Scenario #7: Admin Requirements, SOE, LOA, Returning, and UNIFAST
+## Test Case Scenario #7: Admin Requirements and SOE
 
 - Verify Requirements tabs: Pending, Signing, Rejected, and Previous.
 - Approve and reject material requests and confirm the student receives inbox notifications.
 - Sign an SOE and confirm the cycle cooldown prevents another SOE download until the next cycle.
 - Reject an SOE signing request with reason/notes and confirm the student must download/request again.
 - Confirm previous signed records move to Previous after cycle reset.
-- Submit and review LOA records; confirm reload keeps the student session and request data.
-- Approve/reject LOA with reason and verify frozen/returning behavior where applicable.
-- Verify UNIFAST and returning-student workflows show the expected records and do not create duplicates.
 
 ## Test Case Scenario #8: Admin Announcements, Inbox, Reports, and Deployment Checks
 

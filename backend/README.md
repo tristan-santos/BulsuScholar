@@ -29,7 +29,7 @@ VITE_BACKEND_API_URL=https://your-service.up.railway.app
 
 ## Priority 1 Services
 
-Run `supabase/priority-one.sql` once in the Supabase SQL editor before using Help requests, LOA/return requests, or UNIFAST imports.
+Run `supabase/priority-one.sql` once in the Supabase SQL editor before using Help and support feedback.
 
 The Help Assistant works without an AI key by using its controlled FAQ fallback. To enable OpenAI answers, add these backend-only environment variables to Railway:
 

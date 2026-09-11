@@ -45,13 +45,7 @@ try:
     )
     from .signup_service import finalize_student_signup, validate_student_signup
     from .support_service import ask_support_assistant
-    from .priority_one_service import (
-        create_leave_request,
-        import_unifast_records,
-        list_priority_records,
-        review_leave_request,
-        save_support_feedback,
-    )
+    from .priority_one_service import save_support_feedback
     from .supabase_ops import (
         build_grantor_notification_payload,
         build_admin_notification_payload,
@@ -118,13 +112,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     )
     from signup_service import finalize_student_signup, validate_student_signup
     from support_service import ask_support_assistant
-    from priority_one_service import (
-        create_leave_request,
-        import_unifast_records,
-        list_priority_records,
-        review_leave_request,
-        save_support_feedback,
-    )
+    from priority_one_service import save_support_feedback
     from supabase_ops import (
         build_grantor_notification_payload,
         build_admin_notification_payload,
@@ -705,58 +693,6 @@ def support_chat_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
 @app.post("/support/feedback")
 def support_feedback_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return save_support_feedback(payload)
-
-
-@app.post("/workflows/leave/create")
-def leave_request_create_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return create_leave_request(payload)
-
-
-@app.post("/workflows/leave/review")
-def leave_request_review_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return review_leave_request(payload)
-
-
-@app.post("/priority-one/records")
-def priority_one_records_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return list_priority_records(payload)
-
-
-@app.get("/priority-one/records")
-def priority_one_records_get_endpoint(
-    table: str,
-    studentId: str | None = None,
-    grantorId: str | None = None,
-    requestType: str | None = None,
-    status: str | None = None,
-    userId: str | None = None,
-    userType: str | None = None,
-    category: str | None = None,
-    academicCycle: str | None = None,
-    eligible: str | None = None,
-    limit: int = 5000,
-) -> dict[str, Any]:
-    filters = {
-        "studentId": studentId,
-        "grantorId": grantorId,
-        "requestType": requestType,
-        "status": status,
-        "userId": userId,
-        "userType": userType,
-        "category": category,
-        "academicCycle": academicCycle,
-        "eligible": eligible,
-    }
-    return list_priority_records({
-        "table": table,
-        "filters": {key: value for key, value in filters.items() if value not in (None, "")},
-        "limit": limit,
-    })
-
-
-@app.post("/unifast/import")
-def unifast_import_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return import_unifast_records(payload)
 
 
 @app.post("/reports/csv")

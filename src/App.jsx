@@ -26,7 +26,6 @@ const NotFoundPage = lazy(() => import("./pages/NotFoundPage"))
 const MaintenancePage = lazy(() => import("./pages/MaintenancePage"))
 const PortalInformationPage = lazy(() => import("./pages/PortalInformationPage"))
 const HelpSupportPage = lazy(() => import("./pages/HelpSupportPage"))
-const StudentLeavePage = lazy(() => import("./pages/StudentLeavePage"))
 
 const MAINTENANCE_ALLOWED_PREFIXES = ["/admin"]
 const MAINTENANCE_ALLOWED_PATHS = [
@@ -102,7 +101,6 @@ export default function App() {
 					<Route path="/student-dashboard/scholarships" element={<StudentScholarshipsPage />} />
 					<Route path="/student-dashboard/recommended-scholarships" element={<StudentRecommendedScholarshipsPage />} />
 					<Route path="/student-dashboard/profile" element={<StudentProfilePage />} />
-					<Route path="/student-dashboard/leave" element={<StudentLeavePage />} />
 					<Route path="/provider-dashboard/*" element={<ProviderDashboard />} />
 					<Route path="*" element={<NotFoundPage />} />
 				</Routes>

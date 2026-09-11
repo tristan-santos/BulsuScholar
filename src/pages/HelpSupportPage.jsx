@@ -16,7 +16,7 @@ import PortalInfoHeader from "../components/PortalInfoHeader"
 import { askHelpAssistant, submitSupportFeedback } from "../services/priorityOneService"
 import "../css/PortalSupport.css"
 
-const START = { role: "assistant", text: "Hello. Ask me about BulsuScholar accounts, COR/ROG rules, scholarship applications, SOE, LOA, or common portal errors." }
+const START = { role: "assistant", text: "Hello. Ask me about BulsuScholar accounts, COR/ROG rules, scholarship applications, SOE, or common portal errors." }
 
 const SUPPORT_TOPICS = [
 	{
@@ -42,7 +42,7 @@ const SUPPORT_TOPICS = [
 const SUPPORT_FAQS = [
 	{
 		question: "Why can I not apply for another scholarship?",
-		answer: "BulsuScholar prevents overlapping active applications and scholarships. Finish the current application, wait for any rejection cooldown, or contact the Office of the Scholarship if the system reports a conflict.",
+		answer: "You may apply to multiple eligible grantors before commitment. Requesting materials commits you to one scholarship and closes competing applications. A grantor-specific cooldown, archive restriction, full offering, or eligibility rule may still block an application.",
 	},
 	{
 		question: "What files can I upload for COR and ROG?",

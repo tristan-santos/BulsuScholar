@@ -59,8 +59,7 @@
 .student-portal-view .student-shell,
 .student-portal-view .student-dashboard-content,
 .student-portal-view .student-announcement-detail,
-.student-portal-view .student-recommendation-page,
-.student-portal-view--leave .portal-support-main {
+.student-portal-view .student-recommendation-page {
 	width: min(100%, 1280px);
 	margin-inline: auto;
 	padding: 28px clamp(18px, 3vw, 40px) 48px;
@@ -75,9 +74,7 @@
 	.student-announcement-detail-hero,
 	.student-announcement-detail-panel,
 	.student-announcement-summary-card,
-	.student-recommendation-page-card,
-	.leave-action-grid > article,
-	.leave-history
+	.student-recommendation-page-card
 ) {
 	border: 1px solid var(--student-line);
 	border-radius: 8px;
@@ -507,272 +504,6 @@
 	margin-top: auto;
 }
 
-/* Leave of absence */
-.student-portal-view--leave .portal-support-main {
-	display: grid;
-	gap: 22px;
-}
-
-.student-portal-view--leave .leave-action-grid {
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 18px;
-}
-
-.student-portal-view--leave .leave-action-grid > article {
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	min-width: 0;
-	padding: clamp(20px, 3vw, 28px);
-}
-
-.student-portal-view--leave .leave-action-grid > article > svg {
-	width: 44px;
-	height: 44px;
-	margin-bottom: 18px;
-	padding: 10px;
-	border-radius: 50%;
-	background: var(--student-primary-soft);
-	color: var(--student-primary);
-}
-
-.student-portal-view--leave .leave-action-grid > article h2 {
-	margin-bottom: 8px;
-	font-size: 1.2rem;
-	font-weight: 700;
-}
-
-.student-portal-view--leave .leave-action-grid > article p {
-	margin-bottom: 22px;
-	color: var(--student-muted);
-	line-height: 1.65;
-}
-
-.student-portal-view--leave .leave-action-grid > article button {
-	min-height: 42px;
-	margin-top: auto;
-	padding: 0 16px;
-	border: 1px solid var(--student-primary);
-	border-radius: 6px;
-	background: var(--student-primary);
-	color: #fff;
-	font-weight: 600;
-}
-
-.student-portal-view--leave .leave-history {
-	overflow: hidden;
-}
-
-.student-portal-view--leave .leave-history > header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 16px;
-	padding: 20px 22px;
-	border-bottom: 1px solid var(--student-line);
-}
-
-.student-portal-view--leave .leave-history > header h2 {
-	margin: 0;
-	font-size: 1.2rem;
-	font-weight: 700;
-}
-
-.student-portal-view--leave .leave-history > article {
-	display: grid;
-	grid-template-columns: auto minmax(0, 1fr) auto;
-	align-items: center;
-	gap: 18px;
-	padding: 18px 22px;
-	border-bottom: 1px solid var(--student-line);
-}
-
-.student-portal-view--leave .leave-history > article:last-child {
-	border-bottom: 0;
-}
-
-.student-portal-view--leave .leave-history time {
-	color: var(--student-muted);
-	font-size: 0.88rem;
-	white-space: nowrap;
-}
-
-.student-portal-view--leave .priority-modal-backdrop {
-	position: fixed;
-	inset: 0;
-	z-index: 12000;
-	display: grid;
-	place-items: center;
-	padding: 16px;
-	background: rgba(7, 22, 17, 0.68);
-	backdrop-filter: blur(3px);
-}
-
-.student-portal-view--leave .priority-modal {
-	position: relative;
-	inset: auto;
-	width: min(620px, 100%);
-	max-height: calc(100dvh - 32px);
-	margin: 0;
-	padding: 24px;
-	overflow-y: auto;
-	overscroll-behavior: contain;
-	border: 1px solid var(--student-line-strong);
-	border-radius: 8px;
-	background: var(--student-surface-raised);
-	color: var(--student-ink);
-	box-shadow: 0 28px 70px rgba(8, 27, 20, 0.34);
-}
-
-.student-portal-view--leave .priority-modal-close {
-	position: absolute;
-	top: 18px;
-	right: 18px;
-	display: grid;
-	place-items: center;
-	width: 40px;
-	height: 40px;
-	padding: 0;
-	border: 1px solid var(--student-line);
-	border-radius: 50%;
-	background: var(--student-surface);
-	color: var(--student-primary);
-}
-
-.student-portal-view--leave .priority-modal > header {
-	display: flex;
-	align-items: center;
-	gap: 14px;
-	margin: 0 48px 22px 0;
-	padding-bottom: 18px;
-	border-bottom: 1px solid var(--student-line);
-}
-
-.student-portal-view--leave .priority-modal > header > span {
-	display: grid;
-	place-items: center;
-	width: 46px;
-	height: 46px;
-	border-radius: 6px;
-	background: var(--student-primary-soft);
-	color: var(--student-primary);
-}
-
-.student-portal-view--leave .priority-modal > header h2 {
-	margin: 2px 0 0;
-	font-size: 1.3rem;
-	font-weight: 700;
-}
-
-.student-portal-view--leave .priority-modal label {
-	display: grid;
-	gap: 8px;
-	margin-bottom: 16px;
-	color: var(--student-ink);
-	font-size: 0.9rem;
-	font-weight: 600;
-}
-
-.student-portal-view--leave .priority-modal :where(select, input, textarea) {
-	width: 100%;
-	min-height: 46px;
-	padding: 10px 12px;
-	border: 1px solid var(--student-line-strong);
-	border-radius: 6px;
-	background: var(--student-surface);
-	color: var(--student-ink);
-}
-
-.student-portal-view--leave .leave-file-picker {
-	position: relative;
-	display: grid;
-	grid-template-columns: auto minmax(0, 1fr) auto;
-	align-items: center;
-	gap: 12px;
-	min-height: 64px;
-	padding: 10px 12px;
-	border: 1px dashed var(--student-line-strong);
-	border-radius: 6px;
-	background: var(--student-primary-faint);
-	cursor: pointer;
-}
-
-.student-portal-view--leave .leave-file-picker > svg {
-	width: 26px;
-	height: 26px;
-	color: var(--student-primary);
-}
-
-.student-portal-view--leave .leave-file-picker > span:not(.leave-file-picker-action) {
-	display: grid;
-	gap: 2px;
-	min-width: 0;
-}
-
-.student-portal-view--leave .leave-file-picker strong,
-.student-portal-view--leave .leave-file-picker small {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.student-portal-view--leave .leave-file-picker small {
-	color: var(--student-muted);
-	font-size: 0.74rem;
-	font-weight: 500;
-}
-
-.student-portal-view--leave .leave-file-picker-action {
-	padding: 8px 12px;
-	border: 1px solid var(--student-primary);
-	border-radius: 4px;
-	background: var(--student-surface);
-	color: var(--student-primary);
-	font-size: 0.76rem;
-	font-weight: 600;
-}
-
-.student-portal-view--leave .leave-file-picker input {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	opacity: 0;
-	pointer-events: none;
-}
-
-.student-portal-view--leave .priority-modal textarea {
-	min-height: 110px;
-	resize: vertical;
-}
-
-.student-portal-view--leave .priority-modal > footer {
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 12px;
-	margin-top: 24px;
-	padding-top: 18px;
-	border-top: 1px solid var(--student-line);
-}
-
-.student-portal-view--leave .priority-modal > footer button {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 8px;
-	min-height: 44px;
-	border: 1px solid var(--student-primary);
-	border-radius: 6px;
-	background: var(--student-primary);
-	color: #fff;
-	font-weight: 600;
-}
-
-.student-portal-view--leave .priority-modal > footer button.secondary {
-	background: transparent;
-	color: var(--student-primary);
-}
-
 /* Dark mode */
 .student-portal-view.student-dashboard--dark,
 .student-portal-view.student-dashboard-page--dark {
@@ -815,8 +546,7 @@
 	.student-portal-view .student-shell,
 	.student-portal-view .student-dashboard-content,
 	.student-portal-view .student-announcement-detail,
-	.student-portal-view .student-recommendation-page,
-	.student-portal-view--leave .portal-support-main {
+	.student-portal-view .student-recommendation-page {
 		padding: 20px 14px 38px;
 	}
 
@@ -856,8 +586,7 @@
 	.student-portal-view--inbox .student-inbox-detail-meta,
 	.student-portal-view--inbox .student-inbox-detail-grid,
 	.student-portal-view--announcements .student-announcement-insights,
-	.student-portal-view--announcement-detail .student-announcement-summary-grid,
-	.student-portal-view--leave .leave-action-grid {
+	.student-portal-view--announcement-detail .student-announcement-summary-grid {
 		grid-template-columns: 1fr;
 	}
 
@@ -878,14 +607,6 @@
 		grid-template-columns: 1fr;
 	}
 
-	.student-portal-view--leave .leave-history > article {
-		grid-template-columns: 1fr;
-		gap: 8px;
-	}
-
-	.student-portal-view--leave .leave-history time {
-		white-space: normal;
-	}
 }
 
 @media (max-width: 560px) {
@@ -909,20 +630,15 @@
 		padding-inline: 16px;
 	}
 
-	.student-portal-view--inbox .student-inbox-detail-actions,
-	.student-portal-view--leave .priority-modal > footer {
+	.student-portal-view--inbox .student-inbox-detail-actions {
 		grid-template-columns: 1fr;
 		flex-direction: column;
 	}
 
-	.student-portal-view--inbox .student-inbox-detail-actions > *,
-	.student-portal-view--leave .priority-modal > footer button {
+	.student-portal-view--inbox .student-inbox-detail-actions > * {
 		width: 100%;
 	}
 
-	.student-portal-view--leave .priority-modal {
-		padding: 20px 16px;
-	}
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -940,8 +656,7 @@
 .student-portal-view .student-shell,
 .student-portal-view .student-dashboard-content,
 .student-portal-view .student-announcement-detail,
-.student-portal-view .student-recommendation-page,
-.student-portal-view--leave .portal-support-main {
+.student-portal-view .student-recommendation-page {
 	padding-top: calc(var(--student-topbar-height, 72px) + 1.35rem);
 }
 
@@ -949,8 +664,7 @@
 	.student-portal-view .student-shell,
 	.student-portal-view .student-dashboard-content,
 	.student-portal-view .student-announcement-detail,
-	.student-portal-view .student-recommendation-page,
-	.student-portal-view--leave .portal-support-main {
+	.student-portal-view .student-recommendation-page {
 		padding-top: calc(var(--student-topbar-height, 72px) + 1rem);
 	}
 }
