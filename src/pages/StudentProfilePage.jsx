@@ -41,7 +41,12 @@ import {
 import StudentTopbar from "../components/StudentTopbar"
 import CustomSelect from "../components/CustomSelect"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
-import { downloadStudentApplicationProfile } from "../services/applicationFormService"
+import { downloadStudentProfileTemplate } from "../services/applicationFormService"
+import {
+	downloadStorageObject,
+	getDocumentDownloadErrorMessage,
+	getStorageObjectBlob,
+} from "../services/supabaseStorageService"
 import { scanStudentDocument } from "../services/documentScanService"
 import { updateScholarshipDocumentsWorkflow } from "../services/workflowService"
 import { isClosedApplication } from "../services/scholarshipChoiceService"
@@ -66,8 +71,12 @@ function _checkValidated(userData) {
 	)
 }
 
+function hasDocumentReference(file = null) {
+	return Boolean(file && (file.url || file.publicUrl || file.path || file.publicId || file.storagePath))
+}
+
 function documentStatus(file, semesterTag) {
-	if (!file?.url) return "Not uploaded"
+	if (!hasDocumentReference(file)) return "Not uploaded"
 	if (file.semesterTag && file.semesterTag !== semesterTag) {
 		return `Outdated (${file.semesterTag})`
 	}
@@ -75,7 +84,7 @@ function documentStatus(file, semesterTag) {
 }
 
 function canUploadDocument(file, semesterTag) {
-	if (!file?.url) return true
+	if (!hasDocumentReference(file)) return true
 	if (file.semesterTag && file.semesterTag !== semesterTag) return true
 	return Boolean(file.requiresReupload || file.resetRequired || file.uploadResetRequired)
 }
@@ -219,7 +228,8 @@ export default function StudentProfilePage() {
 	const [barangayLoading, setBarangayLoading] = useState(false)
 	const [barangayError, setBarangayError] = useState("")
 	const [isPhotoUploading, setIsPhotoUploading] = useState(false)
-	const [isDownloadingApplicationForm, setIsDownloadingApplicationForm] = useState(false)
+	const [isDownloadingProfileTemplate, setIsDownloadingProfileTemplate] = useState(false)
+	const [isDownloadingUploadedProfile, setIsDownloadingUploadedProfile] = useState(false)
 	const [isDocumentUploading, setIsDocumentUploading] = useState({
 		cor: false,
 		cog: false,
@@ -240,6 +250,7 @@ export default function StudentProfilePage() {
 	const { theme, setTheme } = useThemeMode()
 	const currentSemesterTag = getCurrentSemesterTag()
 	const profileImageUrl = user?.profileImageUrl || ""
+	const studentApplicationProfile = user?.scholarshipApplicationFile || user?.applicationFormFile || null
 	const canUploadCor = canUploadDocument(user?.corFile, currentSemesterTag)
 	const canUploadCog = canUploadDocument(user?.cogFile, currentSemesterTag)
 	const canUploadSchoolId = canUploadDocument(user?.schoolIdFile, currentSemesterTag)
@@ -247,13 +258,15 @@ export default function StudentProfilePage() {
 		const status = String(item?.status || "").toLowerCase()
 		return !["rejected", "denied", "cancelled", "canceled", "expired"].some((value) => status.includes(value))
 	}) || null
-	const hasDownloadedApplicationForm = Boolean(
-		applicationScholarship?.applicationFormDownloadedAt || user?.applicationFormDownloadedAt,
+	const hasDownloadedProfileTemplate = Boolean(
+		user?.studentProfileTemplateDownloadedAt ||
+		applicationScholarship?.applicationFormDownloadedAt ||
+		user?.applicationFormDownloadedAt,
 	)
-	const canDownloadApplicationForm = true
+	const canDownloadProfileTemplate = true
 	const canUploadApplicationForm =
-		hasDownloadedApplicationForm &&
-		canUploadDocument(user?.scholarshipApplicationFile, currentSemesterTag)
+		hasDownloadedProfileTemplate &&
+		canUploadDocument(studentApplicationProfile, currentSemesterTag)
 
 	const [formData, setFormData] = useState({
 		fname: "",
@@ -286,10 +299,10 @@ export default function StudentProfilePage() {
 	}
 
 	const openDocumentPreview = (title, file) => {
-		if (!file?.url) return
+		if (!hasDocumentReference(file)) return
 		setPreviewDocument({
+			...file,
 			title,
-			url: file.url,
 			name: file.name || title,
 			isPdf: isPreviewPdf(file),
 		})
@@ -300,22 +313,15 @@ export default function StudentProfilePage() {
 	}
 
 	const downloadPreviewDocument = async () => {
-		if (!previewDocument?.url) return
+		if (!previewDocument) return
 		try {
-			const response = await fetch(previewDocument.url)
-			if (!response.ok) throw new Error(`download_failed_${response.status}`)
-			const blob = await response.blob()
-			const url = URL.createObjectURL(blob)
-			const link = document.createElement("a")
-			link.href = url
-			link.download = previewDocument.name || `${previewDocument.title}.pdf`
-			document.body.appendChild(link)
-			link.click()
-			document.body.removeChild(link)
-			URL.revokeObjectURL(url)
+			await downloadStorageObject(previewDocument, {
+				fileName: previewDocument.name || `${previewDocument.title}.pdf`,
+				validatePdf: previewDocument.isPdf,
+			})
 		} catch (error) {
 			console.error("Failed to download document:", error)
-			toast.error("Unable to download the document.")
+			toast.error(getDocumentDownloadErrorMessage(error, previewDocument.title || "document"))
 		}
 	}
 
@@ -339,17 +345,12 @@ export default function StudentProfilePage() {
 		schoolIdFileInputRef.current?.click()
 	}
 
-	const handleDownloadApplicationForm = async () => {
-		if (!user || !userId || isDownloadingApplicationForm) return
+	const handleDownloadProfileTemplate = async () => {
+		if (!user || !userId || isDownloadingProfileTemplate) return
 
-		setIsDownloadingApplicationForm(true)
+		setIsDownloadingProfileTemplate(true)
 		try {
-			await downloadStudentApplicationProfile({
-				student: user,
-				studentId: userId,
-				scholarship: applicationScholarship || {},
-				useGrantorForm: false,
-			})
+			await downloadStudentProfileTemplate()
 			const downloadedAt = new Date().toISOString()
 			const nextScholarships = normalizeScholarshipList(user?.scholarships || []).map((entry) =>
 				applicationScholarship && (
@@ -368,6 +369,7 @@ export default function StudentProfilePage() {
 				doc(db, "students", userId),
 				{
 					scholarships: nextScholarships,
+					studentProfileTemplateDownloadedAt: downloadedAt,
 					applicationFormDownloadedAt: downloadedAt,
 					applicationFormDownloadedSemesterTag: currentSemesterTag,
 					updatedAt: serverTimestamp(),
@@ -377,15 +379,34 @@ export default function StudentProfilePage() {
 			setUser((prev) => ({
 				...(prev || {}),
 				scholarships: nextScholarships,
+				studentProfileTemplateDownloadedAt: downloadedAt,
 				applicationFormDownloadedAt: downloadedAt,
 				applicationFormDownloadedSemesterTag: currentSemesterTag,
 			}))
-			toast.success("Student Application Profile downloaded.")
+			toast.success("Student Application Profile template downloaded.")
 		} catch (error) {
-			console.error("Failed to generate Student Application Profile:", error)
-			toast.error("Unable to download the Student Application Profile.")
+			console.error("Failed to download Student Application Profile template:", error)
+			toast.error(getDocumentDownloadErrorMessage(error, "Student Application Profile template"))
 		} finally {
-			setIsDownloadingApplicationForm(false)
+			setIsDownloadingProfileTemplate(false)
+		}
+	}
+
+	const handleDownloadUploadedProfile = async () => {
+		const profileFile = studentApplicationProfile
+		if (!profileFile || isDownloadingUploadedProfile) return
+		setIsDownloadingUploadedProfile(true)
+		try {
+			await downloadStorageObject(profileFile, {
+				fileName: profileFile.name || `Student_Application_Profile_${userId}.pdf`,
+				validatePdf: true,
+			})
+			toast.success("Uploaded Student Application Profile downloaded.")
+		} catch (error) {
+			console.error("Failed to download uploaded Student Application Profile:", error)
+			toast.error(getDocumentDownloadErrorMessage(error, "uploaded Student Application Profile"))
+		} finally {
+			setIsDownloadingUploadedProfile(false)
 		}
 	}
 
@@ -526,7 +547,7 @@ export default function StudentProfilePage() {
 	const handleDocumentUpload = async (type, file) => {
 		if (!file || !userId) return
 		if (type === "applicationForm") {
-			if (!hasDownloadedApplicationForm) {
+			if (!hasDownloadedProfileTemplate) {
 				toast.info("Download the Student Application Profile first before uploading it.")
 				return
 			}
@@ -652,7 +673,7 @@ export default function StudentProfilePage() {
 	}, [userMenuOpen])
 
 	useEffect(() => {
-		if (!previewDocument?.url) {
+		if (!previewDocument) {
 			setPreviewBlobUrl("")
 			setIsPreviewLoading(false)
 			return undefined
@@ -663,11 +684,7 @@ export default function StudentProfilePage() {
 		setIsPreviewLoading(true)
 		setPreviewBlobUrl("")
 
-		fetch(previewDocument.url)
-			.then((response) => {
-				if (!response.ok) throw new Error(`preview_failed_${response.status}`)
-				return response.blob()
-			})
+		getStorageObjectBlob(previewDocument)
 			.then(async (blob) => {
 				if (cancelled) return
 				if (previewDocument.isPdf) {
@@ -1263,39 +1280,46 @@ export default function StudentProfilePage() {
 									<article className="student-vault-card student-vault-card--application">
 										<div>
 											<h4>Student Application Profile</h4>
-											<p>{documentStatus(user?.scholarshipApplicationFile, currentSemesterTag)}</p>
+											<p>{documentStatus(studentApplicationProfile, currentSemesterTag)}</p>
 										</div>
 										<div className="student-vault-actions">
-											{user?.scholarshipApplicationFile?.url ? (
+											{hasDocumentReference(studentApplicationProfile) ? (
 												<button
 													type="button"
 													className="student-vault-link"
 													onClick={() =>
 														openDocumentPreview(
 															"Student Application Profile",
-															user.scholarshipApplicationFile,
+															studentApplicationProfile,
 														)
 													}
 												>
-													<HiOutlineEye aria-hidden /> View Form
+													<HiOutlineEye aria-hidden /> View Uploaded Profile
+												</button>
+											) : null}
+											{hasDocumentReference(studentApplicationProfile) ? (
+												<button
+													type="button"
+													className="student-vault-link"
+													onClick={handleDownloadUploadedProfile}
+													disabled={isDownloadingUploadedProfile}
+												>
+													<HiOutlineDownload aria-hidden />
+													{isDownloadingUploadedProfile ? "Downloading..." : "Download Uploaded Profile"}
 												</button>
 											) : null}
 											<button
 												type="button"
 												className="student-vault-link"
-												onClick={handleDownloadApplicationForm}
-												disabled={!canDownloadApplicationForm || isDownloadingApplicationForm}
-												title={
-													canDownloadApplicationForm
-														? "Download your Student Application Profile"
-														: "Download your Student Application Profile"
-												}
+												onClick={handleDownloadProfileTemplate}
+												disabled={!canDownloadProfileTemplate || isDownloadingProfileTemplate}
+												title="Download the official Student Application Profile template"
 											>
 												<HiOutlineDownload aria-hidden />
-												{isDownloadingApplicationForm
+												{isDownloadingProfileTemplate
 													? "Preparing..."
-													: canDownloadApplicationForm
-														? "Download Form"
+													: canDownloadProfileTemplate
+														? "Download Profile Template"
 														: "Download Locked"}
 											</button>
 											<button
@@ -1305,15 +1329,15 @@ export default function StudentProfilePage() {
 												disabled={!canUploadApplicationForm || isDocumentUploading.applicationForm}
 												title={
 													canUploadApplicationForm
-															? "Upload your completed PDF Student Application Profile"
-															: "Download the Student Application Profile first before uploading."
+														? "Upload your completed PDF Student Application Profile"
+														: "Download the Student Application Profile first before uploading."
 												}
 											>
 												{isDocumentUploading.applicationForm
 													? "Uploading..."
-													: user?.scholarshipApplicationFile?.url
-																? "Update Profile Document"
-																: "Upload Profile Document"}
+													: hasDocumentReference(studentApplicationProfile)
+														? "Update Profile Document"
+														: "Upload Profile Document"}
 											</button>
 											<input
 												ref={applicationFormFileInputRef}

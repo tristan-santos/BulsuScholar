@@ -1,4 +1,6 @@
 import { requireBackendApiUrl } from "../config/backendApi"
+import { buildPortalRequestHeaders, PortalApiError, postPortalJson } from "./portalApi"
+import { sanitizeReportFilename } from "./reportCatalog"
 
 export function formatDate(value) {
 	const date = value?.toDate ? value.toDate() : new Date(value)
@@ -24,25 +26,6 @@ function isScholarshipActive(status = "") {
 	return !["rejected", "withdrawn", "expired", "cancelled", "resolved"].some((s) =>
 		value.includes(s),
 	)
-}
-
-export function mapStudents(rawStudents = []) {
-	return rawStudents.map((item) => {
-		const fullName = [item.fname, item.mname, item.lname].filter(Boolean).join(" ").trim()
-		const scholarships = Array.isArray(item.scholarships) ? item.scholarships : []
-		const isArchived = item.archived === true
-		return {
-			id: item.id || item.studentnumber || "-",
-			fullName: fullName || "Student",
-			email: item.email || "",
-			fname: item.fname || "",
-			scholarships,
-			course: item.course || "-",
-			yearLevel: item.year || "-",
-			recordStatus: isArchived ? "Archived" : "Active",
-			restrictionSummary: "-",
-		}
-	})
 }
 
 export function filterStudentRows(rows = [], filters = {}) {
@@ -95,35 +78,6 @@ export function mapScholarshipRows(rawStudents = [], rawApplications = []) {
 	return [...programMap.values()]
 }
 
-export function filterScholarshipRows(rows = [], filters = {}) {
-	const { provider = "All", status = "All", search = "" } = filters
-	const keyword = search.trim().toLowerCase()
-	return rows.filter((row) => {
-		const matchesSearch =
-			!keyword ||
-			String(row.programName || "").toLowerCase().includes(keyword) ||
-			String(row.providerType || "").toLowerCase().includes(keyword) ||
-			String(row.status || "").toLowerCase().includes(keyword)
-		const providerMatch =
-			provider === "All" ||
-			String(row.providerType || "").toLowerCase() === provider.toLowerCase()
-		const statusMatch = status === "All" || row.status === status
-		return matchesSearch && providerMatch && statusMatch
-	})
-}
-
-function savePdfFile(pdfBytes, filename) {
-	const blob = new Blob([pdfBytes], { type: "application/pdf" })
-	const url = URL.createObjectURL(blob)
-	const link = document.createElement("a")
-	link.href = url
-	link.download = filename
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-	URL.revokeObjectURL(url)
-}
-
 function downloadBackendFile(blob, filename) {
 	const url = URL.createObjectURL(blob)
 	const link = document.createElement("a")
@@ -132,283 +86,128 @@ function downloadBackendFile(blob, filename) {
 	document.body.appendChild(link)
 	link.click()
 	document.body.removeChild(link)
-	URL.revokeObjectURL(url)
+	setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 async function readBackendError(response) {
 	const payload = await response.json().catch(() => null)
-	return payload?.detail || `Backend report request failed: ${response.status}`
+	const detail = payload?.message || payload?.detail || payload?.reason || `Backend report request failed: ${response.status}`
+	return new PortalApiError(typeof detail === "string" ? detail : JSON.stringify(detail), {
+		status: response.status,
+		reason: String(payload?.reason || payload?.detail || "report_export_failed"),
+		data: payload,
+	})
 }
 
-export async function fetchStudentReportPreview(filters = {}, rows = []) {
-	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/students/preview`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ filters, rows }),
-	})
-	if (!response.ok) throw new Error(await readBackendError(response))
-	const report = await response.json()
+function buildCanonicalReportPdfPayload(report = {}) {
 	return {
-		...report,
-		filename: `student-management-${Date.now()}`,
-		csvRows: report.rows || [],
-		pdfRows: report.rows || [],
-		filters,
-		reportRows: rows,
+		actorType: "admin",
+		reportType: report.reportType || report.key || "report",
+		filename: `${sanitizeReportFilename(report.filename)}.pdf`,
+		title: report.title || "BulsuScholar Report",
+		subtitle: report.description || report.subtitle || "",
+		filterLabel: report.filterLabel || "",
+		stats: report.stats || [],
+		columns: report.columnDefinitions || report.columns || [],
+		rows: report.csvRows || [],
+		groupedPages: report.groupedPages || null,
+		orientation: "landscape",
 	}
 }
 
-export async function downloadStudentReport(format = "pdf", filters = {}, rows = []) {
-	const normalizedFormat = format === "excel" ? "excel" : "pdf"
-	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/students/${normalizedFormat}`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ filters, rows }),
-	})
-	if (!response.ok) throw new Error(await readBackendError(response))
-	const disposition = response.headers.get("content-disposition") || ""
-	const serverFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1]
-	const fallback = `student-management-${Date.now()}.${normalizedFormat === "excel" ? "xlsx" : "pdf"}`
-	downloadBackendFile(await response.blob(), serverFilename || fallback)
-}
-
-async function exportTemplateReportPdf({
-	filename,
-	title,
-	subtitle,
-	filterLabel = "",
-	stats = [],
-	columns = [],
-	rows = [],
-	logoUrl = "",
-	groupedPages = null,
-}) {
-	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/pdf`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			filename,
-			title,
-			subtitle,
-			filterLabel,
-			stats,
-			columns,
-			rows,
-			logoUrl,
-			groupedPages,
-		}),
-	})
-	if (!response.ok) {
-		const message = await response.text().catch(() => "")
-		throw new Error(message || `Report generation failed: ${response.status}`)
-	}
-	const backendPdfBytes = await response.arrayBuffer()
-	savePdfFile(backendPdfBytes, filename)
-	return
-}
-
-function buildStudentReportStats(rows) {
-	return [
-		{ label: "Records", value: rows.length },
-		{ label: "Active", value: rows.filter((row) => row.recordStatus !== "Archived").length },
-		{ label: "Archived", value: rows.filter((row) => row.recordStatus === "Archived").length },
-	]
-}
-
-function buildScholarshipReportStats(rows) {
-	return [
-		{ label: "Programs", value: rows.length },
-		{ label: "Recipients", value: rows.reduce((sum, row) => sum + Number(row.activeRecipients || 0), 0) },
-		{ label: "Grantors", value: new Set(rows.map((row) => row.providerType || "-")).size },
-	]
-}
-
-function buildSoeReportStats(rows) {
-	return [
-		{ label: "Rows", value: rows.length },
-		{ label: "Pending", value: rows.filter((row) => String(row.reviewStateLabel || row.reviewState).toLowerCase().includes("pending") || String(row.reviewStateLabel || row.reviewState).toLowerCase().includes("incoming")).length },
-		{ label: "Approved", value: rows.filter((row) => String(row.reviewStateLabel || row.reviewState).toLowerCase().includes("approved")).length },
-	]
-}
-
-function buildComplianceReportStats(rows) {
-	return [
-		{ label: "Cases", value: rows.length },
-		{ label: "High Risk", value: rows.filter((row) => Number(row.violationCount || 0) >= 3).length },
-		{ label: "Flags", value: rows.filter((row) => String(row.complianceStatus).toLowerCase().includes("non")).length },
-	]
-}
-
-export async function exportStudentsReportPdf(rows = [], filterLabel = "", logoUrl = "") {
-	await exportTemplateReportPdf({
-		filename: `students-report-${Date.now()}.pdf`,
-		title: "Student Management Report",
-		subtitle: "Student lifecycle, scholarship access, and archival status aligned to the provided formatted report template.",
-		filterLabel,
-		stats: buildStudentReportStats(rows),
-		logoUrl,
-		columns: [
-			{ label: "Student ID", width: 82 },
-			{ label: "Full Name", width: 136 },
-			{ label: "Course", width: 94 },
-			{ label: "Year Level", width: 64 },
-			{ label: "Status", width: 70 },
-			{ label: "Restrictions", width: 118 },
-		],
-		rows: rows.map((row) => [
-			row.id,
-			row.fullName,
-			row.course,
-			row.yearLevel,
-			row.recordStatus || "Active",
-			row.restrictionSummary || "-",
-		]),
-	})
-}
-
-export async function exportScholarshipsReportPdf(rows = [], filterLabel = "", logoUrl = "", columns = null, bodyRows = null, title = "Scholarship Programs Report", options = {}) {
-	const tableColumns = Array.isArray(columns) && columns.length > 0 ? columns : ["Program Name", "Provider Type", "Total Slots", "Active Recipients", "Status"]
-	const tableBodyRows =
-		Array.isArray(bodyRows) && bodyRows.length >= 0
-			? bodyRows
-			: rows.map((row) => [row.programName, row.providerType, String(row.totalSlots), String(row.activeRecipients), row.status])
-
-	await exportTemplateReportPdf({
-		filename: options.filename || `scholarships-report-${Date.now()}.pdf`,
-		title,
-		subtitle: options.subtitle || "Program inventory and active recipient coverage rendered using the supplied formatted report template.",
-		filterLabel,
-		stats: buildScholarshipReportStats(rows),
-		logoUrl,
-		columns: tableColumns.map((label, index) => ({
-			label,
-			width:
-				[
-					166,
-					92,
-					64,
-					88,
-					74,
-					84,
-					84,
-				][index] || 88,
-		})),
-		rows: tableBodyRows,
-		groupedPages: options.groupedPages || null,
-	})
-}
-
-export async function exportSoeRequestsReportPdf(rows = [], filterLabel = "", logoUrl = "", options = {}) {
-	await exportTemplateReportPdf({
-		filename: options.filename || `materials-request-report-${Date.now()}.pdf`,
-		title: options.title || "Requirements Report - All Requests",
-		subtitle: options.subtitle || "Request lifecycle, download readiness, and review state exported in the required formatted layout.",
-		filterLabel,
-		stats: buildSoeReportStats(rows),
-		logoUrl,
-		columns: [
-			{ label: "Student ID", width: 76 },
-			{ label: "Student Name", width: 112 },
-			{ label: "Scholarship", width: 102 },
-			{ label: "Materials", width: 88 },
-			{ label: "Status", width: 58 },
-			{ label: "Request Date", width: 72 },
-			{ label: "Review State", width: 74 },
-		],
-		rows: rows.map((row) => [
-			row.studentId || "-",
-			row.fullName || "-",
-			row.scholarshipName || "-",
-			row.requestedMaterialsSummary || row.visibleMaterialsSummary || "-",
-			row.status || "-",
-			formatDate(row.requestDate || row.timestamp || row.dateRequested || row.createdAt),
-			row.reviewStateLabel || row.reviewState || "-",
-		]),
-	})
-}
-
-export async function exportComplianceReportPdf(rows = [], filterLabel = "", logoUrl = "", options = {}) {
-	await exportTemplateReportPdf({
-		filename: options.filename || `compliance-report-${Date.now()}.pdf`,
-		title: options.title || "Compliance Monitoring Report",
-		subtitle: options.subtitle || "Violation counts and current compliance standing prepared on top of the provided formatted report template.",
-		filterLabel,
-		stats: buildComplianceReportStats(rows),
-		logoUrl,
-		columns: [
-			{ label: "Student ID", width: 88 },
-			{ label: "Full Name", width: 150 },
-			{ label: "Status", width: 92 },
-			{ label: "Violations", width: 62 },
-			{ label: "Last Reviewed", width: 88 },
-		],
-		rows: rows.map((row) => [
-			row.studentId || row.id || "-",
-			row.fullName || "-",
-			row.complianceStatus || "-",
-			String(row.violationCount || 0),
-			row.lastReviewed || "-",
-		]),
-	})
-}
-
-export async function downloadCsvReport(filename, headers = [], rows = []) {
-	try {
-		const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/csv`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ filename, headers, rows }),
+async function validateReportPdfBlob(blob) {
+	if (!(blob instanceof Blob) || blob.size < 5) {
+		throw new PortalApiError("The report backend returned an empty PDF.", {
+			reason: "empty_report_pdf",
 		})
-		if (response.ok) {
-			const blob = await response.blob()
-			const url = URL.createObjectURL(blob)
-			const link = document.createElement("a")
-			link.href = url
-			link.download = filename
-			document.body.appendChild(link)
-			link.click()
-			document.body.removeChild(link)
-			URL.revokeObjectURL(url)
-			return
-		}
-	} catch (error) {
-		console.warn("Python CSV report generation unavailable. Falling back to browser CSV.", error)
 	}
-	const headerLine = headers.map((value) => escapeCsvValue(value)).join(",")
-	const bodyLines = rows.map((row) => row.map((value) => escapeCsvValue(value)).join(","))
-	const csv = [headerLine, ...bodyLines].join("\n")
-	const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-	const url = URL.createObjectURL(blob)
-	const link = document.createElement("a")
-	link.href = url
-	link.download = filename
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-	URL.revokeObjectURL(url)
+	const signature = new TextDecoder("ascii").decode(
+		new Uint8Array(await blob.slice(0, 5).arrayBuffer()),
+	)
+	if (signature !== "%PDF-") {
+		throw new PortalApiError("The report backend returned an invalid PDF.", {
+			reason: "invalid_report_pdf",
+		})
+	}
+	return blob
 }
 
-export async function downloadExcelReport(filename, title, filterLabel = "", headers = [], rows = []) {
-	const normalizedFilename = String(filename || `report-${Date.now()}.xlsx`).replace(/\.csv$/i, ".xlsx")
-	const response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/excel`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			filename: normalizedFilename,
-			title: title || "BulsuScholar Report",
-			filterLabel,
-			headers,
-			rows,
-		}),
-	})
-	if (!response.ok) throw new Error(await readBackendError(response))
+export async function fetchCanonicalReportPdf(report = {}, options = {}) {
+	const controller = new AbortController()
+	const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 45000)
+	const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+	const abortFromCaller = () => controller.abort()
+	options.signal?.addEventListener("abort", abortFromCaller, { once: true })
+	let response
+	try {
+		response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/pdf`, {
+			method: "POST",
+			headers: await buildPortalRequestHeaders({ actorType: "admin" }),
+			body: JSON.stringify(buildCanonicalReportPdfPayload(report)),
+			signal: controller.signal,
+		})
+	} catch (error) {
+		if (error?.name === "AbortError") {
+			if (options.signal?.aborted) throw error
+			throw new PortalApiError("PDF report generation timed out. Please try again.", {
+				status: 408,
+				reason: "request_timeout",
+			})
+		}
+		throw new PortalApiError(`Report backend is unavailable. ${error?.message || ""}`.trim(), {
+			reason: "backend_unavailable",
+		})
+	} finally {
+		clearTimeout(timeoutId)
+		options.signal?.removeEventListener("abort", abortFromCaller)
+	}
+	if (!response.ok) throw await readBackendError(response)
 	const disposition = response.headers.get("content-disposition") || ""
 	const serverFilename = disposition.match(/filename="?([^";]+)"?/i)?.[1]
-	downloadBackendFile(await response.blob(), serverFilename || normalizedFilename)
+	const blob = await validateReportPdfBlob(await response.blob())
+	return {
+		blob,
+		filename: serverFilename || `${sanitizeReportFilename(report.filename)}.pdf`,
+	}
+}
+
+export function downloadCanonicalReportPdfBlob(blob, filename = "bulsuscholar-report.pdf") {
+	downloadBackendFile(blob, sanitizeReportFilename(filename))
+}
+
+export async function exportCanonicalReportPdf(report = {}, options = {}) {
+	const result = await fetchCanonicalReportPdf(report, options)
+	downloadCanonicalReportPdfBlob(result.blob, result.filename)
+	return result
+}
+
+export function fetchTopStudentsReport(students = [], offerings = []) {
+	return postPortalJson(
+		requireBackendApiUrl("Report backend"),
+		"/reports/top-students/preview",
+		{ actorType: "admin", students, offerings },
+		"Top students report",
+		{ actor: { actorType: "admin" }, timeoutMs: 30000 },
+	)
+}
+
+function protectSpreadsheetCell(value) {
+	const raw = String(value ?? "").replace(/\r\n?/g, "\n")
+	return /^[\t\r ]*[=+\-@]/.test(raw) ? `'${raw}` : raw
 }
 
 function escapeCsvValue(value) {
-	const raw = String(value ?? "")
-	const escaped = raw.replaceAll('"', '""')
+	const escaped = protectSpreadsheetCell(value).replaceAll('"', '""')
 	return `"${escaped}"`
+}
+
+export function downloadCanonicalReportCsv(report = {}) {
+	const headers = report.columns || (report.columnDefinitions || []).map((column) => column.label)
+	const rows = report.csvRows || []
+	const csv = [
+		headers.map(escapeCsvValue).join(","),
+		...rows.map((row) => row.map(escapeCsvValue).join(",")),
+	].join("\r\n")
+	const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8;" })
+	downloadBackendFile(blob, `${sanitizeReportFilename(report.filename)}.csv`)
 }

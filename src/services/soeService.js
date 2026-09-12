@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts } from "pdf-lib"
 import { resolveSoeRequestNumber } from "./soeRequestNumberService"
+import { sanitizeDownloadFileName, triggerBlobDownload } from "./supabaseStorageService"
 
 function safeText(value, fallback = "N/A") {
 	const text = String(value ?? "").trim()
@@ -204,13 +205,9 @@ export async function exportSoePdfDocument({
 }
 
 export function downloadSoePdfBytes(pdfBytes, fileName = "SOE.pdf") {
+	const bytes = pdfBytes instanceof Uint8Array ? pdfBytes : new Uint8Array(pdfBytes || [])
+	const signature = new TextDecoder("ascii").decode(bytes.slice(0, 5))
+	if (bytes.length < 5 || signature !== "%PDF-") throw new Error("invalid_soe_pdf")
 	const blob = new Blob([pdfBytes], { type: "application/pdf" })
-	const link = document.createElement("a")
-	const url = URL.createObjectURL(blob)
-	link.href = url
-	link.download = fileName
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-	URL.revokeObjectURL(url)
+	triggerBlobDownload(blob, sanitizeDownloadFileName(fileName, "SOE.pdf"))
 }

@@ -6,9 +6,10 @@ import { findStudentAccountByUniqueField, promotePendingStudentToActive, TABLES 
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
-import logo2 from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 
 export default function ConfirmEmailPage() {
+	const brandLogo = usePublicConfiguration().branding?.logoUrl || logo
 	const navigate = useNavigate()
 	const [status, setStatus] = useState("checking")
 	const [email, setEmail] = useState("")
@@ -133,7 +134,7 @@ export default function ConfirmEmailPage() {
 			<div className="login-panel login-panel-info" style={{ "--login-bg": `url(${loginBackground})` }}>
 				<div className="login-info-inner">
 					<div className="login-info-icon" aria-hidden>
-						<img src={logo} alt="Institutional Student Programs and Services logo" className="login-logo-img" />
+						<img src={brandLogo} alt="Institutional Student Programs and Services logo" className="login-logo-img" />
 					</div>
 					<h1 className="login-info-title">Email Confirmation</h1>
 					<p className="login-info-desc">Confirm your student account before logging in to BulsuScholar.</p>
@@ -142,7 +143,7 @@ export default function ConfirmEmailPage() {
 
 			<div className="login-panel login-panel-form">
 				<div className="login-form-inner">
-					<img src={logo2} alt="Bulacan State University Office of the Scholarships" className="login-form-logo" />
+					<img src={brandLogo} alt="Bulacan State University Office of the Scholarships" className="login-form-logo" />
 					<div className="signup-pending-inner">
 						<div className="signup-verified-wrap">{content.icon}</div>
 						<h2 className="signup-verified-title">{content.title}</h2>

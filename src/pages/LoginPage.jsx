@@ -13,10 +13,11 @@ import { supabase } from "../services/supabaseClient"
 import { verifyPassword } from "../services/authService"
 import { grantorMustChangePassword, GRANTOR_PASSWORD_CHANGE_ID_KEY } from "../constants/grantorAuth"
 import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
+import { closeFromModalBackdrop } from "../services/modalLayerService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
-import logo2 from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 
 const APP_URL = (
 	import.meta.env.VITE_APP_URL ||
@@ -27,6 +28,9 @@ const RESET_EMAIL_COOLDOWN_MS = 60 * 1000
 const RESET_EMAIL_COOLDOWN_KEY = "bulsuscholar_reset_email_next_allowed_at"
 
 export default function LoginPage() {
+	const branding = usePublicConfiguration().branding || {}
+	const brandLogo = branding.logoUrl || logo
+	const productName = branding.productName || "BulsuScholar"
 	const [userId, setUserId] = useState("")
 	const [password, setPassword] = useState("")
 	const [showPassword, setShowPassword] = useState(false)
@@ -218,7 +222,7 @@ export default function LoginPage() {
 			const isPendingStudent = found.type === "student" && found.table === TABLES.pendingStudent
 			const hasEncryptedPassword = Boolean(found.data?.password)
 			const shouldUseSupabaseAuth =
-				found.type === "student" &&
+				["student", "admin"].includes(found.type) &&
 				Boolean(found.data?.email) &&
 				Boolean(found.data?.authUserId)
 
@@ -307,6 +311,14 @@ export default function LoginPage() {
 				return
 			}
 
+			if (found.type === "admin" && found.data?.mustChangePassword === true) {
+				sessionStorage.setItem("bulsuscholar_userId", id)
+				sessionStorage.setItem("bulsuscholar_userType", "admin")
+				toast.info("Replace the temporary password before accessing the admin portal.")
+				navigate("/admin/change-password", { replace: true })
+				return
+			}
+
 			toast.info("Logging in...", { autoClose: 1500 })
 			sessionStorage.setItem("bulsuscholar_userId", id)
 			sessionStorage.setItem("bulsuscholar_userType", found.type)
@@ -332,7 +344,7 @@ export default function LoginPage() {
 				<div className="login-info-inner">
 					<div className="login-info-icon" aria-hidden>
 						<img
-							src={logo}
+							src={brandLogo}
 							alt="Institutional Student Programs and Services logo"
 							className="login-logo-img"
 						/>
@@ -361,11 +373,11 @@ export default function LoginPage() {
 			<div className="login-panel login-panel-form">
 				<div className="login-form-inner">
 					<img
-						src={logo2}
+						src={brandLogo}
 						alt="Bulacan State University Office of the Scholarships"
 						className="login-form-logo"
 					/>
-					<h2 className="login-form-title">BulsuScholar</h2>
+					<h2 className="login-form-title">{productName}</h2>
 					<p className="login-form-subtitle">Login to access your dashboard</p>
 
 					<form className="login-form" onSubmit={handleSubmit} noValidate>
@@ -435,7 +447,9 @@ export default function LoginPage() {
 				<div
 					className="admin-modal-overlay"
 					style={{ zIndex: 9999 }}
-					onClick={closeForgotModal}
+					onClick={(event) => closeFromModalBackdrop(event, closeForgotModal, {
+						hasUnsavedChanges: Boolean(forgotUserId.trim()),
+					})}
 				>
 					<div
 						className="admin-modal-card"

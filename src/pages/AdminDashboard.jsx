@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { read, utils } from "xlsx"
-import { addDoc, collection, collectionGroup, doc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from "../services/supabaseDataService"
+import { addDoc, collection, collectionGroup, doc, getRecord, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from "../services/supabaseDataService"
 import {
 	Chart as ChartJS,
 	CategoryScale,
@@ -28,6 +28,7 @@ import {
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
 	HiOutlineEye,
+	HiOutlineExternalLink,
 	HiOutlineHome,
 	HiOutlineLocationMarker,
 	HiOutlineInbox,
@@ -51,9 +52,11 @@ import {
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
+import { supabase } from "../services/supabaseClient"
 import { encryptPasswordAES256 } from "../services/authService"
 import { GRANTOR_DEFAULT_PASSWORD } from "../constants/grantorAuth"
 import logo2 from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
 import TablePagination from "../components/TablePagination"
@@ -75,7 +78,12 @@ import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/sup
 import { broadcastStudentNotification, createAdminNotification, createGrantorNotification, createStudentNotification } from "../services/notificationService"
 import { createGrantorScholarsWorkflow, materialRequestWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
 import { updateGrantorArchiveStateWithFallback } from "../services/grantorArchiveCompatibilityService"
-import { matchesScholarshipApplication } from "../services/scholarshipChoiceService"
+import { hasScholarshipCommitment, matchesScholarshipApplication } from "../services/scholarshipChoiceService"
+import {
+	findMatchingPendingInvitation,
+	getGrantorRejectionCooldown,
+	isManualArchiveForGrantor,
+} from "../services/grantorReapplicationService"
 import {
 	buildApplicationDecisionConfirmation,
 	canUseGrantorConfirmationForStep,
@@ -85,19 +93,27 @@ import {
 	GRANTOR_SUBCOLLECTIONS,
 	findScholarDuplicate,
 	isAnnouncementArchived,
+	isAnnouncementExpired,
+	isAnnouncementExplicitlyArchived,
 	matchesGrantorScholarToStudent,
 	normalizeGrantorScholar,
 } from "../services/grantorService"
 import {
-	downloadExcelReport,
-	downloadStudentReport,
-	exportComplianceReportPdf,
-	exportScholarshipsReportPdf,
-	exportSoeRequestsReportPdf,
+	downloadCanonicalReportPdfBlob,
+	downloadCanonicalReportCsv,
+	fetchCanonicalReportPdf,
+	fetchTopStudentsReport,
 	filterStudentRows,
 	formatDate,
 	mapScholarshipRows,
 } from "../services/adminService"
+import {
+	ADMIN_REPORT_TYPES,
+	createCanonicalReport,
+	isWithinInclusiveDateRange,
+	matchesReportSearch,
+	overlapsInclusiveDateRange,
+} from "../services/reportCatalog"
 import {
 	getMaterialEntry,
 	normalizeMaterialRequest,
@@ -111,6 +127,8 @@ import {
 } from "../services/scholarshipService"
 import { loadRecommendedScholarships } from "../services/recommendedScholarshipService"
 import { collectOtherRequirementDocuments } from "../services/otherRequirementService"
+import { closeFromModalBackdrop } from "../services/modalLayerService"
+import { updateAdminContact } from "../services/adminAccountService"
 import {
 	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
@@ -125,7 +143,6 @@ const ADMIN_SECTIONS = [
 	{ id: "dashboard", label: "Dashboard", icon: HiOutlineAcademicCap, path: "/admin/dashboard" },
 	{ id: "inbox", label: "Inbox", icon: HiOutlineInbox, path: "/admin/inbox", topbarOnly: true },
 	{ id: "notifications", label: "Notifications", icon: HiOutlineBell, path: "/admin/notifications", topbarOnly: true },
-	{ id: "logs", label: "System Logs", icon: HiOutlineDocumentText, path: "/admin/logs", topbarOnly: true },
 	{ id: "profile", label: "Admin Profile", icon: HiOutlineCog, path: "/admin/profile", topbarOnly: true },
 	{ id: "students", label: "Student Management", icon: HiOutlineUsers, path: "/admin/students" },
 	{ id: "grantors", label: "Grantor Management", icon: HiOutlineUserGroup, path: "/admin/grantors" },
@@ -139,6 +156,19 @@ const TREND_RANGES = ["daily", "weekly", "monthly", "yearly"]
 const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6
 const COMPLIANCE_BLOCK_THRESHOLD = 2
 const EMPTY_STATE_TEXT = "No results found matching your criteria."
+const DEFAULT_REPORT_FILTERS = Object.freeze({
+	search: "",
+	status: "All",
+	grantor: "All",
+	course: "All",
+	year: "All",
+	material: "All",
+	signing: "All",
+	risk: "All",
+	scholarship: "All",
+	dateFrom: "",
+	dateTo: "",
+})
 const APPLICATION_REJECTION_REASONS = [
 	"Incomplete Documents",
 	"Information Mismatch",
@@ -189,18 +219,26 @@ const DEFAULT_ADMIN_PROFILE = {
 	officeName: "Office of the Scholarship",
 	contactNumber: "",
 	supportEmail: "scholarships@bulsu.edu.ph",
-	maintenanceMode: false,
-	allowStudentSignup: true,
-	allowGrantorAnnouncements: true,
-	reportExportEnabled: true,
 }
 
 const normalizeAdminProfileSettings = (settings = {}) => {
 	const profileSettings = { ...(settings || {}) }
 	delete profileSettings.systemMode
 	delete profileSettings.accountVerification
+	delete profileSettings.maintenanceMode
+	delete profileSettings.allowStudentSignup
+	delete profileSettings.allowGrantorAnnouncements
+	delete profileSettings.reportExportEnabled
 	return { ...DEFAULT_ADMIN_PROFILE, ...profileSettings }
 }
+
+const applyAdminIdentity = (profile, record) => ({
+	...profile,
+	...(record?.fullName || record?.name ? { displayName: record.fullName || record.name } : {}),
+	...(record?.email ? { email: record.email } : {}),
+	...(record?.contactNumber ? { contactNumber: record.contactNumber } : {}),
+	...(record?.officeName ? { officeName: record.officeName } : {}),
+})
 
 const ADMIN_IMPORT_MAPPABLE_FIELDS = [
 	{ value: "studentId", label: "Student ID" },
@@ -616,7 +654,6 @@ function getSafeAdminNotificationRoute(notification = {}) {
 	const allowedRoutes = new Set([
 		...ADMIN_SECTIONS.map((section) => section.path),
 		"/admin/notifications",
-		"/admin/logs",
 	])
 	return allowedRoutes.has(route) ? route : ""
 }
@@ -664,6 +701,22 @@ function isClosedScholarshipEntry(entry = {}) {
 	return isRejectedScholarshipEntry(entry) || isArchivedScholarshipEntry(entry)
 }
 
+function isActiveApplicationRecord(application = {}) {
+	const status = [
+		application.status,
+		application.applicationStatus,
+		application.reviewStatus,
+		application.finalizedState,
+	].join(" ").toLowerCase()
+	return !(
+		application.archived === true ||
+		application.withdrawn === true ||
+		application.rejected === true ||
+		["rejected", "denied", "declined", "withdrawn", "cancelled", "canceled", "archived", "expired", "resolved", "closed"]
+			.some((value) => status.includes(value))
+	)
+}
+
 function getScholarshipRejectionText(entry = {}) {
 	return (
 		entry?.rejectionMessage ||
@@ -708,6 +761,7 @@ function buildGrantorReportRow(grantor = {}) {
 		totalScholars: Number(grantor.totalScholars || 0),
 		status: toGrantorStatus(grantor),
 		createdAt: formatDate(grantor.createdAt),
+		reportDate: grantor.createdAt || grantor.updatedAt || null,
 	}
 }
 
@@ -1028,19 +1082,40 @@ function toScholarshipWarningReportRow(row) {
 }
 
 function toSoeReportRow(row) {
+	const reviewState = row.reviewState || "incoming"
+	const materialApprovedAt = row.materials?.soe?.approvedAt || row.materials?.application_form?.approvedAt
 	return {
 		id: row.id,
+		applicationNumber: row.applicationNumber || row.applicationId || "-",
+		requestNumber: row.requestNumber || row.registrationNumber || row.id || "-",
+		grantorId: row.grantorId || row.providerId || "",
 		studentId: toDisplayStudentId(row.studentId || row.studentNumber),
 		fullName: row.fullName || "-",
 		scholarshipName: row.scholarshipName || "-",
+		grantor: row.grantorName || row.providerName || (row.providerType ? toProviderLabel(row.providerType) : "-"),
 		providerType: row.providerType || "-",
 		requestedMaterialsSummary: row.visibleMaterialsSummary || row.requestedMaterialsSummary || "-",
 		status: row.status || "-",
 		timestamp: row.timestamp || row.requestDate || row.createdAt || new Date().toISOString(),
 		requestDate: row.requestDate || toJsDate(row.timestamp || row.createdAt || row.dateRequested),
 		nextEligibleLabel: row.nextEligibleLabel || "-",
-		reviewStateLabel: row.reviewStateLabel || toReviewStateLabel(row.reviewState),
+		reviewStateLabel: row.reviewStateLabel || toReviewStateLabel(reviewState),
+		reviewDate:
+			reviewState === "incoming"
+				? null
+				: row.reviewDate || row.reviewedAt || row.approvedAt || row.rejectedAt || materialApprovedAt || row.updatedAt || null,
 		downloadStatusLabel: row.downloadStatusLabel || "-",
+		downloadDate: row.downloadDate || row.downloadedDate || row.downloadedAt || null,
+		signingStatusLabel:
+			row.signingStatusLabel || (row.reviewSource === "download"
+				? row.reviewState === "signed"
+					? "Signed"
+					: row.reviewState === "non_compliant"
+						? "Rejected"
+						: "Pending Signature"
+				: "Not Started"),
+		signingDate: row.signingDate || row.signedAt || row.checkedAt || row.soeSignedAt || null,
+		reportDate: row.requestDate || row.timestamp || row.createdAt || null,
 	}
 }
 
@@ -1048,19 +1123,14 @@ function toComplianceReportRow(student) {
 	return {
 		studentId: toDisplayStudentId(student.studentId || student.id),
 		fullName: student.fullName || "-",
+		scholarship: student.scholarship || "-",
+		grantor: student.grantor || "N/A",
 		complianceStatus: student.complianceStatus || "-",
 		violationCount: Number(student.violationCount || 0),
 		isBlocked: student.isBlocked === true,
 		lastReviewed: student.lastReviewed || "-",
+		reportDate: student.reportDate || null,
 	}
-}
-
-function buildCsvPreview(columns, rows) {
-	const lines = [
-		columns.join(","),
-		...rows.slice(0, TABLE_PAGE_SIZE).map((row) => row.map((value) => String(value ?? "")).join(",")),
-	]
-	return lines.join("\n")
 }
 
 function EmptyStateRow({ colSpan }) {
@@ -1173,6 +1243,11 @@ function AdminFilterSelect({ label, value, options, onChange }) {
 }
 
 export default function AdminDashboard() {
+	const publicConfiguration = usePublicConfiguration()
+	const branding = publicConfiguration.branding || {}
+	const adminReportExportsEnabled = publicConfiguration.portal?.reportExportEnabled !== false
+	const brandLogo = branding.logoUrl || logo2
+	const productName = branding.productName || "BulsuScholar"
 	const navigate = useNavigate()
 	const location = useLocation()
 	const { theme, setTheme } = useThemeMode()
@@ -1278,8 +1353,18 @@ export default function AdminDashboard() {
 
 	const [reportPreview, setReportPreview] = useState(null)
 	const [reportExportFormat, setReportExportFormat] = useState("pdf")
-	const [exportTopStudentsPerGrantor, setExportTopStudentsPerGrantor] = useState(false)
 	const [isReportExporting, setIsReportExporting] = useState(false)
+	const [reportPreviewOrigin, setReportPreviewOrigin] = useState("section")
+	const [reportPreviewFilters, setReportPreviewFilters] = useState({ ...DEFAULT_REPORT_FILTERS })
+	const [reportPreviewDraftFilters, setReportPreviewDraftFilters] = useState({ ...DEFAULT_REPORT_FILTERS })
+	const [reportPdfPreview, setReportPdfPreview] = useState({
+		blob: null,
+		filename: "",
+		url: "",
+		loading: false,
+		error: "",
+	})
+	const [reportPdfRetryKey, setReportPdfRetryKey] = useState(0)
 
 	const [announcementTitle, setAnnouncementTitle] = useState("")
 	const [announcementDescription, setAnnouncementDescription] = useState("")
@@ -1304,29 +1389,71 @@ export default function AdminDashboard() {
 	const [isPostingAnnouncement, setIsPostingAnnouncement] = useState(false)
 	const [isBusy, setIsBusy] = useState(false)
 	const [adminNotifications, setAdminNotifications] = useState([])
-	const [systemLogs, setSystemLogs] = useState([])
 	const [notificationSearch, setNotificationSearch] = useState("")
 	const [notificationFilter, setNotificationFilter] = useState("inbox")
 	const [selectedAdminNotificationIds, setSelectedAdminNotificationIds] = useState([])
 	const [selectedAdminNotification, setSelectedAdminNotification] = useState(null)
-	const [logSearch, setLogSearch] = useState("")
-	const [logTypeFilter, setLogTypeFilter] = useState("all")
-	const [logActorFilter, setLogActorFilter] = useState("all")
-	const [logDateFrom, setLogDateFrom] = useState("")
-	const [logDateTo, setLogDateTo] = useState("")
 	const [adminMenuOpen, setAdminMenuOpen] = useState(false)
 	const [adminProfile, setAdminProfile] = useState(DEFAULT_ADMIN_PROFILE)
 	const [adminProfileForm, setAdminProfileForm] = useState(DEFAULT_ADMIN_PROFILE)
 	const [adminProfileSaving, setAdminProfileSaving] = useState(false)
+	const [adminPermissions, setAdminPermissions] = useState(null)
 	const adminMenuRef = useRef(null)
+	const adminIdentityRef = useRef(null)
 
 	const setTablePage = useCallback((tableKey, page) => {
 		setTablePages((prev) => ({ ...prev, [tableKey]: page }))
 	}, [])
 
 	useEffect(() => {
+		if (!reportPreview) {
+			setReportPdfPreview({ blob: null, filename: "", url: "", loading: false, error: "" })
+			return undefined
+		}
+
+		const controller = new AbortController()
+		let objectUrl = ""
+		setReportPdfPreview({ blob: null, filename: "", url: "", loading: true, error: "" })
+
+		fetchCanonicalReportPdf(reportPreview, { signal: controller.signal })
+			.then(({ blob, filename }) => {
+				if (controller.signal.aborted) return
+				objectUrl = URL.createObjectURL(blob)
+				setReportPdfPreview({ blob, filename, url: objectUrl, loading: false, error: "" })
+			})
+			.catch((error) => {
+				if (controller.signal.aborted) return
+				console.error("Unable to generate the report PDF preview.", error)
+				setReportPdfPreview({
+					blob: null,
+					filename: "",
+					url: "",
+					loading: false,
+					error: error?.message || "Unable to generate the PDF preview.",
+				})
+			})
+
+		return () => {
+			controller.abort()
+			if (objectUrl) URL.revokeObjectURL(objectUrl)
+		}
+	}, [reportPdfRetryKey, reportPreview])
+
+	useEffect(() => {
 		const storedType = sessionStorage.getItem("bulsuscholar_userType")
 		if (storedType !== "admin") navigate("/", { replace: true })
+		const adminId = sessionStorage.getItem("bulsuscholar_userId") || ""
+		if (storedType === "admin" && adminId) {
+			getRecord("admins", adminId).then((record) => {
+				if (String(record?.status || "active").toLowerCase() === "disabled") {
+					sessionStorage.clear(); navigate("/", { replace: true }); return
+				}
+				adminIdentityRef.current = record
+				setAdminPermissions(Array.isArray(record?.permissions) ? record.permissions : null)
+				setAdminProfile((current) => applyAdminIdentity(current, record))
+				setAdminProfileForm((current) => applyAdminIdentity(current, record))
+			}).catch(() => setAdminPermissions(null))
+		}
 	}, [navigate])
 
 	useEffect(() => {
@@ -1346,7 +1473,7 @@ export default function AdminDashboard() {
 			doc(db, "adminSettings", "profile"),
 			(snapshot) => {
 				if (!active || !snapshot.exists()) return
-				const merged = normalizeAdminProfileSettings(snapshot.data() || {})
+				const merged = applyAdminIdentity(normalizeAdminProfileSettings(snapshot.data() || {}), adminIdentityRef.current)
 				setAdminProfile(merged)
 				setAdminProfileForm(merged)
 				localStorage.setItem("bulsuscholar_admin_profile", JSON.stringify(merged))
@@ -1363,21 +1490,11 @@ export default function AdminDashboard() {
 
 	useEffect(() => {
 		const unsubscribeLogs = onSnapshot(
-			collection(db, "systemLogs"),
+			collection(db, "adminNotifications"),
 			(snapshot) => {
-				const rows = snapshot.docs.map((item) => ({ id: item.id, sourceTable: "systemLogs", ...(item.data() || {}) }))
+				const rows = snapshot.docs.map((item) => ({ id: item.id, sourceTable: "adminNotifications", ...(item.data() || {}) }))
 				setAdminNotifications(
 					rows
-						.filter((item) => item.notificationFallbackTable === "adminNotifications")
-						.sort((left, right) => {
-							const leftDate = toJsDate(left.createdAt || left.created_at || left.timestamp)?.getTime() || 0
-							const rightDate = toJsDate(right.createdAt || right.created_at || right.timestamp)?.getTime() || 0
-							return rightDate - leftDate
-						}),
-				)
-				setSystemLogs(
-					rows
-						.filter((item) => item.notificationFallbackTable !== "adminNotifications")
 						.sort((left, right) => {
 							const leftDate = toJsDate(left.createdAt || left.created_at || left.timestamp)?.getTime() || 0
 							const rightDate = toJsDate(right.createdAt || right.created_at || right.timestamp)?.getTime() || 0
@@ -1386,8 +1503,7 @@ export default function AdminDashboard() {
 				)
 			},
 			(error) => {
-				console.error("Unable to load backend system logs.", error)
-				setSystemLogs([])
+				console.error("Unable to load administrator notification fallbacks.", error)
 				setAdminNotifications([])
 			},
 		)
@@ -1545,33 +1661,6 @@ export default function AdminDashboard() {
 			return `${toAdminNotificationTitle(item)} ${toAdminNotificationMessage(item)} ${item.type || ""}`.toLowerCase().includes(keyword)
 		})
 	}, [adminNotifications, notificationFilter, notificationSearch])
-
-	const logTypeOptions = useMemo(
-		() => [...new Set(systemLogs.map((item) => String(item.action || item.type || "system")).filter(Boolean))].sort(),
-		[systemLogs],
-	)
-
-	const logActorOptions = useMemo(
-		() => [...new Set(systemLogs.map((item) => String(item.actorType || "system")).filter(Boolean))].sort(),
-		[systemLogs],
-	)
-
-	const visibleSystemLogs = useMemo(() => {
-		const keyword = logSearch.trim().toLowerCase()
-		const fromDate = logDateFrom ? startOfDay(logDateFrom) : null
-		const toDate = logDateTo ? endOfDay(logDateTo) : null
-		return systemLogs.filter((item) => {
-			const action = String(item.action || item.type || "system")
-			const actorType = String(item.actorType || "system")
-			const createdDate = toJsDate(item.createdAt || item.created_at || item.timestamp)
-			if (logTypeFilter !== "all" && action !== logTypeFilter) return false
-			if (logActorFilter !== "all" && actorType !== logActorFilter) return false
-			if (fromDate && (!createdDate || createdDate < fromDate)) return false
-			if (toDate && (!createdDate || createdDate > toDate)) return false
-			if (!keyword) return true
-			return `${action} ${actorType} ${item.actorId || ""} ${item.target || ""} ${toAdminNotificationMessage(item)}`.toLowerCase().includes(keyword)
-		})
-	}, [logActorFilter, logDateFrom, logDateTo, logSearch, logTypeFilter, systemLogs])
 
 	const markAdminNotificationRead = useCallback(async (notification) => {
 		if (!notification?.id || notification.read === true) return
@@ -2383,8 +2472,15 @@ export default function AdminDashboard() {
 	)
 
 	const grantorReportRows = useMemo(
-		() => visibleGrantorRows.map((grantor) => buildGrantorReportRow(grantor)),
-		[visibleGrantorRows],
+		() => visibleGrantorRows.map((grantor) => ({
+			...buildGrantorReportRow(grantor),
+			activeScholarships: grantorAnnouncementsRaw.filter((announcement) =>
+				String(announcement.grantorId || announcement.providerId || "") === String(grantor.id || "") &&
+				isGrantorScholarshipApplicationAnnouncement(announcement) &&
+				!isAnnouncementArchived(announcement),
+			).length,
+		})),
+		[grantorAnnouncementsRaw, visibleGrantorRows],
 	)
 
 	const grantorLabelById = useMemo(
@@ -2775,9 +2871,8 @@ export default function AdminDashboard() {
 		})
 	}, [matchesSelectedScholarshipGrantor, scholarshipOverviewRows, scholarshipSearch])
 
-	const createdScholarshipRows = useMemo(() => {
-		const keyword = scholarshipSearch.trim().toLowerCase()
-		const grantorLookup = new Map(activeGrantorRows.map((grantor) => [grantor.id, grantor]))
+	const allCreatedScholarshipRows = useMemo(() => {
+		const grantorLookup = new Map(grantorRows.map((grantor) => [grantor.id, grantor]))
 		const sourceRows = [
 			...grantorAnnouncementsRaw.filter(isGrantorScholarshipApplicationAnnouncement).map((announcement) => ({
 				...announcement,
@@ -2799,12 +2894,36 @@ export default function AdminDashboard() {
 				const createdDate = toJsDate(announcement.createdAt || announcement.updatedAt || announcement.date)
 				const startDate = toJsDate(announcement.startDate || announcement.applicationStartDate)
 				const endDate = toJsDate(announcement.endDate || announcement.applicationEndDate)
-				const status = isAnnouncementArchived(announcement) ? "Archived" : "Open"
+				const statusValue = String(announcement.status || "").trim().toLowerCase()
+				const status = isAnnouncementExplicitlyArchived(announcement) || grantor?.archived === true
+					? "Archived"
+					: isAnnouncementExpired(announcement) ||
+						announcement.applicationEnabled === false ||
+						["closed", "ended", "inactive", "disabled"].includes(statusValue)
+						? "Closed"
+						: "Open"
 				const appliedCount = applicationsRaw.filter((application) => {
-					return (
-						(application.announcementId && application.announcementId === announcement.id) ||
-						(application.scholarshipName && String(application.scholarshipName).trim().toLowerCase() === String(announcement.title || announcement.announcementTitle || "").trim().toLowerCase())
-					)
+					const applicationAnnouncementId = String(application.announcementId || "").trim()
+					const applicationScholarshipId = String(application.scholarshipId || application.offeringId || "").trim()
+					const announcementId = String(announcement.id || "").trim()
+					if (applicationAnnouncementId) return applicationAnnouncementId === announcementId
+					if (applicationScholarshipId) {
+						return [announcementId, announcement.scholarshipId, announcement.offeringId]
+							.map((value) => String(value || "").trim())
+							.filter(Boolean)
+							.includes(applicationScholarshipId)
+					}
+
+					const applicationGrantorId = String(application.grantorId || application.providerId || "").trim()
+					const announcementGrantorId = String(announcement.grantorId || announcement.providerId || "").trim()
+					if (applicationGrantorId && announcementGrantorId && applicationGrantorId !== announcementGrantorId) return false
+					const applicationGrantorName = String(application.grantorName || application.providerName || "").trim().toLowerCase()
+					const announcementGrantorName = String(announcement.grantorName || announcement.providerLabel || "").trim().toLowerCase()
+					if ((!applicationGrantorId || !announcementGrantorId) && applicationGrantorName && announcementGrantorName && applicationGrantorName !== announcementGrantorName) return false
+
+					const applicationTitle = String(application.scholarshipName || application.scholarshipTitle || "").trim().toLowerCase()
+					const announcementTitle = String(announcement.title || announcement.announcementTitle || "").trim().toLowerCase()
+					return Boolean(applicationTitle && announcementTitle && applicationTitle === announcementTitle)
 				}).length
 				return {
 					...announcement,
@@ -2834,7 +2953,16 @@ export default function AdminDashboard() {
 					status,
 				}
 			})
-			.filter((row) => {
+			.sort((left, right) => {
+				const leftDate = toJsDate(left.createdAt || left.updatedAt || left.date)?.getTime() || 0
+				const rightDate = toJsDate(right.createdAt || right.updatedAt || right.date)?.getTime() || 0
+				return rightDate - leftDate
+			})
+	}, [applicationsRaw, grantorAnnouncementsRaw, grantorRows])
+
+	const createdScholarshipRows = useMemo(
+		() => allCreatedScholarshipRows.filter((row) => {
+				const keyword = scholarshipSearch.trim().toLowerCase()
 				const providerMatch = matchesSelectedScholarshipGrantor(row)
 				const searchMatch =
 					!keyword ||
@@ -2843,13 +2971,9 @@ export default function AdminDashboard() {
 					row.requiredDocumentsLabel.toLowerCase().includes(keyword) ||
 					row.status.toLowerCase().includes(keyword)
 				return providerMatch && searchMatch
-			})
-			.sort((left, right) => {
-				const leftDate = toJsDate(left.createdAt || left.updatedAt || left.date)?.getTime() || 0
-				const rightDate = toJsDate(right.createdAt || right.updatedAt || right.date)?.getTime() || 0
-				return rightDate - leftDate
-			})
-	}, [activeGrantorRows, applicationsRaw, grantorAnnouncementsRaw, matchesSelectedScholarshipGrantor, scholarshipSearch])
+			}),
+		[allCreatedScholarshipRows, matchesSelectedScholarshipGrantor, scholarshipSearch],
+	)
 
 	const studentGrantorMatches = useMemo(() => {
 		return studentProfiles
@@ -3473,9 +3597,11 @@ export default function AdminDashboard() {
 	const buildStudentReportRows = useCallback(
 		(rows = []) =>
 			rows.map((student) => {
+				const studentId = String(student.studentId || student.id || "")
 				const grantorMatch = studentGrantorMatches.find((entry) => entry.student?.id === student.id)
-				const scholarshipGrantorLabels = normalizeScholarshipList(student.scholarships || [])
+				const activeScholarshipEntries = normalizeScholarshipList(student.scholarships || [])
 					.filter((entry) => !isClosedScholarshipEntry(entry) && !isArchivedScholarshipEntry(entry))
+				const scholarshipGrantorLabels = activeScholarshipEntries
 					.map((entry) =>
 						entry.grantorName ||
 						entry.providerName ||
@@ -3487,8 +3613,9 @@ export default function AdminDashboard() {
 						(entry.providerType ? toProviderLabel(entry.providerType) : ""),
 					)
 					.filter(Boolean)
-				const rosterGrantorLabels = grantorScholarsRaw
+				const activeRosterRows = grantorScholarsRaw
 					.filter((scholar) => scholar.archived !== true && matchesGrantorScholarToStudent(student, scholar))
+				const rosterGrantorLabels = activeRosterRows
 					.map((scholar) =>
 						scholar.grantorName ||
 						scholar.providerName ||
@@ -3508,15 +3635,48 @@ export default function AdminDashboard() {
 					grantorLabelById.get(student.providerType) ||
 					(student.providerType ? toProviderLabel(student.providerType) : "") ||
 					"N/A"
+				const grantorIds = Array.from(new Set([
+					student.grantorId,
+					student.providerId,
+					...activeScholarshipEntries.flatMap((entry) => [entry.grantorId, entry.providerId]),
+					...activeRosterRows.flatMap((scholar) => [scholar.grantorId, scholar.providerId]),
+				].map((value) => String(value || "").trim()).filter(Boolean)))
+				const grantorNames = Array.from(new Set([
+					grantorLabel,
+					...scholarshipGrantorLabels,
+					...rosterGrantorLabels,
+					...(grantorMatch?.distinctGrantors || []).map((grantor) => grantor.label),
+				].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)))
+				const activeApplicationKeys = new Set(
+					applicationsRaw
+						.filter((application) =>
+							String(application.studentId || application.studentNumber || application.studentnumber || "") === studentId &&
+							isActiveApplicationRecord(application),
+						)
+						.map((application) => String(
+							application.id ||
+							application.applicationId ||
+							application.applicationNumber ||
+							application.scholarshipId ||
+							application.scholarshipName ||
+							"application",
+						)),
+				)
+				const currentTracking = studentTrackingById.get(studentId)
 				return {
 					...toStudentReportRow(student),
-					id: toDisplayStudentId(student.studentId || student.id),
+					id: toDisplayStudentId(studentId),
 					gwa: student.gwa || student.currentGwa || student.currentGWA || "-",
 					grantor: grantorLabel,
+					grantorIds,
+					grantorNames,
+					activeApplications: activeApplicationKeys.size,
+					currentStage: currentTracking?.currentStepLabel || "Account Created",
 					recordStatus: student.recordStatus || (student.archived === true ? "Archived" : "Active"),
+					reportDate: student.createdAt || student.updatedAt || null,
 				}
 			}),
-		[grantorLabelById, grantorScholarsRaw, studentGrantorLabelById, studentGrantorMatches],
+		[applicationsRaw, grantorLabelById, grantorScholarsRaw, studentGrantorLabelById, studentGrantorMatches, studentTrackingById],
 	)
 
 	const allStudentReportRows = useMemo(
@@ -3795,7 +3955,15 @@ export default function AdminDashboard() {
 		[archivedScholarshipRows, scholarshipStudentRows, scholarshipTab, selectedScholarshipScholarKeys],
 	)
 
-	const scholarshipSectionPreviewConfig = useMemo(() => {
+	const scholarshipSectionPreviewConfig = (() => {
+		if (scholarshipTab === "scholarships") {
+			return createOfferingPreviewConfig(
+				visibleScholarshipRows,
+				`Table: Scholarships | Search: ${scholarshipSearch || "-"} | Scholarship: ${scholarshipProvider}`,
+				"Scholarship Offerings",
+			)
+		}
+
 		if (scholarshipTab === "overview") {
 			const overviewRows = visibleScholarshipRows.map((row) => toScholarshipReportRow(row))
 			return createScholarshipPreviewConfig(
@@ -3922,7 +4090,7 @@ export default function AdminDashboard() {
 							]),
 			},
 		)
-	}, [scholarshipProvider, scholarshipSearch, scholarshipTab, visibleScholarshipRows])
+	})()
 
 	const scholarshipOverviewProviderRows = useMemo(() => {
 		const counts = { kuya_win: 0, tina_pancho: 0, morisson: 0, other: 0, none: 0 }
@@ -4248,23 +4416,10 @@ export default function AdminDashboard() {
 		[activeGrantorDistributionHoverId, grantorDistributionRows, theme],
 	)
 
-	const soeRows = useMemo(() => {
+	const allSoeRows = useMemo(() => {
 		const studentMap = new Map(studentProfiles.map((student) => [student.id, student]))
-		const latestRequests = new Map()
-
-		soeRequests.forEach((request) => {
-			const normalized = normalizeMaterialRequest(request)
-			const dedupeKey = `${normalized.studentId || "unknown"}__${normalized.scholarshipId || normalized.requestNumber || normalized.id || "request"}`
-			const nextDate = toMaterialRequestActivityDate(normalized)?.getTime() || 0
-			const existing = latestRequests.get(dedupeKey)
-			const existingDate = existing ? toMaterialRequestActivityDate(existing)?.getTime() || 0 : -1
-
-			if (!existing || nextDate >= existingDate) {
-				latestRequests.set(dedupeKey, normalized)
-			}
-		})
-
-		return Array.from(latestRequests.values())
+		return soeRequests
+			.map((request) => normalizeMaterialRequest(request))
 			.map((request) => {
 				const student = studentMap.get(request.studentId)
 				const requestDate = toMaterialRequestDate(request)
@@ -4328,6 +4483,19 @@ export default function AdminDashboard() {
 			})
 			.sort((a, b) => (b.requestDate?.getTime() || 0) - (a.requestDate?.getTime() || 0))
 	}, [soeRequests, studentProfiles])
+
+	const soeRows = useMemo(() => {
+		const latestRequests = new Map()
+		allSoeRows.forEach((request) => {
+			const cycleKey = String(request.semesterTag || request.cycle || request.academicCycle || "legacy").trim().toLowerCase()
+			const dedupeKey = `${request.studentId || "unknown"}__${request.scholarshipId || request.applicationNumber || request.scholarshipName || request.requestNumber || request.id || "request"}__${cycleKey}`
+			const nextDate = toMaterialRequestActivityDate(request)?.getTime() || 0
+			const existing = latestRequests.get(dedupeKey)
+			const existingDate = existing ? toMaterialRequestActivityDate(existing)?.getTime() || 0 : -1
+			if (!existing || nextDate >= existingDate) latestRequests.set(dedupeKey, request)
+		})
+		return Array.from(latestRequests.values()).sort((a, b) => (b.requestDate?.getTime() || 0) - (a.requestDate?.getTime() || 0))
+	}, [allSoeRows])
 
 	const soeVolumeSeries = useMemo(
 		() => buildSoeVolumeSeries(soeRows.map((row) => row.requestDate), soeTrendRange),
@@ -4453,9 +4621,6 @@ export default function AdminDashboard() {
 		[soeRows],
 	)
 
-	const requestingSoeReportRows = useMemo(() => requestingSoeRows.map((row) => toSoeReportRow(row)), [requestingSoeRows])
-	const approvedSoeReportRows = useMemo(() => approvedSoeRows.map((row) => toSoeReportRow(row)), [approvedSoeRows])
-	const rejectedSoeReportRows = useMemo(() => rejectedSoeRows.map((row) => toSoeReportRow(row)), [rejectedSoeRows])
 	const currentSemesterTag = getCurrentSemesterTag()
 
 	const soeDownloadRows = useMemo(() => {
@@ -4612,6 +4777,72 @@ export default function AdminDashboard() {
 			.sort((a, b) => (b.downloadedDate?.getTime() || 0) - (a.downloadedDate?.getTime() || 0))
 	}, [currentSemesterTag, soeDownloads, soeRequests, studentProfiles])
 
+	const requirementReportRows = useMemo(
+		() => allSoeRows.map((request) => {
+			const requestStudentId = String(request.studentId || request.studentNumber || "").trim()
+			const requestGrantorId = String(request.grantorId || request.providerId || "").trim()
+			const requestApplicationNumber = String(request.applicationNumber || request.applicationId || "").trim()
+			const requestScholarshipId = String(request.scholarshipId || "").trim()
+			const requestNumber = String(request.requestNumber || request.id || "").trim()
+			const matchingDownload = soeDownloadRows
+				.filter((download) => {
+					const downloadStudentId = String(download.studentId || download.studentNumber || "").trim()
+					if (requestStudentId && downloadStudentId && requestStudentId !== downloadStudentId) return false
+					const downloadGrantorId = String(download.grantorId || download.providerId || "").trim()
+					if (requestGrantorId && downloadGrantorId && requestGrantorId !== downloadGrantorId) return false
+
+					const downloadApplicationNumber = String(download.applicationNumber || download.applicationId || "").trim()
+					if (requestApplicationNumber && downloadApplicationNumber) return requestApplicationNumber === downloadApplicationNumber
+					const downloadScholarshipId = String(download.scholarshipId || "").trim()
+					if (requestScholarshipId && downloadScholarshipId) return requestScholarshipId === downloadScholarshipId
+					const downloadRequestNumber = String(download.requestNumber || download.id || "").trim()
+					return Boolean(requestNumber && downloadRequestNumber && requestNumber === downloadRequestNumber)
+				})
+				.sort((left, right) =>
+					(toJsDate(right.updatedAt || right.downloadedAt || right.createdAt)?.getTime() || 0) -
+					(toJsDate(left.updatedAt || left.downloadedAt || left.createdAt)?.getTime() || 0),
+				)[0]
+			const signingStatusLabel = matchingDownload
+				? matchingDownload.reviewState === "signed"
+					? "Signed"
+					: matchingDownload.reviewState === "non_compliant"
+						? "Rejected"
+						: "Pending Signature"
+				: "Not Started"
+			return toSoeReportRow({
+				...request,
+				grantorId: request.grantorId || matchingDownload?.grantorId || "",
+				grantorName: request.grantorName || matchingDownload?.grantorName || "",
+				downloadStatusLabel: matchingDownload ? "Downloaded" : request.downloadStatusLabel || "Not Downloaded",
+				downloadDate: request.downloadedDate || matchingDownload?.downloadedDate || matchingDownload?.downloadedAt || null,
+				signingStatusLabel,
+				signingDate:
+					matchingDownload?.signedAt ||
+					matchingDownload?.checkedAt ||
+					matchingDownload?.rejectedAt ||
+					(matchingDownload?.reviewState !== "incoming" ? matchingDownload?.updatedAt : null) ||
+					null,
+			})
+		}),
+		[allSoeRows, soeDownloadRows],
+	)
+	const requirementReportRowById = useMemo(
+		() => new Map(requirementReportRows.map((row) => [String(row.id || row.requestNumber || ""), row])),
+		[requirementReportRows],
+	)
+	const requestingSoeReportRows = useMemo(
+		() => requestingSoeRows.map((row) => requirementReportRowById.get(String(row.id || row.requestNumber || "")) || toSoeReportRow(row)),
+		[requestingSoeRows, requirementReportRowById],
+	)
+	const approvedSoeReportRows = useMemo(
+		() => approvedSoeRows.map((row) => requirementReportRowById.get(String(row.id || row.requestNumber || "")) || toSoeReportRow(row)),
+		[approvedSoeRows, requirementReportRowById],
+	)
+	const rejectedSoeReportRows = useMemo(
+		() => rejectedSoeRows.map((row) => requirementReportRowById.get(String(row.id || row.requestNumber || "")) || toSoeReportRow(row)),
+		[rejectedSoeRows, requirementReportRowById],
+	)
+
 	const soeCheckingRows = useMemo(() => {
 		const keyword = soeCheckSearch.trim().toLowerCase()
 		const activeSigningTab = ["pending", "previous", "rejected"].includes(soeCheckingTab)
@@ -4707,41 +4938,50 @@ export default function AdminDashboard() {
 				: null,
 		[selectedSoeReviewRow, studentProfiles],
 	)
+	const selectedSoeReviewApplication = useMemo(() => {
+		if (!selectedSoeReviewRow) return null
+		const normalizeIdentity = (value) => String(value || "").trim().toLowerCase()
+		const studentId = normalizeIdentity(selectedSoeReviewRow.studentId)
+		const applicationId = normalizeIdentity(selectedSoeReviewRow.applicationId)
+		const applicationNumber = normalizeIdentity(selectedSoeReviewRow.applicationNumber)
+		return applicationsRaw.find((application) => {
+			if (studentId && normalizeIdentity(application.studentId) !== studentId) return false
+			if (applicationId) return normalizeIdentity(application.id || application.applicationId) === applicationId
+			return applicationNumber && normalizeIdentity(application.applicationNumber) === applicationNumber
+		}) || null
+	}, [applicationsRaw, selectedSoeReviewRow])
 	const selectedSoeReviewScholarship = useMemo(() => {
 		if (!selectedSoeReviewStudent || !selectedSoeReviewRow) return null
 		const scholarships = Array.isArray(selectedSoeReviewStudent.scholarships)
 			? selectedSoeReviewStudent.scholarships
 			: []
-		const rowKeys = [
-			selectedSoeReviewRow.scholarshipId,
-			selectedSoeReviewRow.scholarshipName,
-			selectedSoeReviewRow.providerType,
-			selectedSoeReviewRow.requestNumber,
-			selectedSoeReviewRow.applicationNumber,
-		]
-			.filter(Boolean)
-			.map((value) => String(value).trim().toLowerCase())
-		return (
-			scholarships.find((scholarship) => {
-				const scholarshipKeys = [
-					scholarship.id,
-					scholarship.name,
-					scholarship.provider,
-					scholarship.providerType,
-					scholarship.requestNumber,
-					scholarship.applicationNumber,
-				]
-					.filter(Boolean)
-					.map((value) => String(value).trim().toLowerCase())
-				return scholarshipKeys.some((key) => rowKeys.includes(key))
-			}) || scholarships[0] || null
-		)
+		const normalizeIdentity = (value) => String(value || "").trim().toLowerCase()
+		const findByIdentity = (rowValue, scholarshipFields) => {
+			const identity = normalizeIdentity(rowValue)
+			if (!identity) return null
+			return scholarships.find((scholarship) =>
+				scholarshipFields.some((field) => normalizeIdentity(scholarship[field]) === identity),
+			) || null
+		}
+
+		const applicationMatch =
+			findByIdentity(selectedSoeReviewRow.applicationId, ["applicationId"]) ||
+			findByIdentity(selectedSoeReviewRow.applicationNumber, ["applicationNumber"])
+		if (applicationMatch) return applicationMatch
+		if (selectedSoeReviewRow.applicationId || selectedSoeReviewRow.applicationNumber) return null
+
+		const scholarshipMatch = findByIdentity(selectedSoeReviewRow.scholarshipId, ["id", "scholarshipId"])
+		if (scholarshipMatch) return scholarshipMatch
+		const requestMatch = findByIdentity(selectedSoeReviewRow.requestNumber, ["requestNumber"])
+		if (requestMatch) return requestMatch
+
+		return findByIdentity(selectedSoeReviewRow.scholarshipName, ["name"])
 	}, [selectedSoeReviewRow, selectedSoeReviewStudent])
 	const selectedSoeReviewDocuments = useMemo(() => {
 		const documentUrls = getDocumentUrlsForStudent(selectedSoeReviewStudent || {})
 		const student = selectedSoeReviewStudent || {}
 		const applicationForm = selectedSoeReviewScholarship?.lifecycleVersion === 2
-			? selectedSoeReviewScholarship.applicationFormFile || {}
+			? selectedSoeReviewApplication?.applicationFormFile || selectedSoeReviewScholarship.applicationFormFile || {}
 			: student.scholarshipApplicationFile || student.applicationFormFile || {}
 		return [
 			{
@@ -4776,15 +5016,27 @@ export default function AdminDashboard() {
 				key: "application_form",
 				label: "Student Application Profile",
 				title: "Student Application Profile",
-				url: selectedSoeReviewScholarship?.lifecycleVersion === 2 ? applicationForm.url || "" : documentUrls.applicationForm,
+				url: selectedSoeReviewScholarship?.lifecycleVersion === 2
+					? applicationForm.url || documentUrls.applicationForm
+					: documentUrls.applicationForm,
 				name: applicationForm.name || "Student Application Profile",
 				...applicationForm,
 			},
 		]
-	}, [selectedSoeReviewStudent, selectedSoeReviewScholarship])
+	}, [selectedSoeReviewApplication, selectedSoeReviewStudent, selectedSoeReviewScholarship])
 	const selectedSoeReviewOtherDocuments = useMemo(
-		() => collectOtherRequirementDocuments(selectedSoeReviewScholarship || {}),
-		[selectedSoeReviewScholarship],
+		() => collectOtherRequirementDocuments({
+			...(selectedSoeReviewScholarship || {}),
+			otherRequirements:
+				selectedSoeReviewApplication?.otherRequirements ||
+				selectedSoeReviewScholarship?.otherRequirements ||
+				[],
+			otherRequirementUploads:
+				selectedSoeReviewApplication?.otherRequirementUploads ||
+				selectedSoeReviewScholarship?.otherRequirementUploads ||
+				{},
+		}),
+		[selectedSoeReviewApplication, selectedSoeReviewScholarship],
 	)
 	const selectedSoeReviewRejectionDetails = useMemo(() => {
 		if (!selectedSoeReviewRow || selectedSoeReviewRow.reviewState !== "non_compliant") return []
@@ -4841,13 +5093,16 @@ export default function AdminDashboard() {
 					toComplianceReportRow({
 						studentId: student.id,
 						fullName: student.fullName,
+						scholarship: getStudentScholarshipNames(student).join(", ") || "-",
+						grantor: allStudentReportRows.find((row) => row.id === toDisplayStudentId(student.id))?.grantor || "N/A",
 						complianceStatus: student.soeComplianceWarning ? "Non-Compliant" : "Monitoring",
 						violationCount: Number(student.complianceViolationCount || 0),
 						isBlocked: student.soeComplianceBlocked === true,
 						lastReviewed: formatDate(student.lastComplianceReviewAt),
+						reportDate: student.lastComplianceReviewAt || student.updatedAt || null,
 					}),
 				),
-		[studentProfiles],
+		[allStudentReportRows, studentProfiles],
 	)
 
 	const adminAnnouncementSourceOptions = useMemo(
@@ -5572,6 +5827,9 @@ export default function AdminDashboard() {
 	const closeReportPreview = () => {
 		setReportPreview(null)
 		setReportExportFormat("pdf")
+		setReportPreviewOrigin("section")
+		setReportPreviewFilters({ ...DEFAULT_REPORT_FILTERS })
+		setReportPreviewDraftFilters({ ...DEFAULT_REPORT_FILTERS })
 	}
 
 	const runAction = async (callback, successText) => {
@@ -7265,7 +7523,8 @@ export default function AdminDashboard() {
 		})
 	}
 
-	const handleLogout = () => {
+	const handleLogout = async () => {
+		await supabase.auth.signOut().catch(() => {})
 		sessionStorage.removeItem("bulsuscholar_userId")
 		sessionStorage.removeItem("bulsuscholar_userType")
 		navigate("/", { replace: true })
@@ -7278,7 +7537,7 @@ export default function AdminDashboard() {
 	const handleAdminProfileSave = async (event) => {
 		event.preventDefault()
 		if (adminProfileSaving) return
-		const changedFields = Object.keys(DEFAULT_ADMIN_PROFILE).filter(
+		const changedFields = ["contactNumber"].filter(
 			(key) => JSON.stringify(adminProfile?.[key] ?? "") !== JSON.stringify(adminProfileForm?.[key] ?? ""),
 		)
 		if (changedFields.length === 0) {
@@ -7290,41 +7549,17 @@ export default function AdminDashboard() {
 			return
 		}
 		const cleanProfileForm = normalizeAdminProfileSettings(adminProfileForm)
-		const payload = {
-			...cleanProfileForm,
-			contactNumber: normalizeContactNumber(cleanProfileForm.contactNumber),
-			updatedAt: serverTimestamp(),
-			updatedBy: sessionStorage.getItem("bulsuscholar_userId") || "admin",
-		}
+		const payload = { ...cleanProfileForm, contactNumber: normalizeContactNumber(cleanProfileForm.contactNumber) }
 		setAdminProfileSaving(true)
 		try {
-			try {
-				await setDoc(doc(db, "adminSettings", "profile"), payload, { merge: true })
-			} catch (storageError) {
-				console.warn("Admin profile settings were saved locally because Supabase adminSettings is unavailable.", storageError)
-			}
+			await updateAdminContact(payload.contactNumber)
+			adminIdentityRef.current = { ...(adminIdentityRef.current || {}), contactNumber: payload.contactNumber }
 			localStorage.setItem("bulsuscholar_admin_profile", JSON.stringify(payload))
 			setAdminProfile(payload)
-			try {
-				await setDoc(doc(db, "systemLogs", `admin_profile_updated_${Date.now()}`), {
-					action: "admin_profile_updated",
-					type: "admin_profile_updated",
-					actorType: "admin",
-					actorId: sessionStorage.getItem("bulsuscholar_userId") || "admin",
-					target: "admin_profile",
-					message: `Admin profile/settings updated: ${changedFields.join(", ")}`,
-					notificationFallbackTable: "adminNotifications",
-					createdAt: serverTimestamp(),
-					read: false,
-					archived: false,
-				}, { merge: true })
-			} catch (logError) {
-				console.warn("Admin profile was saved, but the system log could not be written.", logError)
-			}
-			toast.success("Admin profile and system settings saved.")
+			toast.success("Administrator contact details saved.")
 		} catch (error) {
 			console.error("Unable to save admin profile settings.", error)
-			toast.error("Unable to save admin profile settings right now.")
+			toast.error("Unable to save administrator contact details right now.")
 		} finally {
 			setAdminProfileSaving(false)
 		}
@@ -7332,6 +7567,13 @@ export default function AdminDashboard() {
 
 	function createScholarshipPreviewConfig(rows, filterLabel, options = {}) {
 		const defaultColumns = ["Program Name", "Provider Type", "Total Slots", "Active Recipients", "Status"]
+		const defaultColumnDefinitions = [
+			{ key: "programName", label: "Program Name", weight: 2.2 },
+			{ key: "providerType", label: "Provider Type", weight: 1.5 },
+			{ key: "totalSlots", label: "Total Slots", weight: 0.8 },
+			{ key: "activeRecipients", label: "Active Recipients", weight: 0.9 },
+			{ key: "status", label: "Status", weight: 0.9 },
+		]
 		const datasetTitle = options.datasetTitle || "Scholarship Programs"
 		const defaultCsvRows = rows.map((row) => [
 			row.programName,
@@ -7357,95 +7599,61 @@ export default function AdminDashboard() {
 				},
 			],
 			columns: options.columns || defaultColumns,
+			columnDefinitions: options.columnDefinitions || (options.columns
+				? options.columns.map((label, index) => ({ key: `column_${index}`, label, weight: 1 }))
+				: defaultColumnDefinitions),
 			csvRows: options.csvRows || defaultCsvRows,
-			pdfRows: rows,
-			pdfColumns: options.columns || defaultColumns,
-			pdfBodyRows: options.csvRows || defaultCsvRows,
 		}
 	}
 
-	const buildTopStudentsPerGrantorReport = (reportGrantors = activeGrantorRows) => {
-		const reportGrantorRecords = reportGrantors
-			.map((reportGrantor) =>
-				grantorRows.find((grantor) => grantor.id === reportGrantor.id) || reportGrantor,
-			)
-			.filter((grantor) => grantor.archived !== true)
-
-		const eligibleStudents = studentProfiles.filter((student) => {
-			if (student.archived === true || student.sourceCollection !== "students") return false
-			if (normalizeScholarshipList(student.scholarships || []).length > 0) return false
-			if (getStudentScholarshipNames(student).length > 0) return false
-			return !grantorScholarsRaw.some((scholar) => {
-				if (scholar.archived === true) return false
-				const directMatchId =
-					grantorScholarStudentRecordLookup.get(
-						`${scholar.grantorId || scholar.providerType || "grantor"}::${scholar.id}`,
-					) || ""
-				return directMatchId === student.id || matchesGrantorScholarToStudent(student, scholar)
-			})
+	function createOfferingPreviewConfig(rows, filterLabel, datasetTitle = "Scholarship Offerings") {
+		const offeringRows = rows.map((row) => {
+			const hasTotalSlots = row.totalSlots !== null && row.totalSlots !== undefined && row.totalSlots !== "" && Number.isFinite(Number(row.totalSlots))
+			const hasRemainingSlots = row.remainingSlots !== null && row.remainingSlots !== undefined && row.remainingSlots !== "" && Number.isFinite(Number(row.remainingSlots))
+			const totalSlots = hasTotalSlots ? Number(row.totalSlots) : null
+			const remainingSlots = hasRemainingSlots ? Number(row.remainingSlots) : null
+			return {
+				scholarship: row.scholarship || getAnnouncementScholarshipTitle(row) || "-",
+				grantor: row.grantorName || "-",
+				minimumGwa: row.minimumGwa || "-",
+				totalSlots: totalSlots ?? "Not configured",
+				occupiedSlots: totalSlots !== null && remainingSlots !== null ? Math.max(0, totalSlots - remainingSlots) : "-",
+				remainingSlots: remainingSlots ?? "Not configured",
+				applications: Number(row.appliedCount || 0),
+				applicationWindow: row.applicationWindow || "-",
+				status: row.status || "-",
+				createdAt: row.createdAtLabel || "-",
+			}
 		})
-
-		const groupedPages = reportGrantorRecords
-			.map((grantor) => {
-				const minimumGwa = toNumericValue(grantor.minimumGwa ?? grantor.minGwa, 2.25)
-				const grantorProvince = String(grantor.province || "").trim().toLowerCase()
-				const grantorCity = String(grantor.city || "").trim().toLowerCase()
-				const rows = eligibleStudents
-					.map((student) => {
-						const gwa = toNumericValue(student.gwa ?? student.currentGwa ?? student.currentGWA, null)
-						const gwaEligible = gwa !== null && minimumGwa !== null ? gwa <= minimumGwa : false
-						const sameProvince = Boolean(
-							grantorProvince && String(student.province || "").trim().toLowerCase() === grantorProvince,
-						)
-						const sameCity = Boolean(
-							grantorCity && String(student.city || student.municipality || "").trim().toLowerCase() === grantorCity,
-						)
-						const score = Math.round(
-							(gwaEligible ? 70 : 0) +
-								(gwa !== null && minimumGwa !== null ? Math.max(0, (minimumGwa - gwa) * 10) : 0) +
-								(sameCity ? 18 : sameProvince ? 10 : 0) +
-								(student.corFile?.url || student.rogFile?.url || student.cogFile?.url ? 4 : 0),
-						)
-						return { student, gwa, score }
-					})
-					.sort((left, right) => {
-						if (left.score !== right.score) return right.score - left.score
-						if ((left.gwa ?? Number.POSITIVE_INFINITY) !== (right.gwa ?? Number.POSITIVE_INFINITY)) {
-							return (left.gwa ?? Number.POSITIVE_INFINITY) - (right.gwa ?? Number.POSITIVE_INFINITY)
-						}
-						return studentFullName(left.student).localeCompare(studentFullName(right.student))
-					})
-					.slice(0, 10)
-					.map(({ student, gwa, score }, index) => [
-						String(index + 1),
-						toDisplayStudentId(student.studentId || student.studentnumber || student.id),
-						student.fullName || studentFullName(student) || "-",
-						student.course || "-",
-						student.year || student.yearLevel || "-",
-						gwa ?? "-",
-						String(score),
-					])
-				return {
-					title: grantor.name || buildGrantorName(grantor) || grantor.id || "Grantor",
-					subtitle: "Top 10 eligible students ranked by the weighted recommendation score.",
-					headers: ["Rank", "Student ID", "Full Name", "Course", "Year Level", "GWA", "Score"],
-					rows,
-				}
-			})
-			.sort((left, right) => left.title.localeCompare(right.title))
-
-		return {
-			groupedPages,
-			columns: ["Grantor", "Rank", "Student ID", "Full Name", "Course", "Year Level", "GWA", "Score"],
-			csvRows: groupedPages.flatMap((group) => group.rows.map((row) => [group.title, ...row])),
-		}
+		return createScholarshipPreviewConfig(offeringRows, filterLabel, {
+			datasetTitle,
+			description: "Audit view of application announcements, capacity, demand, and application windows.",
+			stats: [
+				{ label: "Offerings", value: offeringRows.length },
+				{ label: "Applications", value: offeringRows.reduce((sum, row) => sum + row.applications, 0) },
+				{ label: "Configured Slots", value: offeringRows.reduce((sum, row) => sum + (Number(row.totalSlots) || 0), 0) },
+				{ label: "Remaining Slots", value: offeringRows.reduce((sum, row) => sum + (Number(row.remainingSlots) || 0), 0) },
+			],
+			columnDefinitions: [
+				{ key: "scholarship", label: "Scholarship", weight: 1.7 },
+				{ key: "grantor", label: "Grantor", weight: 1.5 },
+				{ key: "minimumGwa", label: "Minimum GWA", weight: 0.8 },
+				{ key: "totalSlots", label: "Total Slots", weight: 0.75 },
+				{ key: "occupiedSlots", label: "Occupied", weight: 0.7 },
+				{ key: "remainingSlots", label: "Remaining", weight: 0.75 },
+				{ key: "applications", label: "Applications", weight: 0.75 },
+				{ key: "applicationWindow", label: "Application Window", weight: 1.5 },
+				{ key: "status", label: "Status", weight: 0.85 },
+				{ key: "createdAt", label: "Created", weight: 0.9 },
+			],
+			csvRows: offeringRows,
+		})
 	}
 
 	const createGrantorPreviewConfig = (rows, filterLabel, view = "grantors") => {
 		const datasetTitle = view === "archived" ? "Archived Grantors" : "Grantors"
-		const topStudentsReport = buildTopStudentsPerGrantorReport(rows)
 		return {
-			key: "scholarships",
+			key: "grantors",
 			reportType: "grantors",
 			title: `Grantor Management Report - ${datasetTitle}`,
 			datasetTitle,
@@ -7458,33 +7666,32 @@ export default function AdminDashboard() {
 				{ label: "Archived", value: rows.filter((row) => row.status === "Archived").length },
 				{ label: "Password Requests", value: rows.filter((row) => row.status === "Password Requested").length },
 			],
-			columns: ["Grantor ID", "Name", "Email", "Organization", "Total Scholars", "Status", "Created"],
+			columnDefinitions: [
+				{ key: "id", label: "Grantor ID", weight: 1.1 },
+				{ key: "name", label: "Name", weight: 1.6 },
+				{ key: "email", label: "Email", weight: 1.7 },
+				{ key: "organization", label: "Organization", weight: 1.5 },
+				{ key: "activeScholarships", label: "Active Scholarships", weight: 0.9 },
+				{ key: "totalScholars", label: "Total Scholars", weight: 0.8 },
+				{ key: "status", label: "Account Status", weight: 1 },
+				{ key: "createdAt", label: "Created", weight: 1 },
+			],
 			csvRows: rows.map((row) => [
 				row.id,
 				row.name,
 				row.email,
 				row.organization,
+				String(row.activeScholarships || 0),
 				String(row.totalScholars),
 				row.status,
 				row.createdAt,
 			]),
-			pdfRows: rows,
-			pdfColumns: ["Grantor ID", "Name", "Email", "Organization", "Total Scholars", "Status", "Created"],
-			pdfBodyRows: rows.map((row) => [
-				row.id,
-				row.name,
-				row.email,
-				row.organization,
-				String(row.totalScholars),
-				row.status,
-				row.createdAt,
-			]),
-			topStudentsPerGrantor: topStudentsReport,
 		}
 	}
 
 	const createSoePreviewConfig = (rows, filterLabel, datasetTitle = "All Requests") => ({
-		key: "soe",
+		key: ADMIN_REPORT_TYPES.REQUIREMENTS,
+		reportType: ADMIN_REPORT_TYPES.REQUIREMENTS,
 		title: `Requirements Report - ${datasetTitle}`,
 		datasetTitle,
 		description: "Preview requirement request lifecycle data before exporting PDF or CSV.",
@@ -7496,18 +7703,42 @@ export default function AdminDashboard() {
 			{ label: "Approved", value: rows.filter((row) => String(row.reviewStateLabel).toLowerCase().includes("approved")).length },
 			{ label: "SOE Downloaded", value: rows.filter((row) => row.downloadStatusLabel === "Downloaded").length },
 		],
-		columns: ["Student ID", "Student Name", "Scholarship", "Requirements", "Status", "Request Date", "Next Eligible", "Review State"],
+		columnDefinitions: [
+			{ key: "applicationNumber", label: "Application No.", weight: 1.15 },
+			{ key: "requestNumber", label: "Request No.", weight: 1.1 },
+			{ key: "studentId", label: "Student ID", weight: 1 },
+			{ key: "fullName", label: "Student Name", weight: 1.45 },
+			{ key: "scholarshipName", label: "Scholarship", weight: 1.5 },
+			{ key: "grantor", label: "Grantor", weight: 1.35 },
+			{ key: "materials", label: "Materials", weight: 1.3 },
+			{ key: "status", label: "Request Status", weight: 1 },
+			{ key: "requestDate", label: "Request Date", weight: 1 },
+			{ key: "reviewState", label: "Review State", weight: 1 },
+			{ key: "reviewDate", label: "Review Date", weight: 1 },
+			{ key: "downloadState", label: "Download State", weight: 1.1 },
+			{ key: "downloadDate", label: "Download Date", weight: 1 },
+			{ key: "signingState", label: "Signing State", weight: 1.05 },
+			{ key: "signingDate", label: "Signing Date", weight: 1 },
+			{ key: "nextEligible", label: "Next Eligible", weight: 1 },
+		],
 		csvRows: rows.map((row) => [
+			row.applicationNumber || "-",
+			row.requestNumber || row.id || "-",
 			row.studentId || "-",
 			row.fullName || "-",
 			row.scholarshipName || "-",
+			row.grantor || "-",
 			row.visibleMaterialsSummary || row.requestedMaterialsSummary || "-",
 			row.status || "-",
 			formatDate(row.requestDate || row.timestamp || row.createdAt),
-			row.nextEligibleLabel || "-",
 			row.reviewStateLabel || "-",
+			formatDate(row.reviewDate),
+			row.downloadStatusLabel || "-",
+			formatDate(row.downloadDate),
+			row.signingStatusLabel || "Not Started",
+			formatDate(row.signingDate),
+			row.nextEligibleLabel || "-",
 		]),
-		pdfRows: rows,
 	})
 
 	const createCompliancePreviewConfig = (rows, filterLabel) => ({
@@ -7522,26 +7753,61 @@ export default function AdminDashboard() {
 			{ label: "High Risk", value: rows.filter((row) => Number(row.violationCount) >= COMPLIANCE_BLOCK_THRESHOLD).length },
 			{ label: "Flags", value: rows.filter((row) => row.complianceStatus === "Non-Compliant").length },
 		],
-		columns: ["Student ID", "Full Name", "Status", "Violations", "Last Reviewed"],
+		columnDefinitions: [
+			{ key: "studentId", label: "Student ID", weight: 1 },
+			{ key: "fullName", label: "Full Name", weight: 1.6 },
+			{ key: "scholarship", label: "Scholarship", weight: 1.5 },
+			{ key: "grantor", label: "Grantor", weight: 1.4 },
+			{ key: "status", label: "Compliance Status", weight: 1.15 },
+			{ key: "violations", label: "Violations", weight: 0.7 },
+			{ key: "blocked", label: "Blocked", weight: 0.7 },
+			{ key: "lastReviewed", label: "Last Reviewed", weight: 1 },
+		],
 		csvRows: rows.map((row) => [
 			row.studentId,
 			row.fullName,
+			row.scholarship,
+			row.grantor,
 			row.complianceStatus,
 			String(row.violationCount),
+			row.isBlocked ? "Yes" : "No",
 			row.lastReviewed,
 		]),
-		pdfRows: rows,
 	})
 
-	const openReportPreview = (config) => {
-		setReportPreview(config)
+	const openReportPreview = (config, options = {}) => {
+		if (!adminReportExportsEnabled) {
+			toast.error("Report exports are disabled in Admin Profile settings.")
+			return
+		}
+		const normalized = createCanonicalReport(config)
+		const origin = options.origin === "central" ? "central" : "section"
+		const filters = { ...DEFAULT_REPORT_FILTERS, ...(options.filters || {}) }
+		setReportPreview(normalized)
 		setReportExportFormat("pdf")
-		setExportTopStudentsPerGrantor(false)
+		setReportPreviewOrigin(origin)
+		setReportPreviewFilters(filters)
+		setReportPreviewDraftFilters(filters)
+		setReportPdfRetryKey(0)
+		setTablePages((current) => ({
+			...current,
+			[`report_preview_${normalized.key || "default"}`]: 1,
+		}))
 	}
 
 	const createStudentPreviewConfig = (filters, rows) => {
 		const reportRows = buildStudentReportRows(rows)
-		const columns = ["Student ID", "Full Name", "Course", "Year Level", "GWA", "Grantor", "Record Status"]
+		const columnDefinitions = [
+			{ key: "id", label: "Student ID", weight: 1 },
+			{ key: "fullName", label: "Full Name", weight: 1.6 },
+			{ key: "course", label: "Course", weight: 1.6 },
+			{ key: "yearLevel", label: "Year Level", weight: 0.75 },
+			{ key: "gwa", label: "GWA", weight: 0.65 },
+			{ key: "grantor", label: "Grantor", weight: 1.45 },
+			{ key: "activeApplications", label: "Active Applications", weight: 0.85 },
+			{ key: "currentStage", label: "Current Stage", weight: 1.25 },
+			{ key: "recordStatus", label: "Record Status", weight: 0.9 },
+		]
 		const csvRows = reportRows.map((row) => [
 			row.id || "-",
 			row.fullName || "-",
@@ -7549,9 +7815,11 @@ export default function AdminDashboard() {
 			row.yearLevel || "-",
 			row.gwa || "-",
 			row.grantor || "N/A",
+			String(row.activeApplications || 0),
+			row.currentStage || "Account Created",
 			row.recordStatus || "-",
 		])
-		const filterLabel = `View: ${filters.view || "students"} | Search: ${filters.search || "-"} | Course: ${filters.course || "All"} | Year: ${filters.year || "All"}`
+		const filterLabel = `View: ${filters.view || "students"} | Search: ${filters.search || "-"} | Course: ${filters.course || "All"} | Year: ${filters.year || "All"} | Grantor: ${filters.grantorLabel || filters.grantor || "All"}`
 		const datasetTitle = filters.view === "archived" ? "Archived Students" : filters.view === "all" ? "All Students" : "Students"
 		return {
 			key: "students",
@@ -7565,9 +7833,8 @@ export default function AdminDashboard() {
 				{ label: "Active", value: reportRows.filter((row) => row.recordStatus === "Active").length },
 				{ label: "Archived", value: reportRows.filter((row) => row.recordStatus === "Archived").length },
 			],
-			columns,
+			columnDefinitions,
 			csvRows,
-			pdfRows: reportRows,
 			reportRows,
 			filters,
 		}
@@ -7586,55 +7853,267 @@ export default function AdminDashboard() {
 		}
 	}
 
-	const exportPreviewReport = async () => {
-		if (!reportPreview || isReportExporting) return
+	const openTopStudentsReportPreview = async (filters = DEFAULT_REPORT_FILTERS, previewOptions = {}) => {
+		const selectedGrantorLabel = filters.grantor === "All"
+			? "All"
+			: buildGrantorName(grantorRows.find((grantor) => grantor.id === filters.grantor) || {}) || filters.grantor
+		const selectedOfferingLabel = filters.scholarship === "All"
+			? "All active offerings"
+			: allCreatedScholarshipRows.find((offering) => offering.id === filters.scholarship)?.scholarship || filters.scholarship
+		const activeOfferings = allCreatedScholarshipRows.filter((offering) => {
+			if (offering.status !== "Open" || offering.applicationEnabled === false) return false
+			if (offering.slotsConfigured !== true || Number(offering.remainingSlots || 0) < 1) return false
+			if (filters.grantor !== "All" && String(offering.grantorId || "") !== filters.grantor) return false
+			if (filters.scholarship !== "All" && String(offering.id || "") !== filters.scholarship) return false
+			return matchesReportSearch([
+				offering.scholarship,
+				offering.grantorName,
+			], filters.search)
+		})
+		const eligibleStudents = studentProfiles.filter((student) => {
+			if (student.archived === true || student.sourceCollection !== "students") return false
+			const accountStatus = String(student.status || student.accountStatus || "").trim().toLowerCase()
+			if (student.disabled === true || student.adminBlocked === true || ["inactive", "disabled", "frozen"].includes(accountStatus)) return false
+			if (student.soeComplianceBlocked === true || getStudentRestrictionState(student).scholarshipEligibility || hasScholarshipCommitment(student)) return false
+			return !activeGrantorScholars.some((scholar) => matchesGrantorScholarToStudent(student, scholar))
+		})
+		const offerings = activeOfferings.map((offering) => {
+			const grantor = grantorRows.find((row) => row.id === offering.grantorId) || {}
+			return {
+				id: offering.id,
+				announcementId: offering.id,
+				title: offering.scholarship,
+				scholarshipTitle: offering.scholarship,
+				grantorId: offering.grantorId,
+				grantorName: offering.grantorName,
+				minimumGwa: offering.minimumGwa,
+				applicationEnabled: true,
+				applyOpen: true,
+				applicationsBlocked: false,
+				rosterCount: Number(grantor.totalScholars || 0),
+				province: grantor.province || "",
+				city: grantor.city || "",
+				barangay: grantor.barangay || "",
+				profileImageUrl: grantor.profileImageUrl || grantor.logoUrl || "",
+			}
+		})
+		const students = eligibleStudents.map((student) => {
+			const history = [
+				...(Array.isArray(student.scholarships) ? student.scholarships : []),
+				...(Array.isArray(student.scholarshipApplicationHistory) ? student.scholarshipApplicationHistory : []),
+			]
+			const ineligibleOfferingIds = activeOfferings
+				.filter((offering) => {
+					const hasInvitation = Boolean(findMatchingPendingInvitation(student, offering))
+					const manuallyArchived = history.some((record) => isManualArchiveForGrantor(record, offering))
+					return (manuallyArchived && !hasInvitation) || Boolean(getGrantorRejectionCooldown(student, offering))
+				})
+				.map((offering) => offering.id)
+			return {
+				id: student.id,
+				studentId: student.studentId || student.id,
+				fullName: student.fullName || studentFullName(student),
+				course: student.course || "-",
+				yearLevel: student.year || student.yearLevel || "-",
+				gwa: student.gwa || student.currentGwa || student.currentGWA || null,
+				province: student.province || "",
+				city: student.city || student.municipality || "",
+				barangay: student.barangay || "",
+				ineligibleOfferingIds,
+			}
+		})
+		const result = await fetchTopStudentsReport(students, offerings)
+		const columnDefinitions = [
+			{ key: "scholarship", label: "Scholarship", weight: 1.45 },
+			{ key: "grantor", label: "Grantor", weight: 1.35 },
+			{ key: "rank", label: "Rank", weight: 0.45 },
+			{ key: "studentId", label: "Student ID", weight: 0.9 },
+			{ key: "fullName", label: "Full Name", weight: 1.45 },
+			{ key: "course", label: "Course", weight: 1.35 },
+			{ key: "yearLevel", label: "Year", weight: 0.55 },
+			{ key: "gwa", label: "GWA", weight: 0.55 },
+			{ key: "score", label: "Score", weight: 0.6 },
+			{ key: "reasons", label: "Eligibility Reasons", weight: 1.8 },
+		]
+		const csvRows = (result.groups || []).flatMap((group) =>
+			(group.rows || []).map((row) => [
+				group.scholarship,
+				group.grantor,
+				row.rank,
+				toDisplayStudentId(row.studentId),
+				row.fullName,
+				row.course,
+				row.yearLevel,
+				row.gwa,
+				row.score,
+				row.reasons,
+			]),
+		)
+		const groupedPages = (result.groups || []).map((group) => ({
+			title: `${group.scholarship} - ${group.grantor}`,
+			subtitle: "Top 10 eligible students using the scholarship recommendation score.",
+			columns: columnDefinitions,
+			rows: (group.rows || []).map((row) => [
+				group.scholarship,
+				group.grantor,
+				row.rank,
+				toDisplayStudentId(row.studentId),
+				row.fullName,
+				row.course,
+				row.yearLevel,
+				row.gwa,
+				row.score,
+				row.reasons,
+			]),
+		}))
+		openReportPreview({
+			key: ADMIN_REPORT_TYPES.TOP_STUDENTS,
+			reportType: ADMIN_REPORT_TYPES.TOP_STUDENTS,
+			title: "Top Students per Grantor Report",
+			datasetTitle: "Eligible Students by Scholarship Offering",
+			description: "Top eligible students ranked separately for each active scholarship offering.",
+			filterLabel: `Search: ${filters.search || "-"} | Grantor: ${selectedGrantorLabel} | Scholarship: ${selectedOfferingLabel}`,
+			filename: `top-students-per-grantor-${Date.now()}`,
+			stats: [
+				{ label: "Offerings", value: (result.groups || []).length },
+				{ label: "Ranked Students", value: csvRows.length },
+				{ label: "Eligible Pool", value: eligibleStudents.length },
+				{ label: "Algorithm", value: "Weighted" },
+			],
+			columnDefinitions,
+			csvRows,
+			groupedPages,
+		}, previewOptions)
+	}
+
+	const openReportCenterPreview = async (
+		reportType = ADMIN_REPORT_TYPES.STUDENTS,
+		requestedFilters = DEFAULT_REPORT_FILTERS,
+	) => {
+		if (isReportExporting) return
+		const filters = { ...DEFAULT_REPORT_FILTERS, ...(requestedFilters || {}) }
+		if (filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo) {
+			toast.error("The report start date cannot be after the end date.")
+			return
+		}
 		setIsReportExporting(true)
 		try {
-			const useTopStudentsPerGrantor =
-				reportPreview.reportType === "grantors" &&
-				exportTopStudentsPerGrantor &&
-				reportPreview.topStudentsPerGrantor?.groupedPages?.length > 0
-			if (reportPreview.key === "students") {
-				await downloadStudentReport(reportExportFormat, reportPreview.filters, reportPreview.reportRows || [])
-			} else if (reportExportFormat === "excel") {
-				await downloadExcelReport(
-					`${reportPreview.filename}.xlsx`,
-					reportPreview.title,
-					reportPreview.filterLabel,
-					useTopStudentsPerGrantor ? reportPreview.topStudentsPerGrantor.columns : reportPreview.columns,
-					useTopStudentsPerGrantor ? reportPreview.topStudentsPerGrantor.csvRows : reportPreview.csvRows,
-				)
-			} else if (reportPreview.key === "scholarships") {
-				await exportScholarshipsReportPdf(
-					reportPreview.pdfRows,
-					reportPreview.filterLabel,
-					logo2,
-					useTopStudentsPerGrantor ? ["Rank", "Student ID", "Full Name", "Course", "Year Level", "GWA", "Score"] : reportPreview.pdfColumns,
-					useTopStudentsPerGrantor ? [] : reportPreview.pdfBodyRows,
-					useTopStudentsPerGrantor ? "Top Students per Grantor Report" : reportPreview.title,
-					useTopStudentsPerGrantor
-						? {
-								filename: `top-students-per-grantor-${Date.now()}.pdf`,
-								subtitle: "Each page lists one grantor and their top 10 students ranked by weighted recommendation score.",
-								groupedPages: reportPreview.topStudentsPerGrantor.groupedPages,
-							}
-						: {},
-				)
-			} else if (reportPreview.key === "soe") {
-				await exportSoeRequestsReportPdf(reportPreview.pdfRows, reportPreview.filterLabel, logo2, {
-					title: reportPreview.title,
-					filename: `${reportPreview.filename}.pdf`,
+			const previewOptions = { origin: "central", filters }
+			const selectedGrantorLabel = filters.grantor === "All"
+				? "All"
+				: buildGrantorName(grantorRows.find((grantor) => grantor.id === filters.grantor) || {}) || filters.grantor
+			if (reportType === ADMIN_REPORT_TYPES.TOP_STUDENTS) {
+				await openTopStudentsReportPreview(filters, previewOptions)
+				return
+			}
+			if (reportType === ADMIN_REPORT_TYPES.STUDENTS) {
+				const reportById = new Map(allStudentReportRows.map((row) => [row.id, row]))
+				const rows = studentProfiles.filter((student) => {
+					const row = reportById.get(toDisplayStudentId(student.studentId || student.id))
+					if (!row) return false
+					return (
+						matchesReportSearch([row.id, row.fullName, row.course, row.grantor, row.currentStage], filters.search) &&
+						(filters.status === "All" || row.recordStatus === filters.status) &&
+						(filters.course === "All" || row.course === filters.course) &&
+						(filters.year === "All" || row.yearLevel === filters.year) &&
+						(filters.grantor === "All" || row.grantorIds.includes(filters.grantor) ||
+							(row.grantorIds.length === 0 && row.grantorNames.includes(selectedGrantorLabel.toLowerCase()))) &&
+						isWithinInclusiveDateRange(row.reportDate, filters.dateFrom, filters.dateTo)
+					)
 				})
-			} else if (reportPreview.key === "compliance") {
-				await exportComplianceReportPdf(reportPreview.pdfRows, reportPreview.filterLabel, logo2, {
-					title: reportPreview.title,
-					filename: `${reportPreview.filename}.pdf`,
-				})
+				openReportPreview(createStudentPreviewConfig({
+					view: filters.status === "Archived" ? "archived" : filters.status === "Active" ? "students" : "all",
+					search: filters.search,
+					course: filters.course,
+					year: filters.year,
+					grantor: filters.grantor,
+					grantorLabel: selectedGrantorLabel,
+				}, rows), previewOptions)
+				return
+			}
+			if (reportType === ADMIN_REPORT_TYPES.GRANTORS) {
+				const rows = grantorRows
+					.map((grantor) => ({
+						...buildGrantorReportRow(grantor),
+						activeScholarships: grantorAnnouncementsRaw.filter((announcement) =>
+							String(announcement.grantorId || "") === String(grantor.id || "") &&
+							isGrantorScholarshipApplicationAnnouncement(announcement) && !isAnnouncementArchived(announcement),
+						).length,
+					}))
+					.filter((row) =>
+						matchesReportSearch([row.id, row.name, row.email, row.organization], filters.search) &&
+						(filters.status === "All" || row.status === filters.status) &&
+						isWithinInclusiveDateRange(row.reportDate, filters.dateFrom, filters.dateTo),
+					)
+				openReportPreview(createGrantorPreviewConfig(rows, `Search: ${filters.search || "-"} | Status: ${filters.status} | Dates: ${filters.dateFrom || "Any"} to ${filters.dateTo || "Any"}`, filters.status === "Archived" ? "archived" : "grantors"), previewOptions)
+				return
+			}
+			if (reportType === ADMIN_REPORT_TYPES.SCHOLARSHIPS) {
+				const rows = allCreatedScholarshipRows.filter((row) =>
+					matchesReportSearch([row.scholarship, row.grantorName, row.status], filters.search) &&
+					(filters.status === "All" || row.status === filters.status) &&
+					(filters.grantor === "All" || String(row.grantorId || "") === filters.grantor) &&
+					overlapsInclusiveDateRange(
+						row.startDate || row.applicationStartDate || row.createdAt,
+						row.endDate || row.applicationEndDate || row.createdAt,
+						filters.dateFrom,
+						filters.dateTo,
+					),
+				)
+				openReportPreview(createOfferingPreviewConfig(rows, `Search: ${filters.search || "-"} | Status: ${filters.status} | Grantor: ${selectedGrantorLabel} | Application dates: ${filters.dateFrom || "Any"} to ${filters.dateTo || "Any"}`), previewOptions)
+				return
+			}
+			if (reportType === ADMIN_REPORT_TYPES.REQUIREMENTS) {
+				const rows = requirementReportRows.filter((row) =>
+					matchesReportSearch([row.applicationNumber, row.requestNumber, row.studentId, row.fullName, row.scholarshipName, row.grantor], filters.search) &&
+					(filters.status === "All" || row.reviewStateLabel === filters.status) &&
+						(filters.grantor === "All" || String(row.grantorId || "") === filters.grantor ||
+							(!row.grantorId && row.grantor.toLowerCase() === selectedGrantorLabel.toLowerCase())) &&
+					(filters.material === "All" || row.requestedMaterialsSummary.toLowerCase().includes(filters.material.toLowerCase())) &&
+					(filters.signing === "All" || row.signingStatusLabel === filters.signing) &&
+					isWithinInclusiveDateRange(row.reportDate, filters.dateFrom, filters.dateTo),
+				)
+				openReportPreview(createSoePreviewConfig(rows, `Search: ${filters.search || "-"} | Grantor: ${selectedGrantorLabel} | Review: ${filters.status} | Signing: ${filters.signing} | Material: ${filters.material} | Request dates: ${filters.dateFrom || "Any"} to ${filters.dateTo || "Any"}`, "Filtered Requests"), previewOptions)
+				return
+			}
+			const rows = complianceRows.filter((row) => {
+				const risk = row.violationCount >= COMPLIANCE_BLOCK_THRESHOLD ? "High Risk" : "Monitoring"
+				return matchesReportSearch([row.studentId, row.fullName, row.scholarship, row.grantor], filters.search) &&
+					(filters.status === "All" || row.complianceStatus === filters.status) &&
+					(filters.risk === "All" || risk === filters.risk) &&
+					isWithinInclusiveDateRange(row.reportDate, filters.dateFrom, filters.dateTo)
+			})
+			openReportPreview(createCompliancePreviewConfig(rows, `Search: ${filters.search || "-"} | Status: ${filters.status} | Risk: ${filters.risk} | Dates: ${filters.dateFrom || "Any"} to ${filters.dateTo || "Any"}`), previewOptions)
+		} catch (error) {
+			console.error("Unable to prepare report preview.", error)
+			toast.error(error?.message || "Unable to prepare the report preview.")
+		} finally {
+			setIsReportExporting(false)
+		}
+	}
+
+	const exportPreviewReport = async () => {
+		if (!reportPreview || isReportExporting) return
+		if (!adminReportExportsEnabled) {
+			toast.error("Report exports are disabled in Admin Profile settings.")
+			return
+		}
+		setIsReportExporting(true)
+		try {
+			if (reportExportFormat === "csv") downloadCanonicalReportCsv(reportPreview)
+			else {
+				if (!reportPdfPreview.blob) {
+					throw new Error(reportPdfPreview.error || "The PDF preview is not ready yet.")
+				}
+				downloadCanonicalReportPdfBlob(
+					reportPdfPreview.blob,
+					reportPdfPreview.filename || `${reportPreview.filename}.pdf`,
+				)
 			}
 			toast.success(`Report exported as ${reportExportFormat.toUpperCase()}.`)
 		} catch (error) {
 			console.error(error)
-			toast.error("Failed to export report.")
+			toast.error(error?.message || "Failed to export report.")
 		} finally {
 			setIsReportExporting(false)
 		}
@@ -7643,18 +8122,64 @@ export default function AdminDashboard() {
 	const renderReportPreview = () => {
 		if (!reportPreview) return null
 		const previewRows = reportPreviewTablePage.rows
-		const csvPreview = buildCsvPreview(reportPreview.columns, reportPreview.csvRows)
-		const isStudentReport = reportPreview.key === "students"
-		const isGrantorReport = reportPreview.reportType === "grantors"
-		const canExportTopStudentsPerGrantor = Boolean(isGrantorReport && reportPreview.topStudentsPerGrantor?.groupedPages?.length)
+		const reportType = reportPreview.reportType || reportPreview.key
+		const reportStatusOptions = {
+			[ADMIN_REPORT_TYPES.STUDENTS]: ["All", "Active", "Archived"],
+			[ADMIN_REPORT_TYPES.GRANTORS]: ["All", "Active", "Archived", "Password Requested"],
+			[ADMIN_REPORT_TYPES.SCHOLARSHIPS]: ["All", "Open", "Closed", "Archived"],
+			[ADMIN_REPORT_TYPES.REQUIREMENTS]: ["All", "Pending Approval", "Approved", "Rejected"],
+			[ADMIN_REPORT_TYPES.COMPLIANCE]: ["All", "Non-Compliant", "Monitoring"],
+			[ADMIN_REPORT_TYPES.TOP_STUDENTS]: [],
+		}[reportType] || []
+		const reportUsesGrantor = [
+			ADMIN_REPORT_TYPES.STUDENTS,
+			ADMIN_REPORT_TYPES.SCHOLARSHIPS,
+			ADMIN_REPORT_TYPES.REQUIREMENTS,
+			ADMIN_REPORT_TYPES.TOP_STUDENTS,
+		].includes(reportType)
+		const reportUsesDates = [
+			ADMIN_REPORT_TYPES.GRANTORS,
+			ADMIN_REPORT_TYPES.SCHOLARSHIPS,
+			ADMIN_REPORT_TYPES.REQUIREMENTS,
+			ADMIN_REPORT_TYPES.COMPLIANCE,
+		].includes(reportType)
+		const updatePreviewFilter = (key, value) => {
+			setReportPreviewDraftFilters((current) => {
+				const next = { ...current, [key]: value }
+				if (reportType === ADMIN_REPORT_TYPES.TOP_STUDENTS && key === "grantor") {
+					const selectedOffering = allCreatedScholarshipRows.find(
+						(row) => String(row.id || "") === String(current.scholarship || ""),
+					)
+					if (selectedOffering && value !== "All" && String(selectedOffering.grantorId || "") !== value) {
+						next.scholarship = "All"
+					}
+				}
+				return next
+			})
+		}
+		const reportFiltersChanged = Object.keys(DEFAULT_REPORT_FILTERS).some(
+			(key) => reportPreviewDraftFilters[key] !== reportPreviewFilters[key],
+		)
+		const reportFiltersAreDefault = Object.keys(DEFAULT_REPORT_FILTERS).every(
+			(key) => reportPreviewDraftFilters[key] === DEFAULT_REPORT_FILTERS[key] && reportPreviewFilters[key] === DEFAULT_REPORT_FILTERS[key],
+		)
+		const applyPreviewFilters = () => openReportCenterPreview(reportType, reportPreviewDraftFilters)
+		const resetPreviewFilters = () => {
+			const defaults = { ...DEFAULT_REPORT_FILTERS }
+			setReportPreviewDraftFilters(defaults)
+			openReportCenterPreview(reportType, defaults)
+		}
+		const pdfExportUnavailable = reportExportFormat === "pdf" && (
+			reportPdfPreview.loading || !reportPdfPreview.blob
+		)
 		return (
 			<div className="admin-detail-backdrop admin-detail-backdrop--report" role="presentation" onClick={closeReportPreview}>
 				<div className="admin-detail-shell admin-detail-shell--report admin-report-preview-modal-shell" onClick={(event) => event.stopPropagation()}>
-					<button type="button" className="admin-detail-close" onClick={closeReportPreview}>
+					<button type="button" className="admin-detail-close" onClick={closeReportPreview} aria-label="Close report preview">
 						<HiX />
 					</button>
 					<div
-						className="admin-detail-modal admin-detail-modal--report"
+						className={`admin-detail-modal admin-detail-modal--report ${reportPreviewOrigin === "central" ? "admin-detail-modal--report-filters" : ""}`}
 						role="dialog"
 						aria-modal="true"
 						aria-label={reportPreview.title}
@@ -7668,30 +8193,63 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta">{reportPreview.filterLabel}</p>
 							</div>
 							<div className="admin-report-preview-controls">
-								{isGrantorReport ? (
-									<label className="admin-report-option-check">
-										<input
-											type="checkbox"
-											checked={exportTopStudentsPerGrantor}
-											onChange={(event) => setExportTopStudentsPerGrantor(event.target.checked)}
-											disabled={!canExportTopStudentsPerGrantor}
-										/>
-										<span>Export Top Students per Grantor</span>
-									</label>
-								) : null}
 								<div className="admin-report-format-toggle">
 									<button type="button" className={reportExportFormat === "pdf" ? "active" : ""} onClick={() => setReportExportFormat("pdf")}>
 										PDF
 									</button>
-									<button type="button" className={reportExportFormat === "excel" ? "active" : ""} onClick={() => setReportExportFormat("excel")}>
-										Excel
+									<button type="button" className={reportExportFormat === "csv" ? "active" : ""} onClick={() => setReportExportFormat("csv")}>
+										CSV
 									</button>
 								</div>
-								<button type="button" className="admin-export-btn" disabled={isReportExporting} onClick={exportPreviewReport}>
+								<button type="button" className="admin-export-btn" disabled={isReportExporting || pdfExportUnavailable} onClick={exportPreviewReport}>
 									{isReportExporting ? "Exporting..." : `Export ${reportExportFormat.toUpperCase()}`}
 								</button>
 							</div>
 						</div>
+						{reportPreviewOrigin === "central" ? (
+							<section className="admin-report-preview-filters" aria-label="Preview filters">
+								<div className="admin-report-preview-filter-grid">
+									<label className="admin-report-preview-filter-search">
+										<span>Search</span>
+										<input type="search" value={reportPreviewDraftFilters.search} onChange={(event) => updatePreviewFilter("search", event.target.value)} placeholder="Search report records" />
+									</label>
+									{reportStatusOptions.length > 0 ? (
+										<label><span>Status</span><select value={reportPreviewDraftFilters.status} onChange={(event) => updatePreviewFilter("status", event.target.value)}>{reportStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+									) : null}
+									{reportUsesGrantor ? (
+										<label><span>Grantor</span><select value={reportPreviewDraftFilters.grantor} onChange={(event) => updatePreviewFilter("grantor", event.target.value)}><option value="All">All grantors</option>{grantorRows.slice().sort((left, right) => buildGrantorName(left).localeCompare(buildGrantorName(right))).map((grantor) => <option key={grantor.id} value={grantor.id}>{buildGrantorName(grantor) || grantor.id}</option>)}</select></label>
+									) : null}
+									{reportType === ADMIN_REPORT_TYPES.STUDENTS ? (
+										<>
+											<label><span>Course</span><select value={reportPreviewDraftFilters.course} onChange={(event) => updatePreviewFilter("course", event.target.value)}><option value="All">All courses</option>{studentsByCourse.map((course) => <option key={course} value={course}>{course}</option>)}</select></label>
+											<label><span>Year</span><select value={reportPreviewDraftFilters.year} onChange={(event) => updatePreviewFilter("year", event.target.value)}><option value="All">All years</option>{studentsByYear.map((year) => <option key={year} value={year}>{year}</option>)}</select></label>
+										</>
+									) : null}
+									{reportType === ADMIN_REPORT_TYPES.REQUIREMENTS ? (
+										<>
+											<label><span>Material</span><select value={reportPreviewDraftFilters.material} onChange={(event) => updatePreviewFilter("material", event.target.value)}><option value="All">All materials</option><option value="SOE">SOE</option><option value="Application Form">Application Form</option></select></label>
+											<label><span>Signing</span><select value={reportPreviewDraftFilters.signing} onChange={(event) => updatePreviewFilter("signing", event.target.value)}><option value="All">All signing states</option><option value="Not Started">Not Started</option><option value="Pending Signature">Pending Signature</option><option value="Signed">Signed</option><option value="Rejected">Rejected</option></select></label>
+										</>
+									) : null}
+									{reportType === ADMIN_REPORT_TYPES.COMPLIANCE ? (
+										<label><span>Risk</span><select value={reportPreviewDraftFilters.risk} onChange={(event) => updatePreviewFilter("risk", event.target.value)}><option value="All">All risk levels</option><option value="High Risk">High Risk</option><option value="Monitoring">Monitoring</option></select></label>
+									) : null}
+									{reportType === ADMIN_REPORT_TYPES.TOP_STUDENTS ? (
+										<label><span>Scholarship</span><select value={reportPreviewDraftFilters.scholarship} onChange={(event) => updatePreviewFilter("scholarship", event.target.value)}><option value="All">All active offerings</option>{allCreatedScholarshipRows.filter((row) => row.status === "Open" && (reportPreviewDraftFilters.grantor === "All" || String(row.grantorId || "") === reportPreviewDraftFilters.grantor)).map((row) => <option key={row.id} value={row.id}>{row.scholarship} - {row.grantorName}</option>)}</select></label>
+									) : null}
+									{reportUsesDates ? (
+										<>
+											<label><span>Date from</span><input type="date" value={reportPreviewDraftFilters.dateFrom} onChange={(event) => updatePreviewFilter("dateFrom", event.target.value)} /></label>
+											<label><span>Date to</span><input type="date" value={reportPreviewDraftFilters.dateTo} onChange={(event) => updatePreviewFilter("dateTo", event.target.value)} /></label>
+										</>
+									) : null}
+								</div>
+								<div className="admin-report-preview-filter-actions">
+									<button type="button" className="admin-secondary-btn" disabled={isReportExporting || reportFiltersAreDefault} onClick={resetPreviewFilters}><HiOutlineRefresh /> Reset to All</button>
+									<button type="button" className="admin-export-btn" disabled={isReportExporting || !reportFiltersChanged} onClick={applyPreviewFilters}><HiOutlineEye /> {isReportExporting ? "Applying..." : "Apply Filters"}</button>
+								</div>
+							</section>
+						) : null}
 						<div className="admin-report-preview-stats">
 							{reportPreview.stats.map((stat) => (
 								<article key={stat.label} className="admin-report-stat">
@@ -7701,54 +8259,70 @@ export default function AdminDashboard() {
 							))}
 						</div>
 						<div className="admin-report-preview-body">
-							<div className="admin-report-preview-shell">
-								<div className="admin-report-preview-toolbar">
-									<span>Live Preview</span>
+							{reportExportFormat === "pdf" ? (
+								<div className="admin-report-pdf-preview">
+									<div className="admin-report-preview-toolbar">
+										<span>PDF Preview</span>
+										<small>{reportPreview.csvRows.length} matching rows</small>
+									</div>
+									{reportPdfPreview.loading ? (
+										<div className="admin-report-preview-state"><span className="admin-loading-spinner" aria-hidden /><strong>Generating PDF preview...</strong><p>This may take a moment for large reports.</p></div>
+									) : reportPdfPreview.error ? (
+										<div className="admin-report-preview-state admin-report-preview-state--error"><HiOutlineExclamation aria-hidden /><strong>PDF preview unavailable</strong><p>{reportPdfPreview.error}</p><button type="button" className="admin-secondary-btn" onClick={() => setReportPdfRetryKey((value) => value + 1)}><HiOutlineRefresh /> Retry</button></div>
+									) : reportPdfPreview.url ? (
+										<object className="admin-report-pdf-object" data={`${reportPdfPreview.url}#view=FitH`} type="application/pdf" aria-label={`${reportPreview.title} PDF preview`}>
+											<div className="admin-report-preview-state"><strong>Embedded PDF viewing is unavailable.</strong><a className="admin-secondary-btn" href={reportPdfPreview.url} target="_blank" rel="noreferrer">Open PDF Preview</a></div>
+										</object>
+									) : null}
+									{reportPdfPreview.url ? <a className="admin-report-open-pdf" href={reportPdfPreview.url} target="_blank" rel="noreferrer"><HiOutlineExternalLink /> Open PDF Preview</a> : null}
 								</div>
-								{reportExportFormat === "pdf" || isStudentReport ? (
-									<>
-										<div className="admin-table-wrap admin-report-table-scroll">
-											<table className="admin-management-table admin-management-table--preview">
-												<thead>
-													<tr>
-														{reportPreview.columns.map((column) => (
-															<th key={column}>{column}</th>
+							) : (
+								<div className="admin-report-preview-shell">
+									<div className="admin-report-preview-toolbar">
+										<span>CSV Data Preview</span>
+									</div>
+									<div className="admin-table-wrap admin-report-table-scroll">
+									<table
+										className="admin-management-table admin-management-table--preview"
+										style={{ "--report-table-min-width": `${Math.max(1080, reportPreview.columns.length * 135)}px` }}
+									>
+										<thead>
+											<tr>
+												{reportPreview.columns.map((column) => (
+													<th key={column}>{column}</th>
+												))}
+											</tr>
+										</thead>
+										<tbody>
+											{previewRows.length === 0 ? (
+												<EmptyStateRow colSpan={reportPreview.columns.length} />
+											) : (
+												previewRows.map((row, rowIndex) => (
+													<tr key={`${reportPreview.key}_${rowIndex}`}>
+														{row.map((value, valueIndex) => (
+															<td key={`${reportPreview.key}_${rowIndex}_${valueIndex}`}>{value}</td>
 														))}
 													</tr>
-												</thead>
-												<tbody>
-													{previewRows.length === 0 ? (
-														<EmptyStateRow colSpan={reportPreview.columns.length} />
-													) : (
-														previewRows.map((row, rowIndex) => (
-															<tr key={`${reportPreview.key}_${rowIndex}`}>
-																{row.map((value, valueIndex) => (
-																	<td key={`${reportPreview.key}_${rowIndex}_${valueIndex}`}>{value}</td>
-																))}
-															</tr>
-														))
-													)}
-												</tbody>
-											</table>
-										</div>
-										{reportPreviewTablePage.totalPages > 1 ? (
-											<TablePagination
-												currentPage={reportPreviewTablePage.currentPage}
-												totalItems={reportPreview.csvRows.length}
-												onPageChange={(page) => setTablePage(`report_preview_${reportPreview.key || "default"}`, page)}
-											/>
-										) : (
-											<div className="admin-report-preview-footer">
-												<span>
-													Showing {reportPreviewTablePage.startIndex}-{reportPreviewTablePage.endIndex} of {reportPreview.csvRows.length} rows | 25 per page
-												</span>
-											</div>
-										)}
-									</>
-								) : (
-									<pre className="admin-report-preview-code">{csvPreview}</pre>
-								)}
-							</div>
+												))
+											)}
+										</tbody>
+									</table>
+									</div>
+									{reportPreviewTablePage.totalPages > 1 ? (
+									<TablePagination
+										currentPage={reportPreviewTablePage.currentPage}
+										totalItems={reportPreview.csvRows.length}
+										onPageChange={(page) => setTablePage(`report_preview_${reportPreview.key || "default"}`, page)}
+									/>
+									) : (
+									<div className="admin-report-preview-footer">
+										<span>
+											Showing {reportPreviewTablePage.startIndex}-{reportPreviewTablePage.endIndex} of {reportPreview.csvRows.length} rows | 25 per page
+										</span>
+									</div>
+									)}
+								</div>
+							)}
 						</div>
 					</div>
 				</div>
@@ -7757,6 +8331,9 @@ export default function AdminDashboard() {
 	}
 
 	const renderSection = () => {
+		if (adminPermissions && !["dashboard", "inbox", "notifications", "profile"].includes(activeSection) && !adminPermissions.includes(activeSection)) {
+			return <NotFoundPage />
+		}
 		if (activeSection === "inbox") {
 			return (
 				<section className="admin-inbox-page admin-inbox-overview">
@@ -7778,14 +8355,6 @@ export default function AdminDashboard() {
 									<span className="admin-inbox-item-copy"><strong>{toAdminNotificationTitle(notification)}</strong><small>{toAdminNotificationMessage(notification)}</small></span>
 									<span className="admin-inbox-item-meta"><time>{formatRelativeTime(notification.createdAt || notification.created_at)}</time>{notification.read !== true ? <i aria-label="Unread" /> : <HiOutlineCheckCircle aria-label="Read" />}</span>
 								</button>
-							))}
-						</div>
-					</section>
-					<section className="admin-inbox-preview-section admin-inbox-preview-section--logs">
-						<header><div><HiOutlineDocumentText /><span><strong>System Logs</strong><small>Backend activity records</small></span></div><Link to="/admin/logs">See all</Link></header>
-						<div className="admin-log-preview-list">
-							{systemLogs.length === 0 ? <div className="admin-inbox-empty admin-inbox-empty--compact"><HiOutlineDocumentText /><strong>No backend logs yet.</strong></div> : systemLogs.slice(0, 7).map((log) => (
-								<div className="admin-log-preview-row" key={log.id}><span>{toAdminNotificationTitle(log)}</span><small>{log.actorType || "system"}</small><time>{formatRelativeTime(log.createdAt || log.created_at)}</time></div>
 							))}
 						</div>
 					</section>
@@ -7819,24 +8388,6 @@ export default function AdminDashboard() {
 			)
 		}
 
-		if (activeSection === "logs") {
-			return (
-				<section className="admin-logs-page">
-					<header className="admin-inbox-head"><div><span className="admin-page-eyebrow">Backend Records</span><h2>System Logs</h2><p>Read-only activity generated by backend services.</p></div><Link className="admin-page-back-link" to="/admin/inbox">Back to inbox</Link></header>
-					<div className="admin-log-filters">
-						<label className="admin-mail-search"><HiOutlineSearch /><input value={logSearch} onChange={(event) => setLogSearch(event.target.value)} placeholder="Search action, actor, target, or details" /></label>
-						<select value={logTypeFilter} onChange={(event) => setLogTypeFilter(event.target.value)} aria-label="Filter logs by type"><option value="all">All types</option>{logTypeOptions.map((type) => <option key={type} value={type}>{type.replace(/[_-]+/g, " ")}</option>)}</select>
-						<select value={logActorFilter} onChange={(event) => setLogActorFilter(event.target.value)} aria-label="Filter logs by actor"><option value="all">All actors</option>{logActorOptions.map((actor) => <option key={actor} value={actor}>{actor}</option>)}</select>
-						<label className="admin-log-date"><span>From</span><input type="date" value={logDateFrom} onChange={(event) => setLogDateFrom(event.target.value)} /></label>
-						<label className="admin-log-date"><span>To</span><input type="date" value={logDateTo} min={logDateFrom || undefined} onChange={(event) => setLogDateTo(event.target.value)} /></label>
-						<button type="button" onClick={() => { setLogSearch(""); setLogTypeFilter("all"); setLogActorFilter("all"); setLogDateFrom(""); setLogDateTo("") }}><HiOutlineRefresh /> Reset</button>
-					</div>
-					<div className="admin-log-table-wrap"><table className="admin-log-table"><thead><tr><th>Date</th><th>Type</th><th>Actor</th><th>Actor ID</th><th>Target</th><th>Details</th></tr></thead><tbody>{visibleSystemLogs.length === 0 ? <tr><td colSpan="6">No system logs matched the selected filters.</td></tr> : visibleSystemLogs.map((log) => <tr key={log.id}><td>{formatDate(log.createdAt || log.created_at)}</td><td><span>{String(log.action || log.type || "system").replace(/[_-]+/g, " ")}</span></td><td>{log.actorType || "system"}</td><td>{log.actorId || "-"}</td><td>{log.target || "-"}</td><td>{toAdminNotificationMessage(log)}</td></tr>)}</tbody></table></div>
-					<p className="admin-log-result-count">Showing {visibleSystemLogs.length} of {systemLogs.length} backend logs</p>
-				</section>
-			)
-		}
-
 		if (activeSection === "profile") {
 			return (
 				<section className="admin-profile-page">
@@ -7846,7 +8397,7 @@ export default function AdminDashboard() {
 							<div>
 								<span className="admin-page-eyebrow">Account Settings</span>
 								<h2>Admin Profile</h2>
-								<p>Manage administrator identity, support details, and system-level portal settings.</p>
+								<p>Review your root-managed account identity and update your contact number.</p>
 							</div>
 						</div>
 					</header>
@@ -7871,40 +8422,11 @@ export default function AdminDashboard() {
 									</div>
 								</div>
 								<div className="admin-profile-form-grid">
-									<label><span>Display Name</span><input value={adminProfileForm.displayName} onChange={(event) => updateAdminProfileField("displayName", event.target.value)} placeholder="Administrator" /></label>
-									<label><span>Email Address</span><input type="email" value={adminProfileForm.email} onChange={(event) => updateAdminProfileField("email", event.target.value)} placeholder="admin@bulsuscholar.local" /></label>
+									<label><span>Display Name</span><input value={adminProfileForm.displayName} disabled /></label>
+									<label><span>Email Address</span><input type="email" value={adminProfileForm.email} disabled /></label>
 									<label><span>Contact Number</span><input value={adminProfileForm.contactNumber} onChange={(event) => updateAdminProfileField("contactNumber", sanitizeContactNumber(event.target.value))} placeholder="09XXXXXXXXX or 9XXXXXXXXX" inputMode="numeric" maxLength={11} /></label>
-									<label><span>Office Name</span><input value={adminProfileForm.officeName} onChange={(event) => updateAdminProfileField("officeName", event.target.value)} placeholder="Office of the Scholarship" /></label>
-									<label><span>Support Email</span><input type="email" value={adminProfileForm.supportEmail} onChange={(event) => updateAdminProfileField("supportEmail", event.target.value)} placeholder="scholarships@bulsu.edu.ph" /></label>
-								</div>
-							</section>
-
-							<section className="admin-profile-section">
-								<div className="admin-profile-section-head">
-									<HiOutlineCog />
-									<div>
-										<h3>System Settings</h3>
-										<p>Controls for portal availability, account review, and exports.</p>
-									</div>
-								</div>
-								<div className="admin-profile-toggle-grid">
-									{[
-										["allowStudentSignup", "Student Signup", "Allow students to create accounts."],
-										["allowGrantorAnnouncements", "Grantor Announcements", "Allow grantors to publish announcements."],
-										["reportExportEnabled", "Report Exports", "Allow PDF/Excel report generation."],
-										["maintenanceMode", "Maintenance Mode", "Mark the portal as under maintenance."],
-									].map(([key, title, copy]) => (
-										<button
-											key={key}
-											type="button"
-											className={`admin-profile-toggle ${adminProfileForm[key] ? "active" : ""}`}
-											onClick={() => updateAdminProfileField(key, !adminProfileForm[key])}
-											aria-pressed={adminProfileForm[key]}
-										>
-											<i />
-											<span><strong>{title}</strong><small>{copy}</small></span>
-										</button>
-									))}
+									<label><span>Office Name</span><input value={adminProfileForm.officeName} disabled /></label>
+									<label><span>Support Email</span><input type="email" value={adminProfileForm.supportEmail} disabled /></label>
 								</div>
 							</section>
 
@@ -8077,7 +8599,7 @@ export default function AdminDashboard() {
 							<button
 								type="button"
 								className="admin-student-report-btn"
-								disabled={isReportExporting}
+								disabled={isReportExporting || !adminReportExportsEnabled}
 								onClick={() => openStudentReportPreview({ view: studentViewTab, search: studentSearch, course: studentCourse, year: studentYear }, filteredStudents)}
 							>
 								<HiOutlineDocumentText /> {isReportExporting ? "Preparing..." : "Generate Report"}
@@ -8306,6 +8828,7 @@ export default function AdminDashboard() {
 							<button
 								type="button"
 								className="admin-student-report-btn"
+								disabled={!adminReportExportsEnabled}
 								onClick={() => openReportPreview(createGrantorPreviewConfig(grantorReportRows, `View: ${grantorTab} | Search: ${grantorSearch || "-"}`, grantorTab))}
 							>
 								<HiOutlineDocumentText /> Generate Report
@@ -8483,6 +9006,7 @@ export default function AdminDashboard() {
 							<button
 								type="button"
 								className="admin-scholarship-head-action admin-scholarship-head-action--secondary"
+								disabled={!adminReportExportsEnabled}
 								onClick={() => openReportPreview(scholarshipSectionPreviewConfig)}
 							>
 								<HiOutlineEye /> Generate
@@ -9041,6 +9565,7 @@ export default function AdminDashboard() {
 							<button
 								type="button"
 								className="admin-export-btn admin-export-btn--mini"
+								disabled={!adminReportExportsEnabled}
 								onClick={() => openReportPreview(createSoePreviewConfig(
 									visibleRows,
 									`Tab: ${soeTab} | Search: ${soeSearch || "-"} | Chart Range: ${soeTrendRange}`,
@@ -9375,9 +9900,9 @@ export default function AdminDashboard() {
 
 		if (activeSection === "reports") {
 			const scholarshipRecipientTotal = scholarshipRows.reduce((sum, row) => sum + Number(row.activeRecipients || 0), 0)
-			const pendingMaterialRequests = soeRows.filter((row) => row.reviewState === "incoming").length
+			const pendingMaterialRequests = requirementReportRows.filter((row) => row.reviewStateLabel === "Pending Approval").length
 			const highRiskComplianceRows = complianceRows.filter((row) => Number(row.violationCount) >= COMPLIANCE_BLOCK_THRESHOLD).length
-			const totalReportRows = allStudentReportRows.length + scholarshipRows.length + soeRows.length + complianceRows.length
+			const totalReportRows = allStudentReportRows.length + grantorRows.length + allCreatedScholarshipRows.length + requirementReportRows.length + complianceRows.length
 			return (
 				<section className="admin-management-panel admin-report-suite">
 					<div className="admin-panel-head">
@@ -9406,8 +9931,8 @@ export default function AdminDashboard() {
 						<div className="admin-report-kpi-grid">
 							<article className="admin-report-kpi">
 								<span>Datasets</span>
-								<strong>4</strong>
-								<p>Students, scholarships, materials, and compliance.</p>
+								<strong>6</strong>
+								<p>Students, grantors, scholarships, requirements, compliance, and rankings.</p>
 							</article>
 							<article className="admin-report-kpi">
 								<span>Total Rows</span>
@@ -9451,14 +9976,21 @@ export default function AdminDashboard() {
 								</div>
 								<div className="admin-report-card__chips">
 									<span>PDF</span>
-									<span>Excel</span>
+									<span>CSV</span>
 									<span>Access and lifecycle</span>
 								</div>
 								<div className="admin-report-card-actions">
-									<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => openStudentReportPreview({ view: "all", search: "", course: "All", year: "All" }, studentProfiles)}>
+									<button type="button" className="admin-export-btn admin-export-btn--mini" disabled={isReportExporting || !adminReportExportsEnabled} onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.STUDENTS, { ...DEFAULT_REPORT_FILTERS })}>
 										<HiOutlineEye /> Generate Preview
 									</button>
 								</div>
+							</article>
+							<article className="admin-report-card admin-report-card--grantors">
+								<div className="admin-report-card__head"><div className="admin-report-card__icon"><HiOutlineUserGroup /></div><div><span className="admin-report-card__eyebrow">Grantor Management</span><h3>Grantors</h3></div></div>
+								<p>Account status, active scholarship offerings, and scholar coverage by grantor.</p>
+								<div className="admin-report-card__meta"><div className="admin-report-card__metric"><strong>{grantorRows.length}</strong><span>Grantors</span></div><div className="admin-report-card__metric"><strong>{grantorTabCounts.archived}</strong><span>Archived</span></div></div>
+								<div className="admin-report-card__chips"><span>Account audit</span><span>PDF</span><span>CSV</span></div>
+								<div className="admin-report-card-actions"><button type="button" className="admin-export-btn admin-export-btn--mini" disabled={isReportExporting || !adminReportExportsEnabled} onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.GRANTORS, { ...DEFAULT_REPORT_FILTERS })}><HiOutlineEye /> Generate Preview</button></div>
 							</article>
 							<article className="admin-report-card admin-report-card--scholarships">
 								<div className="admin-report-card__head">
@@ -9487,7 +10019,7 @@ export default function AdminDashboard() {
 									<span>CSV</span>
 								</div>
 								<div className="admin-report-card-actions">
-									<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => openReportPreview(createScholarshipPreviewConfig(scholarshipRows.map((row) => toScholarshipReportRow(row)), "All scholarship programs", { datasetTitle: "All Scholarships" }))}>
+									<button type="button" className="admin-export-btn admin-export-btn--mini" disabled={isReportExporting || !adminReportExportsEnabled} onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.SCHOLARSHIPS, { ...DEFAULT_REPORT_FILTERS })}>
 										<HiOutlineEye /> Generate Preview
 									</button>
 								</div>
@@ -9505,7 +10037,7 @@ export default function AdminDashboard() {
 								<p>Requested and reviewed scholarship requirements, including request state and SOE download handling.</p>
 								<div className="admin-report-card__meta">
 									<div className="admin-report-card__metric">
-										<strong>{soeRows.length}</strong>
+										<strong>{requirementReportRows.length}</strong>
 										<span>Requests</span>
 									</div>
 									<div className="admin-report-card__metric">
@@ -9519,7 +10051,7 @@ export default function AdminDashboard() {
 									<span>PDF and CSV</span>
 								</div>
 								<div className="admin-report-card-actions">
-									<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => openReportPreview(createSoePreviewConfig(soeRows.map((row) => toSoeReportRow(row)), "All material requests", "All Requests"))}>
+									<button type="button" className="admin-export-btn admin-export-btn--mini" disabled={isReportExporting || !adminReportExportsEnabled} onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.REQUIREMENTS, { ...DEFAULT_REPORT_FILTERS })}>
 										<HiOutlineEye /> Generate Preview
 									</button>
 								</div>
@@ -9550,10 +10082,17 @@ export default function AdminDashboard() {
 									<span>Audit ready</span>
 								</div>
 								<div className="admin-report-card-actions">
-									<button type="button" className="admin-export-btn admin-export-btn--mini" onClick={() => openReportPreview(createCompliancePreviewConfig(complianceRows, "Compliance monitoring"))}>
+									<button type="button" className="admin-export-btn admin-export-btn--mini" disabled={isReportExporting || !adminReportExportsEnabled} onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.COMPLIANCE, { ...DEFAULT_REPORT_FILTERS })}>
 										<HiOutlineEye /> Generate Preview
 									</button>
 								</div>
+							</article>
+							<article className="admin-report-card admin-report-card--rankings">
+								<div className="admin-report-card__head"><div className="admin-report-card__icon"><HiOutlineChartBar /></div><div><span className="admin-report-card__eyebrow">Eligibility Ranking</span><h3>Top Students per Grantor</h3></div></div>
+								<p>Top ten eligible students ranked independently for every active scholarship offering.</p>
+								<div className="admin-report-card__meta"><div className="admin-report-card__metric"><strong>{allCreatedScholarshipRows.filter((row) => row.status === "Open").length}</strong><span>Offerings</span></div><div className="admin-report-card__metric"><strong>10</strong><span>Per offering</span></div></div>
+								<div className="admin-report-card__chips"><span>Eligibility score</span><span>PDF</span><span>CSV</span></div>
+								<div className="admin-report-card-actions"><button type="button" className="admin-export-btn admin-export-btn--mini" disabled={isReportExporting || !adminReportExportsEnabled} onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.TOP_STUDENTS, { ...DEFAULT_REPORT_FILTERS })}><HiOutlineEye /> Generate Preview</button></div>
 							</article>
 						</div>
 						<aside className="admin-report-aside">
@@ -9593,11 +10132,11 @@ export default function AdminDashboard() {
 										<span>Student profiles synced</span>
 									</div>
 									<div>
-										<strong>{scholarshipRows.length}</strong>
+									<strong>{allCreatedScholarshipRows.length}</strong>
 										<span>Scholarship programs tracked</span>
 									</div>
 									<div>
-										<strong>{soeRows.length}</strong>
+									<strong>{requirementReportRows.length}</strong>
 										<span>Requirement requests indexed</span>
 									</div>
 									<div>
@@ -9786,14 +10325,14 @@ export default function AdminDashboard() {
 		<div className={`admin-portal ${theme === "dark" ? "admin-portal--dark" : ""}`}>
 			<header className="admin-topbar">
 				<Link to="/admin/dashboard" className="admin-topbar-brand" aria-label="Go to admin dashboard">
-					<img src={logo2} alt="" />
+					<img src={brandLogo} alt="" />
 					<div>
-						<strong>BulsuScholar</strong>
+						<strong>{productName}</strong>
 						<span>Admin Portal</span>
 					</div>
 				</Link>
 				<div className="admin-topbar-actions">
-					<Link to="/admin/inbox" className={`admin-topbar-inbox ${["inbox", "notifications", "logs"].includes(activeSection) ? "active" : ""}`} aria-label="Open administrator inbox">
+					<Link to="/admin/inbox" className={`admin-topbar-inbox ${["inbox", "notifications"].includes(activeSection) ? "active" : ""}`} aria-label="Open administrator inbox">
 						<HiOutlineInbox />
 						{unreadAdminNotifications.length > 0 ? <span>{unreadAdminNotifications.length > 99 ? "99+" : unreadAdminNotifications.length}</span> : null}
 					</Link>
@@ -9806,7 +10345,7 @@ export default function AdminDashboard() {
 							<div className="admin-account-menu" role="menu">
 								<div className="admin-account-card">
 									<span className="admin-topbar-avatar admin-topbar-avatar--large">AD</span>
-									<div><strong>Administrator</strong><p>System Manager</p></div>
+									<div><strong>{adminProfile.displayName || "Administrator"}</strong><p>{adminProfile.email || "Administrator account"}</p></div>
 								</div>
 								<nav className="admin-account-links">
 									<Link to="/admin/dashboard" onClick={() => setAdminMenuOpen(false)}><HiOutlineHome /> Dashboard</Link>
@@ -9829,7 +10368,7 @@ export default function AdminDashboard() {
 			<aside className="admin-sidebar">
 				<span className="admin-sidebar-label">Workspace</span>
 				<nav className="admin-sidebar-nav">
-					{ADMIN_SECTIONS.filter((section) => !section.topbarOnly).map((section) => {
+					{ADMIN_SECTIONS.filter((section) => !section.topbarOnly && (!adminPermissions || section.id === "dashboard" || adminPermissions.includes(section.id))).map((section) => {
 						const Icon = section.icon
 						const isActive = activeSection === section.id
 						return (
@@ -9864,7 +10403,17 @@ export default function AdminDashboard() {
 				</div>
 			) : null}
 			{showCreateAdminAnnouncementModal ? (
-				<div className="admin-detail-backdrop admin-announcement-modal-backdrop" role="presentation" onClick={closeCreateAdminAnnouncementModal}>
+				<div
+					className="admin-detail-backdrop admin-announcement-modal-backdrop"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, closeCreateAdminAnnouncementModal, {
+						hasUnsavedChanges:
+							Boolean(announcementTitle.trim()) ||
+							Boolean(announcementDescription.trim()) ||
+							announcementImageFiles.length > 0 ||
+							Boolean(announcementStartDate || announcementEndDate),
+					})}
+				>
 					<section className="admin-announcement-create-modal" role="dialog" aria-modal="true" aria-label="Create announcement" onClick={(event) => event.stopPropagation()}>
 						<header>
 							<div className="admin-scholar-import-head-icon" aria-hidden="true"><HiOutlineCloudUpload /></div>
@@ -9998,7 +10547,13 @@ export default function AdminDashboard() {
 			) : null}
 
 			{showAnnouncementSchedule ? (
-				<div className="admin-detail-backdrop admin-announcement-schedule-backdrop" role="presentation" onClick={cancelAnnouncementSchedule}>
+				<div
+					className="admin-detail-backdrop admin-announcement-schedule-backdrop"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, cancelAnnouncementSchedule, {
+						hasUnsavedChanges: Boolean(announcementDraftStartDate || announcementDraftEndDate),
+					})}
+				>
 					<div className="admin-detail-modal admin-detail-modal--calendar" role="dialog" aria-modal="true" aria-label="Schedule announcement" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="admin-detail-close" onClick={cancelAnnouncementSchedule}>
 							<HiX />
@@ -10060,7 +10615,13 @@ export default function AdminDashboard() {
 			) : null}
 
 			{showGrantorModal ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={closeGrantorModal}>
+				<div
+					className="admin-detail-backdrop"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, closeGrantorModal, {
+						hasUnsavedChanges: Object.values(grantorForm).some((value) => Boolean(String(value || "").trim())),
+					})}
+				>
 					<div className="admin-detail-modal admin-detail-modal--grantor" role="dialog" aria-modal="true" aria-label="Create new grantor" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="admin-detail-close" onClick={closeGrantorModal}>
 							<HiX />
@@ -10502,7 +11063,15 @@ export default function AdminDashboard() {
 			) : null}
 
 			{adminScholarModalOpen ? (
-				<div className="admin-detail-backdrop admin-detail-backdrop--admin-scholar-import" role="presentation" onClick={closeAdminScholarModal}>
+				<div
+					className="admin-detail-backdrop admin-detail-backdrop--admin-scholar-import"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, closeAdminScholarModal, {
+						hasUnsavedChanges:
+							JSON.stringify(adminScholarForm) !== JSON.stringify(ADMIN_SCHOLAR_FORM) ||
+							adminScholarImportRows.length > 0,
+					})}
+				>
 					<div className="admin-detail-shell admin-detail-shell--review admin-detail-shell--admin-scholar-import" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="admin-detail-close" onClick={closeAdminScholarModal} aria-label="Close add scholar modal">
 							<HiX />
@@ -11051,7 +11620,10 @@ export default function AdminDashboard() {
 												selectedScholarshipTrackingRow.studentSnapshot,
 											)
 											if (selectedScholarshipTrackingRow.scholarshipEntry.lifecycleVersion === 2) {
-												documentUrls.applicationForm = selectedScholarshipTrackingRow.scholarshipEntry.applicationFormFile?.url || ""
+												documentUrls.applicationForm =
+													selectedScholarshipTrackingRow.scholarshipEntry.applicationFormFile?.url ||
+													documentUrls.applicationForm ||
+													""
 											}
 											return [
 												{ label: "COR", title: "Certificate of Registration", url: documentUrls.cor },
@@ -11162,7 +11734,10 @@ export default function AdminDashboard() {
 				<div
 					className="admin-reject-modal-backdrop"
 					role="presentation"
-					onClick={closeRejectScholarshipApplicationModal}
+					onClick={(event) => closeFromModalBackdrop(event, closeRejectScholarshipApplicationModal, {
+						hasUnsavedChanges:
+							adminRejectReason !== APPLICATION_REJECTION_REASONS[0] || Boolean(adminRejectNotes.trim()),
+					})}
 				>
 					<div
 						className="admin-reject-modal"
@@ -11788,7 +12363,10 @@ export default function AdminDashboard() {
 				<div
 					className="admin-reject-modal-backdrop admin-reject-modal-backdrop--soe"
 					role="presentation"
-					onClick={closeSoeRejectModal}
+					onClick={(event) => closeFromModalBackdrop(event, closeSoeRejectModal, {
+						hasUnsavedChanges:
+							soeRejectReason !== APPLICATION_REJECTION_REASONS[0] || Boolean(soeRejectNotes.trim()),
+					})}
 				>
 					<div
 						className="admin-reject-modal admin-reject-modal--soe"

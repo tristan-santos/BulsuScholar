@@ -74,6 +74,7 @@ import { grantorMustChangePassword, GRANTOR_PASSWORD_CHANGE_ID_KEY } from "../co
 import { read, utils } from "xlsx"
 import { db } from "../services/supabaseDataService"
 import logo2 from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import "../css/AdminDashboard.css"
 import "../css/ProviderDashboard.css"
 import TablePagination from "../components/TablePagination"
@@ -139,6 +140,7 @@ import {
 	validateScholarshipDocuments,
 } from "../services/scholarshipService"
 import { collectOtherRequirementDocuments } from "../services/otherRequirementService"
+import { closeFromModalBackdrop } from "../services/modalLayerService"
 import {
 	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
@@ -888,6 +890,11 @@ function ScholarTabs({ value, onChange }) {
 }
 
 export default function ProviderDashboard() {
+	const publicConfiguration = usePublicConfiguration()
+	const branding = publicConfiguration.branding || {}
+	const grantorAnnouncementsEnabled = publicConfiguration.portal?.allowGrantorAnnouncements !== false
+	const brandLogo = branding.logoUrl || logo2
+	const productName = branding.productName || "BulsuScholar"
 	const navigate = useNavigate()
 	const location = useLocation()
 	const fileInputRef = useRef(null)
@@ -2536,7 +2543,11 @@ export default function ProviderDashboard() {
 					}
 				: application.documentUrls || {}
 			if (application.lifecycleVersion === 2) {
-				documentUrls.applicationForm = application.applicationFormFile?.url || scholarship?.applicationFormFile?.url || ""
+				documentUrls.applicationForm =
+					application.applicationFormFile?.url ||
+					scholarship?.applicationFormFile?.url ||
+					documentUrls.applicationForm ||
+					""
 			}
 			const documentCheck = scholarship
 				? validateScholarshipDocuments(student || {}, scholarship.name)
@@ -3617,6 +3628,10 @@ export default function ProviderDashboard() {
 	const handlePostAnnouncement = async (event) => {
 		event.preventDefault()
 		if (!grantorId || busy) return
+		if (!grantorAnnouncementsEnabled) {
+			toast.error("Grantor announcements are temporarily disabled by the system administrator.")
+			return
+		}
 		if (grantorAccountArchived) {
 			toast.error("This grantor account is archived and cannot publish announcements.")
 			return
@@ -4211,9 +4226,9 @@ export default function ProviderDashboard() {
 		<div className={`grantor-portal ${theme === "dark" ? "grantor-portal--dark" : ""}`}>
 			<header className="grantor-topbar">
 				<Link to="/provider-dashboard/dashboard" className="grantor-topbar-brand" aria-label="Go to grantor dashboard">
-					<img src={logo2} alt="" />
+					<img src={brandLogo} alt="" />
 					<div>
-						<strong>BulsuScholar</strong>
+						<strong>{productName}</strong>
 						<span>Grantor Portal</span>
 					</div>
 				</Link>
@@ -4704,14 +4719,18 @@ export default function ProviderDashboard() {
 								type="button"
 								className="grantor-create-announcement-btn"
 								onClick={() => {
+									if (!grantorAnnouncementsEnabled) {
+										toast.error("Grantor announcements are temporarily disabled by the system administrator.")
+										return
+									}
 									if (grantorAccountArchived) {
 										toast.error("This grantor account is archived and cannot publish announcements.")
 										return
 									}
 									setShowCreateAnnouncementModal(true)
 								}}
-								disabled={grantorAccountArchived}
-								title={grantorAccountArchived ? "Archived grantor accounts cannot create announcements." : "Create announcement"}
+								disabled={grantorAccountArchived || !grantorAnnouncementsEnabled}
+								title={!grantorAnnouncementsEnabled ? "Grantor announcements are disabled." : grantorAccountArchived ? "Archived grantor accounts cannot create announcements." : "Create announcement"}
 							><HiOutlineCloudUpload /> Create Announcement</button>
 						</header>
 						{showAllAnnouncements ? (
@@ -4743,7 +4762,16 @@ export default function ProviderDashboard() {
 						) : (
 							<>
 								{showCreateAnnouncementModal ? (
-									<div className="admin-detail-backdrop grantor-announcement-modal-backdrop" role="presentation" onClick={closeCreateAnnouncementModal}>
+									<div
+										className="admin-detail-backdrop grantor-announcement-modal-backdrop"
+										role="presentation"
+										onClick={(event) => closeFromModalBackdrop(event, closeCreateAnnouncementModal, {
+											hasUnsavedChanges:
+												JSON.stringify(announcementForm) !== JSON.stringify(ANNOUNCEMENT_FORM) ||
+												announcementImageFiles.length > 0 ||
+												Boolean(announcementApplicationProfileFile),
+										})}
+									>
 								<section className="grantor-announcement-composer grantor-announcement-composer--modal" role="dialog" aria-modal="true" aria-label="Create announcement" onClick={(event) => event.stopPropagation()}>
 									<header><div><h3>Create Announcement</h3><p>Share deadlines, requirements, and scholarship availability.</p></div><button type="button" onClick={closeCreateAnnouncementModal} aria-label="Close create announcement"><HiX /></button></header>
 									<form className="grantor-announcement-compose-form" onSubmit={handlePostAnnouncement}>
@@ -5123,7 +5151,13 @@ export default function ProviderDashboard() {
 				</div>
 			) : null}
 			{composerSlotModalOpen ? (
-				<div className="admin-detail-backdrop grantor-composer-slot-backdrop" role="presentation" onClick={closeComposerSlotModal}>
+				<div
+					className="admin-detail-backdrop grantor-composer-slot-backdrop"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, closeComposerSlotModal, {
+						hasUnsavedChanges: Boolean(composerSlotChoice || composerSlotValue),
+					})}
+				>
 					<section className="grantor-slot-modal grantor-composer-slot-modal" role="dialog" aria-modal="true" aria-label={selectedActiveScholarshipOffering ? "Add scholarship slots" : "Assign scholarship slots"} onClick={(event) => event.stopPropagation()}>
 						<header>
 							<div>
@@ -5176,7 +5210,13 @@ export default function ProviderDashboard() {
 				</div>
 			) : null}
 			{slotCapacityAnnouncement ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={closeSlotCapacityModal}>
+				<div
+					className="admin-detail-backdrop"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, closeSlotCapacityModal, {
+						hasUnsavedChanges: Boolean(slotCapacityChoice || slotCapacityValue),
+					})}
+				>
 					<section className="grantor-slot-modal" role="dialog" aria-modal="true" aria-label="Configure scholarship slots" onClick={(event) => event.stopPropagation()}>
 						<header>
 							<div><span>Scholarship Capacity</span><h3>{slotCapacityAnnouncement.title || "Scholarship"}</h3></div>
@@ -5403,12 +5443,20 @@ export default function ProviderDashboard() {
 																</span>
 															</button>
 														)
-													})}
-												</div>
-												{(() => {
-													const otherDocuments = collectOtherRequirementDocuments(
-														applicationModalState.scholarship || {},
-													)
+											})}
+										</div>
+										{(() => {
+											const otherDocuments = collectOtherRequirementDocuments({
+												...(applicationModalState.scholarship || {}),
+												otherRequirements:
+													applicationModalState.application?.otherRequirements ||
+													applicationModalState.scholarship?.otherRequirements ||
+													[],
+												otherRequirementUploads:
+													applicationModalState.application?.otherRequirementUploads ||
+													applicationModalState.scholarship?.otherRequirementUploads ||
+													{},
+											})
 													if (otherDocuments.length === 0) return null
 													return (
 														<div className="grantor-other-documents">
@@ -5571,7 +5619,16 @@ export default function ProviderDashboard() {
 				</div>
 			) : null}
 			{archiveModalOpen ? (
-				<div className="grantor-reject-modal-backdrop" role="presentation" onClick={closeArchiveModal}>
+				<div
+					className="grantor-reject-modal-backdrop"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, closeArchiveModal, {
+						hasUnsavedChanges:
+							archiveReason !== "Archived by grantor" ||
+							Boolean(archiveOtherReason.trim()) ||
+							Boolean(archiveNotes.trim()),
+					})}
+				>
 					<div
 						className="grantor-reject-modal grantor-reject-modal--archive"
 						role="dialog"
@@ -5707,7 +5764,10 @@ export default function ProviderDashboard() {
 				<div
 					className="grantor-reject-modal-backdrop"
 					role="presentation"
-					onClick={closeRejectModal}
+					onClick={(event) => closeFromModalBackdrop(event, closeRejectModal, {
+						hasUnsavedChanges:
+							rejectReason !== APPLICATION_REJECTION_REASONS[0] || Boolean(rejectNotes.trim()),
+					})}
 				>
 					<div
 						className="grantor-reject-modal"
@@ -5769,7 +5829,16 @@ export default function ProviderDashboard() {
 				</div>
 			) : null}
 			{showCreateModal ? (
-				<div className="grantor-scholar-modal-backdrop" role="presentation" onClick={closeCreateModal}>
+				<div
+					className="grantor-scholar-modal-backdrop"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, closeCreateModal, {
+						hasUnsavedChanges:
+							JSON.stringify(createForm) !== JSON.stringify(SCHOLAR_FORM) ||
+							Boolean(uploadFile) ||
+							Boolean(importData),
+					})}
+				>
 					<div className="grantor-scholar-modal-shell" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="grantor-scholar-modal-close" onClick={closeCreateModal}><HiX /></button>
 						<div className="grantor-scholar-modal grantor-scholar-modal--create" role="dialog" aria-modal="true" aria-label="Add scholar">
@@ -5936,7 +6005,15 @@ export default function ProviderDashboard() {
 				</div>
 			) : null}
 			{showEditModal && selectedScholar ? (
-				<div className="grantor-scholar-modal-backdrop" role="presentation" onClick={closeEditModal}>
+				<div
+					className="grantor-scholar-modal-backdrop"
+					role="presentation"
+					onClick={(event) => closeFromModalBackdrop(event, closeEditModal, {
+						hasUnsavedChanges:
+							Boolean(selectedScholar) &&
+							JSON.stringify(editForm) !== JSON.stringify(scholarToForm(selectedScholar)),
+					})}
+				>
 					<div className="grantor-scholar-modal-shell" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="grantor-scholar-modal-close" onClick={closeEditModal}><HiX /></button>
 						<div className="grantor-scholar-modal grantor-scholar-modal--edit" role="dialog" aria-modal="true" aria-labelledby="grantor-edit-scholar-title">

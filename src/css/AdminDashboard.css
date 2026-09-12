@@ -6743,6 +6743,124 @@
 	display: flex;
 }
 
+.admin-report-preview-filters {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: end;
+	gap: 0.75rem;
+	padding: 0.8rem 0;
+	border-top: 1px solid #e2e8f0;
+	border-bottom: 1px solid #e2e8f0;
+}
+
+.admin-report-preview-filter-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(130px, 1fr));
+	gap: 0.65rem;
+}
+
+.admin-report-preview-filter-grid label {
+	display: grid;
+	gap: 0.3rem;
+	min-width: 0;
+	font-size: 0.72rem;
+	font-weight: 700;
+	color: #334155;
+}
+
+.admin-report-preview-filter-grid input,
+.admin-report-preview-filter-grid select {
+	width: 100%;
+	min-height: 36px;
+	padding: 0.45rem 0.6rem;
+	border: 1px solid #bfd3c8;
+	border-radius: 6px;
+	background: #ffffff;
+	color: #10231d;
+	font: inherit;
+}
+
+.admin-report-preview-filter-grid input:focus,
+.admin-report-preview-filter-grid select:focus {
+	outline: 2px solid rgba(0, 99, 60, 0.18);
+	border-color: #00633c;
+}
+
+.admin-report-preview-filter-search {
+	grid-column: span 2;
+}
+
+.admin-report-preview-filter-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.55rem;
+	padding-bottom: 1px;
+}
+
+.admin-report-preview-filter-actions button {
+	min-height: 36px;
+	white-space: nowrap;
+}
+
+.admin-report-pdf-preview {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+	overflow: hidden;
+	border: 1px solid #dbe4ee;
+	border-radius: 8px;
+	background: #eef2f1;
+}
+
+.admin-report-pdf-object {
+	display: block;
+	width: 100%;
+	min-height: 0;
+	flex: 1 1 auto;
+	border: 0;
+	background: #ffffff;
+}
+
+.admin-report-preview-state {
+	display: grid;
+	place-items: center;
+	align-content: center;
+	gap: 0.65rem;
+	min-height: 260px;
+	height: 100%;
+	padding: 1.5rem;
+	text-align: center;
+	color: #334155;
+}
+
+.admin-report-preview-state p {
+	margin: 0;
+	color: #64748b;
+}
+
+.admin-report-preview-state--error > svg {
+	font-size: 1.8rem;
+	color: #b91c1c;
+}
+
+.admin-report-open-pdf {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	min-height: 36px;
+	padding: 0.5rem 0.8rem;
+	border-top: 1px solid #dbe4ee;
+	background: #ffffff;
+	color: #00633c;
+	font-size: 0.8rem;
+	font-weight: 700;
+	text-decoration: none;
+}
+
 .admin-report-preview-shell {
 	border-radius: 18px;
 	border: 1px solid #dbe4ee;
@@ -6806,6 +6924,7 @@
 .admin-portal--dark .admin-section-tab,
 .admin-portal--dark .admin-distribution-item,
 .admin-portal--dark .admin-report-preview-shell,
+.admin-portal--dark .admin-report-pdf-preview,
 .admin-portal--dark .admin-report-format-toggle,
 .admin-portal--dark .admin-report-option-check,
 .admin-portal--dark .admin-floating-field input,
@@ -6959,6 +7078,34 @@
 	.admin-report-preview-toolbar {
 		flex-direction: column;
 		align-items: flex-start;
+	}
+
+	.admin-report-preview-filters {
+		grid-template-columns: 1fr;
+		max-height: 30vh;
+		overflow-y: auto;
+	}
+
+	.admin-report-preview-filter-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.admin-report-preview-filter-actions {
+		justify-content: stretch;
+	}
+
+	.admin-report-preview-filter-actions button {
+		flex: 1 1 0;
+	}
+}
+
+@media (max-width: 430px) {
+	.admin-report-preview-filter-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-report-preview-filter-search {
+		grid-column: auto;
 	}
 }
 
@@ -7887,6 +8034,10 @@
 	--report-accent: #0f766e;
 }
 
+.admin-report-card--grantors {
+	--report-accent: #7c3aed;
+}
+
 .admin-report-card--scholarships {
 	--report-accent: #1d4ed8;
 }
@@ -7897,6 +8048,10 @@
 
 .admin-report-card--compliance {
 	--report-accent: #dc2626;
+}
+
+.admin-report-card--rankings {
+	--report-accent: #c2410c;
 }
 
 .admin-report-card__head {
@@ -7920,6 +8075,11 @@
 	color: #0f766e;
 }
 
+.admin-report-card--grantors .admin-report-card__icon {
+	background: #f5f3ff;
+	color: #7c3aed;
+}
+
 .admin-report-card--scholarships .admin-report-card__icon {
 	background: #eff6ff;
 	color: #1d4ed8;
@@ -7933,6 +8093,11 @@
 .admin-report-card--compliance .admin-report-card__icon {
 	background: #fef2f2;
 	color: #dc2626;
+}
+
+.admin-report-card--rankings .admin-report-card__icon {
+	background: #fff7ed;
+	color: #c2410c;
 }
 
 .admin-report-card__eyebrow {
@@ -8230,6 +8395,11 @@
 	color: #5eead4;
 }
 
+.admin-portal--dark .admin-report-card--grantors .admin-report-card__icon {
+	background: rgba(124, 58, 237, 0.2);
+	color: #c4b5fd;
+}
+
 .admin-portal--dark .admin-report-card--scholarships .admin-report-card__icon {
 	background: rgba(29, 78, 216, 0.24);
 	color: #93c5fd;
@@ -8243,6 +8413,11 @@
 .admin-portal--dark .admin-report-card--compliance .admin-report-card__icon {
 	background: rgba(220, 38, 38, 0.18);
 	color: #fca5a5;
+}
+
+.admin-portal--dark .admin-report-card--rankings .admin-report-card__icon {
+	background: rgba(194, 65, 12, 0.2);
+	color: #fdba74;
 }
 
 .admin-portal--dark .admin-report-aside-card--accent {
@@ -8305,7 +8480,6 @@
 	.admin-report-aside-metrics {
 		grid-template-columns: 1fr;
 	}
-
 	.admin-report-hero__content h3 {
 		max-width: none;
 	}
@@ -10449,6 +10623,35 @@
 .admin-portal--dark {
 	background: #0f172a;
 	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-report-preview-filters {
+	border-color: #334155;
+}
+
+.admin-portal--dark .admin-report-preview-filter-grid label {
+	color: #e2e8f0;
+}
+
+.admin-portal--dark .admin-report-preview-filter-grid input,
+.admin-portal--dark .admin-report-preview-filter-grid select {
+	border-color: #475569;
+	background: #111f1a;
+	color: #f8fafc;
+}
+
+.admin-portal--dark .admin-report-preview-state {
+	color: #f8fafc;
+}
+
+.admin-portal--dark .admin-report-preview-state p {
+	color: #cbd5e1;
+}
+
+.admin-portal--dark .admin-report-open-pdf {
+	border-color: #334155;
+	background: #0f172a;
+	color: #86efac;
 }
 
 .admin-portal--dark .admin-report-option-check {
@@ -12896,13 +13099,13 @@
 }
 
 .admin-detail-shell--report {
-	width: min(72vw, 1080px);
+	width: min(94vw, 1500px);
 	height: min(86vh, 900px);
 }
 
 .admin-detail-backdrop--report .admin-detail-shell--report.admin-report-preview-modal-shell {
-	width: min(72vw, 1080px) !important;
-	max-width: calc(100vw - 4rem);
+	width: min(94vw, 1500px) !important;
+	max-width: calc(100vw - 2rem);
 }
 
 .admin-detail-modal--report {
@@ -12914,6 +13117,10 @@
 	display: grid;
 	grid-template-rows: auto auto minmax(0, 1fr);
 	gap: 0;
+}
+
+.admin-detail-modal--report.admin-detail-modal--report-filters {
+	grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .admin-report-preview-shell {
@@ -12934,7 +13141,7 @@
 }
 
 .admin-report-table-scroll .admin-management-table--preview {
-	min-width: 1080px;
+	min-width: var(--report-table-min-width, 1500px);
 }
 
 .admin-report-table-scroll::-webkit-scrollbar {
@@ -18471,6 +18678,10 @@
 	border-radius: 10px !important;
 	overflow-x: auto !important;
 	overflow-y: auto !important;
+}
+
+.admin-portal .admin-report-table-scroll .admin-management-table--preview {
+	min-width: var(--report-table-min-width, 1500px) !important;
 }
 
 .admin-portal .admin-table-wrap--grantors {

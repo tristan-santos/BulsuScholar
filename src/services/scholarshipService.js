@@ -2,6 +2,7 @@ import {
 	createScholarshipTrackingState,
 	normalizeScholarshipTrackingState,
 } from "./scholarshipTrackingService"
+import { getConfiguredSemesterTag } from "./systemConfigService"
 
 const SCHOLARSHIP_TYPE = {
 	KUYA_WIN: "kuya_win",
@@ -66,6 +67,8 @@ export function getScholarshipPolicy(provider = "") {
 }
 
 export function getCurrentAcademicYear(date = new Date()) {
+	const configured = getConfiguredSemesterTag()
+	if (configured) return configured.replace(/-(1ST|2ND)$/i, "")
 	const year = date.getFullYear()
 	const month = date.getMonth() + 1
 	if (month >= 7) {
@@ -75,6 +78,8 @@ export function getCurrentAcademicYear(date = new Date()) {
 }
 
 export function getCurrentSemesterTag(date = new Date()) {
+	const configured = getConfiguredSemesterTag()
+	if (configured) return configured
 	const month = date.getMonth() + 1
 	const semester = month >= 7 ? "1ST" : "2ND"
 	return `${getCurrentAcademicYear(date)}-${semester}`

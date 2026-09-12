@@ -74,6 +74,11 @@ begin
     where id = '__choice_test_o1' and parent_id = '__choice_test_g1') <> '24' then
     raise exception 'TEST FAILED: selected slot released';
   end if;
+  if not exists(select 1 from public.soe_requests where id = 'choice___choice_test_a1'
+    and data->>'applicationFormType' = 'default'
+    and data#>>'{materials,application_form,status}' = 'pending') then
+    raise exception 'TEST FAILED: default application form was not included in the material request';
+  end if;
   r := public.mutate_scholarship_choice('__choice_test_s', '__choice_test_a1', 'choose');
   if r->>'idempotent' <> 'true' then raise exception 'TEST FAILED: retry was not idempotent'; end if;
   select count(*) into n from public."grantorNotifications" where id in (
@@ -230,6 +235,7 @@ begin
   end if;
   if not exists(select 1 from public.soe_requests where id = 'choice___choice_test_m2'
     and data#>>'{materials,application_form,status}' = 'pending'
+    and data->>'applicationFormType' = 'custom'
     and data#>>'{customApplicationForm,name}' = 'grantor-form.pdf') then
     raise exception 'TEST FAILED: grantor custom form was not included in the material request';
   end if;

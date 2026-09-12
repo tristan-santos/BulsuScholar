@@ -6,9 +6,14 @@ import {
 	HiOutlineShieldCheck,
 } from "react-icons/hi"
 import logo from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import "../css/MaintenancePage.css"
 
 export default function MaintenancePage() {
+	const configuration = usePublicConfiguration()
+	const branding = configuration.branding || {}
+	const brandLogo = branding.logoUrl || logo
+	const productName = branding.productName || "BulsuScholar"
 	const navigate = useNavigate()
 
 	return (
@@ -16,9 +21,9 @@ export default function MaintenancePage() {
 			<section className="maintenance-shell" aria-labelledby="maintenance-title">
 				<header className="maintenance-header">
 					<div className="maintenance-brand">
-						<img src={logo} alt="BulSU Scholar logo" />
+						<img src={brandLogo} alt="BulSU Scholar logo" />
 						<div>
-							<strong>BulsuScholar</strong>
+							<strong>{productName}</strong>
 							<span>Portal Maintenance</span>
 						</div>
 					</div>
@@ -31,10 +36,7 @@ export default function MaintenancePage() {
 					</div>
 					<p className="maintenance-kicker">Maintenance Mode</p>
 					<h1 id="maintenance-title">The portal is currently under maintenance.</h1>
-					<p>
-						BulsuScholar is being updated by the administrator. Student and grantor pages are paused for now,
-						but administrator access remains available for system management.
-					</p>
+					<p>{branding.maintenanceMessage || `${productName} is temporarily unavailable while protected system maintenance is completed.`}</p>
 				</div>
 
 				<div className="maintenance-grid">
@@ -55,8 +57,8 @@ export default function MaintenancePage() {
 				</div>
 
 				<div className="maintenance-actions">
-					<button type="button" onClick={() => navigate("/")}>
-						<HiOutlineHome /> Go To Login
+					<button type="button" onClick={() => navigate("/help")}>
+						<HiOutlineHome /> Open Help
 					</button>
 				</div>
 

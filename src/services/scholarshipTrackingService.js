@@ -6,6 +6,7 @@ import {
 	normalizeMaterialRequest,
 	toMaterialLabel,
 } from "./materialRequestService"
+import { getConfiguredSemesterTag } from "./systemConfigService"
 
 function normalizeProviderType(value = "") {
 	const normalized = String(value || "").toLowerCase().trim()
@@ -21,12 +22,16 @@ function statusIncludesAny(value = "", keywords = []) {
 }
 
 function getCurrentAcademicYear(date = new Date()) {
+	const configured = getConfiguredSemesterTag()
+	if (configured) return configured.replace(/-(1ST|2ND)$/i, "")
 	const year = date.getFullYear()
 	const month = date.getMonth() + 1
 	return month >= 7 ? `${year}-${year + 1}` : `${year - 1}-${year}`
 }
 
 function getCurrentSemesterTag(date = new Date()) {
+	const configured = getConfiguredSemesterTag()
+	if (configured) return configured
 	const month = date.getMonth() + 1
 	return `${getCurrentAcademicYear(date)}-${month >= 7 ? "1ST" : "2ND"}`
 }
@@ -141,8 +146,8 @@ function buildTrackingDetail(stepId, context) {
 				: "Student still needs to upload the required COR and ROG."
 		case "application_form":
 			return state === "complete"
-				? "Application form has been uploaded and is ready for review."
-				: "Student must complete and upload the Student Application Profile before review continues."
+				? "Student Application Profile has been uploaded from the Profile section and is ready for review."
+				: "Student must upload the Student Application Profile in the Profile section before review continues."
 		case "document_review":
 			return state === "complete"
 				? "Submitted COR, ROG, Student ID, and Student Application Profile were reviewed."
@@ -424,7 +429,7 @@ export function getScholarshipTrackingProgress({
 	}
 	const hasApplicationForm =
 		Number(scholarship.lifecycleVersion) === 2
-			? Boolean(scholarship.applicationFormFile?.url)
+			? Boolean(scholarship.applicationFormFile?.url) || Boolean(documentUrls.applicationForm)
 			: Boolean(documentUrls.applicationForm) || Boolean(scholarship.applicationFormUrl) || Boolean(scholarship.applicationFormFile?.url)
 
 	const requestSemesterTag = String(latestMaterialRequest?.semesterTag || "").trim()

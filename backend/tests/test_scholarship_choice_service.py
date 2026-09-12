@@ -76,6 +76,26 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
         document_get.assert_called_once_with("soe_requests", "choice_application-a")
         self.assertEqual(result["materialRequest"]["materials"]["application_form"]["status"], "pending")
 
+    @patch("backend.scholarship_choice_service.supabase_document_get")
+    @patch("backend.scholarship_choice_service.supabase_rpc")
+    def test_choose_returns_default_application_form_material(self, rpc, document_get):
+        rpc.return_value = {"ok": True, "data": {
+            "materialRequest": {"id": "choice_application-a"},
+        }}
+        document_get.return_value = {"ok": True, "data": {
+            "id": "choice_application-a",
+            "applicationFormType": "default",
+            "materials": {
+                "soe": {"status": "pending"},
+                "application_form": {"status": "pending"},
+            },
+        }}
+
+        result = mutate_scholarship_choice(self.payload)
+
+        self.assertEqual(result["materialRequest"]["applicationFormType"], "default")
+        self.assertEqual(result["materialRequest"]["materials"]["application_form"]["status"], "pending")
+
     @patch("backend.scholarship_choice_service.supabase_rpc")
     def test_database_failure_is_not_reported_as_success(self, rpc):
         rpc.return_value = {"ok": False, "reason": "document_versions_changed"}

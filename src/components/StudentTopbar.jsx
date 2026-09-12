@@ -27,6 +27,7 @@ import {
 import { GRANTOR_SUBCOLLECTIONS } from "../services/grantorService"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import logo2 from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 
 function getReadAnnouncementStorageKey(studentId = "") {
 	return `bulsuscholar_student_read_announcements_${studentId || "guest"}`
@@ -58,6 +59,9 @@ function getStudentInitials(user = {}) {
 }
 
 export default function StudentTopbar({ user, theme, setTheme }) {
+	const branding = usePublicConfiguration().branding || {}
+	const brandLogo = branding.logoUrl || logo2
+	const productName = branding.productName || "BulsuScholar"
 	const archivedGrantorIds = useArchivedGrantorIds()
 	const navigate = useNavigate()
 	const location = useLocation()
@@ -246,8 +250,8 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 			<div className="student-header-content">
 				<div className="student-header-left">
 					<Link to="/student-dashboard" className="student-header-home-link" aria-label="Go to dashboard">
-						<img src={logo2} alt="BulsuScholar" className="student-header-logo" />
-						<h1 className="student-header-brand">BulsuScholar</h1>
+						<img src={brandLogo} alt={productName} className="student-header-logo" />
+						<h1 className="student-header-brand">{productName}</h1>
 					</Link>
 				</div>
 				<div className="student-header-right">

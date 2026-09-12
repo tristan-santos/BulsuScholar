@@ -1,9 +1,10 @@
 import { requireBackendApiUrl } from "../config/backendApi"
+import { buildPortalRequestHeaders } from "./portalApi"
 
 async function postPriorityOne(path, payload = {}) {
 	const response = await fetch(`${requireBackendApiUrl("Portal backend")}${path}`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
+		headers: await buildPortalRequestHeaders(),
 		body: JSON.stringify(payload),
 	})
 	const data = await response.json().catch(() => ({}))

@@ -19,7 +19,7 @@ if load_dotenv:
 
 try:
     from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
-    from .access_control import enforce_material_update_scope, enforce_portal_scope
+    from .access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role
     from .scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from .email_service import send_email_notification
     from .grantor_algorithms import (
@@ -30,12 +30,9 @@ try:
         match_admin_grantor_students,
     )
     from .report_service import (
-        build_csv_bytes,
         build_report_pdf_bytes,
-        build_excel_bytes,
-        build_student_report,
-        build_student_report_excel_bytes,
-        build_student_report_pdf_bytes,
+        sanitize_report_filename,
+        validate_report_payload,
     )
     from .scholarship_rules import (
         check_scholarship_eligibility,
@@ -46,6 +43,8 @@ try:
     from .signup_service import finalize_student_signup, validate_student_signup
     from .support_service import ask_support_assistant
     from .priority_one_service import save_support_feedback
+    from .root_router import router as root_router
+    from .root_service import is_maintenance_enabled, metric_finished, metric_started, public_config
     from .supabase_ops import (
         build_grantor_notification_payload,
         build_admin_notification_payload,
@@ -86,7 +85,7 @@ try:
     )
 except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backend/
     from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
-    from access_control import enforce_material_update_scope, enforce_portal_scope
+    from access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role
     from scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from email_service import send_email_notification
     from grantor_algorithms import (
@@ -97,12 +96,9 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         match_admin_grantor_students,
     )
     from report_service import (
-        build_csv_bytes,
         build_report_pdf_bytes,
-        build_excel_bytes,
-        build_student_report,
-        build_student_report_excel_bytes,
-        build_student_report_pdf_bytes,
+        sanitize_report_filename,
+        validate_report_payload,
     )
     from scholarship_rules import (
         check_scholarship_eligibility,
@@ -113,6 +109,8 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from signup_service import finalize_student_signup, validate_student_signup
     from support_service import ask_support_assistant
     from priority_one_service import save_support_feedback
+    from root_router import router as root_router
+    from root_service import is_maintenance_enabled, metric_finished, metric_started, public_config
     from supabase_ops import (
         build_grantor_notification_payload,
         build_admin_notification_payload,
@@ -154,6 +152,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
 
 
 app = FastAPI(title="BulsuScholar Backend Services")
+app.include_router(root_router)
 
 
 def build_allowed_origins() -> list[str]:
@@ -202,11 +201,18 @@ app.add_middleware(
 
 @app.middleware("http")
 async def ensure_deployed_cors_headers(request, call_next):
+    metric_start = metric_started()
     origin = request.headers.get("origin")
     cors_origin_allowed = is_allowed_cors_origin(origin)
 
+    maintenance_allowed = (
+        request.url.path.startswith("/root/")
+        or request.url.path in {"/", "/health", "/deployment/health", "/scan-document/health", "/email/health", "/config/public", "/support/chat", "/support/feedback", "/openapi.json", "/docs"}
+    )
     if request.method == "OPTIONS" and cors_origin_allowed:
         response = Response(status_code=204)
+    elif not maintenance_allowed and is_maintenance_enabled():
+        response = JSONResponse(status_code=503, content={"detail": "portal_under_maintenance"})
     else:
         try:
             response = await call_next(request)
@@ -228,6 +234,8 @@ async def ensure_deployed_cors_headers(request, call_next):
         response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = request.headers.get("access-control-request-headers", "*")
         response.headers["Vary"] = "Origin"
+
+    metric_finished(request.url.path, response.status_code, metric_start)
 
     return response
 
@@ -540,11 +548,15 @@ def recommend_scholarships_endpoint(payload: dict[str, Any] = Body(...)) -> dict
 
 @app.post("/workflows/student/signup/validate")
 def validate_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if public_config().get("portal", {}).get("allowStudentSignup") is False:
+        raise HTTPException(status_code=403, detail="student_signup_disabled")
     return validate_student_signup(payload)
 
 
 @app.post("/workflows/student/signup/finalize")
 def finalize_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if public_config().get("portal", {}).get("allowStudentSignup") is False:
+        raise HTTPException(status_code=403, detail="student_signup_disabled")
     return finalize_student_signup(payload)
 
 
@@ -627,6 +639,8 @@ def create_grantor_announcement_endpoint(
     background_tasks: BackgroundTasks,
     payload: dict[str, Any] = Body(...),
 ) -> dict[str, Any]:
+    if public_config().get("portal", {}).get("allowGrantorAnnouncements") is False:
+        raise HTTPException(status_code=403, detail="grantor_announcements_disabled")
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     result = create_grantor_announcement(payload, defer_notifications=True)
     announcement_data = result.pop("_announcementData", None)
@@ -647,6 +661,8 @@ def republish_grantor_announcement_endpoint(
     background_tasks: BackgroundTasks,
     payload: dict[str, Any] = Body(...),
 ) -> dict[str, Any]:
+    if public_config().get("portal", {}).get("allowGrantorAnnouncements") is False:
+        raise HTTPException(status_code=403, detail="grantor_announcements_disabled")
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     result = republish_grantor_announcement(payload, defer_notifications=True)
     announcement_data = result.pop("_announcementData", None)
@@ -663,12 +679,16 @@ def republish_grantor_announcement_endpoint(
 
 @app.post("/workflows/grantor/announcements/update")
 def update_grantor_announcement_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if public_config().get("portal", {}).get("allowGrantorAnnouncements") is False:
+        raise HTTPException(status_code=403, detail="grantor_announcements_disabled")
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return update_grantor_announcement(payload)
 
 
 @app.post("/workflows/grantor/announcements/slots")
 def configure_grantor_announcement_slots_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if public_config().get("portal", {}).get("allowGrantorAnnouncements") is False:
+        raise HTTPException(status_code=403, detail="grantor_announcements_disabled")
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return configure_grantor_announcement_slots(payload)
 
@@ -691,74 +711,103 @@ def support_chat_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
 
 
 @app.post("/support/feedback")
-def support_feedback_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def support_feedback_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    actor_id = str(request.headers.get("x-portal-actor-id") or "").strip()
+    actor_type = normalize_role(request.headers.get("x-portal-actor-type"))
+    if actor_id and actor_type in {"student", "grantor", "admin"}:
+        enforce_portal_scope(request, payload, {"student", "grantor", "admin"})
+        payload["userId"] = actor_id
+        payload["userType"] = actor_type
+    else:
+        payload["userId"] = "guest"
+        payload["userType"] = "guest"
+    payload["_clientIp"] = request.client.host if request.client else "unknown"
     return save_support_feedback(payload)
 
 
-@app.post("/reports/csv")
-def generate_csv_report_endpoint(payload: dict[str, Any] = Body(...)) -> Response:
-    csv_bytes = build_csv_bytes(payload.get("headers") or [], payload.get("rows") or [])
-    return Response(
-        content=csv_bytes,
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={payload.get('filename') or 'report.csv'}"},
-    )
-
-
 @app.post("/reports/pdf")
-def generate_pdf_report_endpoint(payload: dict[str, Any] = Body(...)) -> Response:
-    pdf_bytes = build_report_pdf_bytes(payload)
+def generate_pdf_report_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    enforce_portal_scope(request, payload, {"admin"})
+    if public_config().get("portal", {}).get("reportExportEnabled") is False:
+        raise HTTPException(status_code=403, detail="report_exports_disabled")
+    try:
+        validate_report_payload(payload)
+        pdf_bytes = build_report_pdf_bytes(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    filename = sanitize_report_filename(payload.get("filename"))
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={payload.get('filename') or 'report.pdf'}"},
-    )
-
-
-@app.post("/reports/excel")
-def generate_excel_report_endpoint(payload: dict[str, Any] = Body(...)) -> Response:
-    try:
-        excel_bytes = build_excel_bytes(payload)
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    filename = payload.get("filename") or "report.xlsx"
-    if not str(filename).lower().endswith(".xlsx"):
-        filename = f"{filename}.xlsx"
-    return Response(
-        content=excel_bytes,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
-@app.post("/reports/students/preview")
-def preview_student_report_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    try:
-        return build_student_report(payload)
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+@app.post("/reports/top-students/preview")
+def preview_top_students_report_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin"})
+    students = [item for item in payload.get("students") or [] if isinstance(item, dict)]
+    offerings = [item for item in payload.get("offerings") or [] if isinstance(item, dict)]
+    if len(students) > 10_000 or len(offerings) > 1_000:
+        raise HTTPException(status_code=422, detail="top_students_input_limit_exceeded")
 
+    groups: dict[str, dict[str, Any]] = {}
+    for offering in offerings:
+        offering_id = str(offering.get("id") or offering.get("announcementId") or "").strip()
+        if not offering_id:
+            continue
+        groups[offering_id] = {
+            "offering": offering,
+            "rows": [],
+        }
 
-@app.post("/reports/students/pdf")
-def generate_student_report_pdf_endpoint(payload: dict[str, Any] = Body(...)) -> Response:
-    try:
-        content, filename = build_student_report_pdf_bytes(payload)
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    for student in students:
+        ineligible_offering_ids = {
+            str(value).strip()
+            for value in student.get("ineligibleOfferingIds") or []
+            if str(value).strip()
+        }
+        eligible_offerings = [
+            offering
+            for offering in offerings
+            if str(offering.get("id") or offering.get("announcementId") or "").strip()
+            not in ineligible_offering_ids
+        ]
+        ranked = recommend_scholarships({"student": student, "scholarships": eligible_offerings})
+        for recommendation in ranked.get("recommendations") or []:
+            offering = recommendation.get("item") or {}
+            offering_id = str(offering.get("id") or offering.get("announcementId") or "").strip()
+            if offering_id not in groups:
+                continue
+            groups[offering_id]["rows"].append({
+                "studentId": student.get("studentId") or student.get("studentnumber") or student.get("id") or "-",
+                "fullName": student.get("fullName") or " ".join(filter(None, [student.get("fname"), student.get("mname"), student.get("lname")])) or "-",
+                "course": student.get("course") or "-",
+                "yearLevel": student.get("year") or student.get("yearLevel") or "-",
+                "gwa": student.get("gwa") or student.get("currentGwa") or student.get("currentGWA") or "-",
+                "score": recommendation.get("score") or 0,
+                "reasons": ", ".join(recommendation.get("reasons") or []) or "Eligible",
+            })
 
-
-@app.post("/reports/students/excel")
-def generate_student_report_excel_endpoint(payload: dict[str, Any] = Body(...)) -> Response:
-    try:
-        content, filename = build_student_report_excel_bytes(payload)
-    except RuntimeError as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-    return Response(
-        content=content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    result_groups = []
+    for group in groups.values():
+        offering = group["offering"]
+        rows = sorted(
+            group["rows"],
+            key=lambda row: (-float(row.get("score") or 0), str(row.get("fullName") or "").lower()),
+        )[:10]
+        for index, row in enumerate(rows):
+            row["rank"] = index + 1
+        result_groups.append({
+            "announcementId": offering.get("id") or offering.get("announcementId"),
+            "scholarship": offering.get("scholarshipTitle") or offering.get("title") or "Scholarship",
+            "grantor": offering.get("grantorName") or offering.get("providerLabel") or "Grantor",
+            "rows": rows,
+        })
+    result_groups.sort(key=lambda group: (str(group["grantor"]).lower(), str(group["scholarship"]).lower()))
+    return {"ok": True, "algorithm": "Weighted Recommendation Scoring", "groups": result_groups}
 
 
 @app.post("/scan-document")

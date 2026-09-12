@@ -33,6 +33,13 @@ def get_current_academic_year(now: datetime | None = None) -> str:
 
 
 def get_current_semester_tag(now: datetime | None = None) -> str:
+    try:
+        from .root_service import configured_semester_tag
+    except ImportError:  # pragma: no cover
+        from root_service import configured_semester_tag
+    configured = configured_semester_tag()
+    if configured:
+        return configured
     now = now or datetime.now()
     semester = "1ST" if now.month >= 7 else "2ND"
     return f"{get_current_academic_year(now)}-{semester}"

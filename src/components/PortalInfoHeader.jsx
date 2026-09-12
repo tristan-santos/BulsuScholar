@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom"
 import { HiOutlineArrowLeft, HiOutlineHome } from "react-icons/hi"
 import logo from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 
 function getHomePath() {
 	const role = sessionStorage.getItem("bulsuscholar_userType")
@@ -11,11 +12,14 @@ function getHomePath() {
 }
 
 export default function PortalInfoHeader() {
+	const branding = usePublicConfiguration().branding || {}
+	const brandLogo = branding.logoUrl || logo
+	const productName = branding.productName || "BulsuScholar"
 	const navigate = useNavigate()
 	const homePath = getHomePath()
 	return (
 		<header className="portal-info-header">
-			<Link to={homePath} className="portal-info-brand"><img src={logo} alt="" /><span><strong>BulsuScholar</strong><small>Scholarship Support Center</small></span></Link>
+			<Link to={homePath} className="portal-info-brand"><img src={brandLogo} alt="" /><span><strong>{productName}</strong><small>Scholarship Support Center</small></span></Link>
 			<nav aria-label="Support navigation">
 				<Link to="/faq">FAQ</Link><Link to="/about">About</Link><Link to="/help">Help</Link>
 				<button type="button" onClick={() => navigate(-1)} title="Go back"><HiOutlineArrowLeft /></button>

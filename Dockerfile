@@ -7,6 +7,7 @@ RUN apt-get update \
 		tesseract-ocr \
 		tesseract-ocr-eng \
 		poppler-utils \
+		fonts-dejavu-core \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt backend/requirements.txt

@@ -45,6 +45,7 @@ import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 
 const APP_URL = (
 	import.meta.env.VITE_APP_URL ||
@@ -258,6 +259,9 @@ function getSignupWorkflowErrorMessage(error = {}) {
 
 export default function SignupPage() {
 	const navigate = useNavigate()
+	const publicConfiguration = usePublicConfiguration()
+	const brandLogo = publicConfiguration.branding?.logoUrl || logo
+	const studentSignupEnabled = publicConfiguration.portal?.allowStudentSignup !== false
 	const [userId, setUserId] = useState("")
 	const [email, setEmail] = useState("")
 	const [password, setPassword] = useState("")
@@ -1416,6 +1420,10 @@ export default function SignupPage() {
 
 	const handleSubmit = async (e) => {
 		e.preventDefault()
+		if (!studentSignupEnabled) {
+			toast.error("Student signup is temporarily disabled by the system administrator.")
+			return
+		}
 
 		// Validate User ID
 		if (!userId.trim()) {
@@ -1855,7 +1863,7 @@ export default function SignupPage() {
 					<div className="login-info-inner">
 						<div className="login-info-icon" aria-hidden>
 							<img
-								src={logo}
+								src={brandLogo}
 								alt="Institutional Student Programs and Services logo"
 								className="login-logo-img"
 							/>
@@ -1903,7 +1911,7 @@ export default function SignupPage() {
 							aria-label="Go to login page"
 						>
 							<img
-								src={logo}
+								src={brandLogo}
 								alt="Institutional Student Programs and Services logo"
 								className="login-form-logo"
 							/>
@@ -1991,7 +1999,7 @@ export default function SignupPage() {
 				<div className="login-info-inner">
 					<div className="login-info-icon" aria-hidden>
 						<img
-							src={logo}
+							src={brandLogo}
 							alt="Institutional Student Programs and Services logo"
 							className="login-logo-img"
 						/>
@@ -2037,7 +2045,7 @@ export default function SignupPage() {
 						aria-label="Go to login page"
 					>
 						<img
-							src={logo}
+							src={brandLogo}
 							alt="Institutional Student Programs and Services logo"
 							className="login-form-logo"
 						/>
@@ -3030,8 +3038,9 @@ export default function SignupPage() {
 									type="button"
 									className="login-submit signup-review-submit-btn"
 									onClick={handleSubmit}
+									disabled={!studentSignupEnabled}
 								>
-									Create Account
+									{studentSignupEnabled ? "Create Account" : "Signup Disabled"}
 								</button>
 							</div>
 						</div>

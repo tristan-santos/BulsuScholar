@@ -1,432 +1,338 @@
-import csv
 import io
+import re
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
-
-try:
-    from .supabase_ops import supabase_select
-except ImportError:  # pragma: no cover - supports direct backend execution
-    from supabase_ops import supabase_select
+from zipfile import ZipFile
 
 
-STUDENT_REPORT_HEADERS = [
-    "Student ID",
-    "Full Name",
-    "Course",
-    "Year Level",
-    "GWA",
-    "Grantor",
-    "Record Status",
-]
+MAX_REPORT_COLUMNS = 20
+MAX_REPORT_ROWS = 25_000
+MAX_CELL_LENGTH = 10_000
 
 
 def _text(value: Any, fallback: str = "-") -> str:
-    rendered = str(value or "").strip()
+    rendered = str(value if value is not None else "").strip()
     return rendered or fallback
 
 
-def _student_name(data: dict[str, Any]) -> str:
-    explicit = data.get("fullName") or data.get("fullname") or data.get("name")
-    if explicit:
-        return _text(explicit)
-    return _text(" ".join(filter(None, [data.get("fname"), data.get("mname"), data.get("lname")])))
+def sanitize_report_filename(value: Any, fallback: str = "bulsuscholar-report.pdf") -> str:
+    rendered = re.sub(r"[^a-zA-Z0-9._-]+", "-", _text(value, fallback)).strip("-._")
+    if not rendered:
+        rendered = fallback
+    if not rendered.lower().endswith(".pdf"):
+        rendered = f"{rendered}.pdf"
+    return rendered
 
 
-def _student_current_stage(data: dict[str, Any]) -> str:
-    direct = (
-        data.get("currentStepLabel")
-        or data.get("currentStage")
-        or data.get("trackingStage")
-        or data.get("applicationStage")
-    )
-    if direct:
-        return _text(direct)
-
-    scholarships = data.get("scholarships") if isinstance(data.get("scholarships"), list) else []
-    for scholarship in scholarships:
-        if not isinstance(scholarship, dict):
-            continue
-        status = _text(scholarship.get("status"), "").lower()
-        if any(value in status for value in ("rejected", "cancelled", "withdrawn")):
-            continue
-        tracking = scholarship.get("tracking") if isinstance(scholarship.get("tracking"), dict) else {}
-        stage = (
-            scholarship.get("currentStepLabel")
-            or scholarship.get("currentStage")
-            or scholarship.get("stage")
-            or tracking.get("currentStepLabel")
-            or tracking.get("currentStage")
-        )
-        if stage:
-            return _text(stage)
-    return "Account Created"
-
-
-def _student_grantor(data: dict[str, Any]) -> str:
-    direct = (
-        data.get("grantor")
-        or data.get("grantorName")
-        or data.get("providerName")
-        or data.get("providerType")
-    )
-    return _text(direct, "N/A")
-
-
-def _student_id(value: Any) -> str:
-    return _text(value).removeprefix("roster_")
-
-
-def _flatten_student_row(raw: dict[str, Any]) -> dict[str, Any]:
-    nested = raw.get("data") if isinstance(raw.get("data"), dict) else {}
-    data = {**raw, **nested}
-    student_id = data.get("studentnumber") or data.get("studentNumber") or data.get("studentId") or data.get("id") or raw.get("id")
-    record_status = data.get("recordStatus") or data.get("status")
-    if not record_status:
-        record_status = "Archived" if data.get("archived") is True else "Active"
-    return {
-        "id": _student_id(student_id),
-        "fullName": _student_name(data),
-        "email": _text(data.get("email")),
-        "cpNumber": _text(data.get("cpNumber") or data.get("contactNumber") or data.get("number")),
-        "course": _text(data.get("course")),
-        "yearLevel": _text(data.get("year") or data.get("yearLevel")),
-        "gwa": _text(data.get("gwa") or data.get("currentGwa") or data.get("currentGWA")),
-        "grantor": _student_grantor(data),
-        "recordStatus": _text(record_status),
-    }
-
-
-def _student_report_filters(payload: dict[str, Any]) -> dict[str, str]:
-    filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else payload
-    return {
-        "search": _text(filters.get("search"), "").lower(),
-        "course": _text(filters.get("course"), "All"),
-        "year": _text(filters.get("year"), "All"),
-        "view": _text(filters.get("view"), "students").lower(),
-    }
-
-
-def _student_dataset_title(view: str) -> str:
-    if view == "archived":
-        return "Archived Students"
-    if view == "all":
-        return "All Students"
-    return "Students"
-
-
-def build_student_report(payload: dict[str, Any]) -> dict[str, Any]:
-    filters = _student_report_filters(payload)
-    dataset_title = _student_dataset_title(filters["view"])
-    payload_rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
-    if payload_rows:
-        students = [_flatten_student_row(row) for row in payload_rows if isinstance(row, dict)]
-        filtered = students
-    else:
-        result = supabase_select("students", limit=10000)
-        if not result.get("ok"):
-            raise RuntimeError(result.get("reason") or result.get("detail") or "Unable to load students.")
-        students = [_flatten_student_row(row) for row in result.get("rows", [])]
-
-        def include(student: dict[str, Any]) -> bool:
-            if filters["view"] == "archived" and student["recordStatus"] != "Archived":
-                return False
-            if filters["view"] == "students" and student["recordStatus"] == "Archived":
-                return False
-            if filters["course"] != "All" and student["course"] != filters["course"]:
-                return False
-            if filters["year"] != "All" and student["yearLevel"] != filters["year"]:
-                return False
-            haystack = f"{student['id']} {student['fullName']} {student['email']}".lower()
-            return not filters["search"] or filters["search"] in haystack
-
-        filtered = sorted((student for student in students if include(student)), key=lambda item: item["fullName"].lower())
-    rows = [[student[key] for key in ("id", "fullName", "course", "yearLevel", "gwa", "grantor", "recordStatus")] for student in filtered]
-    filter_label = f"View: {filters['view']} | Search: {filters['search'] or '-'} | Course: {filters['course']} | Year: {filters['year']}"
-    return {
-        "key": "students",
-        "title": f"Student Management Report - {dataset_title}",
-        "datasetTitle": dataset_title,
-        "description": "Backend-generated student records using the current management filters.",
-        "filterLabel": filter_label,
-        "columns": STUDENT_REPORT_HEADERS,
-        "rows": rows,
-        "stats": [
-            {"label": "Records", "value": len(filtered)},
-            {"label": "Active", "value": sum(item["recordStatus"] == "Active" for item in filtered)},
-            {"label": "Archived", "value": sum(item["recordStatus"] == "Archived" for item in filtered)},
-        ],
-    }
-
-
-def build_student_report_pdf_bytes(payload: dict[str, Any]) -> tuple[bytes, str]:
-    report = build_student_report(payload)
-    report["subtitle"] = report["datasetTitle"]
-    report["headers"] = report["columns"]
-    dataset_slug = report["datasetTitle"].lower().replace(" ", "-")
-    filename = f"student-management-{dataset_slug}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.pdf"
-    return build_report_pdf_bytes(report), filename
-
-
-def build_student_report_excel_bytes(payload: dict[str, Any]) -> tuple[bytes, str]:
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font, PatternFill
-        from openpyxl.utils import get_column_letter
-    except ImportError as error:  # pragma: no cover - dependency guard
-        raise RuntimeError("openpyxl is required for Excel report generation.") from error
-
-    report = build_student_report(payload)
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = report["datasetTitle"][:31]
-    sheet.append([report["title"]])
-    sheet.append([report["filterLabel"]])
-    sheet.append([])
-    sheet.append(report["columns"])
-    for row in report["rows"]:
-        sheet.append(row)
-
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(report["columns"]))
-    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(report["columns"]))
-    sheet["A1"].font = Font(size=16, bold=True, color="00633C")
-    sheet["A2"].font = Font(size=10, color="526176")
-    for cell in sheet[4]:
-        cell.fill = PatternFill("solid", fgColor="00633C")
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.alignment = Alignment(vertical="center")
-    sheet.freeze_panes = "A5"
-    sheet.auto_filter.ref = f"A4:{get_column_letter(len(report['columns']))}{max(4, sheet.max_row)}"
-    for column_index, column_cells in enumerate(sheet.columns, start=1):
-        width = min(42, max(12, max(len(str(cell.value or "")) for cell in column_cells) + 2))
-        sheet.column_dimensions[get_column_letter(column_index)].width = width
-    for row in sheet.iter_rows(min_row=5):
-        for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-
-    output = io.BytesIO()
-    workbook.save(output)
-    dataset_slug = report["datasetTitle"].lower().replace(" ", "-")
-    filename = f"student-management-{dataset_slug}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx"
-    return output.getvalue(), filename
-
-
-def build_csv_bytes(headers: list[str], rows: list[list[Any]]) -> bytes:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(headers)
-    writer.writerows(rows)
-    return buffer.getvalue().encode("utf-8")
-
-
-def build_excel_bytes(payload: dict[str, Any]) -> bytes:
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font, PatternFill
-        from openpyxl.utils import get_column_letter
-    except ImportError as error:  # pragma: no cover - dependency guard
-        raise RuntimeError("openpyxl is required for Excel report generation.") from error
-
-    headers = payload.get("headers") or payload.get("columns") or []
-    normalized_headers = [item.get("label") if isinstance(item, dict) else item for item in headers]
+def validate_report_payload(payload: dict[str, Any]) -> None:
+    columns = payload.get("columns") or []
     rows = payload.get("rows") or []
-    title = _text(payload.get("title"), "BulsuScholar Report")
-    filter_label = _text(payload.get("filterLabel"), "")
+    grouped_pages = payload.get("groupedPages") or []
+    if not isinstance(columns, list) or len(columns) == 0:
+        raise ValueError("report_columns_required")
+    if len(columns) > MAX_REPORT_COLUMNS:
+        raise ValueError("report_column_limit_exceeded")
+    if not isinstance(rows, list) or len(rows) > MAX_REPORT_ROWS:
+        raise ValueError("report_row_limit_exceeded")
+    if grouped_pages and not isinstance(grouped_pages, list):
+        raise ValueError("invalid_grouped_report_pages")
 
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Report"
-    sheet.append([title])
-    sheet.append([filter_label])
-    sheet.append([])
-    sheet.append(normalized_headers)
-    for row in rows:
-        sheet.append(list(row) if isinstance(row, (list, tuple)) else [row])
+    def validate_rows(raw_rows: Any, column_count: int) -> int:
+        if not isinstance(raw_rows, list):
+            raise ValueError("invalid_report_rows")
+        for row in raw_rows:
+            if not isinstance(row, (list, tuple)) or len(row) != column_count:
+                raise ValueError("invalid_report_row_shape")
+            if any(len(str(value if value is not None else "")) > MAX_CELL_LENGTH for value in row):
+                raise ValueError("report_cell_limit_exceeded")
+        return len(raw_rows)
 
-    last_column = max(1, len(normalized_headers))
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_column)
-    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_column)
-    sheet["A1"].font = Font(size=16, bold=True, color="00633C")
-    sheet["A2"].font = Font(size=10, color="526176")
-    for cell in sheet[4]:
-        cell.fill = PatternFill("solid", fgColor="00633C")
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.alignment = Alignment(vertical="center", wrap_text=True)
-    sheet.freeze_panes = "A5"
-    if normalized_headers:
-        sheet.auto_filter.ref = f"A4:{get_column_letter(last_column)}{max(4, sheet.max_row)}"
-    for column_index, column_cells in enumerate(sheet.columns, start=1):
-        width = min(42, max(12, max(len(str(cell.value or "")) for cell in column_cells) + 2))
-        sheet.column_dimensions[get_column_letter(column_index)].width = width
-    for row in sheet.iter_rows(min_row=5):
-        for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-
-    output = io.BytesIO()
-    workbook.save(output)
-    return output.getvalue()
+    validate_rows(rows, len(columns))
+    grouped_row_count = 0
+    for group in grouped_pages:
+        if not isinstance(group, dict):
+            raise ValueError("invalid_grouped_report_pages")
+        group_columns = group.get("columns") or columns
+        if not isinstance(group_columns, list) or not group_columns or len(group_columns) > MAX_REPORT_COLUMNS:
+            raise ValueError("invalid_grouped_report_columns")
+        grouped_row_count += validate_rows(group.get("rows") or [], len(group_columns))
+    if grouped_row_count > MAX_REPORT_ROWS:
+        raise ValueError("report_row_limit_exceeded")
 
 
-def _report_column_widths(headers: list[str], available_width: float) -> list[float]:
-    if headers == STUDENT_REPORT_HEADERS:
-        weights = [0.12, 0.18, 0.24, 0.09, 0.08, 0.14, 0.15]
-        return [available_width * weight for weight in weights]
-    if not headers:
-        return []
-    return [available_width / len(headers)] * len(headers)
+def _normalize_columns(raw_columns: list[Any]) -> list[dict[str, Any]]:
+    columns = []
+    for index, item in enumerate(raw_columns):
+        if isinstance(item, dict):
+            label = _text(item.get("label") or item.get("key"), f"Column {index + 1}")
+            weight = item.get("weight") or item.get("width") or 1
+        else:
+            label = _text(item, f"Column {index + 1}")
+            weight = 1
+        try:
+            normalized_weight = max(0.25, float(weight))
+        except (TypeError, ValueError):
+            normalized_weight = 1
+        columns.append({"label": label, "weight": normalized_weight})
+    return columns
+
+
+def _column_widths(columns: list[dict[str, Any]], available_width: float) -> list[float]:
+    total_weight = sum(column["weight"] for column in columns) or 1
+    return [available_width * column["weight"] / total_weight for column in columns]
+
+
+def _safe_paragraph(value: Any, style: Any) -> Any:
+    from reportlab.platypus import Paragraph
+
+    rendered = _text(value)[:MAX_CELL_LENGTH]
+    return Paragraph(escape(rendered).replace("\n", "<br/>") or "-", style)
+
+
+def _load_brand_images() -> tuple[bytes | None, bytes | None]:
+    template_path = Path(__file__).resolve().parents[1] / "public" / "Templates" / "FORMATTED_REPORT.docx"
+    if not template_path.exists():
+        return None, None
+    try:
+        with ZipFile(template_path) as archive:
+            return (
+                archive.read("word/media/image1.png"),
+                archive.read("word/media/image2.png"),
+            )
+    except (KeyError, OSError):
+        return None, None
 
 
 def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
     try:
+        import reportlab
         from reportlab.lib import colors
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.pagesizes import landscape, legal
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.utils import ImageReader
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
-        from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-        from pypdf import PdfReader, PdfWriter
+        from reportlab.platypus import KeepTogether, PageBreak, SimpleDocTemplate, Spacer, Table, TableStyle
     except ImportError as error:  # pragma: no cover - dependency guard
-        raise RuntimeError("reportlab and pypdf are required for Python PDF report generation.") from error
+        raise RuntimeError("reportlab is required for PDF report generation.") from error
+
+    validate_report_payload(payload)
+    page_size = landscape(legal)
+    page_width, page_height = page_size
+    margin_left = 28
+    margin_right = 28
+    margin_top = 98
+    margin_bottom = 72
 
     font_regular = "Times-Roman"
     font_bold = "Times-Bold"
-    windows_fonts = Path("C:/Windows/Fonts")
-    times_regular = windows_fonts / "times.ttf"
-    times_bold = windows_fonts / "timesbd.ttf"
-    if times_regular.exists() and times_bold.exists():
-        pdfmetrics.registerFont(TTFont("TimesNewRoman", str(times_regular)))
-        pdfmetrics.registerFont(TTFont("TimesNewRoman-Bold", str(times_bold)))
-        font_regular = "TimesNewRoman"
-        font_bold = "TimesNewRoman-Bold"
+    unicode_font_pairs = [
+        (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"),
+        ),
+        (
+            Path(reportlab.__file__).resolve().parent / "fonts" / "Vera.ttf",
+            Path(reportlab.__file__).resolve().parent / "fonts" / "VeraBd.ttf",
+        ),
+        (Path("C:/Windows/Fonts/arial.ttf"), Path("C:/Windows/Fonts/arialbd.ttf")),
+        (Path("C:/Windows/Fonts/times.ttf"), Path("C:/Windows/Fonts/timesbd.ttf")),
+    ]
+    for regular_path, bold_path in unicode_font_pairs:
+        if not regular_path.exists() or not bold_path.exists():
+            continue
+        pdfmetrics.registerFont(TTFont("BulsuScholarReport", str(regular_path)))
+        pdfmetrics.registerFont(TTFont("BulsuScholarReport-Bold", str(bold_path)))
+        font_regular = "BulsuScholarReport"
+        font_bold = "BulsuScholarReport-Bold"
+        break
 
-    overlay_buffer = io.BytesIO()
-    template_path = Path(__file__).resolve().parents[1] / "public" / "Templates" / "FORMATTED_REPORT.pdf"
-    template_reader = PdfReader(str(template_path)) if template_path.exists() else None
-    template_page = template_reader.pages[0] if template_reader else None
-    page_width = float(template_page.mediabox.width) if template_page else letter[0]
-    page_height = float(template_page.mediabox.height) if template_page else letter[1]
-    page_size = (page_width, page_height)
-    margin_left = 36
-    margin_right = 36
-    margin_top = 190 if template_page else 72
-    margin_bottom = 178 if template_page else 62
-    doc = SimpleDocTemplate(
-        overlay_buffer,
+    output = io.BytesIO()
+    document = SimpleDocTemplate(
+        output,
         pagesize=page_size,
         leftMargin=margin_left,
         rightMargin=margin_right,
         topMargin=margin_top,
         bottomMargin=margin_bottom,
+        title=_text(payload.get("title"), "BulsuScholar Report"),
+        author="BulsuScholar",
     )
     styles = getSampleStyleSheet()
-    for style_name in ("Title", "Heading2", "BodyText"):
-        styles[style_name].fontName = font_regular
-        styles[style_name].fontSize = 10
-        styles[style_name].leading = 12
-    styles["Title"].fontName = font_bold
-    styles["Title"].fontSize = 16
-    styles["Title"].leading = 19
-    styles["Title"].spaceAfter = 5
-    styles["Heading2"].fontName = font_bold
-    styles["Heading2"].fontSize = 11
-    styles["Heading2"].leading = 14
-    styles.add(styles["BodyText"].clone("ReportTableHeader"))
-    styles.add(styles["BodyText"].clone("ReportTableCell"))
-    styles["ReportTableHeader"].fontName = font_bold
-    styles["ReportTableHeader"].fontSize = 10
-    styles["ReportTableHeader"].leading = 12
-    styles["ReportTableHeader"].textColor = colors.white
-    styles["ReportTableCell"].fontName = font_regular
-    styles["ReportTableCell"].fontSize = 10
-    styles["ReportTableCell"].leading = 12
-    styles["ReportTableCell"].wordWrap = "CJK"
-    def append_report_heading() -> None:
-        story.append(Paragraph(payload.get("title") or "Report", styles["Title"]))
-        if payload.get("subtitle"):
-            story.append(Paragraph(payload.get("subtitle"), styles["Heading2"]))
-        story.append(Paragraph(f"Generated: {datetime.now().strftime('%b %d, %Y %I:%M %p')}", styles["BodyText"]))
-        if payload.get("filterLabel"):
-            story.append(Paragraph(f"Filters: {payload['filterLabel']}", styles["BodyText"]))
-        story.append(Spacer(1, 12))
+    title_style = ParagraphStyle(
+        "ReportTitle",
+        parent=styles["Title"],
+        fontName=font_bold,
+        fontSize=15,
+        leading=18,
+        textColor=colors.HexColor("#063d2d"),
+        spaceAfter=3,
+        alignment=0,
+    )
+    meta_style = ParagraphStyle(
+        "ReportMeta",
+        parent=styles["BodyText"],
+        fontName=font_regular,
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#475569"),
+    )
+    group_style = ParagraphStyle(
+        "ReportGroup",
+        parent=styles["Heading2"],
+        fontName=font_bold,
+        fontSize=11,
+        leading=13,
+        textColor=colors.HexColor("#063d2d"),
+        spaceAfter=4,
+    )
+    header_style = ParagraphStyle(
+        "ReportTableHeader",
+        parent=styles["BodyText"],
+        fontName=font_bold,
+        fontSize=7.2,
+        leading=8.5,
+        textColor=colors.white,
+        alignment=1,
+    )
+    cell_style = ParagraphStyle(
+        "ReportTableCell",
+        parent=styles["BodyText"],
+        fontName=font_regular,
+        fontSize=7.2,
+        leading=8.7,
+        textColor=colors.HexColor("#172033"),
+        splitLongWords=True,
+    )
+    stat_value_style = ParagraphStyle(
+        "ReportStatValue",
+        parent=cell_style,
+        fontName=font_bold,
+        fontSize=10,
+        leading=11,
+        textColor=colors.HexColor("#00633c"),
+        alignment=1,
+    )
+    stat_label_style = ParagraphStyle(
+        "ReportStatLabel",
+        parent=cell_style,
+        fontSize=7,
+        textColor=colors.HexColor("#526176"),
+        alignment=1,
+    )
 
-    story = []
-    append_report_heading()
+    header_image, footer_image = _load_brand_images()
 
-    def normalize_headers(raw_headers: list[Any]) -> list[str]:
-        return [
-            item.get("label", "")
-            if isinstance(item, dict)
-            else str(item)
-            for item in raw_headers
-        ]
-
-    def append_report_table(headers: list[str], rows: list[list[Any]]) -> None:
-        table_data = []
-        if headers:
-            table_data.append([Paragraph(header, styles["ReportTableHeader"]) for header in headers])
-        for row in rows:
-            table_data.append([Paragraph(_text(value), styles["ReportTableCell"]) for value in row])
-        if not table_data:
-            story.append(Paragraph("No rows available for the selected report.", styles["BodyText"]))
-            return
-        column_widths = _report_column_widths(headers, page_width - margin_left - margin_right)
-        table = Table(table_data, colWidths=column_widths, repeatRows=1, hAlign="LEFT", splitByRow=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#00633c")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#b7c8be")),
-            ("FONTNAME", (0, 0), (-1, 0), font_bold),
-            ("FONTNAME", (0, 1), (-1, -1), font_regular),
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        story.append(table)
-
-    grouped_pages = payload.get("groupedPages") if isinstance(payload.get("groupedPages"), list) else []
-    if grouped_pages:
-        for group_index, group in enumerate(grouped_pages):
-            if group_index > 0:
-                story.append(PageBreak())
-                append_report_heading()
-            story.append(Paragraph(_text(group.get("title") or f"Grantor {group_index + 1}"), styles["Heading2"]))
-            if group.get("subtitle"):
-                story.append(Paragraph(_text(group.get("subtitle")), styles["BodyText"]))
-            story.append(Spacer(1, 8))
-            group_headers = normalize_headers(group.get("headers") or payload.get("headers") or payload.get("columns") or [])
-            append_report_table(group_headers, group.get("rows") or [])
-    else:
-        raw_headers = payload.get("headers") or payload.get("columns") or []
-        headers = normalize_headers(raw_headers)
-        rows = payload.get("rows") or []
-        append_report_table(headers, rows)
-
-    def draw_template_marker_masks(canvas, _document):
-        if not template_page:
-            return
+    def draw_page(canvas, doc) -> None:
         canvas.saveState()
-        canvas.setFillColor(colors.white)
-        canvas.setStrokeColor(colors.white)
-        # Clear only the template's editable body and marker text. The official
-        # university artwork above and footer artwork below remain untouched.
-        canvas.rect(0, 145, page_width, page_height - margin_top - 145, fill=1, stroke=0)
+        if header_image:
+            canvas.drawImage(
+                ImageReader(io.BytesIO(header_image)),
+                margin_left,
+                page_height - 82,
+                width=page_width - margin_left - margin_right,
+                height=70,
+                preserveAspectRatio=True,
+                anchor="c",
+                mask="auto",
+            )
+        else:
+            canvas.setFillColor(colors.HexColor("#00633c"))
+            canvas.rect(0, page_height - 12, page_width, 12, fill=1, stroke=0)
+            canvas.setFont(font_bold, 13)
+            canvas.drawString(margin_left, page_height - 42, "BulsuScholar")
+        if footer_image:
+            canvas.drawImage(
+                ImageReader(io.BytesIO(footer_image)),
+                margin_left,
+                12,
+                width=page_width - margin_left - margin_right,
+                height=48,
+                preserveAspectRatio=True,
+                anchor="c",
+                mask="auto",
+            )
+        canvas.setFillColor(colors.HexColor("#475569"))
+        canvas.setFont(font_regular, 7)
+        canvas.drawRightString(page_width - margin_right, 8, f"Page {canvas.getPageNumber()}")
         canvas.restoreState()
 
-    doc.build(story, onFirstPage=draw_template_marker_masks, onLaterPages=draw_template_marker_masks)
-    overlay_buffer.seek(0)
-    if not template_page:
-        return overlay_buffer.getvalue()
+    def report_heading() -> list[Any]:
+        heading = [_safe_paragraph(payload.get("title") or "BulsuScholar Report", title_style)]
+        if payload.get("subtitle"):
+            heading.append(_safe_paragraph(payload.get("subtitle"), meta_style))
+        heading.append(_safe_paragraph(f"Generated: {datetime.now().strftime('%b %d, %Y %I:%M %p')}", meta_style))
+        if payload.get("filterLabel"):
+            heading.append(_safe_paragraph(f"Filters: {payload['filterLabel']}", meta_style))
+        heading.append(Spacer(1, 7))
+        stats = [item for item in payload.get("stats") or [] if isinstance(item, dict)]
+        if stats:
+            stat_cells = [
+                [_safe_paragraph(item.get("value"), stat_value_style), _safe_paragraph(item.get("label"), stat_label_style)]
+                for item in stats[:6]
+            ]
+            stat_table = Table([stat_cells], colWidths=[(page_width - margin_left - margin_right) / len(stat_cells)] * len(stat_cells))
+            stat_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f2faf6")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#b7d7c7")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d5e7dd")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            heading.extend([stat_table, Spacer(1, 8)])
+        return heading
 
-    overlay_reader = PdfReader(overlay_buffer)
-    writer = PdfWriter()
-    for overlay_page in overlay_reader.pages:
-        page = PdfReader(str(template_path)).pages[0]
-        page.merge_page(overlay_page)
-        writer.add_page(page)
+    def report_table(raw_columns: list[Any], raw_rows: list[Any]) -> Any:
+        columns = _normalize_columns(raw_columns)
+        headers = [_safe_paragraph(column["label"], header_style) for column in columns]
+        table_data = [headers]
+        for raw_row in raw_rows:
+            row = raw_row if isinstance(raw_row, (list, tuple)) else [raw_row]
+            table_data.append([_safe_paragraph(row[index] if index < len(row) else "-", cell_style) for index in range(len(columns))])
+        if len(table_data) == 1:
+            table_data.append([_safe_paragraph("No records matched the selected filters.", cell_style)] + ["" for _ in columns[1:]])
+        table = Table(
+            table_data,
+            colWidths=_column_widths(columns, page_width - margin_left - margin_right),
+            repeatRows=1,
+            hAlign="LEFT",
+            splitByRow=1,
+        )
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#00633c")),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#b7c8be")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fbf9")]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        if not raw_rows:
+            table.setStyle(TableStyle([("SPAN", (0, 1), (-1, 1)), ("ALIGN", (0, 1), (-1, 1), "CENTER")]))
+        return table
 
-    output = io.BytesIO()
-    writer.write(output)
+    story: list[Any] = []
+    grouped_pages = [item for item in payload.get("groupedPages") or [] if isinstance(item, dict)]
+    if grouped_pages:
+        for group_index, group in enumerate(grouped_pages):
+            if group_index:
+                story.append(PageBreak())
+            story.extend(report_heading())
+            group_heading = [_safe_paragraph(group.get("title") or f"Group {group_index + 1}", group_style)]
+            if group.get("subtitle"):
+                group_heading.append(_safe_paragraph(group.get("subtitle"), meta_style))
+            group_heading.append(Spacer(1, 5))
+            story.append(KeepTogether(group_heading))
+            story.append(report_table(group.get("columns") or payload.get("columns") or [], group.get("rows") or []))
+    else:
+        story.extend(report_heading())
+        story.append(report_table(payload.get("columns") or [], payload.get("rows") or []))
+
+    document.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
     return output.getvalue()

@@ -18,9 +18,10 @@ import { isPasswordStrong } from "../utils/passwordValidation"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
-import logo2 from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 
 export default function GrantorChangePasswordPage() {
+	const brandLogo = usePublicConfiguration().branding?.logoUrl || logo
 	const navigate = useNavigate()
 	const [grantorId, setGrantorId] = useState("")
 	const [password, setPassword] = useState("")
@@ -129,7 +130,7 @@ export default function GrantorChangePasswordPage() {
 			<div className="login-panel login-panel-info" style={{ "--login-bg": `url(${loginBackground})` }}>
 				<div className="login-info-inner">
 					<div className="login-info-icon" aria-hidden>
-						<img src={logo} alt="Institutional Student Programs and Services logo" className="login-logo-img" />
+						<img src={brandLogo} alt="Institutional Student Programs and Services logo" className="login-logo-img" />
 					</div>
 					<h1 className="login-info-title">Grantor Account Security</h1>
 					<p className="login-info-desc">
@@ -140,7 +141,7 @@ export default function GrantorChangePasswordPage() {
 
 			<div className="login-panel login-panel-form">
 				<div className="login-form-inner">
-					<img src={logo2} alt="Bulacan State University Office of the Scholarships" className="login-form-logo" />
+					<img src={brandLogo} alt="Bulacan State University Office of the Scholarships" className="login-form-logo" />
 					<h2 className="login-form-title">Change Password</h2>
 					<p className="login-form-subtitle">
 						{grantorId ? `Changing the password for grantor ${grantorId}` : "Loading grantor account..."}

@@ -11,6 +11,13 @@ node_modules
 dist
 dist-ssr
 *.local
+test-results/
+playwright-report/
+supabase/.temp/
+
+# Python runtime and test caches
+__pycache__/
+*.py[cod]
 
 # Environment variables - NEVER commit these files
 .env

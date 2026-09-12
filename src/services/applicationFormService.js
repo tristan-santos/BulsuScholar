@@ -1,211 +1,67 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
+import {
+	downloadStorageObject,
+	triggerBlobDownload,
+	validatePdfBlob,
+} from "./supabaseStorageService"
 
-const APPLICATION_FORM_TEMPLATE_URL = "/Templates/AplicationForm_Format.pdf"
+const DEFAULT_APPLICATION_FORM_TEMPLATE_URL = "/Templates/AplicationForm_Format.pdf"
+const STUDENT_PROFILE_TEMPLATE_URL = "/Templates/STUDENT PROFILE_APPLICATION-FORMAT.pdf"
 
-function safeText(value, fallback = "N/A") {
-	const text = String(value ?? "").trim()
-	return text || fallback
+function hasStoredFileReference(file = null) {
+	return Boolean(file && (file.url || file.publicUrl || file.path || file.publicId || file.storagePath))
 }
 
-function formatLongDate(value = new Date()) {
-	const date = value instanceof Date ? value : new Date(value)
-	if (Number.isNaN(date.getTime())) return "N/A"
-	return date.toLocaleDateString("en-PH", {
-		day: "2-digit",
-		month: "long",
-		year: "numeric",
-	})
+async function downloadStaticPdfTemplate(url, fileName) {
+	const response = await fetch(url)
+	if (!response.ok) throw new Error(`template_load_failed_${response.status}`)
+	const blob = await validatePdfBlob(await response.blob())
+	triggerBlobDownload(blob, fileName)
+	return { blob, fileName, source: "template" }
 }
 
-export async function exportApplicationFormPdfDocument({
-	student = {},
-	studentId = "",
-	scholarship = {},
-	autoDownload = true,
-} = {}) {
-	try {
-		const response = await fetch(APPLICATION_FORM_TEMPLATE_URL)
-		if (!response.ok) throw new Error(`template_load_failed_${response.status}`)
-		const templatePdf = await PDFDocument.load(await response.arrayBuffer())
-		return exportGeneratedApplicationFormPdfDocument({
-			student,
-			studentId,
-			scholarship,
-			autoDownload,
-			basePdfDoc: templatePdf,
-			source: "template-with-autofill",
-		})
-	} catch (error) {
-		console.warn("Application form template could not be loaded. Using generated fallback.", error)
-		return exportGeneratedApplicationFormPdfDocument({
-			student,
-			studentId,
-			scholarship,
-			autoDownload,
-		})
-	}
-}
-
-async function exportGeneratedApplicationFormPdfDocument({
-	student = {},
-	studentId = "",
-	scholarship = {},
-	autoDownload = true,
-	basePdfDoc = null,
-	source = "generated",
-} = {}) {
-	const pdfDoc = basePdfDoc || await PDFDocument.create()
-	const page = pdfDoc.addPage([612, 792])
-	const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
-	const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-
-	const fullName =
-		[student?.fname, student?.mname, student?.lname].filter(Boolean).join(" ") || "Student"
-	const scholarshipName = safeText(scholarship?.name || scholarship?.provider, "Scholarship")
-	const provider = safeText(scholarship?.provider || scholarship?.name, "Scholarship Office")
-	const applicationNumber = safeText(
-		scholarship?.applicationNumber || scholarship?.requestNumber || scholarship?.id,
-		"Pending",
+export function downloadStudentProfileTemplate() {
+	return downloadStaticPdfTemplate(
+		STUDENT_PROFILE_TEMPLATE_URL,
+		"Student_Application_Profile_Template.pdf",
 	)
-	const course = safeText(student?.course)
-	const yearLevel = safeText(student?.year || student?.yearLevel)
-	const section = safeText(student?.section)
-	const email = safeText(student?.email)
-	const contact = safeText(student?.cpNumber || student?.contact || student?.mobile)
+}
 
-	page.drawText("BulsuScholar Student Application Profile", {
-		x: 50,
-		y: 735,
-		size: 22,
-		font: boldFont,
-		color: rgb(0.04, 0.34, 0.17),
-	})
+export function getApplicationFormSource(scholarship = {}, materialRequest = null) {
+	const requestType = String(materialRequest?.applicationFormType || "").trim().toLowerCase()
+	const requestCustomForm = materialRequest?.customApplicationForm || materialRequest?.customApplicationProfile || null
+	const legacyCustomForm = scholarship?.customApplicationForm || scholarship?.customApplicationProfile || null
 
-	page.drawText("Requested scholarship application document for student release.", {
-		x: 50,
-		y: 712,
-		size: 10,
-		font,
-		color: rgb(0.29, 0.33, 0.38),
-	})
+	if (requestType === "custom") {
+		return {
+			type: "custom",
+			label: "Custom Application Form",
+			file: requestCustomForm,
+			available: hasStoredFileReference(requestCustomForm),
+		}
+	}
+	if (requestType === "default") {
+		return { type: "default", label: "Default Application Form", file: null, available: true }
+	}
 
-	const rows = [
-		["Date Generated", formatLongDate()],
-		["Student Name", fullName],
-		["Student ID", safeText(studentId || student?.studentnumber)],
-		["Scholarship", scholarshipName],
-		["Provider", provider],
-		["Application Number", applicationNumber],
-		["Course", course],
-		["Year / Section", `${yearLevel} / ${section}`],
-		["Email", email],
-		["Contact Number", contact],
-	]
+	const customForm = hasStoredFileReference(requestCustomForm) ? requestCustomForm : legacyCustomForm
+	return hasStoredFileReference(customForm)
+		? { type: "custom", label: "Custom Application Form", file: customForm, available: true }
+		: { type: "default", label: "Default Application Form", file: null, available: true }
+}
 
-	let currentY = 660
-	rows.forEach(([label, value]) => {
-		page.drawText(label, {
-			x: 52,
-			y: currentY,
-			size: 10,
-			font: boldFont,
-			color: rgb(0.12, 0.18, 0.24),
+export async function downloadScholarshipApplicationForm({ scholarship = {}, materialRequest = null } = {}) {
+	const source = getApplicationFormSource(scholarship, materialRequest)
+	if (source.type === "custom") {
+		if (!source.available) throw new Error("custom_application_form_missing")
+		const result = await downloadStorageObject(source.file, {
+			fileName: source.file?.name || "Custom_Application_Form.pdf",
+			validatePdf: true,
 		})
-		page.drawText(value, {
-			x: 210,
-			y: currentY,
-			size: 10,
-			font,
-			color: rgb(0.12, 0.18, 0.24),
-		})
-		currentY -= 28
-	})
+		return { ...result, source: "grantor-custom", sourceLabel: source.label }
+	}
 
-	page.drawText("Declaration", {
-		x: 50,
-		y: 360,
-		size: 12,
-		font: boldFont,
-		color: rgb(0.04, 0.34, 0.17),
-	})
-
-	page.drawText(
-		"I confirm that the information reflected in this generated Student Application Profile follows the current scholarship record stored in BulsuScholar. This document is issued upon approved student request.",
-		{
-			x: 50,
-			y: 336,
-			size: 10,
-			font,
-			color: rgb(0.29, 0.33, 0.38),
-			maxWidth: 510,
-			lineHeight: 14,
-		},
+	return downloadStaticPdfTemplate(
+		DEFAULT_APPLICATION_FORM_TEMPLATE_URL,
+		"Scholarship_Application_Form.pdf",
 	)
-
-	page.drawText("Office of Scholarships", {
-		x: 50,
-		y: 120,
-		size: 11,
-		font: boldFont,
-		color: rgb(0.12, 0.18, 0.24),
-	})
-	page.drawText("Bulacan State University", {
-		x: 50,
-		y: 104,
-		size: 10,
-		font,
-		color: rgb(0.29, 0.33, 0.38),
-	})
-
-	const pdfBytes = await pdfDoc.save()
-
-	if (autoDownload) {
-		downloadApplicationFormPdfBytes(
-			pdfBytes,
-			`Student_Application_Profile_${safeText(studentId || student?.studentnumber, "student")}.pdf`,
-		)
-	}
-
-	return { pdfBytes, source }
-}
-
-export function getApplicationFormSource(scholarship = {}) {
-	const customForm = scholarship?.customApplicationForm || scholarship?.customApplicationProfile || null
-	return customForm?.url || customForm?.publicUrl
-		? { type: "grantor", label: "Grantor-specific application form", file: customForm }
-		: { type: "default", label: "Default Student Application Profile", file: null }
-}
-
-export async function downloadStudentApplicationProfile({ student = {}, studentId = "", scholarship = {}, useGrantorForm = true } = {}) {
-	const sourceInfo = useGrantorForm ? getApplicationFormSource(scholarship) : { type: "default", file: null }
-	const customProfile = sourceInfo.file
-	const customUrl = String(customProfile?.url || customProfile?.publicUrl || "").trim()
-	if (!customUrl) {
-		return exportApplicationFormPdfDocument({ student, studentId, scholarship })
-	}
-
-	const response = await fetch(customUrl)
-	if (!response.ok) throw new Error(`custom_application_profile_load_failed_${response.status}`)
-	const pdfBytes = new Uint8Array(await response.arrayBuffer())
-	const requestedName = String(customProfile?.name || "").trim()
-	const fileName = requestedName.toLowerCase().endsWith(".pdf")
-		? requestedName
-		: `${requestedName || "Student_Application_Profile"}.pdf`
-	downloadApplicationFormPdfBytes(pdfBytes, fileName)
-	return { pdfBytes, source: "grantor-custom", sourceLabel: "Grantor-specific application form" }
-}
-
-export function downloadApplicationFormPdfBytes(
-	pdfBytes,
-	fileName = "Student_Application_Profile.pdf",
-) {
-	const blob = new Blob([pdfBytes], { type: "application/pdf" })
-	const link = document.createElement("a")
-	const url = URL.createObjectURL(blob)
-	link.href = url
-	link.download = fileName
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-	URL.revokeObjectURL(url)
 }

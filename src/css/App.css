@@ -3,6 +3,10 @@
 :root {
 	--bulsu-primary: #00633c;
 	--bulsu-primary-soft: rgba(0, 99, 60, 0.1);
+	--bulsu-layer-content: 1;
+	--bulsu-layer-modal: 100000;
+	--bulsu-layer-modal-nested: 110000;
+	--bulsu-layer-toast: 2147483647;
 	--bulsu-font-family:
 		system-ui,
 		-apple-system,
@@ -11,6 +15,136 @@
 		"Helvetica Neue",
 		Arial,
 		sans-serif;
+}
+
+/* Keep portal feedback above every dialog and every dialog above page content. */
+.Toastify__toast-container {
+	z-index: var(--bulsu-layer-toast) !important;
+}
+
+html body [class$="-backdrop"],
+html body [class*="-backdrop "],
+html body .admin-modal-overlay,
+html body .signup-preview-modal-overlay,
+html body .signup-terms-modal-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: var(--bulsu-layer-modal) !important;
+}
+
+html body .admin-document-preview-backdrop,
+html body .grantor-document-preview-backdrop,
+html body .student-document-preview-backdrop,
+html body .student-soe-preview-backdrop,
+html body .admin-lightbox,
+html body .grantor-image-lightbox,
+html body .student-photo-lightbox,
+html body .signup-preview-modal-overlay {
+	z-index: var(--bulsu-layer-modal-nested) !important;
+}
+
+html body .bulsuscholar-discard-backdrop {
+	display: grid;
+	place-items: center;
+	padding: 1rem;
+	background: rgba(15, 23, 42, 0.58);
+	z-index: var(--bulsu-layer-modal-nested) !important;
+}
+
+.bulsuscholar-discard-modal {
+	position: relative;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 0.85rem;
+	width: min(430px, 100%);
+	padding: 1.35rem;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #0f172a;
+	box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+.bulsuscholar-discard-modal h3,
+.bulsuscholar-discard-modal p {
+	margin: 0;
+}
+
+.bulsuscholar-discard-modal p {
+	margin-top: 0.35rem;
+	color: #64748b;
+	line-height: 1.5;
+}
+
+.bulsuscholar-discard-icon {
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	background: #fee2e2;
+	color: #b91c1c;
+	font-size: 1.3rem;
+}
+
+.bulsuscholar-discard-close {
+	position: absolute;
+	top: 0.75rem;
+	right: 0.75rem;
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: #64748b;
+	cursor: pointer;
+}
+
+.bulsuscholar-discard-modal footer {
+	grid-column: 1 / -1;
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.65rem;
+	margin-top: 0.35rem;
+}
+
+.bulsuscholar-discard-modal footer button {
+	min-height: 40px;
+	padding: 0.6rem 0.9rem;
+	border-radius: 6px;
+	font: inherit;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.bulsuscholar-discard-cancel {
+	border: 1px solid #cbd5e1;
+	background: #ffffff;
+	color: #334155;
+}
+
+.bulsuscholar-discard-confirm {
+	border: 1px solid #b91c1c;
+	background: #b91c1c;
+	color: #ffffff;
+}
+
+body:has(.student-dashboard--dark) .bulsuscholar-discard-modal,
+body:has(.grantor-portal--dark) .bulsuscholar-discard-modal,
+body:has(.admin-portal--dark) .bulsuscholar-discard-modal,
+html[data-theme="dark"] .bulsuscholar-discard-modal {
+	border-color: #475569;
+	background: #111827;
+	color: #f8fafc;
+}
+
+body:has(.student-dashboard--dark) .bulsuscholar-discard-modal p,
+body:has(.grantor-portal--dark) .bulsuscholar-discard-modal p,
+body:has(.admin-portal--dark) .bulsuscholar-discard-modal p,
+html[data-theme="dark"] .bulsuscholar-discard-modal p {
+	color: #cbd5e1;
 }
 
 select {

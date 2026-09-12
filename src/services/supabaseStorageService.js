@@ -80,6 +80,71 @@ export async function getStorageObjectBlob(file = {}) {
 	throw new Error("storage_path_missing")
 }
 
+export function sanitizeDownloadFileName(fileName = "document.pdf", fallback = "document.pdf") {
+	const withoutControlCharacters = [...String(fileName || fallback)]
+		.map((character) => character.charCodeAt(0) < 32 ? "_" : character)
+		.join("")
+	const normalized = withoutControlCharacters
+		.replace(/[<>:"/\\|?*]+/g, "_")
+		.replace(/\s+/g, " ")
+		.trim()
+	return normalized || fallback
+}
+
+export async function validatePdfBlob(blob) {
+	if (!(blob instanceof Blob) || blob.size < 5) {
+		throw new Error("pdf_file_empty")
+	}
+	const signature = new TextDecoder("ascii").decode(
+		new Uint8Array(await blob.slice(0, 5).arrayBuffer()),
+	)
+	if (signature !== "%PDF-") {
+		throw new Error("invalid_pdf_file")
+	}
+	return blob
+}
+
+export function triggerBlobDownload(blob, fileName = "document.pdf") {
+	if (!(blob instanceof Blob) || blob.size === 0) throw new Error("download_file_empty")
+	const link = document.createElement("a")
+	const url = URL.createObjectURL(blob)
+	link.href = url
+	link.download = sanitizeDownloadFileName(fileName)
+	document.body.appendChild(link)
+	link.click()
+	document.body.removeChild(link)
+	setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+export async function downloadStorageObject(file = {}, options = {}) {
+	const blob = await getStorageObjectBlob(file)
+	if (options.validatePdf === true) await validatePdfBlob(blob)
+	const fallbackName = options.validatePdf === true ? "document.pdf" : "document"
+	const fileName = sanitizeDownloadFileName(
+		options.fileName || file.name || file.fileName || fallbackName,
+		fallbackName,
+	)
+	triggerBlobDownload(blob, fileName)
+	return { blob, fileName }
+}
+
+export function getDocumentDownloadErrorMessage(error, label = "document") {
+	const reason = String(error?.message || error || "").toLowerCase()
+	if (reason.includes("invalid_pdf") || reason.includes("pdf_file_empty") || reason.includes("download_file_empty")) {
+		return `The saved ${label} is empty or is not a valid PDF.`
+	}
+	if (reason.includes("storage_path_missing") || reason.includes("_missing") || reason.includes("404") || reason.includes("not found")) {
+		return `The saved ${label} file could not be found.`
+	}
+	if (reason.includes("row-level security") || reason.includes("permission") || reason.includes("403") || reason.includes("unauthorized")) {
+		return `Access to the saved ${label} was denied.`
+	}
+	if (reason.includes("failed to fetch") || reason.includes("network")) {
+		return `The ${label} could not be downloaded because of a network error.`
+	}
+	return `Unable to download the ${label}. Please try again.`
+}
+
 export function normalizeStoragePublicUrl(url = "") {
 	if (!url) return ""
 	try {

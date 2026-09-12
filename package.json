@@ -10,6 +10,7 @@
 		"build": "vite build",
 		"pyRun": "cd backend && python -m pip install -r requirements.txt && python -m uvicorn main:app --reload --port 8000",
 		"create:admin": "node scripts/create-admin.mjs",
+		"create:root": "node scripts/create-root-admin.mjs",
 		"reset:grantor-passwords": "node scripts/reset-grantor-passwords.mjs",
 		"reset:grantor-password": "node scripts/reset-grantor-password.mjs",
 		"verify:password-secret": "node scripts/verify-password-secret.mjs",

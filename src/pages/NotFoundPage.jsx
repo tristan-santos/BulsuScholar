@@ -9,9 +9,11 @@ import {
 	HiOutlineUser,
 } from "react-icons/hi"
 import logo from "../assets/logo.png"
+import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import "../css/NotFoundPage.css"
 
 export default function NotFoundPage() {
+	const brandLogo = usePublicConfiguration().branding?.logoUrl || logo
 	const navigate = useNavigate()
 	const location = useLocation()
 	const suggestedRoutes = [
@@ -26,7 +28,7 @@ export default function NotFoundPage() {
 			<section className="not-found-shell" aria-labelledby="not-found-title">
 				<header className="not-found-header">
 					<div className="not-found-brand">
-						<img src={logo} alt="BulSU Scholar logo" />
+						<img src={brandLogo} alt="BulSU Scholar logo" />
 						<div>
 							<strong>BulsuScholar</strong>
 							<span>Portal Navigation</span>
