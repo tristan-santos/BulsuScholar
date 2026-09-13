@@ -62,6 +62,17 @@ class RootServiceTests(unittest.TestCase):
             self.assertEqual(422, raised.exception.status_code)
         root_service._validate_root_password("StrongRoot123!")
 
+    @patch("backend.root_service._admin_update_auth_user")
+    @patch("backend.root_service._secret", side_effect=HTTPException(status_code=503, detail="root_session_secret_not_configured"))
+    @patch("backend.root_service._root_by_auth", return_value={"id": "Tristan@Root", "auth_user_id": "auth-root"})
+    @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
+    def test_first_password_change_does_not_mutate_auth_without_session_secret(self, _auth, _root, _secret, update_auth):
+        request = type("Request", (), {"headers": {"authorization": "Bearer token"}})()
+        with self.assertRaises(HTTPException) as raised:
+            root_service.change_root_password(request, {"newPassword": "StrongRoot123!"})
+        self.assertEqual(503, raised.exception.status_code)
+        update_auth.assert_not_called()
+
     @patch("backend.root_service._rest")
     def test_admin_contact_is_normalized_and_only_updates_contact(self, rest):
         record = {"fullName": "Admin User", "role": "full_admin", "authUserId": "auth-1"}

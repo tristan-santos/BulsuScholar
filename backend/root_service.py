@@ -328,8 +328,9 @@ def change_root_password(request: Request, payload: dict[str, Any]) -> dict[str,
     if not root:
         raise HTTPException(status_code=401, detail="root_authentication_required")
     password = str(payload.get("newPassword") or "")
-    if len(password) < 12 or not re.search(r"[A-Z]", password) or not re.search(r"[a-z]", password) or not re.search(r"\d", password) or not re.search(r"[^A-Za-z0-9]", password):
-        raise HTTPException(status_code=422, detail="root_password_too_weak")
+    _validate_root_password(password)
+    # Fail before changing Supabase Auth when Railway is missing root security configuration.
+    _secret()
     _admin_update_auth_user(str(root["auth_user_id"]), {"password": password})
     recovery_codes = [secrets.token_hex(5).upper() for _ in range(10)]
     _rest("root_admins", method="PATCH", query=f"id=eq.{urllib.parse.quote(root['id'])}", payload={

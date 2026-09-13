@@ -281,6 +281,7 @@ def health() -> dict[str, Any]:
         "supabaseServerConfigured": bool(supabase_url and service_role_key),
         "hasSupabaseUrl": bool(supabase_url),
         "hasSupabaseServiceRoleKey": bool(service_role_key),
+        "rootSessionSecretConfigured": len(os.getenv("ROOT_SESSION_SECRET", "").strip()) >= 32,
         "scannerDependencies": get_scanner_dependency_status(),
     }
 
@@ -311,6 +312,8 @@ def deployment_health() -> dict[str, Any]:
             "hasSupabaseServiceRoleKey": bool(service_role_key),
             "hasResendApiKey": bool(resend_api_key),
             "hasResendFromEmail": bool(resend_from_email),
+            "hasRootSessionSecret": len(os.getenv("ROOT_SESSION_SECRET", "").strip()) >= 32,
+            "hasRootDatabaseUrl": bool(os.getenv("ROOT_DATABASE_URL") or os.getenv("SUPABASE_DB_URL")),
         },
         "scannerDependencies": get_scanner_dependency_status(),
         "tables": table_results,
