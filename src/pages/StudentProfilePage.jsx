@@ -46,6 +46,8 @@ import {
 	downloadStorageObject,
 	getDocumentDownloadErrorMessage,
 	getStorageObjectBlob,
+	parseSupabaseStorageLocation,
+	removeStorageObject,
 } from "../services/supabaseStorageService"
 import { updateScholarshipDocumentsWorkflow } from "../services/workflowService"
 import { isClosedApplication } from "../services/scholarshipChoiceService"
@@ -158,9 +160,7 @@ export default function StudentProfilePage() {
 		user?.applicationFormDownloadedAt,
 	)
 	const canDownloadProfileTemplate = true
-	const canUploadApplicationForm =
-		hasDownloadedProfileTemplate &&
-		canUploadDocument(studentApplicationProfile, currentSemesterTag)
+	const canUploadApplicationForm = hasDownloadedProfileTemplate
 
 	const [formData, setFormData] = useState({
 		fname: "",
@@ -471,8 +471,11 @@ export default function StudentProfilePage() {
 		}
 
 		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
+		let pendingProfileUpload = null
+		let profileReferenceSaved = false
 		try {
 			let fileToUpload = file
+			const previousApplicationProfile = isApplicationFormUpload ? studentApplicationProfile : null
 
 			// Convert PDF to image if needed for document preview compatibility.
 			if (isPdf(file) && (type === "cor" || type === "cog" || type === "schoolId")) {
@@ -481,7 +484,16 @@ export default function StudentProfilePage() {
 				toast.success("PDF converted successfully!")
 			}
 
-			const uploadResult = await uploadToStorage(fileToUpload)
+			const uploadResult = await uploadToStorage(
+				fileToUpload,
+				isApplicationFormUpload
+					? {
+						folder: `students/${userId}/application-profile`,
+						allowedTypes: ["application/pdf", "image/png"],
+					}
+					: {},
+			)
+			if (isApplicationFormUpload) pendingProfileUpload = uploadResult
 			const fieldName =
 				type === "cor"
 					? "corFile"
@@ -509,6 +521,7 @@ export default function StudentProfilePage() {
 				},
 				{ merge: true },
 			)
+			if (isApplicationFormUpload) profileReferenceSaved = true
 
 			const nextStudentSnapshot = { ...(user || {}), [fieldName]: nextFileValue }
 			const syncedStudent = await syncScholarshipApplicationDocuments({
@@ -518,6 +531,22 @@ export default function StudentProfilePage() {
 			})
 
 			setUser((prev) => ({ ...(prev || {}), ...(syncedStudent || {}), [fieldName]: nextFileValue }))
+			if (isApplicationFormUpload && hasDocumentReference(previousApplicationProfile)) {
+				const previousLocation = parseSupabaseStorageLocation(previousApplicationProfile)
+				const nextLocation = parseSupabaseStorageLocation(nextFileValue)
+				const referencesSameObject =
+					previousLocation.bucket === nextLocation.bucket &&
+					previousLocation.path &&
+					previousLocation.path === nextLocation.path
+				if (!referencesSameObject) {
+					try {
+						await removeStorageObject(previousApplicationProfile)
+					} catch (cleanupError) {
+						console.warn("Student Application Profile was replaced, but the previous storage object could not be removed.", cleanupError)
+						toast.warning("Profile replaced, but the previous stored file could not be cleaned up.")
+					}
+				}
+			}
 			toast.success(
 				type === "cor"
 					? "COR uploaded successfully."
@@ -528,6 +557,13 @@ export default function StudentProfilePage() {
 						: "Student ID uploaded successfully.",
 			)
 		} catch (error) {
+			if (pendingProfileUpload && !profileReferenceSaved) {
+				try {
+					await removeStorageObject(pendingProfileUpload)
+				} catch (cleanupError) {
+					console.warn("Unable to remove an incomplete Student Application Profile upload.", cleanupError)
+				}
+			}
 			console.error(`Failed to upload ${type}:`, error)
 			toast.error("Failed to upload document. Please try again.")
 		} finally {

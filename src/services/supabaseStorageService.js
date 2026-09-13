@@ -61,6 +61,15 @@ export function parseSupabaseStorageLocation(file = {}) {
 	return parsePublicStorageUrl(url, bucket)
 }
 
+export async function removeStorageObject(file = {}) {
+	const { bucket, path } = parseSupabaseStorageLocation(file)
+	if (!path) return { removed: false, reason: "storage_path_missing" }
+
+	const { error } = await supabase.storage.from(bucket).remove([path])
+	if (error) throw error
+	return { removed: true, bucket, path }
+}
+
 export async function getStorageObjectBlob(file = {}) {
 	const url = file.url || file.publicUrl || ""
 	const { bucket, path } = parseSupabaseStorageLocation(file)
