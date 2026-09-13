@@ -81,7 +81,15 @@ function RootLogin({ onAuthenticated }) {
 		event.preventDefault()
 		if (form.newPassword !== form.confirmPassword) return toast.error("Passwords do not match.")
 		setBusy(true)
-		try { const result = await changeRootPassword(tokens.accessToken, form.newPassword); setChallenge(result.challengeId); setRecoveryCodes(result.recoveryCodes || []); setDeliveryFailed(result.deliveryFailed === true); setUseRecoveryCode(result.deliveryFailed === true); setStage("otp") }
+		try {
+			const result = await changeRootPassword(tokens.accessToken, form.newPassword)
+			setTokens({ accessToken: result.accessToken, refreshToken: result.refreshToken })
+			setChallenge(result.challengeId)
+			setRecoveryCodes(result.recoveryCodes || [])
+			setDeliveryFailed(result.deliveryFailed === true)
+			setUseRecoveryCode(result.deliveryFailed === true)
+			setStage("otp")
+		}
 		catch (error) { toast.error(error.message) } finally { setBusy(false) }
 	}
 	const submitCode = async (event) => {

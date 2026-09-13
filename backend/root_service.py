@@ -332,6 +332,13 @@ def change_root_password(request: Request, payload: dict[str, Any]) -> dict[str,
     # Fail before changing Supabase Auth when Railway is missing root security configuration.
     _secret()
     _admin_update_auth_user(str(root["auth_user_id"]), {"password": password})
+    # Supabase revokes the JWT used to authorize a password change. Sign in with
+    # the replacement credential so OTP verification never receives that stale JWT.
+    auth = _auth_password(root["email"], password)
+    access_token = str(auth.get("access_token") or "")
+    refresh_token = str(auth.get("refresh_token") or "")
+    if not access_token or not refresh_token:
+        raise HTTPException(status_code=503, detail="root_session_refresh_failed")
     recovery_codes = [secrets.token_hex(5).upper() for _ in range(10)]
     _rest("root_admins", method="PATCH", query=f"id=eq.{urllib.parse.quote(root['id'])}", payload={
         "must_change_password": False,
@@ -349,7 +356,16 @@ def change_root_password(request: Request, payload: dict[str, Any]) -> dict[str,
         challenge_id = ""
         delivery_failed = True
     audit(request, root["id"], "root_password_changed")
-    return {"ok": True, "stage": "otp", "challengeId": challenge_id, "maskedEmail": mask_email(root["email"]), "recoveryCodes": recovery_codes, "deliveryFailed": delivery_failed}
+    return {
+        "ok": True,
+        "stage": "otp",
+        "challengeId": challenge_id,
+        "accessToken": access_token,
+        "refreshToken": refresh_token,
+        "maskedEmail": mask_email(root["email"]),
+        "recoveryCodes": recovery_codes,
+        "deliveryFailed": delivery_failed,
+    }
 
 
 def request_root_otp(request: Request) -> dict[str, Any]:

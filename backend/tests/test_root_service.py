@@ -73,6 +73,31 @@ class RootServiceTests(unittest.TestCase):
         self.assertEqual(503, raised.exception.status_code)
         update_auth.assert_not_called()
 
+    @patch("backend.root_service.audit")
+    @patch("backend.root_service.create_otp_challenge", return_value={"id": "otp-1"})
+    @patch("backend.root_service._rest")
+    @patch("backend.root_service._admin_update_auth_user")
+    @patch("backend.root_service._secret", return_value=b"configured-secret")
+    @patch("backend.root_service._root_by_auth", return_value={
+        "id": "Tristan@Root", "auth_user_id": "auth-root", "email": "root@example.com",
+    })
+    @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
+    @patch("backend.root_service._auth_password", return_value={
+        "access_token": "fresh-access", "refresh_token": "fresh-refresh",
+    })
+    def test_first_password_change_returns_fresh_auth_tokens(
+        self, authenticate, _auth_user, _root, _secret, update_auth, _rest, _challenge, _audit,
+    ):
+        request = type("Request", (), {"headers": {"authorization": "Bearer stale-token"}})()
+
+        result = root_service.change_root_password(request, {"newPassword": "StrongRoot123!"})
+
+        update_auth.assert_called_once_with("auth-root", {"password": "StrongRoot123!"})
+        authenticate.assert_called_once_with("root@example.com", "StrongRoot123!")
+        self.assertEqual("fresh-access", result["accessToken"])
+        self.assertEqual("fresh-refresh", result["refreshToken"])
+        self.assertEqual("otp-1", result["challengeId"])
+
     @patch("backend.root_service._rest")
     def test_admin_contact_is_normalized_and_only_updates_contact(self, rest):
         record = {"fullName": "Admin User", "role": "full_admin", "authUserId": "auth-1"}
