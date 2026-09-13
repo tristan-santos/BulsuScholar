@@ -15,7 +15,6 @@ try:
         audit,
         build_root_report,
         change_admin_temporary_password,
-        change_root_password,
         collect_file_inventory,
         dependency_health,
         fetch_root_file,
@@ -24,7 +23,6 @@ try:
         historical_metrics,
         list_admins,
         list_branding_versions,
-        list_devices,
         list_logs,
         list_rows,
         list_sessions,
@@ -35,35 +33,30 @@ try:
         overview,
         public_config,
         publish_branding_version,
-        request_root_otp,
-        reauthenticate_root,
-        regenerate_recovery_codes,
         require_root,
-        revoke_device,
         revoke_session,
         run_sql_maintenance,
         sql_query,
         save_branding_draft,
         update_admin,
         update_admin_contact,
-        update_authenticated_root_password,
         update_config,
         update_support,
         upload_branding_asset,
-        verify_root_otp,
+        verify_root_code,
     )
 except ImportError:  # pragma: no cover
     from report_service import build_report_pdf_bytes, sanitize_report_filename, validate_report_payload
     from root_service import (
-        SQL_MAINTENANCE_ACTIONS, SQL_PRESETS, audit, build_root_report, change_admin_temporary_password, change_root_password, collect_file_inventory, dependency_health, fetch_root_file,
-        historical_metrics, integration_action, integration_status, list_admins, list_branding_versions, list_devices,
+        SQL_MAINTENANCE_ACTIONS, SQL_PRESETS, audit, build_root_report, change_admin_temporary_password, collect_file_inventory, dependency_health, fetch_root_file,
+        historical_metrics, integration_action, integration_status, list_admins, list_branding_versions,
         list_logs, list_rows, list_support, login_root, logout_root,
         list_sessions, metrics_snapshot, overview, public_config,
-        publish_branding_version, reauthenticate_root, regenerate_recovery_codes, request_root_otp, require_root,
-        revoke_device, revoke_session, run_sql_maintenance, save_branding_draft, sql_query, update_admin,
+        publish_branding_version, require_root,
+        revoke_session, run_sql_maintenance, save_branding_draft, sql_query, update_admin,
         update_admin_contact,
-        update_authenticated_root_password, update_config, update_support, upload_branding_asset,
-        verify_root_otp,
+        update_config, update_support, upload_branding_asset,
+        verify_root_code,
     )
 
 
@@ -98,46 +91,15 @@ def root_login(request: Request, payload: dict[str, Any] = Body(...)) -> dict[st
     return login_root(request, payload)
 
 
-@router.post("/root/auth/change-password")
-def root_change_password(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return change_root_password(request, payload)
-
-
-@router.post("/root/auth/verify")
+@router.post("/root/auth/verify-code")
 def root_verify(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return verify_root_otp(request, payload)
-
-
-@router.post("/root/auth/resend")
-def root_resend(request: Request) -> dict[str, Any]:
-    return request_root_otp(request)
+    return verify_root_code(request, payload)
 
 
 @router.post("/root/auth/logout")
 def root_logout(request: Request) -> dict[str, Any]:
     identity = require_root(request)
     return logout_root(request, identity)
-
-
-@router.post("/root/auth/reauthenticate")
-def root_reauthenticate(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return reauthenticate_root(request, require_root(request), str(payload.get("password") or ""))
-
-
-@router.post("/root/security/password")
-def root_security_password(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return update_authenticated_root_password(request, require_root(request), payload)
-
-
-@router.post("/root/security/recovery-codes")
-def root_security_recovery_codes(request: Request) -> dict[str, Any]:
-    return regenerate_recovery_codes(request, require_root(request, require_recent=True))
-
-
-@router.get("/root/security/devices")
-def root_devices(request: Request) -> dict[str, Any]:
-    identity = require_root(request)
-    return {"ok": True, "devices": list_devices(identity)}
 
 
 @router.get("/root/security/sessions")
@@ -149,12 +111,6 @@ def root_sessions(request: Request) -> dict[str, Any]:
 @router.delete("/root/security/sessions/{session_id}")
 def root_revoke_session(session_id: str, request: Request) -> dict[str, Any]:
     return revoke_session(request, require_root(request), session_id)
-
-
-@router.delete("/root/security/devices/{device_id}")
-def root_revoke_device(device_id: str, request: Request) -> dict[str, Any]:
-    identity = require_root(request)
-    return revoke_device(request, identity, device_id)
 
 
 @router.get("/root/overview")
@@ -191,13 +147,13 @@ def root_sql_presets(request: Request) -> dict[str, Any]:
 
 @router.post("/root/sql/query")
 def root_sql_query(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    identity = require_root(request, require_recent=True)
+    identity = require_root(request)
     return sql_query(request, identity, str(payload.get("sql") or ""))
 
 
 @router.post("/root/sql/maintenance")
 def root_sql_maintenance(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return run_sql_maintenance(request, require_root(request, require_recent=True), str(payload.get("action") or ""))
+    return run_sql_maintenance(request, require_root(request), str(payload.get("action") or ""))
 
 
 @router.get("/root/admins")
@@ -208,7 +164,7 @@ def root_admins(request: Request) -> dict[str, Any]:
 
 @router.post("/root/admins/save")
 def root_save_admin(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    identity = require_root(request, require_recent=True)
+    identity = require_root(request)
     return update_admin(request, identity, payload)
 
 
@@ -232,7 +188,7 @@ def root_logs(request: Request) -> dict[str, Any]:
 
 @router.post("/root/settings/{setting_id}")
 def root_update_settings(setting_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    identity = require_root(request, require_recent=setting_id in {"portal", "academic_cycle"})
+    identity = require_root(request)
     return update_config(request, identity, setting_id, payload)
 
 
@@ -249,7 +205,7 @@ def root_branding_draft(request: Request, payload: dict[str, Any] = Body(...)) -
 
 @router.post("/root/branding/{version_id}/publish")
 def root_branding_publish(version_id: str, request: Request) -> dict[str, Any]:
-    return publish_branding_version(request, require_root(request, require_recent=True), version_id)
+    return publish_branding_version(request, require_root(request), version_id)
 
 
 @router.post("/root/branding/assets")
@@ -289,7 +245,7 @@ def root_integrations(request: Request) -> dict[str, Any]:
 
 @router.post("/root/integrations/action")
 def root_integration_action(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    identity = require_root(request, require_recent=True)
+    identity = require_root(request)
     return integration_action(request, identity, payload)
 
 

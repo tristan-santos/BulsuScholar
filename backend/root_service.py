@@ -15,7 +15,7 @@ import urllib.request
 from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import HTTPException, Request
 
@@ -45,9 +45,8 @@ except ImportError:  # pragma: no cover
 
 
 ROOT_SESSION_HOURS = 8
-TRUSTED_DEVICE_DAYS = 30
-OTP_MINUTES = 10
-MAX_OTP_ATTEMPTS = 5
+MAX_ROOT_CODE_ATTEMPTS = 5
+ROOT_CODE_LOCK_MINUTES = 15
 MAX_QUERY_ROWS = 500
 DATA_TABLES = {
     "students": "students",
@@ -63,7 +62,7 @@ FORBIDDEN_SQL = re.compile(
     r"\b(insert|update|delete|merge|alter|drop|truncate|create|grant|revoke|copy|call|do|execute|vacuum|refresh|reindex|cluster|comment|security|pg_read_file|pg_ls_dir|lo_import|lo_export|dblink|pg_terminate_backend|pg_cancel_backend|pg_reload_conf|set_config|nextval|setval|pg_advisory_lock|pg_advisory_xact_lock)\b",
     re.IGNORECASE,
 )
-SENSITIVE_SQL = re.compile(r"\b(auth\.|vault\.|pg_authid|pg_shadow|root_(otp|sessions|trusted|admins)|recovery_code)\b", re.IGNORECASE)
+SENSITIVE_SQL = re.compile(r"\b(auth\.|vault\.|pg_authid|pg_shadow|root_(sessions|admins)|login_code)\b", re.IGNORECASE)
 
 
 def now_utc() -> datetime:
@@ -220,12 +219,11 @@ def _new_session(request: Request, root_id: str) -> str:
         "token_hash": secure_hash(token),
         "user_agent": request.headers.get("user-agent", "")[:500],
         "expires_at": (now_utc() + timedelta(hours=ROOT_SESSION_HOURS)).isoformat(),
-        "reauthenticated_at": now_iso(),
     })
     return token
 
 
-def require_root(request: Request, *, require_recent: bool = False) -> dict[str, Any]:
+def require_root(request: Request) -> dict[str, Any]:
     authorization = request.headers.get("authorization", "")
     access_token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
     session_token = request.headers.get("x-root-session", "").strip()
@@ -243,9 +241,6 @@ def require_root(request: Request, *, require_recent: bool = False) -> dict[str,
     )
     if not session:
         raise HTTPException(status_code=401, detail="root_session_expired")
-    recent_at = session.get("reauthenticated_at") or session.get("created_at")
-    if require_recent and datetime.fromisoformat(recent_at.replace("Z", "+00:00")) < now_utc() - timedelta(minutes=15):
-        raise HTTPException(status_code=403, detail="recent_root_authentication_required")
     _rest("root_sessions", method="PATCH", query=f"id=eq.{session['id']}", payload={"last_used_at": now_iso()}, prefer="return=minimal")
     return {"root": root, "user": user, "session": session}
 
@@ -264,220 +259,45 @@ def login_root(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
         raise
     access_token = str(auth.get("access_token") or "")
     refresh_token = str(auth.get("refresh_token") or "")
-    if root.get("must_change_password"):
-        audit(request, root_id, "root_login_password_change_required")
-        return {"ok": True, "stage": "change_password", "accessToken": access_token, "refreshToken": refresh_token}
-
-    device_token = str(payload.get("deviceToken") or "")
-    if device_token:
-        device = _first(
-            "root_trusted_devices",
-            "token_hash=eq.{}&root_id=eq.{}&revoked_at=is.null&expires_at=gt.{}&select=*".format(
-                secure_hash(device_token), urllib.parse.quote(root_id), urllib.parse.quote(now_iso())
-            ),
-        )
-        if device:
-            _rest("root_trusted_devices", method="PATCH", query=f"id=eq.{device['id']}", payload={"last_used_at": now_iso()}, prefer="return=minimal")
-            session_token = _new_session(request, root_id)
-            audit(request, root_id, "root_login_trusted_device", str(device["id"]))
-            return {"ok": True, "stage": "authenticated", "accessToken": access_token, "refreshToken": refresh_token, "rootSession": session_token}
-    try:
-        challenge = create_otp_challenge(request, root)
-        challenge_id = challenge["id"]
-        delivery_failed = False
-    except HTTPException as error:
-        if error.status_code != 503 or not root.get("recovery_code_hashes"):
-            raise
-        challenge_id = ""
-        delivery_failed = True
-    return {"ok": True, "stage": "otp", "challengeId": challenge_id, "accessToken": access_token, "refreshToken": refresh_token, "maskedEmail": mask_email(root["email"]), "deliveryFailed": delivery_failed}
-
-
-def mask_email(email: str) -> str:
-    local, _, domain = email.partition("@")
-    return f"{local[:2]}***@{domain}" if domain else "***"
-
-
-def create_otp_challenge(request: Request, root: dict[str, Any]) -> dict[str, Any]:
-    recent = _first("root_otp_challenges", f"root_id=eq.{urllib.parse.quote(root['id'])}&created_at=gt.{urllib.parse.quote((now_utc() - timedelta(seconds=60)).isoformat())}&select=*")
-    if recent:
-        raise HTTPException(status_code=429, detail="otp_resend_wait")
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    challenge = {
-        "id": str(uuid4()), "root_id": root["id"], "code_hash": secure_hash(code),
-        "attempts": 0, "expires_at": (now_utc() + timedelta(minutes=OTP_MINUTES)).isoformat(),
-    }
-    _rest("root_otp_challenges", method="POST", payload=challenge)
-    delivery = send_email_notification({
-        "to": root["email"], "toName": root.get("display_name") or "Root Administrator",
-        "subject": "Your BulsuScholar root verification code",
-        "html": f'<div data-bulsuscholar-email="true"><h2>Root sign-in verification</h2><p>Your six-digit code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:8px">{code}</p><p>This code expires in 10 minutes. If you did not sign in, reset your password.</p></div>',
-    })
-    if not delivery.get("sent"):
-        _rest("root_otp_challenges", method="DELETE", query=f"id=eq.{challenge['id']}", prefer="return=minimal")
-        raise HTTPException(status_code=503, detail={"reason": "otp_delivery_failed", "delivery": delivery.get("reason")})
-    audit(request, root["id"], "root_otp_sent")
-    return challenge
-
-
-def change_root_password(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
-    authorization = request.headers.get("authorization", "")
-    access_token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
-    user = _auth_user(access_token) if access_token else {}
-    root = _root_by_auth(str(user.get("id") or ""))
-    if not root:
-        raise HTTPException(status_code=401, detail="root_authentication_required")
-    password = str(payload.get("newPassword") or "")
-    _validate_root_password(password)
-    # Fail before changing Supabase Auth when Railway is missing root security configuration.
-    _secret()
-    _admin_update_auth_user(str(root["auth_user_id"]), {"password": password})
-    # Supabase revokes the JWT used to authorize a password change. Sign in with
-    # the replacement credential so OTP verification never receives that stale JWT.
-    auth = _auth_password(root["email"], password)
-    access_token = str(auth.get("access_token") or "")
-    refresh_token = str(auth.get("refresh_token") or "")
     if not access_token or not refresh_token:
-        raise HTTPException(status_code=503, detail="root_session_refresh_failed")
-    recovery_codes = [secrets.token_hex(5).upper() for _ in range(10)]
-    _rest("root_admins", method="PATCH", query=f"id=eq.{urllib.parse.quote(root['id'])}", payload={
-        "must_change_password": False,
-        "recovery_code_hashes": [secure_hash(code) for code in recovery_codes],
-        "updated_at": now_iso(),
-    })
-    root["must_change_password"] = False
-    try:
-        challenge = create_otp_challenge(request, root)
-        challenge_id = challenge["id"]
-        delivery_failed = False
-    except HTTPException as error:
-        if error.status_code != 503:
-            raise
-        challenge_id = ""
-        delivery_failed = True
-    audit(request, root["id"], "root_password_changed")
-    return {
-        "ok": True,
-        "stage": "otp",
-        "challengeId": challenge_id,
-        "accessToken": access_token,
-        "refreshToken": refresh_token,
-        "maskedEmail": mask_email(root["email"]),
-        "recoveryCodes": recovery_codes,
-        "deliveryFailed": delivery_failed,
-    }
+        raise HTTPException(status_code=503, detail="root_authentication_unavailable")
+    if not root.get("login_code_hash"):
+        raise HTTPException(status_code=503, detail="root_login_code_not_configured")
+    audit(request, root_id, "root_password_verified")
+    return {"ok": True, "stage": "code", "accessToken": access_token, "refreshToken": refresh_token}
 
 
-def request_root_otp(request: Request) -> dict[str, Any]:
+def verify_root_code(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     authorization = request.headers.get("authorization", "")
     access_token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
     user = _auth_user(access_token) if access_token else {}
     root = _root_by_auth(str(user.get("id") or ""))
     if not root or not root.get("active"):
         raise HTTPException(status_code=401, detail="root_authentication_required")
-    challenge = create_otp_challenge(request, root)
-    return {"ok": True, "challengeId": challenge["id"], "maskedEmail": mask_email(root["email"])}
-
-
-def _validate_root_password(password: str) -> None:
-    if len(password) < 12 or not re.search(r"[A-Z]", password) or not re.search(r"[a-z]", password) or not re.search(r"\d", password) or not re.search(r"[^A-Za-z0-9]", password):
-        raise HTTPException(status_code=422, detail="root_password_too_weak")
-
-
-def reauthenticate_root(request: Request, identity: dict[str, Any], password: str) -> dict[str, Any]:
-    if not password:
-        raise HTTPException(status_code=422, detail="root_password_required")
-    try:
-        _auth_password(identity["root"]["email"], password)
-    except HTTPException as error:
-        if error.status_code in {400, 401}:
-            raise HTTPException(status_code=401, detail="invalid_root_credentials") from error
-        raise
-    _rest(
-        "root_sessions",
-        method="PATCH",
-        query=f"id=eq.{identity['session']['id']}",
-        payload={"reauthenticated_at": now_iso(), "last_used_at": now_iso()},
-        prefer="return=minimal",
-    )
-    audit(request, identity["root"]["id"], "root_reauthenticated")
-    return {"ok": True, "validForSeconds": 900}
-
-
-def update_authenticated_root_password(request: Request, identity: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    reauthenticate_root(request, identity, str(payload.get("currentPassword") or ""))
-    new_password = str(payload.get("newPassword") or "")
-    _validate_root_password(new_password)
-    _admin_update_auth_user(str(identity["root"]["auth_user_id"]), {"password": new_password})
-    _rest(
-        "root_sessions",
-        method="PATCH",
-        query=f"root_id=eq.{urllib.parse.quote(identity['root']['id'])}&id=neq.{identity['session']['id']}&revoked_at=is.null",
-        payload={"revoked_at": now_iso()},
-        prefer="return=minimal",
-    )
-    _rest("root_trusted_devices", method="PATCH", query=f"root_id=eq.{urllib.parse.quote(identity['root']['id'])}&revoked_at=is.null", payload={"revoked_at": now_iso()}, prefer="return=minimal")
-    audit(request, identity["root"]["id"], "root_password_changed_authenticated")
-    return {"ok": True, "otherSessionsRevoked": True}
-
-
-def regenerate_recovery_codes(request: Request, identity: dict[str, Any]) -> dict[str, Any]:
-    recovery_codes = [secrets.token_hex(5).upper() for _ in range(10)]
-    _rest(
-        "root_admins",
-        method="PATCH",
-        query=f"id=eq.{urllib.parse.quote(identity['root']['id'])}",
-        payload={"recovery_code_hashes": [secure_hash(code) for code in recovery_codes], "updated_at": now_iso()},
-        prefer="return=minimal",
-    )
-    audit(request, identity["root"]["id"], "root_recovery_codes_regenerated")
-    return {"ok": True, "recoveryCodes": recovery_codes}
-
-
-def verify_root_otp(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
-    authorization = request.headers.get("authorization", "")
-    access_token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
-    user = _auth_user(access_token) if access_token else {}
-    root = _root_by_auth(str(user.get("id") or ""))
-    if not root:
-        raise HTTPException(status_code=401, detail="root_authentication_required")
-    challenge_id = str(payload.get("challengeId") or "")
-    code = str(payload.get("code") or "").strip().upper()
-    challenge = None
-    try:
-        valid_challenge_id = str(UUID(challenge_id)) if challenge_id else ""
-    except ValueError:
-        valid_challenge_id = ""
-    if valid_challenge_id:
-        challenge = _first(
-            "root_otp_challenges",
-            f"id=eq.{urllib.parse.quote(valid_challenge_id)}&root_id=eq.{urllib.parse.quote(root['id'])}&select=*",
-        )
-    valid_challenge = challenge and not challenge.get("consumed_at") and challenge.get("attempts", 0) < MAX_OTP_ATTEMPTS and datetime.fromisoformat(challenge["expires_at"].replace("Z", "+00:00")) > now_utc()
-    recovery_hashes = list(root.get("recovery_code_hashes") or [])
-    recovery_hash = secure_hash(code) if code else ""
-    used_recovery = recovery_hash in recovery_hashes
-    if not used_recovery and (not valid_challenge or not hmac.compare_digest(challenge["code_hash"], recovery_hash)):
-        if challenge:
-            _rest("root_otp_challenges", method="PATCH", query=f"id=eq.{challenge_id}", payload={"attempts": int(challenge.get("attempts") or 0) + 1}, prefer="return=minimal")
-        raise HTTPException(status_code=401, detail="invalid_or_expired_root_code")
-    if used_recovery:
-        recovery_hashes.remove(recovery_hash)
-        _rest("root_admins", method="PATCH", query=f"id=eq.{urllib.parse.quote(root['id'])}", payload={"recovery_code_hashes": recovery_hashes}, prefer="return=minimal")
-    elif challenge:
-        _rest("root_otp_challenges", method="PATCH", query=f"id=eq.{challenge_id}", payload={"consumed_at": now_iso()}, prefer="return=minimal")
+    locked_until = root.get("code_locked_until")
+    lock_time = datetime.fromisoformat(locked_until.replace("Z", "+00:00")) if locked_until else None
+    if lock_time and lock_time > now_utc():
+        raise HTTPException(status_code=429, detail="root_login_code_locked")
+    failed_attempts = 0 if lock_time else int(root.get("failed_code_attempts") or 0)
+    code = str(payload.get("code") or "").strip()
+    expected_hash = str(root.get("login_code_hash") or "")
+    valid_code = bool(re.fullmatch(r"\d{10}", code)) and bool(expected_hash) and hmac.compare_digest(expected_hash, secure_hash(code))
+    if not valid_code:
+        failed_attempts += 1
+        locked = failed_attempts >= MAX_ROOT_CODE_ATTEMPTS
+        _rest("root_admins", method="PATCH", query=f"id=eq.{urllib.parse.quote(root['id'])}", payload={
+            "failed_code_attempts": failed_attempts,
+            "code_locked_until": (now_utc() + timedelta(minutes=ROOT_CODE_LOCK_MINUTES)).isoformat() if locked else None,
+            "updated_at": now_iso(),
+        }, prefer="return=minimal")
+        audit(request, root["id"], "root_login_code_rejected", details={"attempt": failed_attempts, "locked": locked})
+        raise HTTPException(status_code=429 if locked else 401, detail="root_login_code_locked" if locked else "invalid_root_login_code")
+    _rest("root_admins", method="PATCH", query=f"id=eq.{urllib.parse.quote(root['id'])}", payload={
+        "failed_code_attempts": 0, "code_locked_until": None, "updated_at": now_iso(),
+    }, prefer="return=minimal")
     root_session = _new_session(request, root["id"])
-    trusted_token = ""
-    if payload.get("rememberDevice", True):
-        trusted_token = secrets.token_urlsafe(48)
-        _rest("root_trusted_devices", method="POST", payload={
-            "id": str(uuid4()), "root_id": root["id"], "token_hash": secure_hash(trusted_token),
-            "label": str(payload.get("deviceLabel") or "Browser")[:120],
-            "user_agent": request.headers.get("user-agent", "")[:500],
-            "expires_at": (now_utc() + timedelta(days=TRUSTED_DEVICE_DAYS)).isoformat(),
-        })
-    audit(request, root["id"], "root_otp_verified", details={"recoveryCode": used_recovery})
-    return {"ok": True, "rootSession": root_session, "trustedDeviceToken": trusted_token, "root": {"id": root["id"], "displayName": root.get("display_name")}}
+    audit(request, root["id"], "root_login_code_verified")
+    return {"ok": True, "rootSession": root_session, "root": {"id": root["id"], "displayName": root.get("display_name")}}
 
 
 METRIC_LOCK = threading.Lock()
@@ -880,7 +700,7 @@ SQL_PRESETS = [
 ]
 
 SQL_MAINTENANCE_ACTIONS = [
-    {"id": "cleanup_expired_root_security", "label": "Clean expired root sessions, devices, and OTP challenges"},
+    {"id": "cleanup_expired_root_security", "label": "Clean expired root sessions"},
     {"id": "cleanup_old_metrics", "label": "Clean request metrics older than 90 days"},
     {"id": "analyze_core_tables", "label": "Analyze core application tables"},
 ]
@@ -889,15 +709,8 @@ SQL_MAINTENANCE_ACTIONS = [
 def run_sql_maintenance(request: Request, identity: dict[str, Any], action: str) -> dict[str, Any]:
     if action == "cleanup_expired_root_security":
         cutoff = urllib.parse.quote(now_iso())
-        counts = {}
-        for table, condition in {
-            "root_otp_challenges": f"expires_at=lt.{cutoff}",
-            "root_trusted_devices": f"expires_at=lt.{cutoff}",
-            "root_sessions": f"expires_at=lt.{cutoff}",
-        }.items():
-            deleted = _rest(table, method="DELETE", query=f"{condition}&select=id", prefer="return=representation") or []
-            counts[table] = len(deleted)
-        result = {"deleted": counts}
+        deleted = _rest("root_sessions", method="DELETE", query=f"expires_at=lt.{cutoff}&select=id", prefer="return=representation") or []
+        result = {"deleted": {"root_sessions": len(deleted)}}
     elif action == "cleanup_old_metrics":
         cutoff = urllib.parse.quote((now_utc() - timedelta(days=90)).isoformat())
         deleted = _rest("request_metric_buckets", method="DELETE", query=f"bucket_start=lt.{cutoff}&select=bucket_start", prefer="return=representation") or []
@@ -1163,11 +976,6 @@ def list_logs() -> dict[str, Any]:
     return {"ok": True, "systemLogs": [_redact_sensitive({"id": row.get("id"), **(row.get("data") or {}), "createdAt": row.get("created_at")}) for row in system], "auditLogs": _redact_sensitive(audit_rows)}
 
 
-def list_devices(identity: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = _rest("root_trusted_devices", query=f"root_id=eq.{urllib.parse.quote(identity['root']['id'])}&select=id,label,user_agent,last_used_at,expires_at,revoked_at,created_at&order=created_at.desc") or []
-    return rows
-
-
 def list_sessions(identity: dict[str, Any]) -> list[dict[str, Any]]:
     return _rest("root_sessions", query=f"root_id=eq.{urllib.parse.quote(identity['root']['id'])}&select=id,user_agent,last_used_at,expires_at,revoked_at,created_at&order=created_at.desc") or []
 
@@ -1177,12 +985,6 @@ def revoke_session(request: Request, identity: dict[str, Any], session_id: str) 
         raise HTTPException(status_code=422, detail="use_logout_for_current_session")
     _rest("root_sessions", method="PATCH", query=f"id=eq.{urllib.parse.quote(session_id)}&root_id=eq.{urllib.parse.quote(identity['root']['id'])}", payload={"revoked_at": now_iso()}, prefer="return=minimal")
     audit(request, identity["root"]["id"], "root_session_revoked", session_id)
-    return {"ok": True}
-
-
-def revoke_device(request: Request, identity: dict[str, Any], device_id: str) -> dict[str, Any]:
-    _rest("root_trusted_devices", method="PATCH", query=f"id=eq.{urllib.parse.quote(device_id)}&root_id=eq.{urllib.parse.quote(identity['root']['id'])}", payload={"revoked_at": now_iso()}, prefer="return=minimal")
-    audit(request, identity["root"]["id"], "trusted_device_revoked", device_id)
     return {"ok": True}
 
 

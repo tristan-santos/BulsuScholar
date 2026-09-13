@@ -55,71 +55,62 @@ class RootServiceTests(unittest.TestCase):
         self.assertGreaterEqual(result["errors"], 1)
         self.assertIn("503", result["statuses"])
 
-    def test_root_password_policy(self):
-        for weak in ["short", "alllowercase123!", "ALLUPPERCASE123!", "NoNumberHere!"]:
-            with self.subTest(weak=weak), self.assertRaises(HTTPException) as raised:
-                root_service._validate_root_password(weak)
-            self.assertEqual(422, raised.exception.status_code)
-        root_service._validate_root_password("StrongRoot123!")
-
-    @patch("backend.root_service._admin_update_auth_user")
-    @patch("backend.root_service._secret", side_effect=HTTPException(status_code=503, detail="root_session_secret_not_configured"))
-    @patch("backend.root_service._root_by_auth", return_value={"id": "Tristan@Root", "auth_user_id": "auth-root"})
-    @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
-    def test_first_password_change_does_not_mutate_auth_without_session_secret(self, _auth, _root, _secret, update_auth):
-        request = type("Request", (), {"headers": {"authorization": "Bearer token"}})()
-        with self.assertRaises(HTTPException) as raised:
-            root_service.change_root_password(request, {"newPassword": "StrongRoot123!"})
-        self.assertEqual(503, raised.exception.status_code)
-        update_auth.assert_not_called()
-
     @patch("backend.root_service.audit")
-    @patch("backend.root_service.create_otp_challenge", return_value={"id": "otp-1"})
-    @patch("backend.root_service._rest")
-    @patch("backend.root_service._admin_update_auth_user")
-    @patch("backend.root_service._secret", return_value=b"configured-secret")
-    @patch("backend.root_service._root_by_auth", return_value={
-        "id": "Tristan@Root", "auth_user_id": "auth-root", "email": "root@example.com",
-    })
-    @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
     @patch("backend.root_service._auth_password", return_value={
         "access_token": "fresh-access", "refresh_token": "fresh-refresh",
     })
-    def test_first_password_change_returns_fresh_auth_tokens(
-        self, authenticate, _auth_user, _root, _secret, update_auth, _rest, _challenge, _audit,
-    ):
-        request = type("Request", (), {"headers": {"authorization": "Bearer stale-token"}})()
+    @patch("backend.root_service._root_by_id", return_value={
+        "id": "Tristan@Root", "email": "root@example.com", "active": True,
+        "login_code_hash": "configured-hash",
+    })
+    def test_root_password_login_advances_to_permanent_code(self, _root, authenticate, _audit):
+        result = root_service.login_root(None, {"userId": "Tristan@Root", "password": "fixed-password"})
 
-        result = root_service.change_root_password(request, {"newPassword": "StrongRoot123!"})
-
-        update_auth.assert_called_once_with("auth-root", {"password": "StrongRoot123!"})
-        authenticate.assert_called_once_with("root@example.com", "StrongRoot123!")
+        authenticate.assert_called_once_with("root@example.com", "fixed-password")
+        self.assertEqual("code", result["stage"])
         self.assertEqual("fresh-access", result["accessToken"])
-        self.assertEqual("fresh-refresh", result["refreshToken"])
-        self.assertEqual("otp-1", result["challengeId"])
+        self.assertNotIn("rootSession", result)
 
     @patch("backend.root_service.audit")
     @patch("backend.root_service._new_session", return_value="root-session")
     @patch("backend.root_service._rest")
-    @patch("backend.root_service._first")
-    @patch("backend.root_service.secure_hash", return_value="recovery-hash")
+    @patch("backend.root_service.secure_hash", return_value="configured-hash")
     @patch("backend.root_service._root_by_auth", return_value={
-        "id": "Tristan@Root", "recovery_code_hashes": ["recovery-hash"],
+        "id": "Tristan@Root", "active": True, "display_name": "Root Administrator",
+        "login_code_hash": "configured-hash", "failed_code_attempts": 0,
     })
     @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
-    def test_recovery_code_does_not_query_empty_challenge_uuid(
-        self, _auth_user, _root, _hash, find_challenge, _rest, _session, _audit,
+    def test_permanent_root_code_creates_eight_hour_session(
+        self, _auth_user, _root, _hash, update, create_session, _audit,
     ):
-        request = type("Request", (), {
-            "headers": {"authorization": "Bearer fresh-token", "user-agent": "Test Browser"},
-        })()
+        request = type("Request", (), {"headers": {"authorization": "Bearer token"}})()
 
-        result = root_service.verify_root_otp(request, {
-            "challengeId": "", "code": "ABCDEF1234", "rememberDevice": False,
-        })
+        result = root_service.verify_root_code(request, {"code": "0123456789"})
 
-        find_challenge.assert_not_called()
         self.assertEqual("root-session", result["rootSession"])
+        self.assertEqual(0, update.call_args.kwargs["payload"]["failed_code_attempts"])
+        create_session.assert_called_once_with(request, "Tristan@Root")
+
+    @patch("backend.root_service.audit")
+    @patch("backend.root_service._rest")
+    @patch("backend.root_service.secure_hash", return_value="wrong-hash")
+    @patch("backend.root_service._root_by_auth", return_value={
+        "id": "Tristan@Root", "active": True, "login_code_hash": "configured-hash",
+        "failed_code_attempts": 4,
+    })
+    @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
+    def test_fifth_wrong_root_code_locks_verification(
+        self, _auth_user, _root, _hash, update, _audit,
+    ):
+        request = type("Request", (), {"headers": {"authorization": "Bearer token"}})()
+
+        with self.assertRaises(HTTPException) as raised:
+            root_service.verify_root_code(request, {"code": "1111111111"})
+
+        self.assertEqual(429, raised.exception.status_code)
+        payload = update.call_args.kwargs["payload"]
+        self.assertEqual(5, payload["failed_code_attempts"])
+        self.assertIsNotNone(payload["code_locked_until"])
 
     @patch("backend.root_service._rest")
     def test_admin_contact_is_normalized_and_only_updates_contact(self, rest):

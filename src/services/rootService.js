@@ -2,7 +2,6 @@ import { requireBackendApiUrl } from "../config/backendApi"
 import { supabase } from "./supabaseClient"
 
 const ROOT_SESSION_KEY = "bulsuscholar_root_session"
-const ROOT_DEVICE_KEY = "bulsuscholar_root_trusted_device"
 
 async function rootHeaders(json = true, accessToken = "") {
 	const { data } = await supabase.auth.getSession()
@@ -39,19 +38,13 @@ async function rootRequest(path, { method = "GET", payload, accessToken = "", si
 }
 
 export async function rootLogin(userId, password) {
-	return rootRequest("/root/auth/login", { method: "POST", payload: { userId, password, deviceToken: localStorage.getItem(ROOT_DEVICE_KEY) || "" } })
+	return rootRequest("/root/auth/login", { method: "POST", payload: { userId, password } })
 }
 
-export const changeRootPassword = (accessToken, newPassword) => rootRequest("/root/auth/change-password", { method: "POST", accessToken, payload: { newPassword } })
-export const verifyRootCode = (accessToken, challengeId, code, rememberDevice = true) => rootRequest("/root/auth/verify", { method: "POST", accessToken, payload: { challengeId, code, rememberDevice, deviceLabel: navigator.platform || "Browser" } })
-export const requestRootCode = (accessToken) => rootRequest("/root/auth/resend", { method: "POST", accessToken, payload: {} })
-export const reauthenticateRoot = (password) => rootRequest("/root/auth/reauthenticate", { method: "POST", payload: { password } })
-export const updateRootPassword = (currentPassword, newPassword) => rootRequest("/root/security/password", { method: "POST", payload: { currentPassword, newPassword } })
-export const regenerateRootRecoveryCodes = () => rootRequest("/root/security/recovery-codes", { method: "POST", payload: {} })
+export const verifyRootCode = (accessToken, code) => rootRequest("/root/auth/verify-code", { method: "POST", accessToken, payload: { code } })
 
 export async function establishRootSession(result, authTokens) {
 	localStorage.setItem(ROOT_SESSION_KEY, result.rootSession)
-	if (result.trustedDeviceToken) localStorage.setItem(ROOT_DEVICE_KEY, result.trustedDeviceToken)
 	await supabase.auth.setSession({ access_token: authTokens.accessToken, refresh_token: authTokens.refreshToken })
 	sessionStorage.setItem("bulsuscholar_userId", result.root?.id || "Tristan@Root")
 	sessionStorage.setItem("bulsuscholar_userType", "root")
@@ -104,8 +97,6 @@ export const getRootFiles = () => rootRequest("/root/files?limit=500")
 export const getRootCanonicalReport = (reportType) => rootRequest(`/root/reports/data/${encodeURIComponent(reportType)}`)
 export const getRootIntegrations = () => rootRequest("/root/integrations")
 export const runRootIntegrationAction = (payload) => rootRequest("/root/integrations/action", { method: "POST", payload })
-export const getRootDevices = () => rootRequest("/root/security/devices")
-export const revokeRootDevice = (id) => rootRequest(`/root/security/devices/${encodeURIComponent(id)}`, { method: "DELETE" })
 export const getRootSessions = () => rootRequest("/root/security/sessions")
 export const revokeRootSession = (id) => rootRequest(`/root/security/sessions/${encodeURIComponent(id)}`, { method: "DELETE" })
 

@@ -11,16 +11,9 @@
 .root-login button, .root-panel button, .root-modal button, .root-integration-grid button { min-height: 40px; padding: .65rem .9rem; border: 1px solid #087647; border-radius: 5px; background: #fff; color: #05653c; font: inherit; font-weight: 750; cursor: pointer; }
 .root-login form > button, .root-panel > button, .root-modal .primary { background: #006b3c; color: #fff; }
 .root-login button:disabled { opacity: .55; cursor: wait; }
-.root-login-notice { display: flex; gap: .5rem; padding: .75rem; border: 1px solid #f5c66b; border-radius: 5px; background: #fff8e8; color: #784b00; }
-.root-phone-otp { display: grid; justify-items: center; gap: .45rem; padding: 1.2rem .5rem; border-radius: 8px; background: #f3f8f6; }
-.root-phone-otp > svg { color: #006b3c; font-size: 1.6rem; }
-.root-phone-otp > div { display: grid; grid-template-columns: repeat(6, 42px); gap: .4rem; margin-top: .6rem; }
-.root-phone-otp input { padding: 0; text-align: center; font-size: 1.25rem; font-weight: 800; }
-.root-phone-otp .root-recovery-input { width: min(260px, 100%); padding: .65rem; letter-spacing: .12em; }
-.root-phone-otp .root-text-button { min-height: 32px; padding: .25rem .45rem; border: 0; background: transparent; font-size: .78rem; text-decoration: underline; }
-.root-otp-warning { color: #b42318; font-size: .75rem; font-weight: 700; text-align: center; }
-.root-recovery { padding: .75rem; border: 1px solid #bdd4ca; border-radius: 5px; }
-.root-recovery code { display: block; max-height: 150px; overflow: auto; white-space: pre; }
+.root-secret-code { display: grid; justify-items: center; gap: .45rem; padding: 1.2rem .5rem; border-radius: 8px; background: #f3f8f6; }
+.root-secret-code > svg { color: #006b3c; font-size: 1.6rem; }
+.root-secret-code input { width: min(260px, 100%); padding: .65rem; text-align: center; font-size: 1.25rem; font-weight: 800; letter-spacing: .12em; }
 
 .root-shell { --root-sidebar: 245px; display: grid; grid-template-columns: var(--root-sidebar) minmax(0, 1fr); }
 .root-shell > aside { position: sticky; top: 0; z-index: 20; display: flex; flex-direction: column; height: 100vh; border-right: 1px solid #d4e3dc; background: #fff; }
@@ -113,10 +106,6 @@
 .root-device-list > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid #e1ebe6; }
 .root-device-list span { display: grid; gap: .2rem; }
 .root-device-list small { color: #6b7e75; }
-.root-security-section { padding: 1rem 0; border-top: 1px solid #e1ebe6; }
-.root-security-section h3 { margin: 0 0 .35rem; font-size: .92rem; }
-.root-security-section > p { margin: 0 0 .75rem; }
-.root-code-list { display: block; max-height: 180px; margin-top: .75rem; overflow: auto; padding: .75rem; border: 1px solid #bdd4ca; border-radius: 5px; background: #f3f8f6; white-space: pre; }
 .root-sidebar-scrim { display: none; }
 
 html[data-theme="dark"] .root-login,
@@ -144,13 +133,11 @@ html[data-theme="dark"] .root-refresh,
 html[data-theme="dark"] .root-panel button,
 html[data-theme="dark"] .root-modal button { color: #bdebd5; border-color: #3d5d4e; background: #111815; }
 html[data-theme="dark"] .root-shell nav button.active,
-html[data-theme="dark"] .root-phone-otp,
-html[data-theme="dark"] .root-code-list { color: #9fe0c1; background: #20342b; }
+html[data-theme="dark"] .root-secret-code { color: #9fe0c1; background: #20342b; }
 html[data-theme="dark"] .root-table-wrap { border-color: #31473d; }
 html[data-theme="dark"] .root-table-wrap th { color: #dcebe4; background: #25352e; }
 html[data-theme="dark"] .root-table-wrap td,
 html[data-theme="dark"] .root-panel dl div,
-html[data-theme="dark"] .root-security-section,
 html[data-theme="dark"] .root-device-list > div { border-color: #31473d; }
 html[data-theme="dark"] .root-login-panel p,
 html[data-theme="dark"] .root-panel p,
@@ -174,5 +161,4 @@ html[data-theme="dark"] .root-device-list small { color: #9bafa5; }
 	.root-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 	.root-report-grid, .root-integration-grid { grid-template-columns: 1fr; }
 	.root-form-grid .wide { grid-column: auto; }
-	.root-phone-otp > div { grid-template-columns: repeat(6, minmax(34px, 42px)); gap: .25rem; }
 }

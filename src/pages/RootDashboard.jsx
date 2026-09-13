@@ -1,21 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "react-toastify"
 import {
 	HiOutlineAdjustments, HiOutlineChartBar, HiOutlineCloud, HiOutlineCode,
 	HiOutlineColorSwatch, HiOutlineDatabase, HiOutlineDocumentDownload,
-	HiOutlineDocumentText, HiOutlineExclamation, HiOutlineHome, HiOutlineKey,
+	HiOutlineDocumentText, HiOutlineHome, HiOutlineKey,
 	HiOutlineLogout, HiOutlineMenu, HiOutlineRefresh, HiOutlineSearch,
 	HiOutlineMoon, HiOutlineServer, HiOutlineShieldCheck, HiOutlineSun, HiOutlineSupport, HiOutlineUsers, HiX,
 } from "react-icons/hi"
 import useThemeMode from "../hooks/useThemeMode"
 import {
-	changeRootPassword, clearRootSession, establishRootSession, executeRootSql, executeRootSqlMaintenance,
+	clearRootSession, establishRootSession, executeRootSql, executeRootSqlMaintenance,
 	downloadRootCanonicalPdf, downloadRootPdf, downloadRootStudentFile,
-	getAllRootData, getRootAdmins, getRootBrandingVersions, getRootData, getRootDevices, getRootFiles, getRootIntegrations,
+	getAllRootData, getRootAdmins, getRootBrandingVersions, getRootData, getRootFiles, getRootIntegrations,
 	getRootCanonicalReport, getRootLogs, getRootMetrics, getRootOverview, getRootSqlPresets, getRootSupport,
-	getRootSessions, hasRootSession, reauthenticateRoot, regenerateRootRecoveryCodes,
-	requestRootCode, revokeRootDevice, revokeRootSession, rootLogin, runRootIntegrationAction,
-	publishRootBrandingVersion, saveRootAdmin, saveRootBrandingDraft, saveRootSetting, updateRootPassword, updateRootSupport, uploadRootBrandingAsset, verifyRootCode,
+	hasRootSession, rootLogin, runRootIntegrationAction,
+	publishRootBrandingVersion, saveRootAdmin, saveRootBrandingDraft, saveRootSetting, updateRootSupport, uploadRootBrandingAsset, verifyRootCode,
 } from "../services/rootService"
 import "../css/RootDashboard.css"
 
@@ -54,16 +53,9 @@ function downloadCsv(filename, rows) {
 
 function RootLogin({ onAuthenticated }) {
 	const [stage, setStage] = useState("login")
-	const [form, setForm] = useState({ userId: "Tristan@Root", password: "", newPassword: "", confirmPassword: "" })
+	const [form, setForm] = useState({ userId: "Tristan@Root", password: "", code: "" })
 	const [tokens, setTokens] = useState(null)
-	const [challenge, setChallenge] = useState(null)
-	const [digits, setDigits] = useState(["", "", "", "", "", ""])
-	const [useRecoveryCode, setUseRecoveryCode] = useState(false)
-	const [recoveryCode, setRecoveryCode] = useState("")
 	const [busy, setBusy] = useState(false)
-	const [recoveryCodes, setRecoveryCodes] = useState([])
-	const [deliveryFailed, setDeliveryFailed] = useState(false)
-	const inputs = useRef([])
 
 	const submitLogin = async (event) => {
 		event.preventDefault(); setBusy(true)
@@ -71,41 +63,15 @@ function RootLogin({ onAuthenticated }) {
 			const result = await rootLogin(form.userId, form.password)
 			const nextTokens = { accessToken: result.accessToken, refreshToken: result.refreshToken }
 			setTokens(nextTokens)
-			if (result.stage === "authenticated") { await establishRootSession(result, nextTokens); onAuthenticated(); return }
-			if (result.stage === "change_password") setStage("password")
-			else { setChallenge(result.challengeId); setDeliveryFailed(result.deliveryFailed === true); setUseRecoveryCode(result.deliveryFailed === true); setStage("otp") }
+			setStage("code")
 		} catch (error) { toast.error(error.message || "Root login failed.") }
 		finally { setBusy(false) }
 	}
-	const submitPassword = async (event) => {
-		event.preventDefault()
-		if (form.newPassword !== form.confirmPassword) return toast.error("Passwords do not match.")
-		setBusy(true)
-		try {
-			const result = await changeRootPassword(tokens.accessToken, form.newPassword)
-			setTokens({ accessToken: result.accessToken, refreshToken: result.refreshToken })
-			setChallenge(result.challengeId)
-			setRecoveryCodes(result.recoveryCodes || [])
-			setDeliveryFailed(result.deliveryFailed === true)
-			setUseRecoveryCode(result.deliveryFailed === true)
-			setStage("otp")
-		}
-		catch (error) { toast.error(error.message) } finally { setBusy(false) }
-	}
 	const submitCode = async (event) => {
-		event.preventDefault(); const code = useRecoveryCode ? recoveryCode.trim() : digits.join("")
-		if ((!useRecoveryCode && code.length !== 6) || (useRecoveryCode && code.length !== 10)) return toast.error(useRecoveryCode ? "Enter a complete 10-character recovery code." : "Enter the complete verification code.")
+		event.preventDefault()
+		if (!/^\d{10}$/.test(form.code)) return toast.error("Enter the complete 10-digit secret code.")
 		setBusy(true)
-		try { const result = await verifyRootCode(tokens.accessToken, challenge, code, true); await establishRootSession(result, tokens); onAuthenticated() }
-		catch (error) { toast.error(error.message) } finally { setBusy(false) }
-	}
-	const changeDigit = (index, value) => {
-		const next = [...digits]; next[index] = value.replace(/\D/g, "").slice(-1); setDigits(next)
-		if (next[index] && index < 5) inputs.current[index + 1]?.focus()
-	}
-	const resendCode = async () => {
-		setBusy(true)
-		try { const result = await requestRootCode(tokens.accessToken); setChallenge(result.challengeId); setDeliveryFailed(false); setUseRecoveryCode(false); toast.success("A new verification code was sent.") }
+		try { const result = await verifyRootCode(tokens.accessToken, form.code); await establishRootSession(result, tokens); onAuthenticated() }
 		catch (error) { toast.error(error.message) } finally { setBusy(false) }
 	}
 
@@ -113,8 +79,7 @@ function RootLogin({ onAuthenticated }) {
 		<div className="root-login-mark"><HiOutlineShieldCheck /></div><span>Restricted system access</span><h1>Root Administration</h1>
 		<p>Authenticate to manage BulsuScholar infrastructure and protected operations.</p>
 		{stage === "login" ? <form onSubmit={submitLogin}><label>User ID<input value={form.userId} onChange={(event) => setForm({ ...form, userId: event.target.value })} autoComplete="username" /></label><label>Password<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} autoComplete="current-password" /></label><button disabled={busy}>{busy ? "Verifying..." : "Continue"}</button></form> : null}
-		{stage === "password" ? <form onSubmit={submitPassword}><div className="root-login-notice"><HiOutlineExclamation /> Replace the temporary password before continuing.</div><label>New password<input type="password" value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} autoComplete="new-password" /></label><label>Confirm password<input type="password" value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} autoComplete="new-password" /></label><small>Use at least 12 characters with uppercase, lowercase, number, and symbol.</small><button disabled={busy}>{busy ? "Updating..." : "Change Password"}</button></form> : null}
-		{stage === "otp" ? <form onSubmit={submitCode} className="root-otp-form"><div className="root-phone-otp"><HiOutlineKey /><strong>Verify this device</strong><small>{useRecoveryCode ? "Enter one unused recovery code." : "Enter the six-digit code sent to the root email."}</small>{deliveryFailed ? <span className="root-otp-warning">Email delivery is unavailable. Use a recovery code or retry delivery.</span> : null}{useRecoveryCode ? <input className="root-recovery-input" value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value.replace(/[^a-fA-F0-9]/g, "").toUpperCase().slice(0, 10))} maxLength={10} autoComplete="one-time-code" /> : <div>{digits.map((digit, index) => <input key={index} ref={(node) => { inputs.current[index] = node }} inputMode="numeric" maxLength={1} value={digit} onChange={(event) => changeDigit(index, event.target.value)} onKeyDown={(event) => { if (event.key === "Backspace" && !digit && index) inputs.current[index - 1]?.focus() }} />)}</div>}<button type="button" className="root-text-button" onClick={() => setUseRecoveryCode((value) => !value)}>{useRecoveryCode ? "Use email verification code" : "Use a recovery code"}</button><button type="button" className="root-text-button" onClick={resendCode} disabled={busy}>Resend email code</button></div>{recoveryCodes.length ? <details className="root-recovery" open><summary>Save recovery codes now</summary><p>Each code works once. Store them offline.</p><code>{recoveryCodes.join("\n")}</code></details> : null}<button disabled={busy}>{busy ? "Checking..." : "Verify and Trust Device"}</button></form> : null}
+		{stage === "code" ? <form onSubmit={submitCode} className="root-code-form"><div className="root-secret-code"><HiOutlineKey /><strong>Enter Secret Code</strong><small>Enter your saved permanent 10-digit root code.</small><input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.replace(/\D/g, "").slice(0, 10) })} inputMode="numeric" pattern="[0-9]{10}" maxLength={10} autoComplete="one-time-code" autoFocus /></div><button disabled={busy}>{busy ? "Checking..." : "Open Root Dashboard"}</button></form> : null}
 	</section></main>
 }
 
@@ -162,10 +127,6 @@ export default function RootDashboard() {
 		try { return await callback() }
 		catch (error) {
 			const reason = typeof error.data?.detail === "string" ? error.data.detail : error.data?.detail?.reason
-			if (reason === "recent_root_authentication_required") {
-				setModal({ type: "reauth", retry: callback })
-				return
-			}
 			if (error.status === 401 || reason === "root_role_required" || reason === "root_session_expired") { await clearRootSession(false); setAuthenticated(false) }
 			toast.error(error.message || "Root operation failed.")
 		} finally { setLoading(false) }
@@ -210,7 +171,7 @@ export default function RootDashboard() {
 	}
 
 	return <div className="root-shell" style={{ "--root-primary": config.branding?.primaryColor || "#006b3c", fontFamily: config.branding?.fontFamily || "Inter, sans-serif" }}>
-		<aside className={sidebarOpen ? "open" : ""}><header><div><HiOutlineShieldCheck /></div><span><strong>{config.branding?.productName || "BulsuScholar"}</strong><small>Root Operations</small></span></header><nav>{SECTIONS.map(([id, label, icon]) => <button className={section === id ? "active" : ""} key={id} onClick={() => navigate(id)}>{icon}<span>{label}</span></button>)}</nav><footer><button onClick={() => setModal({ type: "security" })}><HiOutlineKey /> Security</button><button className="danger" onClick={async () => { await clearRootSession(); setAuthenticated(false) }}><HiOutlineLogout /> Sign Out</button></footer></aside>
+		<aside className={sidebarOpen ? "open" : ""}><header><div><HiOutlineShieldCheck /></div><span><strong>{config.branding?.productName || "BulsuScholar"}</strong><small>Root Operations</small></span></header><nav>{SECTIONS.map(([id, label, icon]) => <button className={section === id ? "active" : ""} key={id} onClick={() => navigate(id)}>{icon}<span>{label}</span></button>)}</nav><footer><button className="danger" onClick={async () => { await clearRootSession(); setAuthenticated(false) }}><HiOutlineLogout /> Sign Out</button></footer></aside>
 		{sidebarOpen ? <button className="root-sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close menu" /> : null}
 		<main><header className="root-topbar"><button className="root-menu" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><HiOutlineMenu /></button><div><span>ROOT CONTROL CENTER</span><h1>{SECTIONS.find(([id]) => id === section)?.[1]}</h1></div><button className="root-refresh" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title={`Use ${theme === "dark" ? "light" : "dark"} mode`} aria-label={`Use ${theme === "dark" ? "light" : "dark"} mode`}>{theme === "dark" ? <HiOutlineSun /> : <HiOutlineMoon />}</button><button className="root-refresh" onClick={() => { setSection(section); loadOverview() }} title="Refresh"><HiOutlineRefresh /></button></header>
 			<div className="root-content">{loading ? <div className="root-loading">Refreshing protected data...</div> : null}
@@ -243,17 +204,6 @@ export default function RootDashboard() {
 			if (type === "integration") await guard(async () => { await runRootIntegrationAction(data); setModal(null); toast.success("Infrastructure action requested.") })
 			if (type === "setting") await guard(async () => { const result = await saveRootSetting(data.settingId, data.values); setConfig((current) => ({ ...current, [data.settingId === "academic_cycle" ? "academicCycle" : data.settingId]: result.data })); setModal(null); toast.success(data.settingId === "academic_cycle" ? "Academic cycle activated." : "Portal controls updated.") })
 			if (type === "sql-maintenance") await guard(async () => { await executeRootSqlMaintenance(data.id); setModal(null); toast.success("Approved database maintenance completed.") })
-			if (type === "revoke") await guard(async () => { await revokeRootDevice(data.id); toast.success("Trusted device revoked.") })
-			if (type === "revoke-session") await guard(async () => { await revokeRootSession(data.id); toast.success("Root session revoked.") })
-			if (type === "reauth") {
-				try {
-					await reauthenticateRoot(data.password)
-					const retry = modal.retry
-					setModal(null)
-					toast.success("Identity confirmed for 15 minutes.")
-					if (retry) await guard(retry)
-				} catch (error) { toast.error(error.message || "Root identity confirmation failed.") }
-			}
 		}} /> : null}
 	</div>
 }
@@ -275,44 +225,11 @@ function BrandingCard({ value, versions, onUpload, onSaveDraft, onPublish }) {
 function RootModal({ modal, close, action }) {
 	const [form, setForm] = useState(modal.data || {})
 	const [showDiscard, setShowDiscard] = useState(false)
-	const [devices, setDevices] = useState([])
-	const [sessions, setSessions] = useState([])
-	const [currentSessionId, setCurrentSessionId] = useState("")
-	const [securityBusy, setSecurityBusy] = useState(false)
-	const [newRecoveryCodes, setNewRecoveryCodes] = useState([])
 	const isDirty = ["admin", "ticket", "integration"].includes(modal.type) && JSON.stringify(form) !== JSON.stringify(modal.data || {})
 	const requestClose = () => isDirty ? setShowDiscard(true) : close()
-	useEffect(() => {
-		if (modal.type !== "security") return
-		Promise.all([getRootDevices(), getRootSessions()]).then(([deviceResult, sessionResult]) => {
-			setDevices(deviceResult.devices || [])
-			setSessions(sessionResult.sessions || [])
-			setCurrentSessionId(sessionResult.currentSessionId || "")
-		}).catch((error) => toast.error(error.message))
-	}, [modal.type])
-	const changeSecurityPassword = async () => {
-		if (form.newPassword !== form.confirmPassword) return toast.error("Passwords do not match.")
-		setSecurityBusy(true)
-		try {
-			await updateRootPassword(form.currentPassword || "", form.newPassword || "")
-			setForm({ ...form, currentPassword: "", newPassword: "", confirmPassword: "" })
-			toast.success("Root password changed. Other sessions were revoked.")
-		} catch (error) { toast.error(error.message) } finally { setSecurityBusy(false) }
-	}
-	const regenerateCodes = async () => {
-		setSecurityBusy(true)
-		try {
-			await reauthenticateRoot(form.currentPassword || "")
-			const result = await regenerateRootRecoveryCodes()
-			setNewRecoveryCodes(result.recoveryCodes || [])
-			toast.success("Recovery codes regenerated. Previous codes no longer work.")
-		} catch (error) { toast.error(error.message) } finally { setSecurityBusy(false) }
-	}
 	return <div className="root-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose() }}><section className="root-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" onClick={requestClose}><HiX /></button>
 		{modal.type === "admin" ? <><h2>{form.adminId ? "Edit Administrator" : "Add Administrator"}</h2><div className="root-form-grid"><label>User ID<input value={form.adminId || ""} disabled={Boolean(modal.data?.adminId)} onChange={(event) => setForm({ ...form, adminId: event.target.value })} /></label><label>Full name<input value={form.fullName || ""} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></label><label>Email<input type="email" value={form.email || ""} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label>Role<select value={form.role || "full_admin"} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="full_admin">Full Admin</option><option value="student_reviewer">Student Reviewer</option><option value="grantor_manager">Grantor Manager</option><option value="reports_viewer">Reports Viewer</option></select></label><label>{modal.data?.adminId ? "New temporary password (optional)" : "Temporary password"}<input type="password" value={form.temporaryPassword || ""} onChange={(event) => setForm({ ...form, temporaryPassword: event.target.value })} /></label><label className="check"><input type="checkbox" checked={form.active !== false} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Active account</label></div><footer><button onClick={close}>Cancel</button><button className="primary" onClick={() => action("admin", form)}>Save Administrator</button></footer></> : null}
 		{modal.type === "ticket" ? <><h2>Support Ticket</h2><p>{form.message}</p><div className="root-form-grid"><label>Status<select value={form.status || "open"} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></label><label>Priority<select value={form.priority || "normal"} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>low</option><option>normal</option><option>high</option><option>urgent</option></select></label><label className="wide">Internal notes<textarea value={form.internalNotes || ""} onChange={(event) => setForm({ ...form, internalNotes: event.target.value })} /></label><label className="wide">Reply by email<textarea value={form.reply || ""} onChange={(event) => setForm({ ...form, reply: event.target.value })} /></label></div><footer><button onClick={close}>Cancel</button><button className="primary" onClick={() => action("ticket", { ticketId: form.id, ...form })}>Save Ticket</button></footer></> : null}
-		{modal.type === "security" ? <><h2>Root Security</h2><p>Manage the owner credential, recovery access, trusted devices, and sessions.</p><div className="root-security-section"><h3>Change password</h3><div className="root-form-grid"><label>Current password<input type="password" value={form.currentPassword || ""} onChange={(event) => setForm({ ...form, currentPassword: event.target.value })} /></label><label>New password<input type="password" value={form.newPassword || ""} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} /></label><label>Confirm new password<input type="password" value={form.confirmPassword || ""} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} /></label></div><button className="primary" disabled={securityBusy} onClick={changeSecurityPassword}>Change Password</button></div><div className="root-security-section"><h3>Recovery codes</h3><p>Confirm the current password, then generate a replacement set. Each code works once.</p><button disabled={securityBusy || !form.currentPassword} onClick={regenerateCodes}>Regenerate Codes</button>{newRecoveryCodes.length ? <code className="root-code-list">{newRecoveryCodes.join("\n")}</code> : null}</div><div className="root-security-section"><h3>Trusted devices</h3><div className="root-device-list">{devices.map((device) => <div key={device.id}><span><strong>{device.label}</strong><small>{formatDate(device.last_used_at)} · expires {formatDate(device.expires_at)}</small></span><button onClick={async () => { await revokeRootDevice(device.id); setDevices((rows) => rows.filter((row) => row.id !== device.id)); toast.success("Trusted device revoked.") }}>Revoke</button></div>)}</div>{!devices.length ? <div className="root-empty">No trusted devices.</div> : null}</div><div className="root-security-section"><h3>Active sessions</h3><div className="root-device-list">{sessions.map((session) => <div key={session.id}><span><strong>{session.id === currentSessionId ? "Current session" : "Root session"}</strong><small>{formatDate(session.last_used_at)} · {session.revoked_at ? "revoked" : `expires ${formatDate(session.expires_at)}`}</small></span>{session.id !== currentSessionId && !session.revoked_at ? <button onClick={async () => { await revokeRootSession(session.id); setSessions((rows) => rows.map((row) => row.id === session.id ? { ...row, revoked_at: new Date().toISOString() } : row)); toast.success("Root session revoked.") }}>Revoke</button> : null}</div>)}</div></div><footer><button onClick={close}>Close</button></footer></> : null}
-		{modal.type === "reauth" ? <><h2>Confirm Root Identity</h2><p>Enter the current root password to authorize this sensitive operation for 15 minutes.</p><label>Current password<input type="password" autoFocus value={form.password || ""} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label><footer><button onClick={close}>Cancel</button><button className="primary" onClick={() => action("reauth", form)} disabled={!form.password}>Confirm and Continue</button></footer></> : null}
 		{modal.type === "integration" ? <><h2>Confirm Infrastructure Action</h2><p>This operation is audited and may briefly interrupt service.</p>{form.action === "railway_restart" ? <label>Railway deployment ID<input value={form.deploymentId || ""} onChange={(event) => setForm({ ...form, deploymentId: event.target.value })} /></label> : null}<footer><button onClick={close}>Cancel</button><button className="danger" onClick={() => action("integration", form)}>Confirm</button></footer></> : null}
 		{modal.type === "setting" ? <><h2>{form.settingId === "academic_cycle" ? "Activate Academic Cycle" : "Apply Portal Controls"}</h2><p>{form.settingId === "academic_cycle" ? `This immediately makes ${form.values?.academicYear || "the selected year"}-${form.values?.semester || "semester"} authoritative for eligibility and current-cycle documents. Historical records remain unchanged.` : form.values?.maintenanceMode ? "Maintenance mode signs normal users out and blocks non-root portal operations until it is disabled." : "These controls take effect across student, grantor, and normal-admin portals."}</p><DataTable rows={[form.values || {}]} /><footer><button onClick={close}>Cancel</button><button className="danger" onClick={() => action("setting", form)}>Confirm Change</button></footer></> : null}
 		{modal.type === "sql-maintenance" ? <><h2>Confirm Database Maintenance</h2><p>{form.label}. This reviewed operation is recorded in the immutable root audit.</p><footer><button onClick={close}>Cancel</button><button className="danger" onClick={() => action("sql-maintenance", form)}>Execute Operation</button></footer></> : null}
