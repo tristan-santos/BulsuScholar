@@ -261,7 +261,7 @@ def login_root(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     refresh_token = str(auth.get("refresh_token") or "")
     if not access_token or not refresh_token:
         raise HTTPException(status_code=503, detail="root_authentication_unavailable")
-    if not root.get("login_code_hash"):
+    if not root.get("login_code_hashes"):
         raise HTTPException(status_code=503, detail="root_login_code_not_configured")
     audit(request, root_id, "root_password_verified")
     return {"ok": True, "stage": "code", "accessToken": access_token, "refreshToken": refresh_token}
@@ -280,8 +280,10 @@ def verify_root_code(request: Request, payload: dict[str, Any]) -> dict[str, Any
         raise HTTPException(status_code=429, detail="root_login_code_locked")
     failed_attempts = 0 if lock_time else int(root.get("failed_code_attempts") or 0)
     code = str(payload.get("code") or "").strip()
-    expected_hash = str(root.get("login_code_hash") or "")
-    valid_code = bool(re.fullmatch(r"\d{10}", code)) and bool(expected_hash) and hmac.compare_digest(expected_hash, secure_hash(code))
+    configured_hashes = [str(value) for value in (root.get("login_code_hashes") or []) if value]
+    submitted_hash = secure_hash(code) if re.fullmatch(r"\d{10}", code) else ""
+    comparisons = [hmac.compare_digest(expected_hash, submitted_hash) for expected_hash in configured_hashes]
+    valid_code = bool(submitted_hash) and any(comparisons)
     if not valid_code:
         failed_attempts += 1
         locked = failed_attempts >= MAX_ROOT_CODE_ATTEMPTS

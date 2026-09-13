@@ -30,8 +30,10 @@ if (!url || !serviceKey) {
 if (!fixedPassword) throw new Error("ROOT_ADMIN_FIXED_PASSWORD is required for root setup.")
 if (!sessionSecret || sessionSecret.length < 32) throw new Error("ROOT_SESSION_SECRET must match Railway and contain at least 32 characters.")
 
-const loginCode = String(randomInt(0, 10_000_000_000)).padStart(10, "0")
-const loginCodeHash = createHmac("sha256", sessionSecret).update(loginCode).digest("hex")
+const loginCodes = new Set()
+while (loginCodes.size < 10) loginCodes.add(String(randomInt(0, 10_000_000_000)).padStart(10, "0"))
+const loginCodeList = [...loginCodes]
+const loginCodeHashes = loginCodeList.map((code) => createHmac("sha256", sessionSecret).update(code).digest("hex"))
 
 const supabase = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
 const { data: listed, error: listError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
@@ -64,7 +66,7 @@ const { error: profileError } = await supabase.from("root_admins").upsert({
 	email,
 	display_name: "Root Administrator",
 	active: true,
-	login_code_hash: loginCodeHash,
+	login_code_hashes: loginCodeHashes,
 	failed_code_attempts: 0,
 	code_locked_until: null,
 	updated_at: new Date().toISOString(),
@@ -74,7 +76,9 @@ if (profileError) throw profileError
 const { error: revokeError } = await supabase.from("root_sessions").update({ revoked_at: new Date().toISOString() }).eq("root_id", rootId).is("revoked_at", null)
 if (revokeError) throw revokeError
 
-if (process.platform === "win32") spawnSync("clip.exe", { input: loginCode, encoding: "utf8", windowsHide: true })
+const printableCodes = loginCodeList.map((code, index) => `${index + 1}. ${code}`).join("\n")
+if (process.platform === "win32") spawnSync("clip.exe", { input: loginCodeList.join("\r\n"), encoding: "utf8", windowsHide: true })
 console.log(`Root administrator is ready: ${rootId} (${email}).`)
-console.log(`Permanent 10-digit code: ${loginCode}`)
-console.log(process.platform === "win32" ? "The code was copied to the clipboard. Save it now; only its hash is stored." : "Save the code now; only its hash is stored.")
+console.log("Permanent 10-digit codes:")
+console.log(printableCodes)
+console.log(process.platform === "win32" ? "All codes were copied to the clipboard. Save them now; only their hashes are stored." : "Save the codes now; only their hashes are stored.")

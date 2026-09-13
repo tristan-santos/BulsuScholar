@@ -61,7 +61,7 @@ class RootServiceTests(unittest.TestCase):
     })
     @patch("backend.root_service._root_by_id", return_value={
         "id": "Tristan@Root", "email": "root@example.com", "active": True,
-        "login_code_hash": "configured-hash",
+        "login_code_hashes": ["configured-hash"],
     })
     def test_root_password_login_advances_to_permanent_code(self, _root, authenticate, _audit):
         result = root_service.login_root(None, {"userId": "Tristan@Root", "password": "fixed-password"})
@@ -77,7 +77,7 @@ class RootServiceTests(unittest.TestCase):
     @patch("backend.root_service.secure_hash", return_value="configured-hash")
     @patch("backend.root_service._root_by_auth", return_value={
         "id": "Tristan@Root", "active": True, "display_name": "Root Administrator",
-        "login_code_hash": "configured-hash", "failed_code_attempts": 0,
+        "login_code_hashes": ["other-hash", "configured-hash"], "failed_code_attempts": 0,
     })
     @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
     def test_permanent_root_code_creates_eight_hour_session(
@@ -92,10 +92,46 @@ class RootServiceTests(unittest.TestCase):
         create_session.assert_called_once_with(request, "Tristan@Root")
 
     @patch("backend.root_service.audit")
+    @patch("backend.root_service._new_session", return_value="root-session")
+    @patch("backend.root_service._rest")
+    @patch("backend.root_service._root_by_auth")
+    @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
+    def test_all_ten_root_codes_are_reusable(self, _auth_user, find_root, _rest, create_session, _audit):
+        codes = [f"{index:010d}" for index in range(10)]
+        hashes = [f"hash-{code}" for code in codes]
+        find_root.return_value = {
+            "id": "Tristan@Root", "active": True, "login_code_hashes": hashes,
+            "failed_code_attempts": 0,
+        }
+        request = type("Request", (), {"headers": {"authorization": "Bearer token"}})()
+
+        with patch("backend.root_service.secure_hash", side_effect=lambda code: f"hash-{code}"):
+            for code in [*codes, codes[0]]:
+                result = root_service.verify_root_code(request, {"code": code})
+                self.assertEqual("root-session", result["rootSession"])
+
+        self.assertEqual(11, create_session.call_count)
+
+    @patch("backend.root_service.audit")
+    @patch("backend.root_service._rest")
+    @patch("backend.root_service._root_by_auth", return_value={
+        "id": "Tristan@Root", "active": True, "login_code_hashes": ["configured-hash"],
+        "failed_code_attempts": 0,
+    })
+    @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
+    def test_malformed_root_codes_are_rejected(self, _auth_user, _root, _rest, _audit):
+        request = type("Request", (), {"headers": {"authorization": "Bearer token"}})()
+
+        for code in ["", "123456789", "12345678901", "ABCDEFGHIJ"]:
+            with self.subTest(code=code), self.assertRaises(HTTPException) as raised:
+                root_service.verify_root_code(request, {"code": code})
+            self.assertEqual(401, raised.exception.status_code)
+
+    @patch("backend.root_service.audit")
     @patch("backend.root_service._rest")
     @patch("backend.root_service.secure_hash", return_value="wrong-hash")
     @patch("backend.root_service._root_by_auth", return_value={
-        "id": "Tristan@Root", "active": True, "login_code_hash": "configured-hash",
+        "id": "Tristan@Root", "active": True, "login_code_hashes": ["configured-hash"],
         "failed_code_attempts": 4,
     })
     @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
