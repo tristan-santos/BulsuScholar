@@ -15,7 +15,7 @@ import urllib.request
 from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, Request
 
@@ -443,7 +443,16 @@ def verify_root_otp(request: Request, payload: dict[str, Any]) -> dict[str, Any]
         raise HTTPException(status_code=401, detail="root_authentication_required")
     challenge_id = str(payload.get("challengeId") or "")
     code = str(payload.get("code") or "").strip().upper()
-    challenge = _first("root_otp_challenges", f"id=eq.{urllib.parse.quote(challenge_id)}&root_id=eq.{urllib.parse.quote(root['id'])}&select=*")
+    challenge = None
+    try:
+        valid_challenge_id = str(UUID(challenge_id)) if challenge_id else ""
+    except ValueError:
+        valid_challenge_id = ""
+    if valid_challenge_id:
+        challenge = _first(
+            "root_otp_challenges",
+            f"id=eq.{urllib.parse.quote(valid_challenge_id)}&root_id=eq.{urllib.parse.quote(root['id'])}&select=*",
+        )
     valid_challenge = challenge and not challenge.get("consumed_at") and challenge.get("attempts", 0) < MAX_OTP_ATTEMPTS and datetime.fromisoformat(challenge["expires_at"].replace("Z", "+00:00")) > now_utc()
     recovery_hashes = list(root.get("recovery_code_hashes") or [])
     recovery_hash = secure_hash(code) if code else ""

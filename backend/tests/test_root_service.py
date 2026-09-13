@@ -98,6 +98,29 @@ class RootServiceTests(unittest.TestCase):
         self.assertEqual("fresh-refresh", result["refreshToken"])
         self.assertEqual("otp-1", result["challengeId"])
 
+    @patch("backend.root_service.audit")
+    @patch("backend.root_service._new_session", return_value="root-session")
+    @patch("backend.root_service._rest")
+    @patch("backend.root_service._first")
+    @patch("backend.root_service.secure_hash", return_value="recovery-hash")
+    @patch("backend.root_service._root_by_auth", return_value={
+        "id": "Tristan@Root", "recovery_code_hashes": ["recovery-hash"],
+    })
+    @patch("backend.root_service._auth_user", return_value={"id": "auth-root"})
+    def test_recovery_code_does_not_query_empty_challenge_uuid(
+        self, _auth_user, _root, _hash, find_challenge, _rest, _session, _audit,
+    ):
+        request = type("Request", (), {
+            "headers": {"authorization": "Bearer fresh-token", "user-agent": "Test Browser"},
+        })()
+
+        result = root_service.verify_root_otp(request, {
+            "challengeId": "", "code": "ABCDEF1234", "rememberDevice": False,
+        })
+
+        find_challenge.assert_not_called()
+        self.assertEqual("root-session", result["rootSession"])
+
     @patch("backend.root_service._rest")
     def test_admin_contact_is_normalized_and_only_updates_contact(self, rest):
         record = {"fullName": "Admin User", "role": "full_admin", "authUserId": "auth-1"}
