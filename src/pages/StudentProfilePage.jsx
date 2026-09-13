@@ -47,7 +47,6 @@ import {
 	getDocumentDownloadErrorMessage,
 	getStorageObjectBlob,
 } from "../services/supabaseStorageService"
-import { scanStudentDocument } from "../services/documentScanService"
 import { updateScholarshipDocumentsWorkflow } from "../services/workflowService"
 import { isClosedApplication } from "../services/scholarshipChoiceService"
 import "../css/StudentDashboard.css"
@@ -89,126 +88,21 @@ function canUploadDocument(file, semesterTag) {
 	return Boolean(file.requiresReupload || file.resetRequired || file.uploadResetRequired)
 }
 
-function normalizeIdentityText(value = "") {
-	return String(value || "")
-		.toLowerCase()
-		.replace(/[^a-z0-9ñ\s]/gi, " ")
-		.replace(/\s+/g, " ")
-		.trim()
-}
-
-function normalizeStudentNumber(value = "") {
-	return String(value || "").replace(/\D/g, "")
-}
-
-function getLevenshteinDistance(left = "", right = "") {
-	const a = normalizeIdentityText(left)
-	const b = normalizeIdentityText(right)
-	if (a === b) return 0
-	if (!a) return b.length
-	if (!b) return a.length
-
-	const matrix = Array.from({ length: b.length + 1 }, (_, row) => [row])
-	for (let column = 0; column <= a.length; column += 1) {
-		matrix[0][column] = column
-	}
-
-	for (let row = 1; row <= b.length; row += 1) {
-		for (let column = 1; column <= a.length; column += 1) {
-			const substitutionCost = a[column - 1] === b[row - 1] ? 0 : 1
-			matrix[row][column] = Math.min(
-				matrix[row - 1][column] + 1,
-				matrix[row][column - 1] + 1,
-				matrix[row - 1][column - 1] + substitutionCost,
-			)
-		}
-	}
-
-	return matrix[b.length][a.length]
-}
-
-function getLevenshteinSimilarity(left = "", right = "") {
-	const a = normalizeIdentityText(left)
-	const b = normalizeIdentityText(right)
-	if (!a && !b) return 1
-	if (!a || !b) return 0
-	const maxLength = Math.max(a.length, b.length)
-	return Number((1 - getLevenshteinDistance(a, b) / maxLength).toFixed(4))
-}
-
-function tokenSortName(value = "") {
-	return normalizeIdentityText(value).split(" ").filter(Boolean).sort().join(" ")
-}
-
-function buildFullNameFromParts(data = {}) {
-	return [data?.fname, data?.mname, data?.lname].filter(Boolean).join(" ").trim()
-}
-
-function buildScannedName(extracted = {}) {
-	return (
-		extracted.fullName ||
-		[extracted.firstName, extracted.middleName, extracted.lastName].filter(Boolean).join(" ")
-	).trim()
-}
-
-function _validateApplicationFormIdentity({ student = {}, studentId = "", extracted = {} }) {
-	const expectedStudentNumber = normalizeStudentNumber(
-		student?.studentnumber || student?.studentId || studentId,
-	)
-	const scannedStudentNumber = normalizeStudentNumber(extracted?.studentId)
-	const expectedName = buildFullNameFromParts(student)
-	const scannedName = buildScannedName(extracted)
-	const expectedSortedName = tokenSortName(expectedName)
-	const scannedSortedName = tokenSortName(scannedName)
-	const nameSimilarity = getLevenshteinSimilarity(expectedSortedName, scannedSortedName)
-	const hasReadableName = Boolean(expectedSortedName && scannedSortedName)
-	const passed = hasReadableName && nameSimilarity >= 0.7
-	const failedRules = []
-
-	if (!expectedName) failedRules.push("Missing expected student name from the account.")
-	if (!scannedName) failedRules.push("Student name was not readable in the uploaded Student Application Profile.")
-	if (hasReadableName && nameSimilarity < 0.7) {
-		failedRules.push(`Name similarity too low: ${nameSimilarity}. Required at least 0.70.`)
-	}
-
-	return {
-		algorithm: "Weighted Record Linkage with Levenshtein Similarity",
-		passed,
-		thresholds: {
-			studentNumber: "Skipped because the Student Application Profile template has no student number field",
-			nameSimilarity: ">= 0.70",
-		},
-		score: nameSimilarity,
-		studentNumberMatched: Boolean(
-			expectedStudentNumber &&
-				scannedStudentNumber &&
-				expectedStudentNumber === scannedStudentNumber,
-		),
-		studentNumberRuleSkipped: true,
-		nameSimilarity,
-		failedRules,
-		expected: {
-			studentNumber: expectedStudentNumber,
-			name: expectedName,
-		},
-		scanned: {
-			studentNumber: scannedStudentNumber,
-			name: scannedName,
-		},
-		normalized: {
-			expectedName: normalizeIdentityText(expectedName),
-			scannedName: normalizeIdentityText(scannedName),
-			expectedSortedName,
-			scannedSortedName,
-		},
-		rawExtracted: extracted,
-	}
-}
-
-async function isValidPdfUpload(file) {
+async function isValidStudentProfileUpload(file) {
 	if (!file || file.size <= 0 || file.size > 10 * 1024 * 1024) return false
-	const header = new Uint8Array(await file.slice(0, 5).arrayBuffer())
-	return String.fromCharCode(...header) === "%PDF-"
+	const header = new Uint8Array(await file.slice(0, 8).arrayBuffer())
+	const isPdf = String.fromCharCode(...header.slice(0, 5)) === "%PDF-"
+	const isPng =
+		header.length >= 8 &&
+		header[0] === 0x89 &&
+		header[1] === 0x50 &&
+		header[2] === 0x4e &&
+		header[3] === 0x47 &&
+		header[4] === 0x0d &&
+		header[5] === 0x0a &&
+		header[6] === 0x1a &&
+		header[7] === 0x0a
+	return isPdf || isPng
 }
 
 function isPreviewPdf(file = {}) {
@@ -397,9 +291,12 @@ export default function StudentProfilePage() {
 		if (!profileFile || isDownloadingUploadedProfile) return
 		setIsDownloadingUploadedProfile(true)
 		try {
+			const profileIsPdf = isPreviewPdf(profileFile)
 			await downloadStorageObject(profileFile, {
-				fileName: profileFile.name || `Student_Application_Profile_${userId}.pdf`,
-				validatePdf: true,
+				fileName:
+					profileFile.name ||
+					`Student_Application_Profile_${userId}.${profileIsPdf ? "pdf" : "png"}`,
+				validatePdf: profileIsPdf,
 			})
 			toast.success("Uploaded Student Application Profile downloaded.")
 		} catch (error) {
@@ -556,41 +453,26 @@ export default function StudentProfilePage() {
 		const mimeType = String(file.type || "").toLowerCase()
 		const isApplicationFormUpload = type === "applicationForm"
 		const isAllowedFile = isApplicationFormUpload
-			? mimeType === "application/pdf" || /\.pdf$/i.test(file.name || "")
+			? mimeType === "application/pdf" || mimeType === "image/png" || /\.(pdf|png)$/i.test(file.name || "")
 			: mimeType.startsWith("image/") ||
 				mimeType === "application/pdf" ||
 				/\.(png|jpe?g|pdf)$/i.test(file.name || "")
 		if (!isAllowedFile) {
 			toast.error(
 				isApplicationFormUpload
-					? "Student Application Profile must be uploaded as a PDF file."
+					? "Student Application Profile must be uploaded as a PDF or PNG file."
 					: "Only PNG, JPG, JPEG, and PDF files are allowed.",
 			)
 			return
 		}
-		if (isApplicationFormUpload && !(await isValidPdfUpload(file))) {
-			toast.error("Invalid Student Application Profile. Upload a valid PDF file no larger than 10 MB.")
+		if (isApplicationFormUpload && !(await isValidStudentProfileUpload(file))) {
+			toast.error("Invalid Student Application Profile. Upload a valid PDF or PNG file no larger than 10 MB.")
 			return
 		}
 
 		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
 		try {
 			let fileToUpload = file
-			let applicationProfileValidation = null
-
-			if (isApplicationFormUpload) {
-				const scanResult = await scanStudentDocument(file, "application_profile")
-				applicationProfileValidation = _validateApplicationFormIdentity({
-					student: user,
-					studentId: userId,
-					extracted: scanResult?.extracted || {},
-				})
-				if (!applicationProfileValidation.passed) {
-					const reason = applicationProfileValidation.failedRules[0] || "The student name does not match this account."
-					toast.error(`Invalid Student Application Profile. ${reason}`)
-					return
-				}
-			}
 
 			// Convert PDF to image if needed for document preview compatibility.
 			if (isPdf(file) && (type === "cor" || type === "cog" || type === "schoolId")) {
@@ -617,13 +499,6 @@ export default function StudentProfilePage() {
 				bucket: uploadResult.bucket || "",
 				uploadedAt: new Date().toISOString(),
 				semesterTag: currentSemesterTag,
-				...(applicationProfileValidation
-					? {
-						identityValidated: true,
-						identityScore: applicationProfileValidation.nameSimilarity,
-						validationAlgorithm: applicationProfileValidation.algorithm,
-					}
-					: {}),
 			}
 
 			await setDoc(
@@ -649,7 +524,7 @@ export default function StudentProfilePage() {
 					: type === "cog"
 					? "ROG uploaded successfully."
 					: type === "applicationForm"
-						? "Scholarship application uploaded successfully."
+						? "Student Application Profile uploaded successfully. It will be checked during document review."
 						: "Student ID uploaded successfully.",
 			)
 		} catch (error) {
@@ -1281,6 +1156,7 @@ export default function StudentProfilePage() {
 										<div>
 											<h4>Student Application Profile</h4>
 											<p>{documentStatus(studentApplicationProfile, currentSemesterTag)}</p>
+											<p>PDF or PNG, maximum 10 MB. Reviewed by admin.</p>
 										</div>
 										<div className="student-vault-actions">
 											{hasDocumentReference(studentApplicationProfile) ? (
@@ -1329,7 +1205,7 @@ export default function StudentProfilePage() {
 												disabled={!canUploadApplicationForm || isDocumentUploading.applicationForm}
 												title={
 													canUploadApplicationForm
-														? "Upload your completed PDF Student Application Profile"
+														? "Upload your completed PDF or PNG Student Application Profile (maximum 10 MB)"
 														: "Download the Student Application Profile first before uploading."
 												}
 											>
@@ -1342,7 +1218,7 @@ export default function StudentProfilePage() {
 											<input
 												ref={applicationFormFileInputRef}
 												type="file"
-												accept=".pdf,application/pdf"
+												accept=".pdf,.png,application/pdf,image/png"
 												className="student-profile-file-input"
 												onChange={(e) => {
 													const file = e.target.files?.[0]
