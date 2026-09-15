@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { HiOutlineCheckCircle, HiOutlineMail, HiOutlineXCircle } from "react-icons/hi"
 import { supabase } from "../services/supabaseClient"
-import { findStudentAccountByUniqueField, promotePendingStudentToActive, TABLES } from "../services/supabaseDataService"
+import { promoteEmailConfirmedStudentWorkflow } from "../services/workflowService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
@@ -18,86 +18,58 @@ export default function ConfirmEmailPage() {
 		let active = true
 
 		const checkSession = async () => {
-			console.log("ConfirmEmailPage: Component mounted. Checking URL for 'code' parameter...");
 			const code = new URLSearchParams(window.location.search).get("code")
 			
 			if (code) {
-				console.log("ConfirmEmailPage: 'code' found! Exchanging for session...");
 				const { error } = await supabase.auth.exchangeCodeForSession(code)
 				if (!active) return
 				if (error) {
-					console.error("ConfirmEmailPage: Exchange code ERROR:", error);
+					console.error("Email confirmation exchange failed.", error)
 					setStatus("error")
 					return
 				}
-				console.log("ConfirmEmailPage: Exchange code SUCCESS.");
-			} else {
-				console.log("ConfirmEmailPage: No 'code' in URL search params.");
 			}
 
-			console.log("ConfirmEmailPage: Checking current session...");
 			const { data, error } = await supabase.auth.getSession()
 			if (!active) return
 
 			if (error) {
-				console.error("ConfirmEmailPage: Get session ERROR:", error);
+				console.error("Confirmed session could not be loaded.", error)
 				setStatus("error")
 				return
 			}
 
 			if (data?.session?.user) {
-				console.log("ConfirmEmailPage: Session found for user:", data.session.user.email);
 				const user = data.session.user
 				const userEmailAddr = user.email || ""
 				setEmail(userEmailAddr)
 				const studentIdFromMetadata = String(user.user_metadata?.user_id || user.user_metadata?.studentId || "").trim()
 				try {
-					const lookup = studentIdFromMetadata
-						? { table: TABLES.pendingStudent, record: { id: studentIdFromMetadata } }
-						: await findStudentAccountByUniqueField("email", userEmailAddr)
-					const pendingStudentId =
-						lookup?.table === TABLES.pendingStudent
-							? lookup.record?.id || studentIdFromMetadata
-							: studentIdFromMetadata
-					if (pendingStudentId) {
-						const promoted = await promotePendingStudentToActive(pendingStudentId, {
-							authUserId: user.id,
-							email: userEmailAddr,
-						})
-						console.log("ConfirmEmailPage: Pending student promotion result.", {
-							studentId: pendingStudentId,
-							promoted: promoted?.promoted === true,
-							alreadyActive: promoted?.alreadyActive === true,
-						})
-					}
+					await promoteEmailConfirmedStudentWorkflow({ studentId: studentIdFromMetadata })
 				} catch (promotionError) {
-					console.error("ConfirmEmailPage: Email confirmed but pending student promotion failed.", promotionError)
+					console.error("Email confirmed but student activation failed.", promotionError)
+					setStatus("error")
+					return
 				}
 				setStatus("confirmed")
 				
 				// Sign out so they have to log in manually with Student ID
 				await supabase.auth.signOut()
-				console.log("ConfirmEmailPage: Signed out after confirmation.")
-
 				setTimeout(() => {
 					if (active) navigate("/", { replace: true })
 				}, 2000)
 				return
 			}
 
-			console.warn("ConfirmEmailPage: No active session found.");
 			setStatus("missing")
 		}
 
 		void checkSession()
 
 		const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
-			console.log("ConfirmEmailPage: Auth state change event:", event);
 			if (!active || !session?.user) return
-			console.log("ConfirmEmailPage: Session confirmed via auth state change.");
+			if (event !== "SIGNED_IN") return
 			setEmail(session.user.email || "")
-			setStatus("confirmed")
-			await supabase.auth.signOut()
 		})
 
 		return () => {
@@ -114,8 +86,8 @@ export default function ConfirmEmailPage() {
 		},
 		confirmed: {
 			icon: <HiOutlineCheckCircle className="signup-verified-icon" />,
-			title: "Email confirmed!",
-			copy: email ? `${email} has been verified successfully. Redirecting you to login...` : "Your email has been verified successfully. Redirecting you to login...",
+			title: "Welcome to BulsuScholar",
+			copy: email ? `${email} is confirmed and your student dashboard is ready. Redirecting you to login...` : "Your account is confirmed and ready. Redirecting you to login...",
 		},
 		missing: {
 			icon: <HiOutlineXCircle className="signup-verified-icon" />,

@@ -734,6 +734,13 @@ def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
         if not current.get("ok"):
             return {"ok": False, "reason": "application_not_found"}
         current_data = current.get("data") or {}
+        archive_decision = str(current_data.get("grantorArchiveDecision") or "").strip().lower()
+        if current_data.get("workflowPaused") is True or archive_decision in {"pending", "change"}:
+            return {
+                "ok": False,
+                "reason": "archive_choice_required",
+                "message": "This scholarship is paused while the student decides whether to keep or replace it.",
+            }
         if current_data.get("closureReason") in {"selected_another_scholarship", "student_withdrawal"}:
             return {"ok": False, "reason": "application_closed", "message": "This application is archived and read-only."}
         if current_data.get("lifecycleVersion") == 2:
@@ -747,11 +754,16 @@ def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
                 "closureReason", "closedAt", "readOnly", "cooldownUntil", "committedAt", "isLocked",
                 "applicationFormFile", "otherRequirementUploads", "reviewedDocumentVersions",
                 "reviewedApplicationFormVersion", "reviewedOtherRequirementVersions", "documentUrls",
+                "grantorArchiveDecision", "grantorArchiveChoice", "grantorAccountArchived",
+                "workflowPaused", "servicingOwner", "replacementForApplicationId",
+                "archiveTransitionResolution", "replacementApplicationId",
             }
             update["data"] = {key: value for key, value in (update.get("data") or {}).items()
                               if key not in protected_keys}
 
     if actor_type == "grantor":
+        if _archived_grantor_account(actor_id):
+            return {"ok": False, "reason": "grantor_archived", "message": "Archived grantors cannot update scholarship records."}
         for update in updates:
             table = str(update.get("table") or "").strip()
             record_id = str(update.get("id") or "").strip()
@@ -861,9 +873,35 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
     updates = payload.get("updates") or []
     actor_type = str(payload.get("actorType") or "student").strip().lower()
     actor_id = str(payload.get("actorId") or "").strip()
+    if actor_type == "grantor" and _archived_grantor_account(actor_id):
+        return {"ok": False, "reason": "grantor_archived", "message": "Archived grantors cannot update material requests."}
     results = []
+    for change in [*inserts, *updates]:
+        if change.get("table") not in {"soe_requests", "soeRequests"}:
+            continue
+        current_request = supabase_document_get("soe_requests", str(change.get("id") or ""))
+        request_data = current_request.get("data") or change.get("data") or {}
+        request_student_id = str(request_data.get("studentId") or "").strip()
+        request_application_id = str(request_data.get("applicationId") or "").strip()
+        if not request_student_id or not request_application_id:
+            continue
+        request_student = supabase_document_get("students", request_student_id)
+        archive_choice = (request_student.get("data") or {}).get("grantorArchiveChoice") or {}
+        if (str(archive_choice.get("applicationId") or "") == request_application_id
+                and str(archive_choice.get("decision") or "").strip().lower() in {"pending", "change"}):
+            return {
+                "ok": False,
+                "reason": "archive_choice_required",
+                "message": "This material request is paused while the student decides whether to keep or replace the scholarship.",
+            }
     if actor_type == "student":
         current_student = supabase_document_get("students", actor_id)
+        if (current_student.get("data") or {}).get("rosterDecisionPending") is True:
+            return {
+                "ok": False,
+                "reason": "roster_decision_required",
+                "message": "Resolve your listed scholarship record before requesting or downloading materials.",
+            }
         if (current_student.get("data") or {}).get("scholarshipLifecycleVersion") == 2:
             student = current_student.get("data") or {}
             commitment = student.get("scholarshipCommitment") or {}
@@ -1011,7 +1049,7 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
                 "materialLabel": material_label,
                 "decision": decision_label,
                 "reason": reason,
-                "route": "/student/scholarships",
+                "route": "/student-dashboard/scholarships",
                 "actorType": actor_type,
                 "actorId": payload.get("actorId") or "",
                 "read": False,
@@ -1552,43 +1590,37 @@ def update_grantor_archive_state(payload: dict[str, Any]) -> dict[str, Any]:
     announcement_count = 0
     invitation_count = 0
     notification_count = 0
+    affected_scholar_count = 0
+    choice_notification_count = 0
 
     for grantor_id in grantor_ids:
-        if archived:
-            account_data = {
-                "archived": True,
-                "archivedAt": now,
-                "status": "Archived",
-                "updatedAt": now,
-            }
-            portal_data = account_data
-        else:
-            account_data = {
-                **restore_data,
-                "archived": False,
-                "archivedAt": None,
-                "status": "Active",
-                "updatedAt": now,
-            }
-            portal_data = {
-                "archived": False,
-                "archivedAt": None,
-                "status": "Active",
-                "updatedAt": now,
-            }
-
-        provider_result = supabase_document_upsert("providers", grantor_id, account_data, merge=True)
-        portal_result = supabase_document_upsert("grantor_portals", grantor_id, portal_data, merge=True)
         grantor_failures = []
-        if not provider_result.get("ok"):
-            grantor_failures.append({"step": "provider", "detail": provider_result})
-        if not portal_result.get("ok"):
-            grantor_failures.append({"step": "portal", "detail": portal_result})
+        choice_result = supabase_rpc("sync_archived_grantor_scholar_choices", {
+            "p_grantor_id": grantor_id,
+            "p_archived": archived,
+            "p_actor_id": actor_id,
+        })
+        choice_data = choice_result.get("data") if isinstance(choice_result.get("data"), dict) else {}
+        if choice_result.get("ok"):
+            affected_scholar_count += int(choice_data.get("affectedScholarCount") or 0)
+            choice_notification_count += int(choice_data.get("choiceNotificationCount") or 0)
+            if not archived and restore_data:
+                restore_result = supabase_document_upsert("providers", grantor_id, {
+                    **restore_data,
+                    "archived": False,
+                    "archivedAt": None,
+                    "status": "Active",
+                    "updatedAt": now,
+                }, merge=True)
+                if not restore_result.get("ok"):
+                    grantor_failures.append({"step": "provider_credentials", "detail": restore_result})
+        else:
+            grantor_failures.append({"step": "committed_scholar_preservation", "detail": choice_result})
 
         archived_announcements = 0
         cancelled_invitations = 0
         sent_notifications = 0
-        if archived:
+        if archived and choice_result.get("ok"):
             announcement_rows = supabase_select(
                 "grantor_portal_announcements",
                 {"parent_id": grantor_id},
@@ -1744,6 +1776,8 @@ def update_grantor_archive_state(payload: dict[str, Any]) -> dict[str, Any]:
             "announcementCount": archived_announcements,
             "invitationCount": cancelled_invitations,
             "notificationCount": sent_notifications,
+            "affectedScholarCount": int(choice_data.get("affectedScholarCount") or 0),
+            "choiceNotificationCount": int(choice_data.get("choiceNotificationCount") or 0),
             "ok": len(grantor_failures) == 0,
             "failures": grantor_failures,
         }
@@ -1761,6 +1795,8 @@ def update_grantor_archive_state(payload: dict[str, Any]) -> dict[str, Any]:
             "announcementCount": announcement_count,
             "invitationCount": invitation_count,
             "notificationCount": notification_count,
+            "affectedScholarCount": affected_scholar_count,
+            "choiceNotificationCount": choice_notification_count,
             "failureCount": len(failures),
         },
         "createdAt": now,
@@ -1772,6 +1808,8 @@ def update_grantor_archive_state(payload: dict[str, Any]) -> dict[str, Any]:
         "announcementCount": announcement_count,
         "invitationCount": invitation_count,
         "notificationCount": notification_count,
+        "affectedScholarCount": affected_scholar_count,
+        "choiceNotificationCount": choice_notification_count,
         "results": results,
         "failures": failures,
     }

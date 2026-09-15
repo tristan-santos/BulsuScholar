@@ -395,7 +395,10 @@ def dependency_health() -> dict[str, Any]:
         supabase = {"configured": bool(os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY")), "reachable": False, "latencyMs": round((time.perf_counter() - started) * 1000, 2), "status": error.status_code}
     return {
         "supabase": supabase,
-        "email": {"configured": bool(os.getenv("RESEND_API_KEY") or os.getenv("BREVO_API_KEY"))},
+        "email": {
+            "provider": os.getenv("EMAIL_PROVIDER", "brevo").strip().lower(),
+            "configured": bool(os.getenv("BREVO_API_KEY") and os.getenv("BREVO_SENDER_EMAIL")),
+        },
         "sqlConsole": {"configured": bool(os.getenv("ROOT_DATABASE_URL"))},
         "railway": {"configured": bool(os.getenv("RAILWAY_PROJECT_TOKEN") and os.getenv("RAILWAY_SERVICE_ID"))},
         "vercel": {"configured": bool(os.getenv("VERCEL_DEPLOY_HOOK_URL") or (os.getenv("VERCEL_ACCESS_TOKEN") and os.getenv("VERCEL_PROJECT_ID")))},
@@ -788,7 +791,10 @@ def integration_status() -> dict[str, Any]:
     status: dict[str, Any] = {
         "railway": {"configured": bool(os.getenv("RAILWAY_PROJECT_TOKEN")), "serviceId": os.getenv("RAILWAY_SERVICE_ID", "")},
         "vercel": {"configured": bool(os.getenv("VERCEL_ACCESS_TOKEN")), "projectId": os.getenv("VERCEL_PROJECT_ID", "")},
-        "email": {"provider": "resend", "configured": bool(os.getenv("RESEND_API_KEY")), "brevoConfigured": bool(os.getenv("BREVO_API_KEY"))},
+        "email": {
+            "provider": os.getenv("EMAIL_PROVIDER", "brevo").strip().lower(),
+            "configured": bool(os.getenv("BREVO_API_KEY") and os.getenv("BREVO_SENDER_EMAIL")),
+        },
         "supabase": {"configured": bool(os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY")), "databaseSqlConfigured": bool(os.getenv("ROOT_DATABASE_URL") or os.getenv("SUPABASE_DB_URL"))},
     }
     token = os.getenv("RAILWAY_PROJECT_TOKEN", "")

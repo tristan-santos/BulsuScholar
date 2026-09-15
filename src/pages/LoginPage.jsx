@@ -8,7 +8,8 @@ import {
 	HiX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { findAccountById, getRecord, promotePendingStudentToActive, TABLES, upsertProvider } from "../services/supabaseDataService"
+import { findAccountById, getRecord, TABLES, upsertProvider } from "../services/supabaseDataService"
+import { promoteEmailConfirmedStudentWorkflow } from "../services/workflowService"
 import { supabase } from "../services/supabaseClient"
 import { verifyPassword } from "../services/authService"
 import { grantorMustChangePassword, GRANTOR_PASSWORD_CHANGE_ID_KEY } from "../constants/grantorAuth"
@@ -18,12 +19,8 @@ import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
+import { requirePublicAppUrl } from "../config/publicUrls"
 
-const APP_URL = (
-	import.meta.env.VITE_APP_URL ||
-	import.meta.env.VITE_PUBLIC_SITE_URL ||
-	"https://bulsu-scholar.vercel.app"
-).replace(/\/$/, "")
 const RESET_EMAIL_COOLDOWN_MS = 60 * 1000
 const RESET_EMAIL_COOLDOWN_KEY = "bulsuscholar_reset_email_next_allowed_at"
 
@@ -128,7 +125,7 @@ export default function LoginPage() {
 			}
 
 			const { error } = await supabase.auth.resetPasswordForEmail(student.email, {
-				redirectTo: `${APP_URL}/reset-password?userId=${encodeURIComponent(id)}`,
+				redirectTo: `${requirePublicAppUrl()}/reset-password?userId=${encodeURIComponent(id)}`,
 			})
 			if (error) throw error
 
@@ -236,16 +233,13 @@ export default function LoginPage() {
 				if (!error) {
 					authUser = data?.user || null
 					if (isPendingStudent) {
-						const promoted = await promotePendingStudentToActive(id, {
-							authUserId: authUser?.id || found.data.authUserId || "",
-							email: found.data.email,
-						})
-						if (promoted?.record) {
+						const promoted = await promoteEmailConfirmedStudentWorkflow({ studentId: id })
+						if (promoted?.student) {
 							found = {
 								...found,
 								table: TABLES.students,
 								isPending: false,
-								data: promoted.record,
+								data: { id, ...promoted.student },
 							}
 						}
 					}

@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -13,6 +14,28 @@ from fastapi import HTTPException, Request
 def normalize_role(value: Any) -> str:
     role = str(value or "").strip().lower()
     return "grantor" if role in {"provider", "grantor"} else role
+
+
+def require_supabase_user(request: Request) -> dict[str, Any]:
+    """Resolve the authenticated Supabase user without trusting portal headers."""
+    authorization = request.headers.get("authorization", "")
+    token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not token or not url or not key:
+        raise HTTPException(status_code=401, detail="authentication_required")
+    try:
+        user_request = urllib.request.Request(
+            f"{url}/auth/v1/user",
+            headers={"apikey": key, "Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(user_request, timeout=10) as response:
+            user = json.loads(response.read().decode("utf-8") or "{}")
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError) as error:
+        raise HTTPException(status_code=401, detail="invalid_authentication_session") from error
+    if not user.get("id") or not user.get("email"):
+        raise HTTPException(status_code=401, detail="invalid_authentication_session")
+    return user
 
 
 def require_admin_bearer(request: Request, actor_id: str) -> tuple[dict[str, Any], dict[str, Any]]:

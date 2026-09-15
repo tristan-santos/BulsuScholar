@@ -653,11 +653,142 @@ def create_admin_notification(payload: dict[str, Any]) -> dict[str, Any]:
     return supabase_document_insert("systemLogs", data)
 
 
-def update_student_notification(notification_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return supabase_document_update("studentNotifications", notification_id, payload)
+def _notification_rows(result: dict[str, Any], source_table: str) -> list[dict[str, Any]]:
+    if not result.get("ok"):
+        return []
+    rows = []
+    for row in result.get("rows") or []:
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        rows.append({
+            **data,
+            "id": row.get("id"),
+            "sourceTable": source_table,
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        })
+    return rows
 
 
-def update_student_notifications(notification_ids: list[str], payload: dict[str, Any], student_id: str = "") -> dict[str, Any]:
+def _sorted_notification_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        rows,
+        key=lambda row: str(
+            row.get("createdAt")
+            or row.get("created_at")
+            or row.get("updatedAt")
+            or row.get("updated_at")
+            or ""
+        ),
+        reverse=True,
+    )
+
+
+def list_admin_notifications() -> dict[str, Any]:
+    result = supabase_select(
+        "systemLogs",
+        {"data->>notificationFallbackTable": "adminNotifications"},
+        limit=1000,
+    )
+    if not result.get("ok"):
+        return {**result, "notifications": []}
+    return {
+        "ok": True,
+        "notifications": _sorted_notification_rows(
+            _notification_rows(result, "systemLogs")
+        ),
+    }
+
+
+def list_student_notifications(student_id: str) -> dict[str, Any]:
+    student_id = str(student_id or "").strip()
+    if not student_id:
+        return {"ok": False, "reason": "missing_student_id", "notifications": []}
+    primary = supabase_select(
+        "studentNotifications",
+        {"data->>studentId": student_id},
+        limit=1000,
+    )
+    fallback = supabase_select(
+        "student_warnings",
+        {
+            "data->>studentId": student_id,
+            "data->>notificationFallbackTable": "student_warnings",
+        },
+        limit=1000,
+    )
+    if not primary.get("ok"):
+        return {**primary, "notifications": []}
+    rows = _notification_rows(primary, "studentNotifications")
+    if fallback.get("ok"):
+        rows.extend(_notification_rows(fallback, "student_warnings"))
+    return {"ok": True, "notifications": _sorted_notification_rows(rows)}
+
+
+def list_grantor_notifications(grantor_id: str) -> dict[str, Any]:
+    grantor_id = str(grantor_id or "").strip()
+    if not grantor_id:
+        return {"ok": False, "reason": "missing_grantor_id", "notifications": []}
+    primary = supabase_select(
+        "grantorNotifications",
+        {"data->>grantorId": grantor_id},
+        limit=1000,
+    )
+    fallback = supabase_select(
+        "systemLogs",
+        {
+            "data->>grantorId": grantor_id,
+            "data->>notificationFallbackTable": "systemLogs",
+        },
+        limit=1000,
+    )
+    if not primary.get("ok"):
+        return {**primary, "notifications": []}
+    rows = _notification_rows(primary, "grantorNotifications")
+    if fallback.get("ok"):
+        rows.extend(_notification_rows(fallback, "systemLogs"))
+    return {"ok": True, "notifications": _sorted_notification_rows(rows)}
+
+
+def _owned_notification(
+    table: str,
+    notification_id: str,
+    owner_key: str,
+    owner_id: str,
+    fallback_marker: str = "",
+) -> dict[str, Any]:
+    existing = supabase_select(table, {"id": notification_id}, limit=1)
+    rows = existing.get("rows") or []
+    stored = rows[0].get("data") if rows and isinstance(rows[0].get("data"), dict) else {}
+    if not existing.get("ok") or not rows:
+        return {"ok": False, "reason": existing.get("reason") or "notification_not_found"}
+    if owner_id and str(stored.get(owner_key) or "").strip() != owner_id:
+        owner_label = "student" if owner_key == "studentId" else "grantor"
+        return {"ok": False, "reason": f"{owner_label}_notification_owner_mismatch"}
+    if fallback_marker and str(stored.get("notificationFallbackTable") or "") != fallback_marker:
+        return {"ok": False, "reason": "invalid_notification_source"}
+    return {"ok": True, "data": stored}
+
+
+def update_student_notification(
+    notification_id: str,
+    payload: dict[str, Any],
+    student_id: str = "",
+    source_table: str = "studentNotifications",
+) -> dict[str, Any]:
+    table = "student_warnings" if source_table in {"studentWarning", "student_warnings"} else "studentNotifications"
+    marker = "student_warnings" if table == "student_warnings" else ""
+    ownership = _owned_notification(table, notification_id, "studentId", student_id, marker)
+    if not ownership.get("ok"):
+        return ownership
+    return supabase_document_update(table, notification_id, payload)
+
+
+def update_student_notifications(
+    notification_ids: list[str],
+    payload: dict[str, Any],
+    student_id: str = "",
+    source_table: str = "studentNotifications",
+) -> dict[str, Any]:
     unique_ids = list(dict.fromkeys(str(item or "").strip() for item in notification_ids if str(item or "").strip()))
     if not unique_ids:
         return {"ok": True, "updated": 0, "results": []}
@@ -667,17 +798,12 @@ def update_student_notifications(notification_ids: list[str], payload: dict[str,
     results = []
     failures = []
     for notification_id in unique_ids:
-        existing = supabase_select("studentNotifications", {"id": notification_id}, limit=1)
-        rows = existing.get("rows") or []
-        stored = rows[0].get("data") if rows and isinstance(rows[0].get("data"), dict) else {}
-        stored_student_id = str(stored.get("studentId") or "").strip()
-        if not existing.get("ok") or not rows:
-            failures.append({"id": notification_id, "reason": existing.get("reason") or "notification_not_found"})
-            continue
-        if student_id and stored_student_id != student_id:
-            failures.append({"id": notification_id, "reason": "student_notification_owner_mismatch"})
-            continue
-        result = update_student_notification(notification_id, payload)
+        result = update_student_notification(
+            notification_id,
+            payload,
+            student_id,
+            source_table,
+        )
         if result.get("ok"):
             results.append({"id": notification_id})
         else:
@@ -692,11 +818,26 @@ def update_student_notifications(notification_ids: list[str], payload: dict[str,
     }
 
 
-def update_grantor_notification(notification_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return supabase_document_update("grantorNotifications", notification_id, payload)
+def update_grantor_notification(
+    notification_id: str,
+    payload: dict[str, Any],
+    grantor_id: str = "",
+    source_table: str = "grantorNotifications",
+) -> dict[str, Any]:
+    table = "systemLogs" if source_table == "systemLogs" else "grantorNotifications"
+    marker = "systemLogs" if table == "systemLogs" else ""
+    ownership = _owned_notification(table, notification_id, "grantorId", grantor_id, marker)
+    if not ownership.get("ok"):
+        return ownership
+    return supabase_document_update(table, notification_id, payload)
 
 
-def update_grantor_notifications(notification_ids: list[str], payload: dict[str, Any], grantor_id: str = "") -> dict[str, Any]:
+def update_grantor_notifications(
+    notification_ids: list[str],
+    payload: dict[str, Any],
+    grantor_id: str = "",
+    source_table: str = "grantorNotifications",
+) -> dict[str, Any]:
     unique_ids = list(dict.fromkeys(str(item or "").strip() for item in notification_ids if str(item or "").strip()))
     if not unique_ids:
         return {"ok": True, "updated": 0, "results": []}
@@ -706,17 +847,12 @@ def update_grantor_notifications(notification_ids: list[str], payload: dict[str,
     results = []
     failures = []
     for notification_id in unique_ids:
-        existing = supabase_select("grantorNotifications", {"id": notification_id}, limit=1)
-        rows = existing.get("rows") or []
-        stored = rows[0].get("data") if rows and isinstance(rows[0].get("data"), dict) else {}
-        stored_grantor_id = str(stored.get("grantorId") or stored.get("providerId") or "").strip()
-        if not existing.get("ok") or not rows:
-            failures.append({"id": notification_id, "reason": existing.get("reason") or "notification_not_found"})
-            continue
-        if grantor_id and stored_grantor_id != grantor_id:
-            failures.append({"id": notification_id, "reason": "grantor_notification_owner_mismatch"})
-            continue
-        result = update_grantor_notification(notification_id, payload)
+        result = update_grantor_notification(
+            notification_id,
+            payload,
+            grantor_id,
+            source_table,
+        )
         if result.get("ok"):
             results.append({"id": notification_id})
         else:
@@ -735,12 +871,30 @@ def update_admin_notification(notification_id: str, payload: dict[str, Any]) -> 
     return supabase_document_update("systemLogs", notification_id, payload)
 
 
-def delete_student_notification(notification_id: str) -> dict[str, Any]:
-    return supabase_document_delete("studentNotifications", notification_id)
+def delete_student_notification(
+    notification_id: str,
+    student_id: str = "",
+    source_table: str = "studentNotifications",
+) -> dict[str, Any]:
+    table = "student_warnings" if source_table in {"studentWarning", "student_warnings"} else "studentNotifications"
+    marker = "student_warnings" if table == "student_warnings" else ""
+    ownership = _owned_notification(table, notification_id, "studentId", student_id, marker)
+    if not ownership.get("ok"):
+        return ownership
+    return supabase_document_delete(table, notification_id)
 
 
-def delete_grantor_notification(notification_id: str) -> dict[str, Any]:
-    return supabase_document_delete("grantorNotifications", notification_id)
+def delete_grantor_notification(
+    notification_id: str,
+    grantor_id: str = "",
+    source_table: str = "grantorNotifications",
+) -> dict[str, Any]:
+    table = "systemLogs" if source_table == "systemLogs" else "grantorNotifications"
+    marker = "systemLogs" if table == "systemLogs" else ""
+    ownership = _owned_notification(table, notification_id, "grantorId", grantor_id, marker)
+    if not ownership.get("ok"):
+        return ownership
+    return supabase_document_delete(table, notification_id)
 
 
 def delete_admin_notification(notification_id: str) -> dict[str, Any]:

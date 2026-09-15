@@ -1,4 +1,4 @@
-const frontendUrl = String(process.env.FRONTEND_URL || process.env.VITE_APP_URL || "https://bulsu-scholar.vercel.app").replace(/\/$/, "")
+const frontendUrl = String(process.env.FRONTEND_URL || process.env.VITE_APP_URL || "https://bulsuscholar.com").replace(/\/$/, "")
 const backendUrl = String(process.env.BACKEND_URL || process.env.VITE_BACKEND_API_URL || "").replace(/\/$/, "")
 
 if (!backendUrl) {

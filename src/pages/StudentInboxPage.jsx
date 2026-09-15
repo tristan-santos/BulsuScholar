@@ -3,13 +3,9 @@ import { useNavigate } from "react-router-dom"
 import {
 	collection,
 	collectionGroup,
-	deleteDoc,
 	doc,
 	onSnapshot,
-	query,
 	serverTimestamp,
-	setDoc,
-	where,
 } from "../services/supabaseDataService"
 import {
 	HiCheck,
@@ -35,6 +31,7 @@ import {
 } from "../services/studentAccessService"
 import {
 	deleteStudentNotification,
+	loadStudentNotifications,
 	updateStudentNotification,
 	updateStudentNotifications,
 } from "../services/notificationService"
@@ -251,50 +248,37 @@ export default function StudentInboxPage() {
 		const syncReadIds = window.setTimeout(() => {
 			setReadAnnouncementIds(loadReadAnnouncementIds(sessionState.storedUserId))
 		}, 0)
-		let notificationRows = []
-		let warningRows = []
-		const updateInboxNotifications = () => {
-			setNotifications(
-				[...notificationRows, ...warningRows]
-					.filter((item) => {
-						const isGrantorAnnouncement = String(item.type || "").toLowerCase().includes("announcement")
-						return !(isGrantorAnnouncement && archivedGrantorIds.has(String(item.grantorId || item.providerId || "")))
-					})
-					.sort(
-					(a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
-				),
-			)
-		}
-		const unsubscribeNotifications = onSnapshot(
-			query(collection(db, "studentNotifications"), where("studentId", "==", sessionState.storedUserId)),
-			(snap) => {
-				notificationRows = snap.docs.map((item) =>
-					normalizeStudentNotification(item.data() || {}, item.id, "studentNotifications"),
+		let active = true
+		let loading = false
+		const refresh = async () => {
+			if (loading) return
+			loading = true
+			try {
+				const result = await loadStudentNotifications()
+				if (!active) return
+				setNotifications(
+					(result.notifications || [])
+						.map((item) => normalizeStudentNotification(item, item.id, item.sourceTable))
+						.filter((item) => {
+							const isGrantorAnnouncement = String(item.type || "").toLowerCase().includes("announcement")
+							return !(isGrantorAnnouncement && archivedGrantorIds.has(String(item.grantorId || "")))
+						}),
 				)
-				updateInboxNotifications()
-			},
-			() => {
-				notificationRows = []
-				updateInboxNotifications()
-			},
-		)
-		const unsubscribeWarnings = onSnapshot(
-			query(collection(db, "studentWarning"), where("studentId", "==", sessionState.storedUserId)),
-			(snap) => {
-				warningRows = snap.docs
-					.map((item) => normalizeStudentNotification(item.data() || {}, item.id, "studentWarning"))
-					.filter((item) => item.source === "personal" || item.notificationFallbackTable === "student_warnings")
-				updateInboxNotifications()
-			},
-			() => {
-				warningRows = []
-				updateInboxNotifications()
-			},
-		)
+			} catch (error) {
+				if (active) {
+					console.error("Unable to load student inbox notifications.", error)
+					toast.error("Unable to load your inbox. Please try again.", { toastId: "student-inbox-load-error" })
+				}
+			} finally {
+				loading = false
+			}
+		}
+		void refresh()
+		const interval = window.setInterval(refresh, 30000)
 		return () => {
+			active = false
 			window.clearTimeout(syncReadIds)
-			unsubscribeNotifications()
-			unsubscribeWarnings()
+			window.clearInterval(interval)
 		}
 	}, [archivedGrantorIds, sessionState.storedUserId])
 
@@ -415,11 +399,12 @@ export default function StudentInboxPage() {
 				read: true,
 				readAt: serverTimestamp(),
 			}
-			if (notification.sourceTable === "studentWarning") {
-				await setDoc(doc(db, "studentWarning", notification.id), updateData, { merge: true })
-			} else {
-				await updateStudentNotification(notification.id, updateData)
-			}
+			await updateStudentNotification(notification.id, updateData, notification.sourceTable)
+			setNotifications((current) => current.map((item) =>
+				item.id === notification.id && item.sourceTable === notification.sourceTable
+					? { ...item, ...updateData }
+					: item,
+			))
 		} catch (error) {
 			console.error("Unable to mark student notification as read.", error)
 			toast.error("Unable to update this inbox message.")
@@ -433,14 +418,21 @@ export default function StudentInboxPage() {
 		try {
 			if (personalUnread.length > 0) {
 				const readAt = serverTimestamp()
-				const warnings = personalUnread.filter((item) => item.sourceTable === "studentWarning")
-				const notifications = personalUnread.filter((item) => item.sourceTable !== "studentWarning")
+				const warnings = personalUnread.filter((item) => item.sourceTable === "student_warnings")
+				const notifications = personalUnread.filter((item) => item.sourceTable !== "student_warnings")
 				await Promise.all([
-					...warnings.map((item) => setDoc(doc(db, "studentWarning", item.id), { read: true, readAt }, { merge: true })),
+					warnings.length > 0
+						? updateStudentNotifications(warnings.map((item) => item.id), { read: true, readAt }, "student_warnings")
+						: Promise.resolve(),
 					notifications.length > 0
 						? updateStudentNotifications(notifications.map((item) => item.id), { read: true, readAt })
 						: Promise.resolve(),
 				])
+				setNotifications((current) => current.map((item) =>
+					personalUnread.some((row) => row.id === item.id && row.sourceTable === item.sourceTable)
+						? { ...item, read: true, readAt }
+						: item,
+				))
 			}
 			if (announcementUnread.length > 0) {
 				const nextIds = [...readAnnouncementIds, ...announcementUnread.map((item) => item.announcementId)]
@@ -456,11 +448,10 @@ export default function StudentInboxPage() {
 	const deleteNotification = async (notification) => {
 		if (notification.source !== "personal" || !notification?.id) return
 		try {
-			if (notification.sourceTable === "studentWarning") {
-				await deleteDoc(doc(db, "studentWarning", notification.id))
-			} else {
-				await deleteStudentNotification(notification.id)
-			}
+			await deleteStudentNotification(notification.id, notification.sourceTable)
+			setNotifications((current) => current.filter((item) =>
+				item.id !== notification.id || item.sourceTable !== notification.sourceTable,
+			))
 			if (selectedNotification?.id === notification.id) setSelectedNotification(null)
 		} catch (error) {
 			console.error("Unable to delete student notification.", error)

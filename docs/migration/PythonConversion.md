@@ -23,7 +23,6 @@
 
 ### Custom email sending
 - File: `backend/email_service.py`
-- Endpoint: `POST /email/send`
 - React custom email helper now points to Python in `src/services/emailService.js`.
 - Supabase Auth confirm-account and forgot-password flows are not changed.
 
@@ -159,29 +158,28 @@
 
 Frontend:
 ```env
-VITE_BACKEND_API_URL=https://bulsuscholar.onrender.com
-VITE_DOCUMENT_SCAN_API_URL=https://bulsuscholar.onrender.com
-VITE_RESEND_API_ENDPOINT=https://bulsuscholar.onrender.com/email/send
-VITE_APP_URL=https://bulsu-scholar.vercel.app
-VITE_PUBLIC_SITE_URL=https://bulsu-scholar.vercel.app
+VITE_BACKEND_API_URL=https://api.bulsuscholar.com
+VITE_DOCUMENT_SCAN_API_URL=https://api.bulsuscholar.com
+VITE_APP_URL=https://bulsuscholar.com
+VITE_PUBLIC_SITE_URL=https://bulsuscholar.com
 ```
 
 Python backend:
 ```env
-RESEND_API_KEY=
-RESEND_FROM_EMAIL=BulsuScholar <onboarding@resend.dev>
+BREVO_API_KEY=
+BREVO_SENDER_EMAIL=BulsuScholar <no-reply@bulsuscholar.com>
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
-FRONTEND_URL=https://bulsu-scholar.vercel.app
+DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsuscholar.com
+FRONTEND_URL=https://bulsuscholar.com
 ```
 
-For production email branding, verify your domain in Resend before using a custom sender like `BulsuScholar <noreply@your-domain.com>`.
+For production email branding, verify your domain in Brevo before using a custom sender like `BulsuScholar <noreply@your-domain.com>`.
 
 ## Required Tests
 
 ### Backend startup
-- Open `https://bulsuscholar.onrender.com/health`.
+- Open `https://api.bulsuscholar.com/health`.
 - Expected: `{"status":"ok"}`.
 
 ### Document scanning
@@ -258,8 +256,7 @@ For production email branding, verify your domain in Resend before using a custo
 - Confirm browser fallback still prevents a blank dashboard.
 
 ### Email
-- Trigger a custom welcome/SOE email.
-- Confirm request goes to `POST /email/send`.
+- Trigger the applicable backend-controlled SOE or support notification email.
 - Confirm Supabase forgot-password and account confirmation still use Supabase Auth.
 
 ### Notifications

@@ -12,7 +12,6 @@ import {
 	HiOutlineEyeOff,
 	HiOutlineUser,
 	HiOutlineIdentification,
-	HiOutlineCheckCircle,
 } from "react-icons/hi"
 import {
 	serverTimestamp,
@@ -25,9 +24,7 @@ import { supabase } from "../services/supabaseClient"
 import { uploadToStorage } from "../services/storageService"
 import { findMatchingGrantorScholars } from "../services/grantorService"
 import {
-	buildScholarshipRecord,
 	getCurrentSemesterTag,
-	getDocumentUrlsForStudent,
 } from "../services/scholarshipService"
 import { scanStudentDocument } from "../services/documentScanService"
 import { finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
@@ -41,17 +38,13 @@ import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumb
 import { isPdf, convertPdfToImage } from "../utils/pdfConverter"
 import CustomSelect from "../components/CustomSelect"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
+import SignupTermsModal, { SIGNUP_TERMS_VERSION } from "../components/SignupTermsModal"
 import "../css/LoginPage.css"
 import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
-
-const APP_URL = (
-	import.meta.env.VITE_APP_URL ||
-	import.meta.env.VITE_PUBLIC_SITE_URL ||
-	"https://bulsu-scholar.vercel.app"
-).replace(/\/$/, "")
+import { requirePublicAppUrl } from "../config/publicUrls"
 
 const COURSES = [
 	{
@@ -129,49 +122,6 @@ function getPasswordRequirements(pwd) {
 		hasSpecial: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(pwd),
 		hasMinLength: pwd.length >= 6,
 	}
-}
-
-import {
-	sendEmailNotification,
-	getWelcomeEmailBody,
-} from "../services/emailService"
-
-function buildGrantorMatchScholarships(
-	matches = [],
-	studentDraft = {},
-	studentId = "",
-	semesterTag = "",
-) {
-	const hasMultipleMatches = matches.length >= 2
-	return matches.map((match) => {
-		const nextRecord = buildScholarshipRecord({
-			name: match.scholarshipName || match.grantorName || "Scholarship",
-			provider: match.grantorName || match.scholarshipName || "Grantor",
-			studentId,
-			type: "Scholarship",
-			mode: "applied",
-			documentUrls: getDocumentUrlsForStudent(studentDraft),
-			semesterTag,
-		})
-
-		return {
-			...nextRecord,
-			name: match.scholarshipName || match.grantorName || nextRecord.name,
-			provider:
-				match.grantorName || match.scholarshipName || nextRecord.provider,
-			providerType: match.providerType || nextRecord.providerType,
-			status: hasMultipleMatches ? "Pending Selection" : "Matched",
-			adminBlocked: hasMultipleMatches,
-			adminBlockedAt: hasMultipleMatches ? new Date().toISOString() : null,
-			matchSource: "grantor_roster",
-			matchedGrantorId: match.grantorId || "",
-			matchedGrantorName: match.grantorName || "",
-			matchedScholarId: match.id || "",
-			documentRequirementLabel: match.requiresFullDocs
-				? "Requires COR and ROG"
-				: "Requires COR and ROG",
-		}
-	})
 }
 
 function toGrantorMatchMetadata(matches = []) {
@@ -297,6 +247,7 @@ export default function SignupPage() {
 	const [showTermsModal, setShowTermsModal] = useState(false)
 	const [termsChecked, setTermsChecked] = useState(false)
 	const [termsAccepted, setTermsAccepted] = useState(false)
+	const [termsAcceptedAt, setTermsAcceptedAt] = useState("")
 	const [showImagePreview, setShowImagePreview] = useState(false)
 	const [previewFile, setPreviewFile] = useState(null)
 	const [isPending, setIsPending] = useState(false)
@@ -1340,6 +1291,7 @@ export default function SignupPage() {
 		}
 
 		setTermsAccepted(true)
+		setTermsAcceptedAt(new Date().toISOString())
 		setShowTermsModal(false)
 		setHasStartedReview(true)
 		setShowReview(true)
@@ -1671,6 +1623,12 @@ export default function SignupPage() {
 				corFile: corFilePayload,
 				rogFile: rogFilePayload,
 				documentScan: storedDocumentScan,
+				termsAcceptance: {
+					accepted: true,
+					acceptedAt: termsAcceptedAt || new Date().toISOString(),
+					version: SIGNUP_TERMS_VERSION,
+					privacyLaw: "Republic Act No. 10173",
+				},
 				academicStatus: {
 					hasAcademicConcern,
 					concernTerms: academicConcernTerms,
@@ -1716,89 +1674,46 @@ export default function SignupPage() {
 				return
 			}
 			const hasMultipleMatchedGrantors = matchedGrantors.length >= 2
-			const matchedScholarships = hasMultipleMatchedGrantors
-				? buildGrantorMatchScholarships(
-						matchedGrantors,
-						registrationDraft,
-						studentId,
-						semesterTag,
-					)
-				: []
-			const hasRosterMatchedGrantor = matchedGrantors.length > 0
-			if (hasRosterMatchedGrantor) {
-				console.info("SignupPage: roster match found. Backend will create an auto-confirmed Supabase Auth user.", {
-					studentId,
-					matchCount: matchedGrantors.length,
-				})
-			} else {
-				console.log(
-					"SignupPage: Starting Supabase Auth signUp for email:",
-					normalizedSignupEmail,
-				)
-				const { data: signupAuthData, error: authError } = await supabase.auth.signUp({
+			console.log(
+				"SignupPage: Starting mandatory Supabase Auth email confirmation:",
+				normalizedSignupEmail,
+			)
+			const { data: signupAuthData, error: authError } = await supabase.auth.signUp({
 					email: normalizedSignupEmail,
 					password,
 					options: {
-						emailRedirectTo: `${APP_URL}/confirm-email`,
+						emailRedirectTo: `${requirePublicAppUrl()}/confirm-email`,
 						data: {
 							user_id: studentId,
 							user_type: "student",
 							full_name: `${fname.trim()} ${lname.trim()}`.trim(),
 						},
 					},
-				})
+			})
 
-				if (authError) {
-					console.error("SignupPage: Supabase Auth signUp ERROR:", authError)
-					toast.error(
-						authError.message || "Failed to create Supabase Auth account.",
-					)
-					return
-				}
-				authData = signupAuthData
-				console.log("SignupPage: Supabase Auth signUp SUCCESS:", authData)
+			if (authError) {
+				console.error("SignupPage: Supabase Auth signUp ERROR:", authError)
+				toast.error(authError.message || "Failed to create Supabase Auth account.")
+				return
 			}
+			authData = signupAuthData
 			const grantorConflictMessage = hasMultipleMatchedGrantors
-				? "Multiple grantor matches were found based on your name and address. Choose one matched grantor first before requesting scholarship materials."
+				? "Multiple scholarship roster records may match this account. Review the exact records after confirming your email."
 				: ""
 			const baseData = {
 				...registrationDraft,
-				scholarships: matchedScholarships,
+				scholarships: [],
 				grantorMatches: toGrantorMatchMetadata(matchedGrantors),
-				scholarshipConflictWarning: hasMultipleMatchedGrantors,
-				scholarshipConflictMessage: grantorConflictMessage,
-				scholarshipRestrictionReason: hasMultipleMatchedGrantors
-					? "multiple_scholarships"
-					: null,
-				...(hasMultipleMatchedGrantors
-					? {
-							restrictions: {
-								accountAccess: false,
-								scholarshipEligibility: true,
-								complianceHold: false,
-							},
-						}
-					: {}),
+				rosterMatchCount: matchedGrantors.length,
+				rosterDecisionPending: false,
+				rosterMatchNotice: grantorConflictMessage,
 			}
-
-			// All new students now go to pending review by default or auto-verified if no scholarship is needed
-			// Since scholarships are removed from signup, we can auto-verify or keep them pending.
-			// The user said "Student Creation of Account: Login and Reviewing of information",
-			// usually this implies an admin review or just a simpler signup.
-			// Given the previous logic, I'll set them to pending for safety, or auto-verify if that's the new standard.
-			// Let's stick to auto-verify for now as there are no "blocking" scholarship requirements anymore during signup.
-
-			const isAutoVerified = hasRosterMatchedGrantor
 
 			const finalizeResult = await finalizeStudentSignupWorkflow({
 				studentId,
-				isAutoVerified,
 				auth: {
 					userId: authData?.user?.id || "",
 					email: authData?.user?.email || normalizedSignupEmail,
-					password: hasRosterMatchedGrantor ? password : "",
-					createUser: hasRosterMatchedGrantor,
-					emailConfirm: hasRosterMatchedGrantor,
 				},
 				cor: {
 					hash: corHash,
@@ -1808,41 +1723,17 @@ export default function SignupPage() {
 				},
 				student: {
 					...baseData,
-					isValidated: isAutoVerified,
-					isPending: !isAutoVerified,
-					validatedAt: isAutoVerified ? serverTimestamp() : null,
+					isValidated: false,
+					isPending: true,
+					validatedAt: null,
 					createdAt: serverTimestamp(),
 				},
 			})
 
 			console.log("SignupPage: Student document saved through Python workflow", finalizeResult)
 
-			sendEmailNotification(
-				email.trim(),
-				`${fname.trim()} ${lname.trim()}`,
-				"Welcome to BulsuScholar!",
-				getWelcomeEmailBody(`${fname.trim()} ${lname.trim()}`, {
-					isAutoVerified,
-					dashboardUrl: `${APP_URL}/student/dashboard`,
-				}),
-			).catch((err) => console.error("Welcome email failed:", err))
-
-			toast.success(
-				isAutoVerified
-					? "Congratulations! Your account has been successfully created."
-					: "Your application has been submitted for review.",
-			)
-			if (matchedGrantors.length === 1) {
-				toast.info(
-					`Matched grantor found: ${matchedGrantors[0].grantorName || matchedGrantors[0].providerLabel || "Grantor"}. Choose an available scholarship from this grantor in your scholarship page.`,
-				)
-			} else if (matchedScholarships.length >= 2) {
-				toast.info(
-					"Multiple grantor matches were found. Choose one matched grantor in the scholarship section before requesting materials.",
-				)
-			}
-
-			setVerificationStatus(isAutoVerified ? "auto-verified" : "pending-review")
+			toast.success("Account created. Confirm your email before signing in.")
+			setVerificationStatus("email-confirmation")
 			setIsPending(true)
 			return
 
@@ -1917,16 +1808,16 @@ export default function SignupPage() {
 							/>
 						</button>
 						<h2 className="login-form-title">BulsuScholar</h2>
-						{verificationStatus === "auto-verified" ? (
+						{verificationStatus === "email-confirmation" ? (
 							<>
 								<div className="signup-pending-icon-wrap signup-verified-wrap">
-									<span className="signup-verified-icon">✓</span>
+									<span className="signup-verified-icon" aria-hidden>OK</span>
 								</div>
 								<p className="signup-pending-title signup-verified-title">
-									Email Confirmation has been sent
+									Confirmation Email Sent
 								</p>
 								<p className="signup-pending-info">
-									Please check your email for a confirmation link. Click the link to verify your account and complete the registration process. If you don't see the email, please check your spam folder.
+									Open the confirmation link in your email to activate your account. Check your spam folder if it does not arrive in your inbox.
 								</p>
 								<div className="signup-verified-details">
 									<p>
@@ -1934,9 +1825,9 @@ export default function SignupPage() {
 									</p>
 									<ul>
 										<li>Verify your email address by clicking the confirmation link</li>
-										<li>Complete any additional verification if required</li>
-										<li>Access your account and student dashboard</li>
-										<li>Begin tracking your scholarship applications</li>
+										<li>Sign in after confirmation to access your dashboard</li>
+										<li>Review any scholarship roster records matched to your student ID</li>
+										<li>Start or track applications after every roster decision is resolved</li>
 									</ul>
 								</div>
 								<button
@@ -1944,46 +1835,10 @@ export default function SignupPage() {
 									className="login-submit signup-pending-back-btn"
 									onClick={() => navigate("/")}
 								>
-									Go back to Login
+									Go to Login
 								</button>
 							</>
-						) : (
-							<>
-								<div className="signup-pending-icon-wrap">
-									<HiOutlineClock className="signup-pending-icon" aria-hidden />
-								</div>
-								<p className="signup-pending-title">
-									📋 Application Under Review
-								</p>
-								<p className="signup-pending-info">
-									Your application requires additional verification due to your
-									scholarship selections. Our team will review your documents
-									and contact you for an interview or additional requirements.
-								</p>
-								<div className="signup-pending-details">
-									<p>
-										<strong>What to expect:</strong>
-									</p>
-									<ul>
-										<li>Email notification within 1-3 business days</li>
-										<li>Possible interview or document verification</li>
-										<li>Compliance check for selected scholarships</li>
-										<li>Final approval notification</li>
-									</ul>
-									<p>
-										<strong>Need help?</strong> Contact the Scholarships Office
-										at scholarships@bulsu.edu.ph
-									</p>
-								</div>
-								<button
-									type="button"
-									className="login-submit signup-pending-back-btn"
-									onClick={() => navigate("/")}
-								>
-									Return to Login
-								</button>
-							</>
-						)}
+						) : null}
 					</div>
 				</div>
 			</div>
@@ -3076,92 +2931,12 @@ export default function SignupPage() {
 			)}
 
 			{showTermsModal && (
-				<div
-					className="signup-terms-modal-overlay"
-					onClick={() => setShowTermsModal(false)}
-				>
-					<div
-						className="signup-terms-modal"
-						role="dialog"
-						aria-modal="true"
-						aria-labelledby="signup-terms-title"
-						onClick={(e) => e.stopPropagation()}
-					>
-						<button
-							type="button"
-							className="signup-terms-close"
-							aria-label="Close terms and conditions"
-							onClick={() => setShowTermsModal(false)}
-						>
-							X
-						</button>
-						<div className="signup-terms-header">
-							<span className="signup-terms-icon" aria-hidden>
-								<HiOutlineCheckCircle />
-							</span>
-							<div>
-								<p className="signup-terms-kicker">Account Consent</p>
-								<h2 id="signup-terms-title">Terms and Conditions</h2>
-							</div>
-						</div>
-						<div className="signup-terms-body">
-							<p>
-								Before creating your BulsuScholar account, please confirm that
-								the information and documents you submitted are accurate,
-								complete, and belong to you.
-							</p>
-							<ul>
-								<li>
-									I understand that my COR, ROG, personal information, contact
-									details, and academic records will be used to verify my
-									scholarship eligibility.
-								</li>
-								<li>
-									I agree that BulsuScholar may compare my submitted documents
-									with existing student and grantor records to prevent duplicate
-									accounts or duplicate scholarship applications.
-								</li>
-								<li>
-									I confirm that I am not using another student's documents,
-									email address, CP number, or student number.
-								</li>
-								<li>
-									I understand that false or mismatched information may cause my
-									account request or scholarship application to be rejected,
-									archived, or reviewed manually.
-								</li>
-							</ul>
-						</div>
-						<label className="signup-terms-check">
-							<input
-								type="checkbox"
-								checked={termsChecked}
-								onChange={(e) => setTermsChecked(e.target.checked)}
-							/>
-							<span>
-								I have read and agree to the terms and conditions for creating
-								my BulsuScholar account.
-							</span>
-						</label>
-						<div className="signup-terms-actions">
-							<button
-								type="button"
-								className="signup-terms-cancel"
-								onClick={() => setShowTermsModal(false)}
-							>
-								Cancel
-							</button>
-							<button
-								type="button"
-								className="signup-terms-continue"
-								disabled={!termsChecked}
-								onClick={handleAcceptTermsAndPreview}
-							>
-								Continue to Preview
-							</button>
-						</div>
-					</div>
-				</div>
+				<SignupTermsModal
+					checked={termsChecked}
+					onCheckedChange={setTermsChecked}
+					onClose={() => setShowTermsModal(false)}
+					onAccept={handleAcceptTermsAndPreview}
+				/>
 			)}
 		</div>
 	)

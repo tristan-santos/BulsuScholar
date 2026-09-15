@@ -5,34 +5,58 @@ import urllib.request
 from typing import Any
 
 
-DEFAULT_RESEND_FROM_EMAIL = "BulsuScholar <onboarding@resend.dev>"
+BREVO_EMAIL_API_URL = "https://api.brevo.com/v3/smtp/email"
+DEFAULT_SENDER_NAME = "BulsuScholar"
+
+
+def _recipient_list(recipient: Any) -> list[dict[str, str]]:
+    values = recipient if isinstance(recipient, list) else [recipient]
+    return [
+        {"email": str(value).strip()}
+        for value in values
+        if str(value or "").strip()
+    ]
 
 
 def send_email_notification(payload: dict[str, Any]) -> dict[str, Any]:
-    api_key = os.getenv("RESEND_API_KEY", "")
-    if not api_key:
-        return {"sent": False, "reason": "missing_resend_api_key"}
+    provider = os.getenv("EMAIL_PROVIDER", "brevo").strip().lower()
+    if provider != "brevo":
+        return {"sent": False, "reason": "unsupported_email_provider", "provider": provider}
 
-    recipient = payload.get("to") or payload.get("toEmail")
-    subject = payload.get("subject")
+    api_key = os.getenv("BREVO_API_KEY", "").strip()
+    if not api_key:
+        return {"sent": False, "reason": "missing_brevo_api_key", "provider": provider}
+
+    sender_email = os.getenv("BREVO_SENDER_EMAIL", "").strip()
+    sender_name = os.getenv("BREVO_SENDER_NAME", DEFAULT_SENDER_NAME).strip() or DEFAULT_SENDER_NAME
+    reply_to_email = os.getenv("BREVO_REPLY_TO_EMAIL", "").strip()
+    if not sender_email:
+        return {"sent": False, "reason": "missing_brevo_sender_email", "provider": provider}
+
+    recipients = _recipient_list(payload.get("to") or payload.get("toEmail"))
+    subject = str(payload.get("subject") or "").strip()
     html = payload.get("html")
-    to_name = payload.get("toName")
-    if not recipient or not subject or not html:
-        return {"sent": False, "reason": "missing_to_subject_or_html"}
+    to_name = str(payload.get("toName") or "").strip()
+    if not recipients or not subject or not html:
+        return {"sent": False, "reason": "missing_to_subject_or_html", "provider": provider}
+    if len(recipients) == 1 and to_name:
+        recipients[0]["name"] = to_name
 
     should_prepend_greeting = to_name and "data-bulsuscholar-email" not in str(html)
-    from_email = os.getenv("RESEND_FROM_EMAIL", DEFAULT_RESEND_FROM_EMAIL).strip() or DEFAULT_RESEND_FROM_EMAIL
-    body = {
-        "from": from_email,
-        "to": [recipient] if isinstance(recipient, str) else recipient,
+    body: dict[str, Any] = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": recipients,
         "subject": subject,
-        "html": f"<p>Hello {to_name},</p>{html}" if should_prepend_greeting else html,
+        "htmlContent": f"<p>Hello {to_name},</p>{html}" if should_prepend_greeting else str(html),
     }
+    if reply_to_email:
+        body["replyTo"] = {"name": "BulsuScholar Support", "email": reply_to_email}
+
     request = urllib.request.Request(
-        "https://api.resend.com/emails",
+        BREVO_EMAIL_API_URL,
         data=json.dumps(body).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "api-key": api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": "BulsuScholar-FastAPI/1.0",
@@ -43,31 +67,32 @@ def send_email_notification(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             data = json.loads(response.read().decode("utf-8") or "{}")
-            return {"sent": True, "response": data}
+            return {"sent": True, "provider": provider, "response": data}
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8")
-        domain_hint = ""
-        if error.code == 403 and ("domain is not verified" in detail.lower() or "verify a domain" in detail.lower()):
-            domain_hint = (
-                " The configured RESEND_FROM_EMAIL sender is not verified in Resend. "
-                "Verify that domain in Resend, or temporarily set RESEND_FROM_EMAIL to "
-                "'BulsuScholar <onboarding@resend.dev>' for testing."
-            )
         return {
             "sent": False,
-            "reason": "resend_http_error",
+            "provider": provider,
+            "reason": "brevo_http_error",
             "status": error.code,
             "detail": detail,
-            "fromEmail": from_email,
+            "fromEmail": sender_email,
             "hint": (
-                "Resend rejected the request before sending. Check RESEND_FROM_EMAIL, "
-                "sender/domain verification, and account restrictions."
-                f"{domain_hint}"
+                "Brevo rejected the request. Check the API key, verified sender/domain, "
+                "account limits, and transactional-email status."
             ),
         }
     except urllib.error.URLError as error:
         return {
             "sent": False,
-            "reason": "resend_network_error",
+            "provider": provider,
+            "reason": "brevo_network_error",
             "detail": str(error.reason),
+        }
+    except TimeoutError:
+        return {
+            "sent": False,
+            "provider": provider,
+            "reason": "brevo_timeout",
+            "detail": "Brevo did not respond within 20 seconds.",
         }

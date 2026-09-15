@@ -145,7 +145,7 @@ While testing, check:
 - No critical console errors.
 - Backend-related actions work on the deployed URL.
 - CORS errors should not appear.
-- All redirects should use `https://bulsu-scholar.vercel.app`.
+- All redirects should use `https://bulsuscholar.com`.
 
 ## Tester Notes
 

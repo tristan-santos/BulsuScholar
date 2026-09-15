@@ -6,7 +6,8 @@
 	--bulsu-layer-content: 1;
 	--bulsu-layer-modal: 100000;
 	--bulsu-layer-modal-nested: 110000;
-	--bulsu-layer-toast: 2147483647;
+	--bulsu-layer-toast: 200000;
+	--bulsu-layer-loading: 2147483647;
 	--bulsu-font-family:
 		system-ui,
 		-apple-system,
@@ -25,11 +26,170 @@
 html body [class$="-backdrop"],
 html body [class*="-backdrop "],
 html body .admin-modal-overlay,
+html body .modal-overlay,
 html body .signup-preview-modal-overlay,
 html body .signup-terms-modal-overlay {
 	position: fixed;
 	inset: 0;
 	z-index: var(--bulsu-layer-modal) !important;
+}
+
+html body .modal-overlay--nested {
+	z-index: var(--bulsu-layer-modal-nested) !important;
+}
+
+.operation-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: var(--bulsu-layer-loading);
+	display: grid;
+	place-content: center;
+	justify-items: center;
+	gap: 0.75rem;
+	background: rgba(247, 250, 249, 0.88);
+	backdrop-filter: blur(4px);
+	color: #063d29;
+	animation: operation-overlay-in 160ms ease-out both;
+}
+
+.operation-overlay-indicator {
+	display: grid;
+	place-items: center;
+	width: 58px;
+	height: 58px;
+	border-radius: 50%;
+	background: #ffffff;
+	box-shadow: 0 10px 32px rgba(0, 68, 43, 0.18);
+	font-size: 2rem;
+}
+
+.operation-overlay-spinner {
+	width: 30px;
+	height: 30px;
+	border: 4px solid #cfe9de;
+	border-top-color: var(--bulsu-primary);
+	border-radius: 50%;
+	animation: operation-overlay-spin 700ms linear infinite;
+}
+
+.operation-overlay--success .operation-overlay-indicator {
+	background: #087a4d;
+	color: #ffffff;
+}
+
+.operation-overlay--success svg {
+	stroke-width: 3;
+}
+
+.operation-overlay--error .operation-overlay-indicator {
+	background: #b42318;
+	color: #ffffff;
+}
+
+.operation-overlay strong {
+	font-size: 0.95rem;
+	letter-spacing: 0;
+}
+
+.student-roster-modal-layer {
+	display: grid;
+	place-items: center;
+	padding: 1rem;
+	background: rgba(15, 23, 42, 0.58);
+}
+
+.student-roster-modal {
+	position: relative;
+	width: min(620px, 100%);
+	max-height: min(760px, calc(100vh - 2rem));
+	overflow: auto;
+}
+
+.student-roster-modal-icon {
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	background: #e8f5ef;
+	color: var(--bulsu-primary);
+	font-size: 1.35rem;
+}
+
+.student-roster-options {
+	display: grid;
+	gap: 0.65rem;
+	margin: 1rem 0;
+}
+
+.student-roster-options label {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.85rem;
+	border: 1px solid #cbd5e1;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+.student-roster-options label.is-selected {
+	border-color: var(--bulsu-primary);
+	background: var(--bulsu-primary-soft);
+}
+
+.student-roster-options span,
+.student-roster-options small {
+	display: block;
+}
+
+.student-roster-options small {
+	margin-top: 0.2rem;
+	color: #64748b;
+}
+
+.student-roster-persistent {
+	position: fixed;
+	right: 1rem;
+	bottom: 1rem;
+	z-index: calc(var(--bulsu-layer-modal) - 1);
+	display: flex;
+	align-items: center;
+	gap: 0.65rem;
+	max-width: min(520px, calc(100vw - 2rem));
+	padding: 0.8rem 0.9rem;
+	border: 1px solid #d69e2e;
+	border-radius: 7px;
+	background: #fffaf0;
+	color: #713f12;
+	box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+}
+
+.student-roster-persistent button {
+	margin-left: auto;
+	white-space: nowrap;
+	border: 0;
+	background: transparent;
+	color: #00633c;
+	font-weight: 800;
+	cursor: pointer;
+}
+
+@keyframes operation-overlay-spin { to { transform: rotate(360deg); } }
+@keyframes operation-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-color-scheme: dark) {
+	.operation-overlay { background: rgba(5, 20, 15, 0.9); color: #ecfdf5; }
+	.operation-overlay-indicator { background: #102a20; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.operation-overlay { animation: none; }
+	.operation-overlay-spinner { animation-duration: 1.6s; }
+}
+
+@media (max-width: 560px) {
+	.student-roster-persistent { align-items: flex-start; flex-wrap: wrap; }
+	.student-roster-persistent button { width: 100%; text-align: left; margin-left: 1.9rem; }
 }
 
 html body .admin-document-preview-backdrop,

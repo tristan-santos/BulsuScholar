@@ -2,7 +2,13 @@
  * Student Dashboard - Professional bento-style scholarship portal.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { SCHOLARSHIP_CHOICE_ENABLED, hasScholarshipCommitment, getGrantorApplicationBlock } from "../services/scholarshipChoiceService"
+import {
+	SCHOLARSHIP_CHOICE_ENABLED,
+	getArchivedGrantorChoice,
+	getGrantorApplicationBlock,
+	hasScholarshipCommitment,
+	isArchivedGrantorReplacementMode,
+} from "../services/scholarshipChoiceService"
 import { Link, useNavigate } from "react-router-dom"
 import {
 	collection,
@@ -442,7 +448,11 @@ export default function StudentDashboard() {
 		})
 		return applicationKeys.size
 	}, [scholarships])
-	const applicationEntryBlocked = SCHOLARSHIP_CHOICE_ENABLED ? hasScholarshipCommitment(user || {}) : activeOrPendingScholarships.length > 0
+	const archivedGrantorChoice = getArchivedGrantorChoice(user || {})
+	const archivedGrantorReplacementMode = isArchivedGrantorReplacementMode(user || {})
+	const applicationEntryBlocked = SCHOLARSHIP_CHOICE_ENABLED
+		? hasScholarshipCommitment(user || {}) && !archivedGrantorReplacementMode
+		: activeOrPendingScholarships.length > 0
 	useEffect(() => {
 		if (!user || !sessionState.storedUserId || scholarships.length === 0) return
 		if (SCHOLARSHIP_CHOICE_ENABLED) return
@@ -684,6 +694,11 @@ export default function StudentDashboard() {
 			}
 			if (studentAccessState.isScholarshipActionBlocked) {
 				toast.error(getStudentBlockedBannerMessage(user || {}))
+				return
+			}
+			const grantorBlock = SCHOLARSHIP_CHOICE_ENABLED && getGrantorApplicationBlock(user, recommendation)
+			if (grantorBlock) {
+				toast.info(grantorBlock)
 				return
 			}
 			const grantorCooldown = getGrantorRejectionCooldown(user, recommendation)
@@ -1024,6 +1039,22 @@ export default function StudentDashboard() {
 
 			<main className="student-shell">
 				<div className="student-shell-content student-dashboard-surface">
+					{archivedGrantorChoice ? (
+						<div className="student-compliance-banner" role="status">
+							<HiOutlineExclamation className="student-compliance-icon" aria-hidden />
+							<div className="student-compliance-copy">
+								<p className="student-compliance-title">Archived grantor scholarship decision</p>
+								<p className="student-compliance-desc">
+									{archivedGrantorReplacementMode
+										? "Your original award and slot remain protected while you apply to another active grantor."
+										: "Your award is protected, but scholarship progress is paused until you choose Keep Scholarship or Change Scholarship."}
+								</p>
+							</div>
+							<button type="button" className="student-mini-btn student-mini-btn--primary student-compliance-action" onClick={() => navigate("/student-dashboard/scholarships")}>
+								Review Decision
+							</button>
+						</div>
+					) : null}
 					{hasBlockedScholarshipBanner ? (
 						<div className="student-block-banner" role="alert">
 							<HiOutlineExclamation className="student-block-icon" aria-hidden />

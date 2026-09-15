@@ -209,7 +209,7 @@ Also check:
 Supabase Dashboard -> Authentication -> SMTP Settings
 ```
 
-For reliable testing, configure SMTP using Resend or another email provider.
+For reliable testing, configure SMTP using Brevo or another email provider.
 
 ## 9. Test Student Forgot Password
 

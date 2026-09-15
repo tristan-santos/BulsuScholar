@@ -23,6 +23,10 @@ export function withdrawScholarshipWorkflow(payload = {}) {
 	return postWorkflow("/workflows/scholarship/withdraw", payload)
 }
 
+export function resolveArchivedGrantorScholarshipWorkflow(payload = {}) {
+	return postWorkflow("/workflows/scholarship/archived-grantor-decision", payload)
+}
+
 export function updateScholarshipDocumentsWorkflow(payload = {}) {
 	return postWorkflow("/workflows/scholarship/documents", payload)
 }
@@ -57,6 +61,18 @@ export function recommendScholarshipsWorkflow(payload = {}) {
 
 export function finalizeStudentSignupWorkflow(payload = {}) {
 	return postWorkflow("/workflows/student/signup/finalize", payload)
+}
+
+export function promoteEmailConfirmedStudentWorkflow(payload = {}) {
+	return postWorkflow("/workflows/student/email-confirmed", payload)
+}
+
+export function resolveRosterScholarshipWorkflow(payload = {}) {
+	return postWorkflow("/workflows/student/roster-scholarship-decision", payload)
+}
+
+export function confirmGrantorAdminDecisionWorkflow(payload = {}) {
+	return postWorkflow("/workflows/grantor/applications/confirm-admin-decision", payload)
 }
 
 export function createGrantorScholarsWorkflow(payload = {}) {

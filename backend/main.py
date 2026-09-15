@@ -19,9 +19,8 @@ if load_dotenv:
 
 try:
     from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
-    from .access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role
-    from .scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
-    from .email_service import send_email_notification
+    from .access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
+    from .scholarship_choice_service import mutate_scholarship_choice, resolve_archived_grantor_scholar_choice, update_scholarship_documents
     from .grantor_algorithms import (
         check_student_table_duplicates,
         evaluate_scholar_duplicate,
@@ -41,6 +40,7 @@ try:
         validate_scholarship_documents,
     )
     from .signup_service import finalize_student_signup, validate_student_signup
+    from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student, resolve_roster_scholarship
     from .support_service import ask_support_assistant
     from .priority_one_service import save_support_feedback
     from .root_router import router as root_router
@@ -53,6 +53,11 @@ try:
         broadcast_student_notification,
         create_grantor_notification,
         create_admin_notification,
+        list_admin_notifications,
+        list_grantor_notifications,
+        list_student_notifications,
+        supabase_document_get,
+        supabase_select,
         create_log,
         create_student_notification,
         delete_grantor_notification,
@@ -85,9 +90,8 @@ try:
     )
 except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backend/
     from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
-    from access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role
-    from scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
-    from email_service import send_email_notification
+    from access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
+    from scholarship_choice_service import mutate_scholarship_choice, resolve_archived_grantor_scholar_choice, update_scholarship_documents
     from grantor_algorithms import (
         check_student_table_duplicates,
         evaluate_scholar_duplicate,
@@ -107,6 +111,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         validate_scholarship_documents,
     )
     from signup_service import finalize_student_signup, validate_student_signup
+    from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student, resolve_roster_scholarship
     from support_service import ask_support_assistant
     from priority_one_service import save_support_feedback
     from root_router import router as root_router
@@ -119,6 +124,11 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         broadcast_student_notification,
         create_grantor_notification,
         create_admin_notification,
+        list_admin_notifications,
+        list_grantor_notifications,
+        list_student_notifications,
+        supabase_document_get,
+        supabase_select,
         create_log,
         create_student_notification,
         delete_grantor_notification,
@@ -164,7 +174,7 @@ def build_allowed_origins() -> list[str]:
     default_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "https://bulsu-scholar.vercel.app",
+        "https://bulsuscholar.com",
         os.getenv("FRONTEND_URL", "").strip(),
         os.getenv("VITE_APP_URL", "").strip(),
         os.getenv("VITE_PUBLIC_SITE_URL", "").strip(),
@@ -173,7 +183,7 @@ def build_allowed_origins() -> list[str]:
 
 
 allowed_origins = build_allowed_origins()
-allowed_origin_regex = os.getenv("DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+allowed_origin_regex = os.getenv("DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX", "")
 
 
 def is_allowed_cors_origin(origin: str | None) -> bool:
@@ -264,7 +274,7 @@ def root() -> dict[str, Any]:
     return {
         "name": "BulsuScholar Backend Services",
         "status": "running",
-        "frontend": os.getenv("FRONTEND_URL", "https://bulsu-scholar.vercel.app"),
+        "frontend": os.getenv("FRONTEND_URL", "https://bulsuscholar.com"),
         "health": "/health",
         "deploymentHealth": "/deployment/health",
         "scanner": "/scan-document",
@@ -290,8 +300,9 @@ def health() -> dict[str, Any]:
 def deployment_health() -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "")
     service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    resend_api_key = os.getenv("RESEND_API_KEY", "")
-    resend_from_email = os.getenv("RESEND_FROM_EMAIL", "")
+    email_provider = os.getenv("EMAIL_PROVIDER", "brevo").strip().lower()
+    brevo_api_key = os.getenv("BREVO_API_KEY", "")
+    brevo_sender_email = os.getenv("BREVO_SENDER_EMAIL", "")
     table_results = [supabase_table_status(table) for table in REQUIRED_SUPABASE_TABLES]
     missing_tables = [
         item["table"]
@@ -302,7 +313,7 @@ def deployment_health() -> dict[str, Any]:
 
     return {
         "status": "ok" if not failed_tables and supabase_url and service_role_key else "needs_attention",
-        "frontendUrl": os.getenv("FRONTEND_URL", "https://bulsu-scholar.vercel.app"),
+        "frontendUrl": os.getenv("FRONTEND_URL", "https://bulsuscholar.com"),
         "cors": {
             "allowedOrigins": allowed_origins,
             "allowedOriginRegex": allowed_origin_regex,
@@ -310,8 +321,9 @@ def deployment_health() -> dict[str, Any]:
         "environment": {
             "hasSupabaseUrl": bool(supabase_url),
             "hasSupabaseServiceRoleKey": bool(service_role_key),
-            "hasResendApiKey": bool(resend_api_key),
-            "hasResendFromEmail": bool(resend_from_email),
+            "emailProvider": email_provider,
+            "hasBrevoApiKey": bool(brevo_api_key),
+            "hasBrevoSenderEmail": bool(brevo_sender_email),
             "hasRootSessionSecret": len(os.getenv("ROOT_SESSION_SECRET", "").strip()) >= 32,
             "hasRootDatabaseUrl": bool(os.getenv("ROOT_DATABASE_URL") or os.getenv("SUPABASE_DB_URL")),
         },
@@ -335,13 +347,17 @@ def scan_document_health() -> dict[str, Any]:
 
 @app.get("/email/health")
 def email_health() -> dict[str, Any]:
-    api_key = os.getenv("RESEND_API_KEY", "")
-    from_email = os.getenv("RESEND_FROM_EMAIL", "")
+    provider = os.getenv("EMAIL_PROVIDER", "brevo").strip().lower()
+    api_key = os.getenv("BREVO_API_KEY", "")
+    from_email = os.getenv("BREVO_SENDER_EMAIL", "")
+    reply_to_email = os.getenv("BREVO_REPLY_TO_EMAIL", "")
     return {
-        "configured": bool(api_key and from_email),
-        "hasResendApiKey": bool(api_key),
+        "provider": provider,
+        "configured": provider == "brevo" and bool(api_key and from_email),
+        "hasBrevoApiKey": bool(api_key),
         "hasFromEmail": bool(from_email),
         "fromEmail": from_email,
+        "hasReplyToEmail": bool(reply_to_email),
     }
 
 
@@ -390,14 +406,6 @@ def admin_check_student_duplicates_endpoint(payload: dict[str, Any] = Body(...))
     )
 
 
-@app.post("/email/send")
-def send_email_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    result = send_email_notification(payload)
-    if not result.get("sent"):
-        raise HTTPException(status_code=502, detail=result)
-    return result
-
-
 @app.post("/logs/build")
 def build_log_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return build_log_payload(
@@ -442,6 +450,15 @@ def create_admin_notification_endpoint(request: Request, payload: dict[str, Any]
     return create_admin_notification(payload)
 
 
+@app.post("/notifications/admin/list")
+def list_admin_notifications_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin"})
+    result = list_admin_notifications()
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail="admin_notifications_unavailable")
+    return result
+
+
 @app.post("/notifications/admin/update")
 def update_admin_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"admin"})
@@ -462,6 +479,18 @@ def create_student_notification_endpoint(request: Request, payload: dict[str, An
     return create_student_notification(payload)
 
 
+@app.post("/notifications/student/list")
+def list_student_notifications_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "admin"})
+    student_id = str(payload.get("studentId") or payload.get("actorId") or "").strip()
+    if payload.get("actorType") == "student" and student_id != str(payload.get("actorId") or "").strip():
+        raise HTTPException(status_code=403, detail="student_notification_owner_mismatch")
+    result = list_student_notifications(student_id)
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("reason") or "student_notifications_unavailable")
+    return result
+
+
 @app.post("/notifications/student/broadcast")
 def broadcast_student_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"admin"})
@@ -471,14 +500,25 @@ def broadcast_student_notification_endpoint(request: Request, payload: dict[str,
 @app.post("/notifications/student/update")
 def update_student_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student", "admin"})
-    return update_student_notification(payload.get("id") or "", payload.get("data") or {})
+    student_id = str(payload.get("actorId") or "") if payload.get("actorType") == "student" else ""
+    return update_student_notification(
+        payload.get("id") or "",
+        payload.get("data") or {},
+        student_id,
+        payload.get("sourceTable") or "studentNotifications",
+    )
 
 
 @app.post("/notifications/student/update-many")
 def update_student_notifications_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student", "admin"})
     student_id = str(payload.get("actorId") or "") if payload.get("actorType") == "student" else ""
-    result = update_student_notifications(payload.get("ids") or [], payload.get("data") or {}, student_id)
+    result = update_student_notifications(
+        payload.get("ids") or [],
+        payload.get("data") or {},
+        student_id,
+        payload.get("sourceTable") or "studentNotifications",
+    )
     if not result.get("ok") and not result.get("partial"):
         raise HTTPException(status_code=400, detail=result)
     return result
@@ -487,7 +527,12 @@ def update_student_notifications_endpoint(request: Request, payload: dict[str, A
 @app.post("/notifications/student/delete")
 def delete_student_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student", "admin"})
-    return delete_student_notification(payload.get("id") or "")
+    student_id = str(payload.get("actorId") or "") if payload.get("actorType") == "student" else ""
+    return delete_student_notification(
+        payload.get("id") or "",
+        student_id,
+        payload.get("sourceTable") or "studentNotifications",
+    )
 
 
 @app.post("/notifications/grantor/build")
@@ -507,17 +552,40 @@ def create_grantor_notification_endpoint(request: Request, payload: dict[str, An
     return create_grantor_notification(payload)
 
 
+@app.post("/notifications/grantor/list")
+def list_grantor_notifications_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor", "admin"})
+    grantor_id = str(payload.get("grantorId") or payload.get("actorId") or "").strip()
+    if payload.get("actorType") == "grantor" and grantor_id != str(payload.get("actorId") or "").strip():
+        raise HTTPException(status_code=403, detail="grantor_notification_owner_mismatch")
+    result = list_grantor_notifications(grantor_id)
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("reason") or "grantor_notifications_unavailable")
+    return result
+
+
 @app.post("/notifications/grantor/update")
 def update_grantor_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"grantor", "admin"})
-    return update_grantor_notification(payload.get("id") or "", payload.get("data") or {})
+    grantor_id = str(payload.get("actorId") or "") if payload.get("actorType") == "grantor" else ""
+    return update_grantor_notification(
+        payload.get("id") or "",
+        payload.get("data") or {},
+        grantor_id,
+        payload.get("sourceTable") or "grantorNotifications",
+    )
 
 
 @app.post("/notifications/grantor/update-many")
 def update_grantor_notifications_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"grantor", "admin"})
     grantor_id = str(payload.get("actorId") or "") if payload.get("actorType") == "grantor" else ""
-    result = update_grantor_notifications(payload.get("ids") or [], payload.get("data") or {}, grantor_id)
+    result = update_grantor_notifications(
+        payload.get("ids") or [],
+        payload.get("data") or {},
+        grantor_id,
+        payload.get("sourceTable") or "grantorNotifications",
+    )
     if not result.get("ok") and not result.get("partial"):
         raise HTTPException(status_code=400, detail=result)
     return result
@@ -526,7 +594,12 @@ def update_grantor_notifications_endpoint(request: Request, payload: dict[str, A
 @app.post("/notifications/grantor/delete")
 def delete_grantor_notification_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"grantor", "admin"})
-    return delete_grantor_notification(payload.get("id") or "")
+    grantor_id = str(payload.get("actorId") or "") if payload.get("actorType") == "grantor" else ""
+    return delete_grantor_notification(
+        payload.get("id") or "",
+        grantor_id,
+        payload.get("sourceTable") or "grantorNotifications",
+    )
 
 
 @app.post("/scholarships/validate-documents")
@@ -545,7 +618,14 @@ def check_eligibility_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str,
 
 
 @app.post("/scholarships/recommend")
-def recommend_scholarships_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def recommend_scholarships_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student"})
+    actor_id = str(payload.get("actorId") or "").strip()
+    student = supabase_document_get("students", actor_id)
+    student_data = student.get("data") or {}
+    if student_data.get("rosterDecisionPending") is True:
+        return {"ok": True, "recommendations": [], "reason": "roster_decision_required"}
+    payload["student"] = {"id": actor_id, **student_data}
     return recommend_scholarships(payload)
 
 
@@ -561,6 +641,17 @@ def finalize_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dic
     if public_config().get("portal", {}).get("allowStudentSignup") is False:
         raise HTTPException(status_code=403, detail="student_signup_disabled")
     return finalize_student_signup(payload)
+
+
+@app.post("/workflows/student/email-confirmed")
+def student_email_confirmed_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return promote_email_confirmed_student(payload, require_supabase_user(request))
+
+
+@app.post("/workflows/student/roster-scholarship-decision")
+def student_roster_scholarship_decision_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
+    return resolve_roster_scholarship(payload, require_supabase_user(request))
 
 
 @app.post("/workflows/scholarship/apply")
@@ -585,6 +676,18 @@ def choose_scholarship_endpoint(request: Request, payload: dict[str, Any] = Body
 def withdraw_scholarship_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
     return mutate_scholarship_choice(payload, withdraw=True)
+
+
+@app.post("/workflows/scholarship/archived-grantor-decision")
+def archived_grantor_decision_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
+    return resolve_archived_grantor_scholar_choice(payload)
+
+
+@app.post("/workflows/grantor/applications/confirm-admin-decision")
+def grantor_confirm_admin_decision_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
+    return confirm_grantor_admin_decision(payload)
 
 
 @app.post("/workflows/scholarship/documents")
@@ -875,7 +978,7 @@ def api_not_found(full_path: str) -> dict[str, Any]:
             "error": "api_route_not_found",
             "path": f"/{full_path}",
             "message": "This backend route does not exist. Open the frontend site for pages, or call a listed API endpoint.",
-            "frontend": os.getenv("FRONTEND_URL", "https://bulsu-scholar.vercel.app"),
+            "frontend": os.getenv("FRONTEND_URL", "https://bulsuscholar.com"),
             "availableHealthRoutes": ["/", "/health", "/deployment/health", "/email/health"],
         },
     )

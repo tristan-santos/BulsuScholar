@@ -101,7 +101,7 @@ If a bug involves duplicate detection, record both records being compared.
 - Do not use a personal password.
 - Do not share test credentials with another tester.
 - Do not reuse another tester's email or contact number.
-- Do not spam forgot password, confirmation email, or resend email features because email services can rate-limit.
+- Do not spam forgot password, confirmation email, or brevo email features because email services can rate-limit.
 
 ## 7. Modal Testing Rules
 
@@ -177,8 +177,8 @@ Test using the deployed site unless instructed otherwise.
 
 Expected production URLs:
 
-- Frontend: `https://bulsu-scholar.vercel.app`
-- Backend: `https://bulsuscholar.onrender.com`
+- Frontend: `https://bulsuscholar.com`
+- Backend: `https://api.bulsuscholar.com`
 
 During testing, open the browser console and check:
 

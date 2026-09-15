@@ -4,7 +4,6 @@ import { matchesScholarshipApplication } from "../services/scholarshipChoiceServ
 import {
 	collection,
 	collectionGroup,
-	deleteDoc,
 	doc,
 	getDoc,
 	getDocs,
@@ -98,11 +97,13 @@ import {
 	createAdminNotification,
 	createStudentNotification,
 	deleteGrantorNotification as deleteGrantorNotificationRecord,
+	loadGrantorNotifications,
 	updateGrantorNotification,
 	updateGrantorNotifications,
 } from "../services/notificationService"
 import {
 	adminReviewWorkflow,
+	confirmGrantorAdminDecisionWorkflow,
 	configureGrantorAnnouncementSlotsWorkflow,
 	createGrantorAnnouncementWorkflow,
 	createGrantorScholarsWorkflow,
@@ -1396,43 +1397,30 @@ export default function ProviderDashboard() {
 	}, [announcementImagePreviews])
 
 	useEffect(() => {
-		if (!grantorId) return
-		let notificationRows = []
-		let fallbackRows = []
-		const updateGrantorInboxRows = () => {
-			setPersonalNotifications(
-				[...notificationRows, ...fallbackRows].sort(
-					(a, b) => (toJsDate(b.createdAt)?.getTime() || 0) - (toJsDate(a.createdAt)?.getTime() || 0),
-				),
-			)
+		if (!grantorId) return undefined
+		let active = true
+		let loading = false
+		const refresh = async () => {
+			if (loading) return
+			loading = true
+			try {
+				const result = await loadGrantorNotifications()
+				if (!active) return
+				setPersonalNotifications(result.notifications || [])
+			} catch (error) {
+				if (active) {
+					console.error("Unable to load grantor inbox notifications.", error)
+					toast.error("Unable to load the grantor inbox. Please try again.", { toastId: "grantor-inbox-load-error" })
+				}
+			} finally {
+				loading = false
+			}
 		}
-		const unsubscribeNotifications = onSnapshot(
-			query(collection(db, "grantorNotifications"), where("grantorId", "==", grantorId)),
-			(snap) => {
-				notificationRows = snap.docs.map((row) => ({ id: row.id, sourceTable: "grantorNotifications", ...(row.data() || {}) }))
-				updateGrantorInboxRows()
-			},
-			() => {
-				notificationRows = []
-				updateGrantorInboxRows()
-			},
-		)
-		const unsubscribeFallback = onSnapshot(
-			query(collection(db, "systemLogs"), where("grantorId", "==", grantorId)),
-			(snap) => {
-				fallbackRows = snap.docs
-					.map((row) => ({ id: row.id, sourceTable: "systemLogs", ...(row.data() || {}) }))
-					.filter((row) => row.notificationFallbackTable === "systemLogs")
-				updateGrantorInboxRows()
-			},
-			() => {
-				fallbackRows = []
-				updateGrantorInboxRows()
-			},
-		)
+		void refresh()
+		const interval = window.setInterval(refresh, 30000)
 		return () => {
-			unsubscribeNotifications()
-			unsubscribeFallback()
+			active = false
+			window.clearInterval(interval)
 		}
 	}, [grantorId])
 
@@ -2613,6 +2601,11 @@ export default function ProviderDashboard() {
 			toast.error("You can only update applications submitted to your grantor account.")
 			return
 		}
+		const storedAdminDecision = getPendingApplicationDecisionConfirmation(applicationModalState.application || {})
+		if (storedAdminDecision?.requestedBy === "admin") {
+			await handleConfirmPendingApplicationDecision()
+			return
+		}
 
 		const currentStep = applicationModalState.trackingProgress?.currentStep
 		const currentStepLabel = getGrantorCompletableStepLabel(currentStep?.id)
@@ -2802,76 +2795,40 @@ export default function ProviderDashboard() {
 
 	const handleConfirmPendingApplicationDecision = async (options = {}) => {
 		const pendingDecision = getPendingApplicationDecisionConfirmation(applicationModalState.application || {})
-		if (!pendingDecision) return
-		if (pendingDecision.decision === "reject") {
-			await handleConfirmRejectApplication({
-				reason: pendingDecision.reason || APPLICATION_REJECTION_REASONS[0],
-				notes: pendingDecision.notes || "",
-				fromConfirmation: true,
-			})
-			return
-		}
-		await handleCompleteGrantorStage()
-		if (options.automatic) {
-			toast.info(`${formatApplicationDecisionLabel(pendingDecision.decision)} was applied automatically after the 3-day confirmation window.`)
-		}
-	}
-
-	const handleCancelPendingApplicationDecision = async () => {
-		const pendingDecision = getPendingApplicationDecisionConfirmation(applicationModalState.application || {})
-		if (!pendingDecision || !applicationModalState.application) return
+		const applicationId = applicationModalState.application?.id || ""
+		if (!pendingDecision || !applicationId || busy) return
 		setBusy("decision_confirmation")
 		try {
-			await adminReviewWorkflow({
+			const result = await confirmGrantorAdminDecisionWorkflow({
 				actorType: "grantor",
 				actorId: grantorId,
-				updates: [
-					{
-						table: "scholarship_applications",
-						id: applicationModalState.application.id,
-						data: {
-							decisionConfirmation: null,
-							grantorConfirmationPending: false,
-							grantorConfirmationDecision: null,
-							grantorConfirmationDeadlineAt: null,
-							updatedAt: serverTimestamp(),
-						},
-					},
-				],
-			})
-			await createAdminNotification({
-				type: "application_confirmation_cancelled",
-				title: `Grantor Cancelled ${formatApplicationDecisionLabel(pendingDecision.decision)}`,
-				message: `${grantorName} cancelled the admin-proposed ${formatApplicationDecisionVerb(pendingDecision.decision)} decision for ${applicationModalState.application.fullName || "the student"}.`,
 				grantorId,
-				grantorName,
-				studentId: applicationModalState.application.studentId || "",
-				studentName: applicationModalState.application.fullName || "",
-				applicationNumber:
-					applicationModalState.application.applicationNumber ||
-					applicationModalState.application.requestNumber ||
-					applicationModalState.application.id ||
-					"",
-				decision: pendingDecision.decision,
-				read: false,
-				createdAt: serverTimestamp(),
-			}).catch((error) => console.error("Admin notification for cancelled application confirmation failed.", error))
+				applicationId,
+			})
+			const persistedApplication = result.application || {}
 			setApplicationModalState((prev) => ({
 				...prev,
-				application: prev.application
+				application: prev.application ? { ...prev.application, ...persistedApplication } : prev.application,
+				scholarship: prev.scholarship
 					? {
-							...prev.application,
-							decisionConfirmation: null,
-							grantorConfirmationPending: false,
-							grantorConfirmationDecision: null,
-							grantorConfirmationDeadlineAt: null,
+							...prev.scholarship,
+							status: persistedApplication.status || prev.scholarship.status,
+							tracking: persistedApplication.tracking || prev.scholarship.tracking,
 						}
-					: prev.application,
+					: prev.scholarship,
 			}))
-			toast.success(`${formatApplicationDecisionLabel(pendingDecision.decision)} confirmation cancelled.`)
+			if (result.warning) {
+				toast.warning("The decision was saved, but inbox delivery could not be confirmed.")
+			} else {
+				toast.success(`${formatApplicationDecisionLabel(pendingDecision.decision)} confirmed.`)
+			}
+			if (options.automatic) {
+				toast.info(`${formatApplicationDecisionLabel(pendingDecision.decision)} was applied automatically after the 3-day confirmation window.`)
+			}
+			closeApplicationModal()
 		} catch (error) {
-			console.error("Unable to cancel application decision confirmation.", error)
-			toast.error("Unable to cancel the confirmation right now.")
+			console.error("Unable to confirm the stored administrator decision.", error)
+			toast.error(error?.message || "Unable to confirm the administrator decision right now.")
 		} finally {
 			setBusy("")
 		}
@@ -4172,11 +4129,12 @@ export default function ProviderDashboard() {
 				read: true,
 				readAt: serverTimestamp(),
 			}
-			if (notification.sourceTable === "systemLogs") {
-				await setDoc(doc(db, "systemLogs", notification.id), updateData, { merge: true })
-			} else {
-				await updateGrantorNotification(notification.id, updateData)
-			}
+			await updateGrantorNotification(notification.id, updateData, notification.sourceTable)
+			setPersonalNotifications((current) => current.map((item) =>
+				item.id === notification.id && item.sourceTable === notification.sourceTable
+					? { ...item, ...updateData }
+					: item,
+			))
 		} catch (error) {
 			console.error("Unable to mark grantor notification as read.", error)
 		}
@@ -4195,11 +4153,18 @@ export default function ProviderDashboard() {
 			const systemLogs = unreadPersonalNotifications.filter((notification) => notification.sourceTable === "systemLogs")
 			const notifications = unreadPersonalNotifications.filter((notification) => notification.sourceTable !== "systemLogs")
 			await Promise.all([
-				...systemLogs.map((notification) => setDoc(doc(db, "systemLogs", notification.id), { read: true, readAt }, { merge: true })),
+				systemLogs.length > 0
+					? updateGrantorNotifications(systemLogs.map((notification) => notification.id), { read: true, readAt }, "systemLogs")
+					: Promise.resolve(),
 				notifications.length > 0
 					? updateGrantorNotifications(notifications.map((notification) => notification.id), { read: true, readAt })
 					: Promise.resolve(),
 			])
+			setPersonalNotifications((current) => current.map((item) =>
+				unreadPersonalNotifications.some((row) => row.id === item.id && row.sourceTable === item.sourceTable)
+					? { ...item, read: true, readAt }
+					: item,
+			))
 		} catch (error) {
 			console.error("Unable to mark all grantor notifications as read.", error)
 			toast.error("Unable to update all inbox messages.")
@@ -4209,11 +4174,10 @@ export default function ProviderDashboard() {
 	const deleteGrantorNotification = async (notification) => {
 		if (!notification?.id) return
 		try {
-			if (notification.sourceTable === "systemLogs") {
-				await deleteDoc(doc(db, "systemLogs", notification.id))
-			} else {
-				await deleteGrantorNotificationRecord(notification.id)
-			}
+			await deleteGrantorNotificationRecord(notification.id, notification.sourceTable)
+			setPersonalNotifications((current) => current.filter((item) =>
+				item.id !== notification.id || item.sourceTable !== notification.sourceTable,
+			))
 		} catch (error) {
 			console.error("Unable to delete grantor notification.", error)
 			toast.error("Unable to delete this inbox message.")
@@ -5510,14 +5474,6 @@ export default function ProviderDashboard() {
 													>
 														{pendingApplicationDecision.decision === "reject" ? <HiOutlineBan /> : <HiCheck />}
 														Confirm {pendingApplicationDecisionLabel}
-													</button>
-													<button
-														type="button"
-														className="admin-export-btn grantor-cancel-confirmation-btn"
-														onClick={handleCancelPendingApplicationDecision}
-														disabled={busy === "grantor_tracking" || busy === "reject_application" || busy === "decision_confirmation"}
-													>
-														<HiX /> Cancel {pendingApplicationDecisionLabel}
 													</button>
 												</>
 											) : (

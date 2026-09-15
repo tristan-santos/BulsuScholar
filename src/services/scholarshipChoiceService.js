@@ -15,6 +15,29 @@ export function hasScholarshipCommitment(student = {}) {
 	))
 }
 
+export function getArchivedGrantorChoice(student = {}) {
+	const choice = student?.grantorArchiveChoice
+	return choice && typeof choice === "object" && choice.applicationId ? choice : null
+}
+
+export function isArchivedGrantorReplacementMode(student = {}) {
+	return normalize(getArchivedGrantorChoice(student)?.decision) === "change"
+}
+
+export function isArchivedGrantorChoicePending(student = {}) {
+	return normalize(getArchivedGrantorChoice(student)?.decision) === "pending"
+}
+
+export function isOriginalArchivedGrantorScholarship(student = {}, entry = {}) {
+	const choice = getArchivedGrantorChoice(student)
+	return Boolean(choice?.applicationId && normalize(choice.applicationId) === normalize(entry.applicationId || entry.id))
+}
+
+export function isReplacementApplication(student = {}, entry = {}) {
+	const choice = getArchivedGrantorChoice(student)
+	return Boolean(choice?.applicationId && normalize(entry.replacementForApplicationId) === normalize(choice.applicationId))
+}
+
 export function sameApplicationGrantor(left = {}, right = {}) {
 	const leftId = normalize(left.grantorId || left.providerId || left.matchedGrantorId)
 	const rightId = normalize(right.grantorId || right.providerId || right.matchedGrantorId)
@@ -40,7 +63,13 @@ export function matchesScholarshipApplication(application = {}, entry = {}) {
 }
 
 export function getGrantorApplicationBlock(student = {}, offering = {}, now = Date.now()) {
-	if (hasScholarshipCommitment(student)) return "You have already selected a scholarship."
+	const archiveChoice = getArchivedGrantorChoice(student)
+	const archiveDecision = normalize(archiveChoice?.decision)
+	if (archiveDecision === "pending") return "Choose whether to keep or change your archived-grantor scholarship first."
+	if (archiveDecision === "change" && sameApplicationGrantor(archiveChoice, offering)) {
+		return "The archived grantor cannot accept a replacement application."
+	}
+	if (hasScholarshipCommitment(student) && archiveDecision !== "change") return "You have already selected a scholarship."
 	const active = (student.scholarships || []).find((entry) =>
 		!isClosedApplication(entry) && sameApplicationGrantor(entry, offering))
 	if (active) return "You already have an active application with this grantor."

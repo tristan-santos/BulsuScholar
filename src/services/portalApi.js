@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient"
+import { trackedFetch } from "./operationTracker"
 
 export class PortalApiError extends Error {
 	constructor(message, { status = 0, reason = "", data = null } = {}) {
@@ -32,7 +33,7 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 	const controller = timeoutMs > 0 ? new AbortController() : null
 	const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
 	try {
-		response = await fetch(`${baseUrl}${path}`, {
+		response = await trackedFetch(`${baseUrl}${path}`, {
 			method: "POST",
 			headers: await buildPortalRequestHeaders(options.actor || {}),
 			body: JSON.stringify(payload),

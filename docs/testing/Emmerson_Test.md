@@ -30,7 +30,7 @@ Test creating a student account using correct credentials, then check:
 
 After creating the account, check:
 
-- A confirmation or welcome email is received by the email used during signup.
+- A confirmation email is received by the email used during signup.
 - The email design is readable and branded as BulsuScholar.
 - The email link redirects to the deployed site, not localhost.
 - Account confirmation works from the email link.
@@ -127,7 +127,7 @@ While testing, also check:
 - Dropdowns use the correct green highlight design.
 - Required fields show clear errors.
 - Console should not show critical errors.
-- Deployed links should use `https://bulsu-scholar.vercel.app`, not localhost.
+- Deployed links should use `https://bulsuscholar.com`, not localhost.
 
 ## Tester Notes
 

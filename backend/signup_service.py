@@ -9,7 +9,6 @@ try:
         create_admin_notification,
         create_log,
         create_student_notification,
-        supabase_admin_create_user,
         supabase_document_get,
         supabase_document_insert,
         supabase_document_upsert,
@@ -22,7 +21,6 @@ except ImportError:  # pragma: no cover
         create_admin_notification,
         create_log,
         create_student_notification,
-        supabase_admin_create_user,
         supabase_document_get,
         supabase_document_insert,
         supabase_document_upsert,
@@ -497,39 +495,24 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     student_id = validation["studentId"]
     student = sanitize_student_payload(dict(payload.get("student") or {}))
     auth = payload.get("auth") or {}
-    is_auto_verified = payload.get("isAutoVerified", True)
     auth_result = None
-
-    if auth.get("createUser") is True:
-        auth_result = supabase_admin_create_user(
-            validation["email"],
-            str(auth.get("password") or ""),
-            {
-                "user_id": student_id,
-                "user_type": "student",
-                "full_name": student.get("fullName") or " ".join(
-                    part for part in [student.get("fname"), student.get("lname")] if part
-                ).strip(),
-                "auto_verified_from_roster": bool(auth.get("emailConfirm")),
-            },
-            email_confirm=bool(auth.get("emailConfirm")),
-        )
-        if not auth_result.get("ok"):
-            return {"ok": False, "reason": auth_result.get("reason") or "auth_create_failed", "auth": auth_result}
-        auth["userId"] = (auth_result.get("user") or {}).get("id") or auth.get("userId") or ""
+    if auth.get("createUser") is True or auth.get("emailConfirm") is True:
+        return {"ok": False, "reason": "automatic_email_confirmation_disabled"}
+    if not str(auth.get("userId") or "").strip():
+        return {"ok": False, "reason": "auth_user_id_required"}
 
     student["email"] = validation["email"]
     student["cpNumber"] = validation["cpNumber"]
     student["studentnumber"] = student_id
     student["userType"] = "student"
     student["authUserId"] = auth.get("userId") or student.get("authUserId") or ""
-    student["isValidated"] = bool(is_auto_verified)
-    student["isPending"] = not bool(is_auto_verified)
-    student["validatedAt"] = utc_now_iso() if is_auto_verified else None
+    student["isValidated"] = False
+    student["isPending"] = True
+    student["validatedAt"] = None
     student.setdefault("createdAt", utc_now_iso())
     student["updatedAt"] = utc_now_iso()
 
-    target_table = "students" if is_auto_verified else "pending_students"
+    target_table = "pending_students"
     student_result = supabase_document_upsert(target_table, student_id, student, merge=False)
     if not student_result.get("ok"):
         return {"ok": False, "reason": "student_save_failed", "result": student_result}

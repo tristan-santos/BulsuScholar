@@ -23,9 +23,25 @@ For scanned PDF OCR, install Poppler and add its `bin` folder to PATH. Digital P
 Add this to `.env`:
 
 ```env
-VITE_DOCUMENT_SCAN_API_URL=https://your-service.up.railway.app
-VITE_BACKEND_API_URL=https://your-service.up.railway.app
+VITE_DOCUMENT_SCAN_API_URL=https://api.bulsuscholar.com
+VITE_BACKEND_API_URL=https://api.bulsuscholar.com
 ```
+
+## Transactional Email
+
+The backend sends portal notifications through Brevo while Supabase Auth uses
+Brevo SMTP for confirmation and recovery messages.
+
+```env
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=
+BREVO_SENDER_NAME=BulsuScholar
+BREVO_SENDER_EMAIL=no-reply@bulsuscholar.com
+BREVO_REPLY_TO_EMAIL=support@bulsuscholar.com
+```
+
+Keep the API key on Railway. Configure Supabase separately with the Brevo SMTP
+login and SMTP key; do not expose either credential through a `VITE_` variable.
 
 ## Priority 1 Services
 

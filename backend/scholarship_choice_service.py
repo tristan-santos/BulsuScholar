@@ -51,6 +51,11 @@ CHOICE_MESSAGES = {
     "grantor_application_exists": "You already have an active application with this grantor.",
     "reapply_cooldown_active": "Please wait 24 hours before applying to this grantor again.",
     "scholarship_ineligible": "You do not meet this scholarship's eligibility requirements.",
+    "archive_choice_required": "Choose whether to keep or change your scholarship before continuing.",
+    "invalid_archive_choice": "This archived-grantor scholarship decision is not valid.",
+    "original_commitment_missing": "The original scholarship commitment could not be verified.",
+    "replacement_not_allowed": "This application is not an authorized replacement scholarship.",
+    "replacement_already_committed": "A replacement scholarship has already been selected.",
 }
 
 
@@ -67,7 +72,11 @@ def reserve_scholarship_application(payload: dict[str, Any]) -> dict[str, Any]:
     grantor_id = str(application.get("grantorId") or application.get("providerId") or "").strip()
     invitation_id = str(payload.get("invitationId") or "").strip()
     student_result = supabase_document_get("students", student_id) if student_id else {"ok": False}
-    stored_invitations = (student_result.get("data") or {}).get("scholarshipInvitations")
+    student_data = student_result.get("data") or {}
+    if student_data.get("rosterDecisionPending") is True:
+        return {"ok": False, "reason": "roster_decision_required",
+                "message": "Resolve your listed scholarship record before applying."}
+    stored_invitations = student_data.get("scholarshipInvitations")
     matching_invitation = next((invitation for invitation in stored_invitations or []
         if isinstance(invitation, dict) and _stored_invitation_matches(invitation, application, invitation_id)), None)
     if not announcement_id and matching_invitation:
@@ -87,7 +96,23 @@ def reserve_scholarship_application(payload: dict[str, Any]) -> dict[str, Any]:
     # student/grantor/offering tuple instead of trusting a caller's record ID.
     application_id = str(uuid4())
     application_number = f"{student_id[-3:]}-{uuid4().hex[:8]}"
-    result = supabase_rpc("reserve_scholarship_application", {
+    archive_choice = student_data.get("grantorArchiveChoice") if isinstance(student_data.get("grantorArchiveChoice"), dict) else {}
+    commitment = student_data.get("scholarshipCommitment") if isinstance(student_data.get("scholarshipCommitment"), dict) else {}
+    choice_decision = _normalize(archive_choice.get("decision"))
+    is_replacement = (
+        choice_decision == "change"
+        and _normalize(archive_choice.get("applicationId")) == _normalize(commitment.get("applicationId"))
+        and _normalize(grantor_id) != _normalize(archive_choice.get("grantorId"))
+    )
+    if commitment and not is_replacement:
+        return {"ok": False, "reason": "scholarship_already_committed",
+                "message": CHOICE_MESSAGES["scholarship_already_committed"]}
+    if choice_decision == "pending":
+        return {"ok": False, "reason": "archive_choice_required", "message": CHOICE_MESSAGES["archive_choice_required"]}
+    if choice_decision == "change" and not is_replacement:
+        return {"ok": False, "reason": "replacement_not_allowed", "message": CHOICE_MESSAGES["replacement_not_allowed"]}
+    rpc_name = "reserve_archived_grantor_replacement_application" if is_replacement else "reserve_scholarship_application"
+    result = supabase_rpc(rpc_name, {
         "p_student_id": student_id, "p_announcement_id": announcement_id,
         "p_grantor_id": grantor_id, "p_application_id": application_id,
         "p_application_number": application_number,
@@ -111,11 +136,37 @@ def mutate_scholarship_choice(payload: dict[str, Any], *, withdraw: bool = False
         return {"ok": False, "reason": "portal_record_owner_mismatch"}
     if payload.get("confirmed") is not True:
         return {"ok": False, "reason": "confirmation_required"}
-    result = supabase_rpc("mutate_scholarship_choice", {
-        "p_student_id": student_id,
-        "p_application_id": application_id,
-        "p_action": "withdraw" if withdraw else "choose",
-    })
+    student_result = supabase_document_get("students", student_id)
+    student_data = student_result.get("data") or {}
+    if student_data.get("rosterDecisionPending") is True:
+        return {"ok": False, "reason": "roster_decision_required",
+                "message": "Resolve your listed scholarship record before continuing."}
+    archive_choice = student_data.get("grantorArchiveChoice") if isinstance(student_data.get("grantorArchiveChoice"), dict) else {}
+    choice_decision = _normalize(archive_choice.get("decision"))
+    original_application_id = str(archive_choice.get("applicationId") or "").strip()
+    if original_application_id and application_id == original_application_id and choice_decision in {"pending", "change"}:
+        return {"ok": False, "reason": "archive_choice_required", "message": CHOICE_MESSAGES["archive_choice_required"]}
+    replacement_application = supabase_document_get("scholarship_applications", application_id)
+    replacement_data = replacement_application.get("data") or {}
+    is_replacement = (
+        choice_decision == "change"
+        and original_application_id
+        and application_id != original_application_id
+        and str(replacement_data.get("replacementForApplicationId") or "") == original_application_id
+    )
+    if choice_decision == "change" and application_id != original_application_id and not is_replacement:
+        return {"ok": False, "reason": "replacement_not_allowed", "message": CHOICE_MESSAGES["replacement_not_allowed"]}
+    if is_replacement:
+        rpc_name = "withdraw_archived_grantor_replacement" if withdraw else "commit_archived_grantor_replacement"
+        rpc_payload = {"p_student_id": student_id, "p_application_id": application_id}
+    else:
+        rpc_name = "mutate_scholarship_choice"
+        rpc_payload = {
+            "p_student_id": student_id,
+            "p_application_id": application_id,
+            "p_action": "withdraw" if withdraw else "choose",
+        }
+    result = supabase_rpc(rpc_name, rpc_payload)
     if not result.get("ok"):
         reason = result.get("reason") or "scholarship_choice_failed"
         return {"ok": False, "reason": reason,
@@ -129,12 +180,40 @@ def mutate_scholarship_choice(payload: dict[str, Any], *, withdraw: bool = False
     return {"ok": True, **response_data}
 
 
+def resolve_archived_grantor_scholar_choice(payload: dict[str, Any]) -> dict[str, Any]:
+    student_id = str(payload.get("studentId") or "").strip()
+    application_id = str(payload.get("applicationId") or "").strip()
+    action = _normalize(payload.get("action"))
+    if payload.get("actorType") != "student" or payload.get("actorId") != student_id:
+        return {"ok": False, "reason": "portal_record_owner_mismatch"}
+    if not student_id or not application_id:
+        return {"ok": False, "reason": "original_commitment_missing", "message": CHOICE_MESSAGES["original_commitment_missing"]}
+    if payload.get("confirmed") is not True:
+        return {"ok": False, "reason": "confirmation_required"}
+    if action not in {"keep", "change"}:
+        return {"ok": False, "reason": "invalid_archive_choice", "message": CHOICE_MESSAGES["invalid_archive_choice"]}
+    result = supabase_rpc("resolve_archived_grantor_scholar_choice", {
+        "p_student_id": student_id,
+        "p_application_id": application_id,
+        "p_action": action,
+    })
+    if not result.get("ok"):
+        reason = result.get("reason") or "invalid_archive_choice"
+        return {"ok": False, "reason": reason,
+                "message": CHOICE_MESSAGES.get(reason, "Unable to save this scholarship decision.")}
+    return {"ok": True, **(result.get("data") or {})}
+
+
 def update_scholarship_documents(payload: dict[str, Any]) -> dict[str, Any]:
     if not scholarship_choice_enabled():
         return {"ok": False, "reason": "scholarship_choice_not_enabled"}
     student_id = str(payload.get("studentId") or "").strip()
     if not student_id or payload.get("actorType") != "student" or payload.get("actorId") != student_id:
         return {"ok": False, "reason": "portal_record_owner_mismatch"}
+    student_result = supabase_document_get("students", student_id)
+    if (student_result.get("data") or {}).get("rosterDecisionPending") is True:
+        return {"ok": False, "reason": "roster_decision_required",
+                "message": "Resolve your listed scholarship record before updating application documents."}
     field = payload.get("field")
     value = payload.get("value")
     if field not in {"applicationFormFile", "otherRequirementUploads"} or not isinstance(value, dict):

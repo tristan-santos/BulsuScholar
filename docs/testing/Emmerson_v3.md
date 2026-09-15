@@ -16,7 +16,7 @@ Use this file for the final/V3 student-side test pass. Record `Pass`, `Fail`, or
 - Confirm only regular students can apply for scholarships.
 - Confirm duplicate email, contact number, student ID, and reused COR are blocked.
 - Confirm roster identity check allows similar names but blocks unrelated names for the same student ID.
-- Confirm welcome/confirmation email redirects to the deployed Vercel URL, not localhost.
+- Confirm the Supabase confirmation email redirects to `https://bulsuscholar.com/confirm-email`, not localhost.
 
 ## Test Case Scenario #17: Student Login, Dashboard, and Inbox
 

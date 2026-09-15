@@ -59,7 +59,21 @@ class GrantorArchiveWorkflowTests(unittest.TestCase):
     @patch("backend.workflow_service.supabase_select")
     @patch("backend.workflow_service.supabase_document_update")
     @patch("backend.workflow_service.supabase_document_upsert")
-    def test_restore_updates_account_only(self, upsert, update, select, _log):
+    @patch("backend.workflow_service.supabase_rpc", return_value={"ok": False, "reason": "rpc_not_found"})
+    def test_missing_archive_rpc_does_not_mutate_accounts(self, _rpc, upsert, update, select, _log):
+        result = update_grantor_archive_state({"grantorIds": ["grantor-a"], "archived": True, "actorId": "admin-a"})
+        self.assertTrue(result["partial"])
+        self.assertEqual("committed_scholar_preservation", result["failures"][0]["step"])
+        upsert.assert_not_called()
+        update.assert_not_called()
+        select.assert_not_called()
+
+    @patch("backend.workflow_service.create_log")
+    @patch("backend.workflow_service.supabase_select")
+    @patch("backend.workflow_service.supabase_document_update")
+    @patch("backend.workflow_service.supabase_document_upsert")
+    @patch("backend.workflow_service.supabase_rpc", return_value={"ok": True, "data": {"affectedScholarCount": 0}})
+    def test_restore_updates_account_only(self, _rpc, upsert, update, select, _log):
         upsert.return_value = {"ok": True}
         result = update_grantor_archive_state({
             "grantorIds": ["grantor-a"], "archived": False, "actorId": "admin-a",
@@ -70,17 +84,16 @@ class GrantorArchiveWorkflowTests(unittest.TestCase):
         select.assert_not_called()
         update.assert_not_called()
         provider_call = upsert.call_args_list[0]
-        portal_call = upsert.call_args_list[1]
         self.assertEqual(provider_call.args[0], "providers")
         self.assertEqual(provider_call.args[2]["password"], "encrypted")
-        self.assertEqual(portal_call.args[0], "grantor_portals")
-        self.assertNotIn("password", portal_call.args[2])
+        self.assertEqual(1, upsert.call_count)
 
     @patch("backend.workflow_service.create_log")
     @patch("backend.workflow_service.supabase_select")
     @patch("backend.workflow_service.supabase_document_update")
     @patch("backend.workflow_service.supabase_document_upsert")
-    def test_archive_cascades_owned_announcements(self, upsert, update, select, _log):
+    @patch("backend.workflow_service.supabase_rpc", return_value={"ok": True, "data": {"affectedScholarCount": 0}})
+    def test_archive_cascades_owned_announcements(self, _rpc, upsert, update, select, _log):
         upsert.return_value = {"ok": True}
         select.return_value = {"ok": True, "rows": [{"id": "announcement-a", "data": {"status": "Published"}}]}
         update.return_value = {"ok": True}
@@ -94,7 +107,8 @@ class GrantorArchiveWorkflowTests(unittest.TestCase):
     @patch("backend.workflow_service.supabase_select")
     @patch("backend.workflow_service.supabase_document_update")
     @patch("backend.workflow_service.supabase_document_upsert")
-    def test_archive_cancels_pending_invitations_and_preserves_history(self, upsert, update, select, _log):
+    @patch("backend.workflow_service.supabase_rpc", return_value={"ok": True, "data": {"affectedScholarCount": 1, "choiceNotificationCount": 1}})
+    def test_archive_cancels_pending_invitations_and_preserves_history(self, _rpc, upsert, update, select, _log):
         upsert.return_value = {"ok": True}
         update.return_value = {"ok": True}
         select.side_effect = [
@@ -110,6 +124,7 @@ class GrantorArchiveWorkflowTests(unittest.TestCase):
         result = update_grantor_archive_state({"grantorIds": ["grantor-a"], "archived": True, "actorId": "admin-a"})
         self.assertEqual(result["invitationCount"], 1)
         self.assertEqual(result["notificationCount"], 1)
+        self.assertEqual(result["affectedScholarCount"], 1)
         student_patch = next(call.args[2] for call in upsert.call_args_list if call.args[0] == "students")
         self.assertEqual(student_patch["scholarshipInvitations"][0]["status"], "Cancelled")
         self.assertEqual(student_patch["scholarshipInvitations"][1]["status"], "Pending")

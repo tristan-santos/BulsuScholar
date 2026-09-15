@@ -7,6 +7,9 @@ import { BACKEND_API_URL } from "./config/backendApi"
 import FloatingHelpButton from "./components/FloatingHelpButton"
 import { PageLoading } from "./components/PortalLoading"
 import ModalDiscardConfirmation from "./components/ModalDiscardConfirmation"
+import StudentRosterDecisionGate from "./components/StudentRosterDecisionGate"
+import OperationStatusProvider from "./components/OperationStatusProvider"
+import { trackedFetch } from "./services/operationTracker"
 import { PublicConfigurationContext } from "./contexts/PublicConfigurationContext"
 
 const LoginPage = lazy(() => import("./pages/LoginPage"))
@@ -55,7 +58,7 @@ function MaintenanceGate({ children }) {
 	useEffect(() => {
 		if (!BACKEND_API_URL) return undefined
 		const controller = new AbortController()
-		fetch(`${BACKEND_API_URL}/config/public`, { signal: controller.signal })
+		trackedFetch(`${BACKEND_API_URL}/config/public`, { signal: controller.signal })
 			.then((response) => response.ok ? response.json() : Promise.reject(new Error("configuration_unavailable")))
 			.then((settings) => {
 				localStorage.setItem("bulsuscholar_public_config", JSON.stringify(settings))
@@ -86,6 +89,7 @@ function MaintenanceGate({ children }) {
 export default function App() {
 	return (
 		<BrowserRouter>
+			<OperationStatusProvider>
 			<MaintenanceGate>
 				<Suspense fallback={<PageLoading />}>
 				<Routes>
@@ -102,13 +106,13 @@ export default function App() {
 					<Route path="/admin/change-password" element={<AdminChangePasswordPage />} />
 					<Route path="/admin/*" element={<AdminDashboard />} />
 					<Route path="/admin-dashboard" element={<Navigate to="/admin/dashboard" replace />} />
-					<Route path="/student-dashboard" element={<StudentDashboard />} />
-					<Route path="/student-dashboard/announcements" element={<StudentAnnouncementsPage />} />
-					<Route path="/student-dashboard/announcements/:source/:announcementId" element={<StudentAnnouncementDetailPage />} />
-					<Route path="/student-dashboard/inbox" element={<StudentInboxPage />} />
-					<Route path="/student-dashboard/scholarships" element={<StudentScholarshipsPage />} />
-					<Route path="/student-dashboard/recommended-scholarships" element={<StudentRecommendedScholarshipsPage />} />
-					<Route path="/student-dashboard/profile" element={<StudentProfilePage />} />
+					<Route path="/student-dashboard" element={<StudentRosterDecisionGate><StudentDashboard /></StudentRosterDecisionGate>} />
+					<Route path="/student-dashboard/announcements" element={<StudentRosterDecisionGate><StudentAnnouncementsPage /></StudentRosterDecisionGate>} />
+					<Route path="/student-dashboard/announcements/:source/:announcementId" element={<StudentRosterDecisionGate><StudentAnnouncementDetailPage /></StudentRosterDecisionGate>} />
+					<Route path="/student-dashboard/inbox" element={<StudentRosterDecisionGate><StudentInboxPage /></StudentRosterDecisionGate>} />
+					<Route path="/student-dashboard/scholarships" element={<StudentRosterDecisionGate><StudentScholarshipsPage /></StudentRosterDecisionGate>} />
+					<Route path="/student-dashboard/recommended-scholarships" element={<StudentRosterDecisionGate><StudentRecommendedScholarshipsPage /></StudentRosterDecisionGate>} />
+					<Route path="/student-dashboard/profile" element={<StudentRosterDecisionGate><StudentProfilePage /></StudentRosterDecisionGate>} />
 					<Route path="/provider-dashboard/*" element={<ProviderDashboard />} />
 					<Route path="*" element={<NotFoundPage />} />
 				</Routes>
@@ -121,6 +125,7 @@ export default function App() {
 				className="bulsuscholar-toast-container"
 			/>
 			<ModalDiscardConfirmation />
+			</OperationStatusProvider>
 		</BrowserRouter>
 	)
 }

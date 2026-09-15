@@ -62,7 +62,7 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
         rpc.return_value = {"ok": True, "data": {
             "materialRequest": {"id": "choice_application-a", "materials": {"soe": {"status": "pending"}}},
         }}
-        document_get.return_value = {"ok": True, "data": {
+        material = {"ok": True, "data": {
             "id": "choice_application-a",
             "materials": {
                 "soe": {"status": "pending"},
@@ -70,10 +70,11 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
             },
             "customApplicationForm": {"url": "https://example.test/custom.pdf"},
         }}
+        document_get.side_effect = lambda table, _id: material if table == "soe_requests" else {"ok": True, "data": {}}
 
         result = mutate_scholarship_choice(self.payload)
 
-        document_get.assert_called_once_with("soe_requests", "choice_application-a")
+        self.assertIn(unittest.mock.call("soe_requests", "choice_application-a"), document_get.call_args_list)
         self.assertEqual(result["materialRequest"]["materials"]["application_form"]["status"], "pending")
 
     @patch("backend.scholarship_choice_service.supabase_document_get")
@@ -82,7 +83,7 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
         rpc.return_value = {"ok": True, "data": {
             "materialRequest": {"id": "choice_application-a"},
         }}
-        document_get.return_value = {"ok": True, "data": {
+        material = {"ok": True, "data": {
             "id": "choice_application-a",
             "applicationFormType": "default",
             "materials": {
@@ -90,6 +91,7 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
                 "application_form": {"status": "pending"},
             },
         }}
+        document_get.side_effect = lambda table, _id: material if table == "soe_requests" else {"ok": True, "data": {}}
 
         result = mutate_scholarship_choice(self.payload)
 
@@ -140,8 +142,9 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
         self.assertEqual(result["reason"], "missing_application_identity")
         rpc.assert_not_called()
 
+    @patch("backend.scholarship_choice_service.supabase_document_get", return_value={"ok": True, "data": {}})
     @patch("backend.scholarship_choice_service.supabase_rpc")
-    def test_documents_reject_external_or_other_student_paths(self, rpc):
+    def test_documents_reject_external_or_other_student_paths(self, rpc, _student_get):
         with patch.dict(os.environ, {"SUPABASE_URL": "https://test.supabase.co"}):
             for url in ["javascript:alert(1)", "https://elsewhere.test/students/student-a/file.pdf",
                         "https://test.supabase.co/storage/v1/object/public/docs/students/student-b/form.pdf"]:
@@ -149,8 +152,9 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
                 self.assertEqual(result["reason"], "invalid_application_documents")
         rpc.assert_not_called()
 
+    @patch("backend.scholarship_choice_service.supabase_document_get", return_value={"ok": True, "data": {}})
     @patch("backend.scholarship_choice_service.supabase_rpc")
-    def test_documents_allow_only_the_students_uploaded_file(self, rpc):
+    def test_documents_allow_only_the_students_uploaded_file(self, rpc, _student_get):
         rpc.return_value = {"ok": True, "data": {"student": {"id": "student-a"}}}
         value = {"url": "https://test.supabase.co/storage/v1/object/public/docs/students/student-a/form.pdf"}
         with patch.dict(os.environ, {"SUPABASE_URL": "https://test.supabase.co"}):

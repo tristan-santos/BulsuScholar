@@ -75,9 +75,8 @@ import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumb
 import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
 import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
-import { broadcastStudentNotification, createAdminNotification, createGrantorNotification, createStudentNotification } from "../services/notificationService"
-import { createGrantorScholarsWorkflow, materialRequestWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
-import { updateGrantorArchiveStateWithFallback } from "../services/grantorArchiveCompatibilityService"
+import { broadcastStudentNotification, createAdminNotification, createGrantorNotification, createStudentNotification, loadAdminNotifications, updateAdminNotification } from "../services/notificationService"
+import { createGrantorScholarsWorkflow, materialRequestWorkflow, updateGrantorArchiveStateWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
 import { hasScholarshipCommitment, matchesScholarshipApplication } from "../services/scholarshipChoiceService"
 import {
 	findMatchingPendingInvitation,
@@ -1489,10 +1488,16 @@ export default function AdminDashboard() {
 	}, [])
 
 	useEffect(() => {
-		const unsubscribeLogs = onSnapshot(
-			collection(db, "adminNotifications"),
-			(snapshot) => {
-				const rows = snapshot.docs.map((item) => ({ id: item.id, sourceTable: "adminNotifications", ...(item.data() || {}) }))
+		let active = true
+		let loading = false
+		let deploymentRequired = false
+		const refresh = async () => {
+			if (loading || deploymentRequired) return
+			loading = true
+			try {
+				const result = await loadAdminNotifications()
+				if (!active) return
+				const rows = result.notifications || []
 				setAdminNotifications(
 					rows
 						.sort((left, right) => {
@@ -1501,13 +1506,19 @@ export default function AdminDashboard() {
 							return rightDate - leftDate
 						}),
 				)
-			},
-			(error) => {
-				console.error("Unable to load administrator notification fallbacks.", error)
-				setAdminNotifications([])
-			},
-		)
-		return unsubscribeLogs
+			} catch (error) {
+				if (active && error.reason === "admin_inbox_deployment_required") {
+					deploymentRequired = true
+					toast.error(error.message, { toastId: "admin-inbox-deployment-required" })
+				}
+				if (active) console.error("Unable to load administrator notifications.", error)
+			} finally {
+				loading = false
+			}
+		}
+		void refresh()
+		const interval = setInterval(refresh, 30000)
+		return () => { active = false; clearInterval(interval) }
 	}, [])
 
 	useEffect(() => {
@@ -1665,7 +1676,8 @@ export default function AdminDashboard() {
 	const markAdminNotificationRead = useCallback(async (notification) => {
 		if (!notification?.id || notification.read === true) return
 		try {
-			await setDoc(doc(db, notification.sourceTable || "adminNotifications", notification.id), { read: true, readAt: new Date().toISOString() }, { merge: true })
+			await updateAdminNotification(notification.id, { read: true, readAt: new Date().toISOString() })
+			setAdminNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read: true } : item))
 		} catch (error) {
 			console.error("Unable to mark administrator notification as read.", error)
 			toast.error("Unable to update this inbox message.")
@@ -1682,10 +1694,11 @@ export default function AdminDashboard() {
 		try {
 			await Promise.all(
 				unreadAdminNotifications.map((notification) =>
-					setDoc(doc(db, notification.sourceTable || "adminNotifications", notification.id), { read: true, readAt: new Date().toISOString() }, { merge: true }),
+					updateAdminNotification(notification.id, { read: true, readAt: new Date().toISOString() }),
 				),
 			)
 			toast.success("All admin inbox messages are marked as read.")
+			setAdminNotifications((current) => current.map((item) => unreadAdminNotifications.some((row) => row.id === item.id) ? { ...item, read: true } : item))
 		} catch (error) {
 			console.error("Unable to mark all administrator notifications as read.", error)
 			toast.error("Unable to update the administrator inbox.")
@@ -1698,10 +1711,11 @@ export default function AdminDashboard() {
 		try {
 			await Promise.all(
 				rows.map((notification) =>
-					setDoc(doc(db, notification.sourceTable || "adminNotifications", notification.id), { archived: true, archivedAt: new Date().toISOString(), read: true }, { merge: true }),
+					updateAdminNotification(notification.id, { archived: true, archivedAt: new Date().toISOString(), read: true }),
 				),
 			)
 			setSelectedAdminNotificationIds([])
+			setAdminNotifications((current) => current.map((item) => rows.some((row) => row.id === item.id) ? { ...item, read: true, archived: true } : item))
 			toast.success(`${rows.length} notification${rows.length === 1 ? "" : "s"} archived.`)
 		} catch (error) {
 			console.error("Unable to archive administrator notifications.", error)
@@ -3861,6 +3875,33 @@ export default function AdminDashboard() {
 		})
 	}, [archivedScholarshipRows, matchesSelectedScholarshipGrantor, scholarshipSearch])
 
+	const preservedScholarshipRows = useMemo(() => {
+		const keyword = scholarshipSearch.trim().toLowerCase()
+		return allScholarshipTrackingRows.filter((row) => {
+			const choice = row.studentSnapshot?.grantorArchiveChoice || {}
+			const applicationId = row.scholarshipEntry?.applicationId || row.scholarshipEntry?.id || ""
+			if (!choice.applicationId || choice.applicationId !== applicationId) return false
+			const searchText = [row.studentId, row.fullName, row.scholarship, row.grantorName, choice.decision, choice.servicingOwner]
+				.join(" ").toLowerCase()
+			return (!keyword || searchText.includes(keyword)) && matchesSelectedScholarshipGrantor(row)
+		}).map((row) => {
+			const choice = row.studentSnapshot?.grantorArchiveChoice || {}
+			const replacements = applicationsRaw.filter((application) =>
+				application.studentId === row.studentId &&
+				application.replacementForApplicationId === choice.applicationId &&
+				isActiveApplicationRecord(application),
+			)
+			return {
+				...row,
+				decision: choice.decision || "pending",
+				servicingOwner: choice.servicingOwner || "unassigned",
+				paused: choice.workflowPaused === true,
+				replacementProgress: replacements.length > 0 ? `${replacements.length} active application${replacements.length === 1 ? "" : "s"}` : "None",
+				pendingOwner: choice.workflowPaused === true ? "Student" : row.currentStepOwnerLabel || "Office",
+			}
+		})
+	}, [allScholarshipTrackingRows, applicationsRaw, matchesSelectedScholarshipGrantor, scholarshipSearch])
+
 	const scholarshipTrackingRows = useMemo(() => {
 		const keyword = scholarshipSearch.trim().toLowerCase()
 		return allScholarshipTrackingRows.filter((row) => {
@@ -3893,6 +3934,7 @@ export default function AdminDashboard() {
 			scholars: scholarshipStudentRows.length,
 			tracking: scholarshipTrackingRows.length,
 			warning: warningRows.length,
+			preserved: preservedScholarshipRows.length,
 			archived: archivedScholarshipRows.length,
 		}),
 		[
@@ -3901,6 +3943,7 @@ export default function AdminDashboard() {
 			scholarshipOverviewRows.length,
 			scholarshipStudentRows.length,
 			scholarshipTrackingRows.length,
+			preservedScholarshipRows.length,
 			warningRows.length,
 		],
 	)
@@ -3910,6 +3953,7 @@ export default function AdminDashboard() {
 		if (scholarshipTab === "warning") return warningRows
 		if (scholarshipTab === "overview") return filteredScholarships
 		if (scholarshipTab === "tracking") return scholarshipTrackingRows
+		if (scholarshipTab === "preserved") return preservedScholarshipRows
 		if (scholarshipTab === "archived") return archivedScholarshipTableRows
 		return scholarshipStudentTableRows
 	}, [
@@ -3919,6 +3963,7 @@ export default function AdminDashboard() {
 		scholarshipStudentTableRows,
 		scholarshipTab,
 		scholarshipTrackingRows,
+		preservedScholarshipRows,
 		warningRows,
 	])
 	const selectedScholarshipAnnouncement = useMemo(
@@ -5836,7 +5881,11 @@ export default function AdminDashboard() {
 		if (isBusy) return
 		setIsBusy(true)
 		try {
-			await callback()
+			const outcome = await callback()
+			if (outcome?.warning) {
+				toast.warning(outcome.warning)
+				return
+			}
 			if (successText) toast.success(successText)
 		} catch (error) {
 			console.error(error)
@@ -5912,7 +5961,7 @@ export default function AdminDashboard() {
 					},
 					{ merge: true },
 				)
-				await createGrantorNotification({
+				const notificationResult = await createGrantorNotification({
 					grantorId: matchingApplication.grantorId,
 					type: "application_decision_confirmation",
 					title: "Application Approval Needs Confirmation",
@@ -5925,7 +5974,13 @@ export default function AdminDashboard() {
 					deadlineAt: confirmation.deadlineAt,
 					read: false,
 					createdAt: serverTimestamp(),
+				}).catch((error) => {
+					console.warn("Approval saved; grantor notification delivery was not confirmed.", error)
+					return { deliveryUnconfirmed: true }
 				})
+				if (notificationResult?.deliveryUnconfirmed) {
+					return { warning: "Approval saved and awaiting grantor confirmation. Inbox notification delivery could not be confirmed. Refresh the application before taking further action." }
+				}
 			}, `${currentStep.label} approval sent to the grantor for confirmation.`)
 			return
 		}
@@ -6494,7 +6549,7 @@ export default function AdminDashboard() {
 		const targetIds = [...selectedGrantorIds]
 		setAdminConfirmDialog(null)
 		await runAction(async () => {
-			const result = await updateGrantorArchiveStateWithFallback({
+			const result = await updateGrantorArchiveStateWorkflow({
 				actorType: "admin",
 				actorId: sessionStorage.getItem("bulsuscholar_userId") || "admin",
 				grantorIds: targetIds,
@@ -6503,13 +6558,11 @@ export default function AdminDashboard() {
 			if (result.partial) {
 				setSelectedGrantorIds([...new Set((result.failures || []).map((item) => item.grantorId).filter(Boolean))])
 				console.error("[BulsuScholar] Some grantor archive operations failed.", result.failures)
-				toast.warning(result.compatibilityFallback
-					? `The backend archive route is not deployed, and the compatibility update failed for ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"}. Check admin database permissions and retry.`
-					: `Archived with ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"} requiring retry.`)
+				toast.warning(`Archived with ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"} requiring retry.`)
 				return
 			}
 			setSelectedGrantorIds([])
-			toast.success(`Successfully archived ${targetIds.length} grantors and ${result.announcementCount || 0} announcements.`)
+			toast.success(`Archived ${targetIds.length} grantor${targetIds.length === 1 ? "" : "s"}, ${result.announcementCount || 0} announcement${result.announcementCount === 1 ? "" : "s"}, and preserved ${result.affectedScholarCount || 0} committed scholar${result.affectedScholarCount === 1 ? "" : "s"}.`)
 		})
 	}
 
@@ -6607,7 +6660,7 @@ export default function AdminDashboard() {
 		setAdminConfirmDialog(null)
 		await runAction(async () => {
 			const encryptedPassword = await encryptPasswordAES256(GRANTOR_DEFAULT_PASSWORD)
-			const result = await updateGrantorArchiveStateWithFallback({
+			const result = await updateGrantorArchiveStateWorkflow({
 				actorType: "admin",
 				actorId: sessionStorage.getItem("bulsuscholar_userId") || "admin",
 				grantorIds: targetIds,
@@ -6627,9 +6680,7 @@ export default function AdminDashboard() {
 			if (result.partial) {
 				setSelectedGrantorIds([...new Set((result.failures || []).map((item) => item.grantorId).filter(Boolean))])
 				console.error("[BulsuScholar] Some grantor restore operations failed.", result.failures)
-				toast.warning(result.compatibilityFallback
-					? `The backend restore route is not deployed, and the compatibility update failed for ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"}. Check admin database permissions and retry.`
-					: `Restored with ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"} requiring retry.`)
+				toast.warning(`Restored with ${result.failures.length} operation${result.failures.length === 1 ? "" : "s"} requiring retry.`)
 				return
 			}
 			setSelectedGrantorIds([])
@@ -9048,6 +9099,7 @@ export default function AdminDashboard() {
 								{ id: "scholarships", label: "Scholarships", count: scholarshipTabCounts.scholarships, icon: HiOutlineDocumentText },
 								{ id: "scholars", label: "Scholars", count: scholarshipTabCounts.scholars, icon: HiOutlineUsers },
 								{ id: "tracking", label: "Tracking", count: scholarshipTabCounts.tracking, icon: HiOutlineClock },
+								{ id: "preserved", label: "Preserved Scholars", count: scholarshipTabCounts.preserved, icon: HiOutlineArchive },
 								{ id: "warning", label: "Warning", count: scholarshipTabCounts.warning, icon: HiOutlineExclamation },
 								{ id: "archived", label: "Archived", count: scholarshipTabCounts.archived, icon: HiOutlineTrash },
 							]}
@@ -9241,9 +9293,11 @@ export default function AdminDashboard() {
 													? "Search by scholarship title, grantor, requirements, or status"
 													: scholarshipTab === "warning"
 													? "Search by student ID, student name, grantor, or conflict"
-													: scholarshipTab === "tracking"
-														? "Search by student ID, student name, scholarship, current step, or status"
-														: scholarshipTab === "archived"
+												: scholarshipTab === "tracking"
+													? "Search by student ID, student name, scholarship, current step, or status"
+													: scholarshipTab === "preserved"
+														? "Search preserved scholars by student, grantor, decision, or owner"
+													: scholarshipTab === "archived"
 															? "Search by student ID, student name, scholarship, or grantor"
 															: "Search by student ID, student name, scholarship, contact number, or grantor"
 											}
@@ -9285,6 +9339,17 @@ export default function AdminDashboard() {
 												<th>Scholarship</th>
 												<th>Current Step</th>
 												<th>Action</th>
+											</tr>
+										) : scholarshipTab === "preserved" ? (
+											<tr>
+												<th>Student</th>
+												<th>Scholarship</th>
+												<th>Grantor</th>
+												<th>Decision</th>
+												<th>Servicing Owner</th>
+												<th>Workflow</th>
+												<th>Replacement</th>
+												<th>Pending Action</th>
 											</tr>
 										) : scholarshipTab === "archived" ? (
 											<tr>
@@ -9361,7 +9426,9 @@ export default function AdminDashboard() {
 															? 4
 															: scholarshipTab === "tracking"
 																? 5
-																: scholarshipTab === "archived"
+														: scholarshipTab === "preserved"
+															? 8
+														: scholarshipTab === "archived"
 																	? 9
 																	: 9
 													}
@@ -9378,7 +9445,9 @@ export default function AdminDashboard() {
 														? 4
 													: scholarshipTab === "tracking"
 															? 5
-															: scholarshipTab === "archived"
+													: scholarshipTab === "preserved"
+														? 8
+													: scholarshipTab === "archived"
 																? 9
 																: 9
 												}
@@ -9443,6 +9512,19 @@ export default function AdminDashboard() {
 															</button>
 														</div>
 													</td>
+												</tr>
+											))
+										) : scholarshipTab === "preserved" ? (
+											scholarshipTablePage.rows.map((row) => (
+												<tr key={row.trackingKey}>
+													<td>{toDisplayStudentId(row.studentId)}<br /><small>{row.fullName}</small></td>
+													<td>{row.scholarship || "-"}</td>
+													<td>{row.grantorName || "-"}</td>
+													<td><span className={toStatusClass(row.decision)}>{String(row.decision || "pending").replace(/^./, (letter) => letter.toUpperCase())}</span></td>
+													<td>{row.servicingOwner || "-"}</td>
+													<td>{row.paused ? "Paused" : "Continuing"}</td>
+													<td>{row.replacementProgress}</td>
+													<td>{row.pendingOwner}</td>
 												</tr>
 											))
 										) : scholarshipTab === "archived" ? (

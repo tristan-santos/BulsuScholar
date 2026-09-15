@@ -9,7 +9,12 @@ import {
 	formatCooldownDuration,
 } from "./rejectionCooldownService"
 import { getScholarshipSlotState } from "./scholarshipSlotService"
-import { SCHOLARSHIP_CHOICE_ENABLED, getGrantorApplicationBlock, sameApplicationGrantor } from "./scholarshipChoiceService"
+import {
+	SCHOLARSHIP_CHOICE_ENABLED,
+	getGrantorApplicationBlock,
+	isArchivedGrantorReplacementMode,
+	sameApplicationGrantor,
+} from "./scholarshipChoiceService"
 import { findMatchingPendingInvitation, getGrantorRejectionCooldown, isManualArchiveForGrantor } from "./grantorReapplicationService"
 
 export function isScholarshipActiveOrPending(status = "") {
@@ -113,6 +118,7 @@ export function getAnnouncementApplyAvailability({
 	const providerType = getAnnouncementProviderType(announcement)
 	const scholarships = normalizeScholarshipList(user?.scholarships || [])
 	const hasLockedScholarship = scholarships.some((item) => item.isLocked)
+	const replacementMode = isArchivedGrantorReplacementMode(user)
 	const hasSameActiveApplication = scholarships.some(
 		(item) => (SCHOLARSHIP_CHOICE_ENABLED ? sameApplicationGrantor(item, announcement) : item.providerType === providerType) && isScholarshipActiveOrPending(item.status),
 	)
@@ -141,7 +147,7 @@ export function getAnnouncementApplyAvailability({
 	if (posterProfile?.applicationsBlocked === true) {
 		return { canApply: false, reason: `Applications for ${announcement.sourceLabel || grantorDisplayName || "this grantor"} are currently closed.` }
 	}
-	if (hasLockedScholarship) {
+	if (hasLockedScholarship && !replacementMode) {
 		return { canApply: false, reason: "Your scholarship selection is already locked for this semester." }
 	}
 	if (hasSameActiveApplication) {

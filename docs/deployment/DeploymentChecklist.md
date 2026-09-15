@@ -10,11 +10,10 @@ Required frontend variables:
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 VITE_SUPABASE_STORAGE_BUCKET=bulsuscholar
-VITE_APP_URL=https://bulsu-scholar.vercel.app
-VITE_PUBLIC_SITE_URL=https://bulsu-scholar.vercel.app
-VITE_BACKEND_API_URL=https://your-service.up.railway.app
-VITE_DOCUMENT_SCAN_API_URL=https://your-service.up.railway.app
-VITE_RESEND_API_ENDPOINT=https://your-service.up.railway.app/email/send
+VITE_APP_URL=https://bulsuscholar.com
+VITE_PUBLIC_SITE_URL=https://bulsuscholar.com
+VITE_BACKEND_API_URL=https://api.bulsuscholar.com
+VITE_DOCUMENT_SCAN_API_URL=https://api.bulsuscholar.com
 VITE_PASSWORD_SECRET=
 VITE_PASSWORD_LEGACY_SECRETS=
 ```
@@ -31,11 +30,14 @@ Required backend variables:
 ```env
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-RESEND_API_KEY=
-RESEND_FROM_EMAIL=BulsuScholar <onboarding@resend.dev>
-DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsu-scholar.vercel.app
-DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX=https://.*\.vercel\.app
-FRONTEND_URL=https://bulsu-scholar.vercel.app
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=
+BREVO_SENDER_NAME=BulsuScholar
+BREVO_SENDER_EMAIL=no-reply@bulsuscholar.com
+BREVO_REPLY_TO_EMAIL=support@bulsuscholar.com
+DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsuscholar.com
+DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX=
+FRONTEND_URL=https://bulsuscholar.com
 ENFORCE_PORTAL_ACTOR_HEADERS=true
 ENABLE_SCHOLARSHIP_CHOICE=true
 WEB_CONCURRENCY=1
@@ -44,12 +46,10 @@ OPENAI_API_KEY=
 OPENAI_HELP_MODEL=gpt-5-mini
 ```
 
-Use `BulsuScholar <onboarding@resend.dev>` only for testing. For production, verify your domain in Resend first, then change this to something like `BulsuScholar <noreply@your-verified-domain.com>`.
-
 Expected:
 - Backend can write to Supabase using the service role key.
-- Vercel production and preview deployments pass CORS.
-- Email endpoint can use Resend.
+- The canonical production frontend passes CORS.
+- Email health reports Brevo as configured while authentication mail is delivered by Supabase SMTP.
 
 Railway runtime:
 - Connect the repository root and use the root `Dockerfile`.
@@ -71,7 +71,14 @@ Run these in Supabase SQL Editor, in order:
 supabase/schema.sql
 supabase/relational-migration.sql
 supabase/security-hardening.sql
+supabase/migrations/20260915133000_preserve_archived_grantor_scholars.sql
+supabase/migrations/20260915150000_roster_confirmation_and_grantor_decisions.sql
+supabase/migrations/20260915151000_database_advisor_cleanup.sql
+supabase/migrations/20260915152000_allow_authoritative_roster_transitions.sql
+supabase/migrations/20260915153000_fix_archive_notification_ids.sql
 ```
+
+For an existing production database, apply only migrations that are not already recorded as applied. Do not rerun the base schema files over production data.
 
 Required tables:
 - `students`
@@ -101,10 +108,10 @@ Expected:
 Set in Supabase Dashboard:
 
 ```txt
-Site URL: https://bulsu-scholar.vercel.app
+Site URL: https://bulsuscholar.com
 Redirect URLs:
-https://bulsu-scholar.vercel.app/confirm-email
-https://bulsu-scholar.vercel.app/reset-password
+https://bulsuscholar.com/confirm-email
+https://bulsuscholar.com/reset-password
 ```
 
 Expected:
@@ -116,10 +123,10 @@ Expected:
 Open:
 
 ```txt
-https://your-service.up.railway.app/
-https://your-service.up.railway.app/health
-https://your-service.up.railway.app/deployment/health
-https://your-service.up.railway.app/email/health
+https://api.bulsuscholar.com/
+https://api.bulsuscholar.com/health
+https://api.bulsuscholar.com/deployment/health
+https://api.bulsuscholar.com/email/health
 ```
 
 Expected:
@@ -127,7 +134,7 @@ Expected:
 - `/health` shows Supabase server config is present.
 - `/deployment/health` status is `ok`.
 - `/deployment/health` has no missing tables.
-- `/email/health` shows Resend is configured.
+- `/email/health` shows Brevo is configured.
 
 ## 6. Document Scan
 
@@ -141,7 +148,7 @@ From the deployed Vercel frontend:
 
 Expected:
 - Browser does not show CORS errors.
-- Requests go to `https://your-service.up.railway.app/scan-document`.
+- Requests go to `https://api.bulsuscholar.com/scan-document`.
 
 ## 7. Student Signup
 
@@ -236,7 +243,7 @@ Expected:
 2. Confirm Vercel has `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_STORAGE_BUCKET`, `VITE_BACKEND_API_URL`, `VITE_DOCUMENT_SCAN_API_URL`, `VITE_APP_URL`, and `VITE_PUBLIC_SITE_URL`.
 3. Confirm Railway has `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_URL`, `DOCUMENT_SCAN_ALLOWED_ORIGINS`, `ENFORCE_PORTAL_ACTOR_HEADERS=true`, email settings, and optional OpenAI settings.
 4. Keep `WEB_CONCURRENCY=1` until workflow concurrency has been load-tested. Raise it only when the hosting memory limit and Supabase connection usage are known.
-5. In Supabase Auth, set the site URL and redirect allow-list to `https://bulsu-scholar.vercel.app`, including `/confirm-email` and `/reset-password`.
+5. In Supabase Auth, set the site URL to `https://bulsuscholar.com` and allow its `/confirm-email` and `/reset-password` routes. Keep the Vercel aliases in the redirect allow-list for deployment diagnostics.
 6. Confirm the `bulsuscholar` bucket policies permit authenticated uploads and the application-required preview/download reads. Match the application limit of 10 MB and the supported PDF/image/spreadsheet MIME types.
 7. Run `npm run verify:deployment` from a shell containing the production environment values. This checks backend health routes and production CORS without writing data or sending email.
 8. Manually test one student, one grantor, and one admin session. Verify own-record isolation, grantor ownership filtering, audit logs, and inbox delivery.

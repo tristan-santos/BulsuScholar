@@ -17,7 +17,7 @@ Goal: improve deployed backend speed, especially document scanning and workflow 
 
 - Add a cron/ping service that requests:
 
-`https://bulsuscholar.onrender.com/`
+`https://api.bulsuscholar.com/`
 
 - Suggested interval: every 5 to 10 minutes.
 - Use this only as support; paid Render is still the better fix.

@@ -92,7 +92,7 @@ Test account email flows.
 - Confirmation email has modern BulsuScholar design.
 - Forgot password email has modern BulsuScholar design.
 - Buttons are visible and noticeable.
-- Email links redirect to `https://bulsu-scholar.vercel.app`, not localhost.
+- Email links redirect to `https://bulsuscholar.com`, not localhost.
 - Forgot password rate-limit message is readable if Supabase blocks repeated requests.
 
 ## - Test Case Scenario #8 : Student Inbox Details Modal

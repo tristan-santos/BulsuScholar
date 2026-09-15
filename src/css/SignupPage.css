@@ -1588,8 +1588,8 @@
 
 .signup-terms-modal {
 	position: relative;
-	width: min(640px, 100%);
-	max-height: min(86vh, 720px);
+	width: min(760px, 100%);
+	max-height: min(90vh, 860px);
 	overflow: hidden;
 	display: flex;
 	flex-direction: column;
@@ -1659,6 +1659,12 @@
 	letter-spacing: 0.06em;
 }
 
+.signup-terms-version {
+	margin: 0.35rem 0 0;
+	color: #607087;
+	font-size: 0.8rem;
+}
+
 .signup-terms-header h2 {
 	margin: 0;
 	color: #052c1d;
@@ -1669,13 +1675,47 @@
 
 .signup-terms-body {
 	overflow-y: auto;
-	max-height: 300px;
+	max-height: min(52vh, 500px);
 	padding: 1rem;
 	border: 1px solid #d8e7de;
 	border-radius: 10px;
 	background: #fbfdfc;
 	color: #24384d;
 	line-height: 1.55;
+}
+
+.signup-terms-body:focus-visible {
+	outline: 2px solid #15835a;
+	outline-offset: 2px;
+}
+
+.signup-terms-body section + section {
+	margin-top: 1.2rem;
+}
+
+.signup-terms-body h3 {
+	margin: 0 0 0.55rem;
+	color: #0f5132;
+	font-size: 1rem;
+	line-height: 1.35;
+}
+
+.signup-terms-body strong {
+	color: #173a2a;
+}
+
+.signup-terms-intro {
+	font-weight: 600;
+}
+
+.signup-terms-warning {
+	padding: 0.9rem;
+	border-left: 4px solid #b91c1c;
+	background: #fff7f7;
+}
+
+.signup-terms-warning h3 {
+	color: #991b1b;
 }
 
 .signup-terms-body p {

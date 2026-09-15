@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { SCHOLARSHIP_CHOICE_ENABLED } from "../services/scholarshipChoiceService"
+import { SCHOLARSHIP_CHOICE_ENABLED, isArchivedGrantorReplacementMode } from "../services/scholarshipChoiceService"
 import { getAnnouncementApplyAvailability } from "../services/announcementApplyEligibilityService"
 import { useNavigate, useParams } from "react-router-dom"
 import {
@@ -374,6 +374,7 @@ export default function StudentAnnouncementDetailPage() {
 
 		const scholarships = normalizeScholarshipList(user?.scholarships || [])
 		const hasLockedScholarship = scholarships.some((item) => item.isLocked)
+		const replacementMode = isArchivedGrantorReplacementMode(user)
 		const hasSameActiveApplication = scholarships.some(
 			(item) =>
 				item.providerType === announcementProviderType &&
@@ -396,7 +397,7 @@ export default function StudentAnnouncementDetailPage() {
 		if (isPosterApplicationsClosed) {
 			return { canApply: false, reason: `Applications for ${announcement.sourceLabel || grantorDisplayName || "this grantor"} are currently closed.` }
 		}
-		if (hasLockedScholarship) {
+		if (hasLockedScholarship && !replacementMode) {
 			return { canApply: false, reason: "Your scholarship selection is already locked for this semester." }
 		}
 		if (!SCHOLARSHIP_CHOICE_ENABLED && hasSameActiveApplication) {
@@ -477,6 +478,7 @@ export default function StudentAnnouncementDetailPage() {
 		const studentId = sessionState.storedUserId
 		const scholarships = normalizeScholarshipList(user?.scholarships || [])
 		const hasLockedScholarship = scholarships.some((item) => item.isLocked)
+		const replacementMode = isArchivedGrantorReplacementMode(user)
 		const hasActiveOrPendingScholarship = scholarships.some(
 			(item) => !item.isLocked && isScholarshipActiveOrPending(item.status),
 		)
@@ -518,7 +520,7 @@ export default function StudentAnnouncementDetailPage() {
 			toast.info(`Applications for ${announcement.sourceLabel || "this grantor"} are currently closed.`)
 			return
 		}
-		if (hasLockedScholarship) {
+		if (hasLockedScholarship && !replacementMode) {
 			toast.info("Your scholarship selection is already locked for this semester.")
 			return
 		}
