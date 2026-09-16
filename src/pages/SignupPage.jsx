@@ -1805,7 +1805,7 @@ export default function SignupPage() {
 					<div className="login-form-inner signup-pending-inner">
 						<button
 							type="button"
-							className="signup-logo-link"
+							className="signup-brand-home-button"
 							onClick={() => navigate("/")}
 							aria-label="Go to login page"
 						>
@@ -1903,7 +1903,7 @@ export default function SignupPage() {
 				<div className="login-form-inner">
 					<button
 						type="button"
-						className="signup-logo-link"
+						className="signup-brand-home-button"
 						onClick={() => navigate("/")}
 						aria-label="Go to login page"
 					>
@@ -2187,7 +2187,7 @@ export default function SignupPage() {
 										/>
 										<button
 											type="button"
-											className="login-input-eye-btn"
+											className="password-visibility-toggle"
 											onClick={() => setShowPassword((v) => !v)}
 											aria-label={
 												showPassword ? "Hide password" : "Show password"
@@ -2270,7 +2270,7 @@ export default function SignupPage() {
 									/>
 									<button
 										type="button"
-										className="login-input-eye-btn"
+										className="password-visibility-toggle"
 										onClick={() => setShowConfirmPassword((v) => !v)}
 										aria-label={
 											showConfirmPassword ? "Hide password" : "Show password"

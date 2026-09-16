@@ -31,18 +31,31 @@
 	min-width: 0;
 }
 
-.signup-logo-link {
+.signup-brand-home-button {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	margin: 0 auto 1rem;
-	padding: 0;
-	border: 0;
-	background: transparent;
+	padding: 0 !important;
+	border: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
 	cursor: pointer;
 }
 
-.signup-logo-link .login-form-logo {
+.signup-brand-home-button:hover,
+.signup-brand-home-button:active {
+	border-color: transparent !important;
+	background: transparent !important;
+	box-shadow: none !important;
+}
+
+.signup-brand-home-button:focus-visible {
+	outline: 2px solid #087a4d;
+	outline-offset: 4px;
+}
+
+.signup-brand-home-button .login-form-logo {
 	margin-bottom: 0;
 }
 

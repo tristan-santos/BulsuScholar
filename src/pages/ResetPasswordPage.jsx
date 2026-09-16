@@ -182,7 +182,7 @@ export default function ResetPasswordPage() {
 									onChange={(event) => setPassword(event.target.value)}
 									autoComplete="new-password"
 								/>
-								<button type="button" className="login-input-eye-btn" onClick={() => setShowPassword((value) => !value)}>
+								<button type="button" className="password-visibility-toggle" onClick={() => setShowPassword((value) => !value)}>
 									{showPassword ? <HiOutlineEyeOff className="login-input-eye-icon" /> : <HiOutlineEye className="login-input-eye-icon" />}
 								</button>
 							</div>
@@ -201,7 +201,7 @@ export default function ResetPasswordPage() {
 							</div>
 
 							<button type="submit" className="login-submit" disabled={isSubmitting}>
-								{isSubmitting ? "Updating..." : "Update Password"}
+								<HiOutlineCheckCircle aria-hidden /> {isSubmitting ? "Updating..." : "Update Password"}
 							</button>
 						</form>
 					)}

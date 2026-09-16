@@ -412,7 +412,7 @@ export default function LoginPage() {
 							/>
 							<button
 								type="button"
-								className="login-input-eye-btn"
+								className="password-visibility-toggle"
 								onClick={() => setShowPassword((value) => !value)}
 								aria-label={showPassword ? "Hide password" : "Show password"}
 							>
@@ -433,7 +433,7 @@ export default function LoginPage() {
 						</button>
 
 						<button type="submit" className="login-submit" disabled={isLoading}>
-							{isLoading ? "Logging in..." : "Enter"}
+							<HiOutlineLockClosed aria-hidden /> {isLoading ? "Logging in..." : "Enter"}
 						</button>
 
 						<div className="login-create-account">
@@ -479,6 +479,7 @@ export default function LoginPage() {
 								/>
 							</div>
 							<button type="submit" className="login-submit" disabled={isSendingReset || resetCooldownSeconds > 0} style={{ width: "100%" }}>
+								<HiOutlineMail aria-hidden />
 								{isSendingReset
 									? "Sending..."
 									: resetCooldownSeconds > 0
@@ -526,7 +527,7 @@ export default function LoginPage() {
 								disabled={isRequestingGrantorPassword}
 								style={{ width: "100%" }}
 							>
-								{isRequestingGrantorPassword ? "Submitting..." : "Request Change Password"}
+								<HiOutlineLockClosed aria-hidden /> {isRequestingGrantorPassword ? "Submitting..." : "Request Change Password"}
 							</button>
 						</form>
 					</div>

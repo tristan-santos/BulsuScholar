@@ -9,6 +9,8 @@ const CONTROL_SELECTOR = [
 	".custom-select__option",
 	".login-forgot-btn",
 	".create-account-btn",
+	".signup-brand-home-button",
+	".password-visibility-toggle",
 	"[class*='link-btn']",
 	"[class*='link-button']",
 	"[class*='text-button']",
@@ -31,9 +33,9 @@ const CONTROL_SELECTOR = [
 	"nav button",
 ].join(",")
 
-const POSITIVE_ACTION = /\b(accept|activate|add|apply|approve|assign|complete|confirm|continue|create|download|execute|finish|generate|invite|keep scholarship|log in|login|next|proceed|publish|re-?assign|reactivate|request|restore|retry|save|send|sign|sign in|sign up|submit|unarchive|update|upload|verify)\b/i
-const DANGER_ACTION = /\b(archive|cancel|clear|decline|delete|discard|disable|log out|logout|not my record|reject|remove|reset|revoke|sign out|withdraw)\b/i
-const NEUTRAL_ACTION = /\b(back|browse|change|choose|close preview|edit|filter|keep editing|open|preview|print|refresh|search|select|show|view)\b/i
+const POSITIVE_ACTION = /\b(accept|activate|add|apply|approve|assign|change password|complete|confirm|continue|create|download|execute|finish|generate|invite|keep scholarship|log in|login|next|proceed|publish|re-?assign|reactivate|request|reset password|restore|retry|save|send|sign|sign in|sign up|submit|unarchive|update|upload|verify)\b/i
+const DANGER_ACTION = /\b(archive|cancel|clear|decline|delete|discard|disable|log out|logout|not my record|reject|remove|revoke|sign out|withdraw)\b/i
+const NEUTRAL_ACTION = /\b(back|browse|change|choose|close preview|edit|filter|keep editing|open|preview|print|refresh|reset|search|select|show|view)\b/i
 
 function getButtonLabel(button) {
 	return [
@@ -47,15 +49,18 @@ function getButtonVariant(button) {
 	const label = getButtonLabel(button)
 	const semanticSource = `${label} ${button.className || ""}`
 
-	if (NEUTRAL_ACTION.test(label)) return "neutral"
 	if (DANGER_ACTION.test(semanticSource)) return "danger"
 	if (POSITIVE_ACTION.test(semanticSource) || button.type === "submit") return "positive"
+	if (NEUTRAL_ACTION.test(label)) return "neutral"
 	return "neutral"
 }
 
 function classifyButton(button) {
 	if (!(button instanceof HTMLButtonElement)) return
-	if (button.matches(CONTROL_SELECTOR) || button.dataset.buttonVariant === "none") return
+	if (button.matches(CONTROL_SELECTOR) || button.dataset.buttonVariant === "none") {
+		if (button.dataset.buttonVariant !== "none") delete button.dataset.buttonVariant
+		return
+	}
 	button.dataset.buttonVariant = getButtonVariant(button)
 }
 

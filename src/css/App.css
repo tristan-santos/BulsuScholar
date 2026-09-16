@@ -45,9 +45,8 @@ html body .modal-overlay--nested {
 	display: grid;
 	place-content: center;
 	padding: 1rem;
-	background: rgba(237, 243, 240, 0.52);
-	backdrop-filter: blur(3px);
-	color: #063d29;
+	background: rgba(0, 99, 60, 0.85);
+	color: #ffffff;
 	animation: operation-overlay-in 160ms ease-out both;
 	cursor: wait;
 }
@@ -62,11 +61,10 @@ html body .modal-overlay--nested {
 	justify-items: center;
 	gap: 1rem;
 	width: min(360px, calc(100vw - 2rem));
-	padding: 1.4rem 1.5rem;
-	border: 1px solid rgba(0, 99, 60, 0.2);
-	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.96);
-	box-shadow: 0 20px 55px rgba(15, 42, 31, 0.2);
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
 	text-align: center;
 }
 
@@ -141,7 +139,7 @@ html body .modal-overlay--nested {
 }
 
 .operation-overlay-copy span {
-	color: #5b6f66;
+	color: rgba(255, 255, 255, 0.82);
 	font-size: 0.8rem;
 	line-height: 1.5;
 	overflow-wrap: anywhere;
@@ -239,33 +237,24 @@ html body .modal-overlay--nested {
 }
 
 @media (prefers-color-scheme: dark) {
-	.operation-overlay { background: rgba(5, 20, 15, 0.52); color: #ecfdf5; }
-	.operation-overlay-content { border-color: rgba(142, 224, 184, 0.3); background: rgba(16, 35, 28, 0.97); }
+	.operation-overlay { background: rgba(0, 99, 60, 0.85); color: #ffffff; }
 	.operation-overlay-indicator { background: #f8fafc; }
-	.operation-overlay-copy span { color: #bed0c8; }
+	.operation-overlay-copy span { color: rgba(255, 255, 255, 0.82); }
 }
 
 html[data-theme="dark"] .operation-overlay,
 body:has(.student-dashboard--dark) .operation-overlay,
 body:has(.grantor-portal--dark) .operation-overlay,
 body:has(.admin-portal--dark) .operation-overlay {
-	background: rgba(5, 20, 15, 0.52);
-	color: #ecfdf5;
-}
-
-html[data-theme="dark"] .operation-overlay-content,
-body:has(.student-dashboard--dark) .operation-overlay-content,
-body:has(.grantor-portal--dark) .operation-overlay-content,
-body:has(.admin-portal--dark) .operation-overlay-content {
-	border-color: rgba(142, 224, 184, 0.3);
-	background: rgba(16, 35, 28, 0.97);
+	background: rgba(0, 99, 60, 0.85);
+	color: #ffffff;
 }
 
 html[data-theme="dark"] .operation-overlay-copy span,
 body:has(.student-dashboard--dark) .operation-overlay-copy span,
 body:has(.grantor-portal--dark) .operation-overlay-copy span,
 body:has(.admin-portal--dark) .operation-overlay-copy span {
-	color: #bed0c8;
+	color: rgba(255, 255, 255, 0.82);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -277,7 +266,6 @@ body:has(.admin-portal--dark) .operation-overlay-copy span {
 }
 
 @media (max-width: 480px) {
-	.operation-overlay-content { padding: 1.2rem 1rem; }
 	.operation-overlay-indicator { width: 68px; height: 68px; }
 	.operation-overlay-indicator img { width: 48px; height: 48px; }
 }

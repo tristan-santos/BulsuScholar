@@ -170,7 +170,7 @@ export default function GrantorChangePasswordPage() {
 								/>
 								<button
 									type="button"
-									className="login-input-eye-btn"
+									className="password-visibility-toggle"
 									onClick={() => setShowPassword((value) => !value)}
 									aria-label={showPassword ? "Hide password" : "Show password"}
 								>
@@ -196,7 +196,7 @@ export default function GrantorChangePasswordPage() {
 							</div>
 
 							<button type="submit" className="login-submit" disabled={isSubmitting}>
-								{isSubmitting ? "Saving..." : "Save New Password"}
+								<HiOutlineCheckCircle aria-hidden /> {isSubmitting ? "Saving..." : "Save New Password"}
 							</button>
 
 							<button

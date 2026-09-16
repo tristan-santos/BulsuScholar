@@ -9,7 +9,8 @@ function normalizeMessage(message, fallback) {
 export const OPERATION_PROFILES = Object.freeze({
 	"generic.background": {
 		kind: "background",
-		delayMs: 1200,
+		delayMs: 3000,
+		stageTimes: [3000, 4800, 7500],
 		showSuccess: false,
 		loading: [
 			stage("Loading the latest information...", "Keeping this page up to date."),
@@ -331,7 +332,7 @@ export function resolveOperationProfile(metadata, input, init = {}) {
 		showSuccess: explicit.showCompletion ?? explicit.showSuccess ?? base.showSuccess,
 		delayMs: Number.isFinite(Number(explicit.delayMs))
 			? Math.max(0, Number(explicit.delayMs))
-			: base.delayMs ?? (base.kind === "background" ? 1200 : 250),
+			: base.delayMs ?? (base.kind === "background" ? 3000 : 250),
 		stageTimes: explicit.stageTimes || base.stageTimes || [0, 1800, 4500],
 		priority: Number.isFinite(Number(explicit.priority))
 			? Number(explicit.priority)

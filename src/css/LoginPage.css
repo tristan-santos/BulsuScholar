@@ -463,27 +463,46 @@
 	color: #9ca3af;
 }
 
-.login-input-eye-btn {
+.password-visibility-toggle {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	width: 32px;
 	height: 32px;
 	margin-left: 0.25rem;
-	border: none;
-	background: transparent;
+	padding: 0;
+	border: 0 !important;
+	background: transparent !important;
+	box-shadow: none !important;
 	color: #9ca3af;
 	cursor: pointer;
 	flex-shrink: 0;
 }
 
-.login-input-eye-btn:hover {
+.password-visibility-toggle:hover,
+.password-visibility-toggle:active {
+	border-color: transparent !important;
+	background: transparent !important;
+	box-shadow: none !important;
 	color: #4b5563;
 }
 
-.login-input-eye-btn:focus,
-.login-input-eye-btn:focus-visible {
+.password-visibility-toggle:focus {
 	outline: none;
+}
+
+.password-visibility-toggle:focus-visible {
+	outline: 2px solid currentColor;
+	outline-offset: 2px;
+}
+
+html[data-theme="dark"] .password-visibility-toggle {
+	color: #f8fafc;
+}
+
+html[data-theme="dark"] .password-visibility-toggle:hover,
+html[data-theme="dark"] .password-visibility-toggle:active {
+	color: #ffffff;
 }
 
 .login-input-eye-icon {
@@ -492,6 +511,10 @@
 }
 
 .login-submit {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
 	margin-top: 0.5rem;
 	padding: clamp(0.75rem, 2vw, 0.875rem) clamp(1.25rem, 3vw, 1.5rem);
 	min-height: 48px;
