@@ -6,6 +6,7 @@ const ROOT_ID = "Tristan@Root"
 const CONFIRMATION = "DELETE_ALL_EXCEPT_ROOT"
 const STORAGE_PAGE_SIZE = 1000
 const STORAGE_DELETE_BATCH_SIZE = 100
+const AUTO_RECREATED_TABLES = new Set(["request_metric_buckets"])
 
 const RESET_TABLES = [
 	"admin_settings",
@@ -122,10 +123,14 @@ async function verifySqlReset(client) {
 		.in("id", ["portal", "academic_cycle", "branding"])
 	if (error) throw error
 	const portal = configuration.find((row) => row.id === "portal")
+	const blockingTables = nonemptyTables.filter((item) => !AUTO_RECREATED_TABLES.has(item.table))
+	const autoRecreatedTables = nonemptyTables.filter((item) => AUTO_RECREATED_TABLES.has(item.table))
 
 	return {
-		ready: nonemptyTables.length === 0 && configuration.length === 3 && portal?.data?.maintenanceMode === true,
-		nonemptyTableCount: nonemptyTables.length,
+		ready: blockingTables.length === 0 && configuration.length === 3 && portal?.data?.maintenanceMode === true,
+		nonemptyTables,
+		blockingTables,
+		autoRecreatedTables,
 		configurationCount: configuration.length,
 		maintenanceEnabled: portal?.data?.maintenanceMode === true,
 	}
@@ -139,6 +144,7 @@ const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL
 const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY
 const storageBucket = env.VITE_SUPABASE_STORAGE_BUCKET || "bulsuscholar"
 const execute = process.argv.includes("--execute")
+const diagnose = process.argv.includes("--diagnose")
 
 if (!supabaseUrl || !serviceRoleKey) {
 	throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in the trusted local environment.")
@@ -184,12 +190,19 @@ console.log(`Root Auth users preserved: ${rootAuthUsers.length}`)
 console.log(`Non-root Auth users to delete: ${nonRootAuthUsers.length}`)
 console.log(`Storage objects to delete: ${storageObjects.length}`)
 console.log(`SQL reset ready: ${sqlState.ready}`)
-console.log(`Nonempty reset tables: ${sqlState.nonemptyTableCount}`)
+console.log(`Nonempty application tables: ${sqlState.blockingTables.length}`)
+console.log(`Auto-recreated operational tables: ${sqlState.autoRecreatedTables.length}`)
 console.log(`Required configuration records: ${sqlState.configurationCount}`)
 console.log(`Maintenance Mode enabled: ${sqlState.maintenanceEnabled}`)
+if (diagnose && sqlState.nonemptyTables.length > 0) {
+	console.log("Nonempty reset-table counts:")
+	for (const item of sqlState.nonemptyTables) console.log(`${item.table}: ${item.count}`)
+}
 
 if (!execute) {
-	console.log("Dry run complete. Run the SQL reset first, then use --execute with the required confirmation value.")
+	console.log(sqlState.ready
+		? "Dry run complete. The SQL reset is verified; --execute may now be used with the required confirmation value."
+		: "Dry run complete. Run the SQL reset first, then use --execute with the required confirmation value.")
 	process.exit(0)
 }
 if (!sqlState.ready) {

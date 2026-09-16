@@ -170,6 +170,74 @@ class RootServiceTests(unittest.TestCase):
         self.assertEqual("admin_password_too_weak", raised.exception.detail)
         root_service._validate_admin_password("StrongPass1!")
 
+    @patch("backend.root_service.audit")
+    @patch("backend.root_service._rest")
+    @patch("backend.root_service._first", return_value={
+        "data": {
+            "maintenanceMode": True,
+            "allowStudentSignup": True,
+            "allowGrantorAnnouncements": True,
+            "reportExportEnabled": True,
+            "resetAt": "2026-09-16T00:00:00Z",
+        },
+    })
+    def test_portal_settings_ignore_server_metadata_from_loaded_config(self, _first, rest, _audit):
+        result = root_service.update_config(None, {"root": {"id": "Tristan@Root"}}, "portal", {
+            "maintenanceMode": False,
+            "allowStudentSignup": True,
+            "allowGrantorAnnouncements": True,
+            "reportExportEnabled": True,
+            "resetAt": "2026-09-16T00:00:00Z",
+            "updatedAt": "stale-client-value",
+        })
+
+        self.assertFalse(result["data"]["maintenanceMode"])
+        self.assertNotEqual("stale-client-value", result["data"]["updatedAt"])
+        self.assertEqual("2026-09-16T00:00:00Z", result["data"]["resetAt"])
+        self.assertEqual("system_configuration", rest.call_args.args[0])
+
+    @patch("backend.root_service.audit")
+    @patch("backend.root_service._admin_update_auth_user", return_value={"id": "existing-admin-auth"})
+    @patch("backend.root_service._find_auth_user_by_email", return_value={
+        "id": "existing-admin-auth",
+        "app_metadata": {"portal_role": "admin"},
+        "user_metadata": {"user_type": "admin"},
+    })
+    @patch("backend.root_service._rest", side_effect=[[], []])
+    @patch("backend.root_service._first", return_value=None)
+    def test_admin_creation_relinks_existing_admin_auth_identity(
+        self, _first, rest, find_auth, update_auth, _audit,
+    ):
+        result = root_service.update_admin(None, {"root": {"id": "Tristan@Root"}}, {
+            "adminId": "admin-001",
+            "fullName": "System Administrator",
+            "email": "admin@example.com",
+            "role": "full_admin",
+            "active": True,
+            "temporaryPassword": "StrongPass1!",
+        })
+
+        self.assertEqual("existing-admin-auth", result["admin"]["authUserId"])
+        find_auth.assert_called_once_with("admin@example.com")
+        update_auth.assert_called_once()
+        self.assertEqual("admins", rest.call_args.args[0])
+
+    @patch("backend.root_service._first", return_value=None)
+    @patch("backend.root_service._find_auth_user_by_email", return_value={
+        "id": "student-auth",
+        "app_metadata": {"portal_role": "student"},
+        "user_metadata": {"user_type": "student"},
+    })
+    def test_admin_creation_refuses_non_admin_auth_identity(self, _find_auth, _first):
+        with self.assertRaises(HTTPException) as raised:
+            root_service.update_admin(None, {"root": {"id": "Tristan@Root"}}, {
+                "adminId": "admin-001",
+                "email": "student@example.com",
+                "temporaryPassword": "StrongPass1!",
+            })
+        self.assertEqual(409, raised.exception.status_code)
+        self.assertEqual("admin_email_registered_to_another_portal_role", raised.exception.detail)
+
     @patch("backend.root_service._all_data_rows")
     def test_root_student_report_uses_fixed_schema_and_active_application_count(self, all_rows):
         datasets = {

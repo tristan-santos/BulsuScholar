@@ -190,6 +190,26 @@ def _admin_update_auth_user(auth_user_id: str, payload: dict[str, Any]) -> dict[
     return data or {}
 
 
+def _find_auth_user_by_email(email: str) -> dict[str, Any] | None:
+    url, key = _supabase_config()
+    normalized_email = email.strip().lower()
+    for page in range(1, 101):
+        data, _ = _http_json(
+            f"{url}/auth/v1/admin/users?page={page}&per_page=1000",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        )
+        users = (data or {}).get("users") or []
+        match = next(
+            (user for user in users if str(user.get("email") or "").strip().lower() == normalized_email),
+            None,
+        )
+        if match:
+            return match
+        if len(users) < 1000:
+            return None
+    raise HTTPException(status_code=503, detail="auth_user_lookup_limit_reached")
+
+
 def _root_by_id(root_id: str) -> dict[str, Any] | None:
     return _first("root_admins", f"id=eq.{urllib.parse.quote(root_id)}&select=*")
 
@@ -597,10 +617,12 @@ def update_config(request: Request, identity: dict[str, Any], key: str, data: di
         "academic_cycle": {"academicYear", "semester"},
         "branding": {"productName", "fontFamily", "primaryColor", "accentColor", "logoUrl", "faviconUrl", "maintenanceMessage"},
     }
-    unknown = set(data) - allowed_fields[key]
+    server_fields = {"updatedBy", "updatedAt", "activatedAt", "semesterTag", "resetAt"}
+    unknown = set(data) - allowed_fields[key] - server_fields
     if unknown:
         raise HTTPException(status_code=422, detail="unsupported_system_setting")
-    merged = {**(current.get("data") or {}), **data, "updatedBy": identity["root"]["id"], "updatedAt": now_iso()}
+    submitted = {field: data[field] for field in allowed_fields[key] if field in data}
+    merged = {**(current.get("data") or {}), **submitted, "updatedBy": identity["root"]["id"], "updatedAt": now_iso()}
     if key == "academic_cycle":
         if not re.fullmatch(r"\d{4}-\d{4}", str(merged.get("academicYear") or "")) or merged.get("semester") not in {"1ST", "2ND"}:
             raise HTTPException(status_code=422, detail="invalid_academic_cycle")
@@ -610,7 +632,7 @@ def update_config(request: Request, identity: dict[str, Any], key: str, data: di
         merged = {**merged, **_validate_branding(merged)}
     _rest("system_configuration", method="POST", query="on_conflict=id", payload={"id": key, "data": merged, "updated_at": now_iso()}, prefer="resolution=merge-duplicates,return=representation")
     PUBLIC_CONFIG_CACHE.update({"value": None, "expires": 0.0})
-    audit(request, identity["root"]["id"], f"system_{key}_updated", key, {"fields": sorted(data.keys())})
+    audit(request, identity["root"]["id"], f"system_{key}_updated", key, {"fields": sorted(submitted.keys())})
     return {"ok": True, "id": key, "data": merged}
 
 
@@ -865,8 +887,30 @@ def update_admin(request: Request, identity: dict[str, Any], payload: dict[str, 
         if not data["email"]:
             raise HTTPException(status_code=422, detail="admin_email_and_temporary_password_required")
         _validate_admin_password(temporary_password)
-        url, key = _supabase_config()
-        auth_user, _ = _http_json(f"{url}/auth/v1/admin/users", method="POST", payload={"email": data["email"], "password": temporary_password, "email_confirm": True, "user_metadata": {"user_id": admin_id, "user_type": "admin"}, "app_metadata": {"portal_role": "admin"}}, headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        existing_auth = _find_auth_user_by_email(data["email"])
+        if existing_auth:
+            app_metadata = existing_auth.get("app_metadata") or {}
+            user_metadata = existing_auth.get("user_metadata") or {}
+            existing_role = str(app_metadata.get("portal_role") or user_metadata.get("user_type") or "").lower()
+            if existing_role != "admin":
+                raise HTTPException(status_code=409, detail="admin_email_registered_to_another_portal_role")
+            linked_admins = _rest("admins", query="select=id,data&limit=500") or []
+            if any(
+                str((row.get("data") or {}).get("authUserId") or "") == str(existing_auth.get("id") or "")
+                and str(row.get("id") or "") != admin_id
+                for row in linked_admins
+            ):
+                raise HTTPException(status_code=409, detail="admin_auth_identity_already_linked")
+            auth_user = _admin_update_auth_user(str(existing_auth["id"]), {
+                "password": temporary_password,
+                "email_confirm": True,
+                "user_metadata": {**user_metadata, "user_id": admin_id, "user_type": "admin"},
+                "app_metadata": {**app_metadata, "portal_role": "admin"},
+                "ban_duration": "none",
+            })
+        else:
+            url, key = _supabase_config()
+            auth_user, _ = _http_json(f"{url}/auth/v1/admin/users", method="POST", payload={"email": data["email"], "password": temporary_password, "email_confirm": True, "user_metadata": {"user_id": admin_id, "user_type": "admin"}, "app_metadata": {"portal_role": "admin"}}, headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
         data["authUserId"] = auth_user.get("id")
         data["mustChangePassword"] = True
     elif payload.get("temporaryPassword"):
