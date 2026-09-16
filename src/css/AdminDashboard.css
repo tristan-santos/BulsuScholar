@@ -11933,12 +11933,6 @@
 	text-decoration: none;
 }
 
-.admin-inbox-list--limited {
-	max-height: 380px;
-	overflow-y: auto;
-	overscroll-behavior: contain;
-}
-
 .admin-inbox-empty--compact {
 	min-height: 86px;
 }

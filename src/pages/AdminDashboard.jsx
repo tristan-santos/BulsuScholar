@@ -8395,11 +8395,11 @@ export default function AdminDashboard() {
 						</div>
 					</header>
 					<section className="admin-inbox-preview-section">
-						<header><div><HiOutlineInbox /><span><strong>Notifications</strong><small>{unreadAdminNotifications.length} unread</small></span></div><Link to="/admin/notifications">See all</Link></header>
-						<div className="admin-inbox-list admin-inbox-list--limited">
+						<header><div><HiOutlineInbox /><span><strong>Notifications</strong><small>{unreadAdminNotifications.length} unread</small></span></div></header>
+						<div className="admin-inbox-list">
 							{adminNotifications.filter((item) => item.archived !== true).length === 0 ? (
 								<div className="admin-inbox-empty admin-inbox-empty--compact"><HiOutlineInbox /><strong>No notifications yet.</strong></div>
-							) : adminNotifications.filter((item) => item.archived !== true).slice(0, 5).map((notification) => (
+							) : adminNotifications.filter((item) => item.archived !== true).map((notification) => (
 								<button key={notification.id} type="button" className={`admin-inbox-item ${notification.read === true ? "" : "unread"}`} onClick={() => openAdminNotification(notification)}>
 									<span className="admin-inbox-item-icon"><HiOutlineBell /></span>
 									<span className="admin-inbox-item-copy"><strong>{toAdminNotificationTitle(notification)}</strong><small>{toAdminNotificationMessage(notification)}</small></span>
