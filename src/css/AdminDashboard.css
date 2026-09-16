@@ -18520,11 +18520,28 @@
 
 .admin-detail-actions--confirm .admin-safe-btn {
 	background: linear-gradient(180deg, #007a49, #00633c) !important;
+	border-color: #067647 !important;
+	color: #ffffff !important;
 	box-shadow: 0 14px 26px rgba(0, 99, 60, 0.2) !important;
 }
 
 .admin-detail-actions--confirm .admin-danger-btn {
-	background: #fff1f2 !important;
+	border-color: #b42318ba !important;
+	background: #b42318ba !important;
+	color: #ffffff !important;
+}
+
+.admin-detail-actions--confirm .admin-table-btn {
+	border-color: #cbd5e1 !important;
+	background: #ffffff !important;
+	color: #475569 !important;
+}
+
+.admin-portal--dark .admin-detail-actions--confirm .admin-table-btn,
+.grantor-portal--dark .admin-detail-actions--confirm .admin-table-btn {
+	border-color: #94a3b8 !important;
+	background: transparent !important;
+	color: #f8fafc !important;
 }
 
 .admin-portal--dark .admin-detail-modal--confirm {

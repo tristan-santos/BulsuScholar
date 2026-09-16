@@ -5222,11 +5222,11 @@ export default function ProviderDashboard() {
 								</div>
 							</div>
 							<div className="admin-detail-actions admin-detail-actions--confirm">
-								<button type="button" className="admin-table-btn" onClick={() => setAnnouncementArchiveConfirmId("")} disabled={Boolean(busy)}>
+								<button type="button" className="admin-table-btn" data-button-variant="neutral" onClick={() => setAnnouncementArchiveConfirmId("")} disabled={Boolean(busy)}>
 									<HiX />
 									Cancel
 								</button>
-								<button type="button" className="admin-danger-btn" onClick={confirmArchiveAnnouncement} disabled={Boolean(busy)}>
+								<button type="button" className="admin-danger-btn" data-button-variant="danger" onClick={confirmArchiveAnnouncement} disabled={Boolean(busy)}>
 									<HiOutlineArchive />
 									Archive
 								</button>
@@ -5236,7 +5236,7 @@ export default function ProviderDashboard() {
 				</div>
 			) : null}
 			{announcementImagePreview ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={closeAnnouncementImagePreview}>
+				<div className="admin-detail-backdrop portal-image-preview-backdrop" role="presentation" onClick={closeAnnouncementImagePreview}>
 					<div className="grantor-image-lightbox" role="dialog" aria-modal="true" aria-label="Announcement image preview" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="grantor-image-lightbox-close" onClick={closeAnnouncementImagePreview} aria-label="Close image preview">
 							<HiX />
@@ -5510,7 +5510,7 @@ export default function ProviderDashboard() {
 			) : null}
 			{previewDocument ? (
 				<div
-					className="grantor-document-preview-backdrop"
+					className="grantor-document-preview-backdrop portal-image-preview-backdrop"
 					role="dialog"
 					aria-modal="true"
 					aria-label={`${previewDocument.title} preview`}

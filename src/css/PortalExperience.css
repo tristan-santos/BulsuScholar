@@ -82,6 +82,12 @@ textarea:focus-visible,
 button[aria-busy="true"] { cursor: wait; }
 button[aria-busy="true"] svg { animation: portal-spin 0.8s linear infinite; }
 
+html body .portal-image-preview-backdrop.portal-image-preview-backdrop {
+	position: fixed !important;
+	inset: 0 !important;
+	z-index: var(--bulsu-layer-modal-nested) !important;
+}
+
 /* Shared semantic command buttons are opt-in. Navigation, tabs, selectors,
    toggles, card surfaces, and icon controls keep their purpose-specific styles. */
 html body button[data-button-variant]:not([data-button-variant="none"]) {

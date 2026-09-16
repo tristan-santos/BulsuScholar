@@ -10673,7 +10673,7 @@ export default function AdminDashboard() {
 			) : null}
 
 			{announcementImagePreview ? (
-				<div className="admin-detail-backdrop" role="presentation" onClick={closeAnnouncementImagePreview}>
+				<div className="admin-detail-backdrop portal-image-preview-backdrop" role="presentation" onClick={closeAnnouncementImagePreview}>
 					<div className="admin-lightbox admin-zoom-lightbox" role="dialog" aria-modal="true" aria-label="Announcement image preview" onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="admin-detail-close" onClick={closeAnnouncementImagePreview}>
 							<HiX />
@@ -11558,7 +11558,7 @@ export default function AdminDashboard() {
 
 			{previewDocument ? (
 				<div
-					className="admin-document-preview-backdrop"
+					className="admin-document-preview-backdrop portal-image-preview-backdrop"
 					role="dialog"
 					aria-modal="true"
 					aria-label={`${previewDocument.title} preview`}
@@ -12140,13 +12140,14 @@ export default function AdminDashboard() {
 								</div>
 							) : null}
 							<div className="admin-detail-actions admin-detail-actions--confirm">
-								<button type="button" className="admin-table-btn" onClick={closeAdminConfirmDialog} disabled={isBusy && adminConfirmDialog.mode !== "confirm"}>
+								<button type="button" className="admin-table-btn" data-button-variant="neutral" onClick={closeAdminConfirmDialog} disabled={isBusy && adminConfirmDialog.mode !== "confirm"}>
 									<HiX />
 									{adminConfirmDialog.cancelLabel || "Cancel"}
 								</button>
 								<button
 									type="button"
 									className={adminConfirmDialog.tone === "danger" ? "admin-danger-btn" : "admin-safe-btn"}
+									data-button-variant={adminConfirmDialog.tone === "danger" ? "danger" : "positive"}
 									onClick={confirmAdminDialogAction}
 									disabled={isBusy && adminConfirmDialog.mode !== "confirm"}
 								>
