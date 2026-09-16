@@ -1,10 +1,159 @@
-# BulsuScholar Deployment Checklist
+# BulsuScholar Production Finalization
 
-Use this after every Vercel or Railway redeploy.
+Use this checklist for the final production pass. Complete the sections in order.
+Do not put Supabase service keys, Brevo keys, SMTP credentials, database URLs, or
+provider tokens in Git, Vercel browser variables, screenshots, or chat.
 
-## 1. Vercel Environment Variables
+## Verified Baseline - 2026-09-15
 
-Required frontend variables:
+- `https://bulsuscholar.com` serves the current Vercel frontend.
+- The deployed frontend bundle uses `https://api.bulsuscholar.com` and contains no
+  Render or old Vercel production fallback.
+- `www.bulsuscholar.com` and the old Vercel hostname redirect permanently to the
+  apex domain.
+- Railway `/health` and `/deployment/health` return `status: ok`.
+- Railway reaches Supabase and all 16 deployment table checks pass.
+- Railway reports Brevo configured with `no-reply@bulsuscholar.com` and the support
+  reply-to address.
+- Brevo code, both DKIM records, and DMARC resolve publicly.
+- The production academic cycle is `2026-2027`, `1ST` semester.
+- The lifecycle migrations through
+  `20260915153000_fix_archive_notification_ids.sql` are applied.
+
+Still pending:
+
+- Verify the new Brevo sender in the Brevo Senders page.
+- Save and test Supabase Custom SMTP through Brevo.
+- Install the final Confirm Signup and Reset Password templates.
+- Finish Cloudflare Email Routing for `support@bulsuscholar.com`; no public MX
+  record currently resolves.
+- Remove the broad Railway CORS regex. It currently resolves as
+  `https://.*\.com` and must be empty.
+- Configure `ROOT_DATABASE_URL` with a restricted Supabase pooler role if the root
+  SQL Console is required for launch.
+- Commit and deploy the local semantic-button and email-template changes.
+
+## 1. Brevo Sender
+
+In Brevo, open **Settings -> Senders, Domains & Dedicated IPs -> Senders**.
+
+Required sender:
+
+```txt
+Name: BulsuScholar
+Email: no-reply@bulsuscholar.com
+```
+
+Confirm that the sender is verified and uses the authenticated
+`bulsuscholar.com` domain. Keep the Gmail sender only until production tests pass.
+Then remove it so new messages cannot accidentally use the free-mail identity.
+
+In Brevo transactional settings, disable click/link rewriting for authentication
+messages. Supabase confirmation and recovery URLs must arrive unchanged.
+
+## 2. Supabase Custom SMTP
+
+In **Supabase -> Authentication -> SMTP Settings**, enable Custom SMTP:
+
+```txt
+Sender name: BulsuScholar
+Sender email: no-reply@bulsuscholar.com
+Host: smtp-relay.brevo.com
+Port: 587
+Username: <Brevo SMTP login>
+Password: <Brevo SMTP key, not the API key>
+```
+
+The Brevo API key remains in Railway. The Brevo SMTP key belongs only in
+Supabase Auth.
+
+In **Authentication -> Providers -> Email**:
+
+- Keep email/password signup enabled.
+- Require email confirmation.
+- Do not enable automatic confirmation.
+
+In **Authentication -> URL Configuration**:
+
+```txt
+Site URL: https://bulsuscholar.com
+
+Redirect URLs:
+https://bulsuscholar.com/*
+https://bulsuscholar.com/confirm-email
+https://bulsuscholar.com/reset-password
+```
+
+## 3. Authentication Email Templates
+
+Install both templates from `docs/email/SupabaseEmailTemplates.md` under
+**Supabase -> Authentication -> Email Templates**.
+
+```txt
+Confirm Signup subject: Confirm your BulsuScholar account
+Reset Password subject: Reset your BulsuScholar password
+```
+
+Keep every `{{ .ConfirmationURL }}` and `{{ .Email }}` variable exactly as
+written. Save each template separately.
+
+## 4. Cloudflare Support Mail
+
+In **Cloudflare -> bulsuscholar.com -> Email -> Email Routing**:
+
+1. Enable Email Routing.
+2. Add and verify the existing Gmail inbox as a destination.
+3. Create the route `support@bulsuscholar.com` to that verified Gmail address.
+4. Allow Cloudflare to add its required MX and sender-policy DNS records.
+5. Confirm the Email Routing dashboard reports the route as active.
+6. Send a message from a different mailbox to `support@bulsuscholar.com` and
+   confirm it arrives in Gmail.
+
+Do not replace Brevo DKIM or DMARC records while enabling routing.
+
+## 5. Railway Variables
+
+Required production values:
+
+```env
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+EMAIL_PROVIDER=brevo
+BREVO_API_KEY=
+BREVO_SENDER_NAME=BulsuScholar
+BREVO_SENDER_EMAIL=no-reply@bulsuscholar.com
+BREVO_REPLY_TO_EMAIL=support@bulsuscholar.com
+FRONTEND_URL=https://bulsuscholar.com
+DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsuscholar.com
+DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX=
+ENFORCE_PORTAL_ACTOR_HEADERS=true
+ENABLE_SCHOLARSHIP_CHOICE=true
+WEB_CONCURRENCY=1
+UVICORN_KEEP_ALIVE=30
+ROOT_SESSION_SECRET=
+ROOT_DATABASE_URL=
+OPENAI_API_KEY=
+OPENAI_HELP_MODEL=gpt-5-mini
+```
+
+Delete `DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX` or set it to an empty value. Do not
+use `https://.*\.com`; that permits unrelated `.com` sites to pass the regex.
+
+`ROOT_DATABASE_URL` must be the Supabase session-pooler URL for a dedicated,
+least-privilege diagnostics role. Do not use the service-role key or expose the
+database URL to Vercel. Until configured, the root SQL Console remains unavailable.
+
+Railway runtime:
+
+- Repository root uses the root `Dockerfile`.
+- Build and Start commands remain empty.
+- Health-check path is `/health`.
+- Use one replica initially.
+- Do not define `PORT`; Railway injects it.
+
+## 6. Vercel Variables
+
+Required Production and Preview values:
 
 ```env
 VITE_SUPABASE_URL=
@@ -16,238 +165,130 @@ VITE_BACKEND_API_URL=https://api.bulsuscholar.com
 VITE_DOCUMENT_SCAN_API_URL=https://api.bulsuscholar.com
 VITE_PASSWORD_SECRET=
 VITE_PASSWORD_LEGACY_SECRETS=
+VITE_ENABLE_SCHOLARSHIP_CHOICE=true
 ```
 
-Expected:
-- Frontend calls Railway, not localhost.
-- Supabase login/signup can initialize.
-- Existing grantor/admin encrypted passwords can still be checked.
+Do not add Brevo, SMTP, Supabase service-role, root-session, database, Railway, or
+Vercel provider secrets to a `VITE_*` variable.
 
-## 2. Railway Environment Variables
+## 7. Final Deployment Order
 
-Required backend variables:
+1. Finish Brevo sender, Supabase SMTP/templates, Cloudflare routing, and Railway
+   variable corrections.
+2. Run all local verification commands.
+3. Review the Git diff and ensure no generated files or secrets are staged.
+4. Commit the semantic-button and final email-template changes to `main`.
+5. Push `main`.
+6. Wait for Railway first; verify backend health and OpenAPI.
+7. Wait for Vercel; verify the apex domain serves the new asset bundle.
+8. Run authenticated browser workflows only after both deployments are current.
+9. Test maintenance mode last, then immediately turn it off.
 
-```env
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-EMAIL_PROVIDER=brevo
-BREVO_API_KEY=
-BREVO_SENDER_NAME=BulsuScholar
-BREVO_SENDER_EMAIL=no-reply@bulsuscholar.com
-BREVO_REPLY_TO_EMAIL=support@bulsuscholar.com
-DOCUMENT_SCAN_ALLOWED_ORIGINS=https://bulsuscholar.com
-DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX=
-FRONTEND_URL=https://bulsuscholar.com
-ENFORCE_PORTAL_ACTOR_HEADERS=true
-ENABLE_SCHOLARSHIP_CHOICE=true
-WEB_CONCURRENCY=1
-UVICORN_KEEP_ALIVE=30
-OPENAI_API_KEY=
-OPENAI_HELP_MODEL=gpt-5-mini
+Local verification:
+
+```powershell
+python -m compileall backend -q
+python -m unittest discover -s backend/tests -p "test_*.py"
+node scripts/test-scholarship-choice-policy.mjs
+node scripts/test-grantor-reapplication-policy.mjs
+npm.cmd run lint
+npm.cmd run build
 ```
 
-Expected:
-- Backend can write to Supabase using the service role key.
-- The canonical production frontend passes CORS.
-- Email health reports Brevo as configured while authentication mail is delivered by Supabase SMTP.
-
-Railway runtime:
-- Connect the repository root and use the root `Dockerfile`.
-- Keep the Railway build and start commands empty so the Dockerfile command is used.
-- Use one replica in the Singapore/Southeast Asia region.
-- Set the deployment health-check path to `/health` and restart policy to `ON_FAILURE`.
-- Do not set `PORT`; Railway injects it at runtime.
-- The Dockerfile installs `tesseract-ocr` for PNG/JPG OCR and `poppler-utils` for scanned PDF fallback.
-
-Expected:
-- Image uploads for application forms do not fail with `tesseract is not installed or it's not in your PATH`.
-- PDF scans still work through `pdfplumber`.
-
-## 3. Supabase SQL
-
-Run these in Supabase SQL Editor, in order:
+Production verification:
 
 ```txt
-supabase/schema.sql
-supabase/relational-migration.sql
-supabase/security-hardening.sql
-supabase/migrations/20260915133000_preserve_archived_grantor_scholars.sql
-supabase/migrations/20260915150000_roster_confirmation_and_grantor_decisions.sql
-supabase/migrations/20260915151000_database_advisor_cleanup.sql
-supabase/migrations/20260915152000_allow_authoritative_roster_transitions.sql
-supabase/migrations/20260915153000_fix_archive_notification_ids.sql
-```
-
-For an existing production database, apply only migrations that are not already recorded as applied. Do not rerun the base schema files over production data.
-
-Required tables:
-- `students`
-- `pending_students`
-- `providers`
-- `admins`
-- `grantor_portals`
-- `grantor_portal_scholars`
-- `grantor_portal_applications`
-- `grantor_portal_announcements`
-- `scholarship_applications`
-- `soe_requests`
-- `soe_downloads`
-- `student_warnings`
-- `studentNotifications`
-- `grantorNotifications`
-- `student_document_usage`
-- `systemLogs`
-
-Expected:
-- No `PGRST205` table/schema-cache errors.
-- `studentNotifications` and `grantorNotifications` can be read by the frontend.
-- `student_document_usage` blocks reused COR documents.
-
-## 4. Supabase Auth URLs
-
-Set in Supabase Dashboard:
-
-```txt
-Site URL: https://bulsuscholar.com
-Redirect URLs:
-https://bulsuscholar.com/confirm-email
-https://bulsuscholar.com/reset-password
-```
-
-Expected:
-- Confirm account email redirects to the deployed site.
-- Forgot password email redirects to the deployed site.
-
-## 5. Backend Health
-
-Open:
-
-```txt
-https://api.bulsuscholar.com/
 https://api.bulsuscholar.com/health
 https://api.bulsuscholar.com/deployment/health
 https://api.bulsuscholar.com/email/health
+https://api.bulsuscholar.com/config/public
+https://api.bulsuscholar.com/openapi.json
 ```
 
 Expected:
-- `/` shows backend information, not plain `Not Found`.
-- `/health` shows Supabase server config is present.
-- `/deployment/health` status is `ok`.
-- `/deployment/health` has no missing tables.
-- `/email/health` shows Brevo is configured.
 
-## 6. Document Scan
+- Health and deployment status are `ok`.
+- No required tables fail.
+- Frontend URL is `https://bulsuscholar.com`.
+- Brevo is configured with sender and reply-to values present.
+- CORS contains only the intended production/local development origins.
+- OpenAPI includes notification inbox routes and the latest lifecycle workflows.
+- OpenAPI does not expose a generic unauthenticated `/email/send` route.
 
-From the deployed Vercel frontend:
-- Upload COR PDF.
-- Confirm COR fields are detected.
-- Upload COG PDF after COR.
-- Confirm COG identity check passes when name/student number match.
-- Confirm GWA autofills.
-- Confirm COG final grade debug logs show collected final grades.
+## 8. Authentication Tests
 
-Expected:
-- Browser does not show CORS errors.
-- Requests go to `https://api.bulsuscholar.com/scan-document`.
+Use a new email address that has never registered before.
 
-## 7. Student Signup
+1. Create a student account and accept the Terms and Conditions.
+2. Confirm the account cannot enter the dashboard before email verification.
+3. Verify the Confirm Signup email appears in Brevo Transactional Logs.
+4. Check sender name, sender address, layout, mobile rendering, and spam placement.
+5. Confirm the button opens `https://bulsuscholar.com/confirm-email`.
+6. Confirm the pending student is promoted after verification.
+7. Request a password reset.
+8. Verify the reset email and its button open
+   `https://bulsuscholar.com/reset-password`.
+9. Confirm an invalid, expired, or reused link fails clearly.
 
-Test:
-- New student ID.
-- New email.
-- New CP number starting with `09`.
-- COR PDF not reused.
-- COG PDF valid when required.
-- Terms accepted.
+## 9. Portal Workflow Tests
 
-Expected:
-- Supabase Auth account is created.
-- Student row is created in `students`.
-- Document usage row is created in `student_document_usage`.
-- Student receives an inbox notification.
-- Admin receives a system notification/log.
+Student:
 
-## 8. Grantor Workflows
+- Signup, confirmation, login, profile upload/replacement, shared COR/ROG/ID/profile
+  detection, multiple pending applications, withdrawal, invitations, materials,
+  SOE/default/custom form downloads, tracking through completion, and inbox actions.
+- Confirm application-specific Other Requirements do not leak across scholarships.
 
-Test:
-- Create announcement.
-- Archive announcement.
-- Unarchive announcement.
-- Add scholar roster.
-- Duplicate roster warning.
-- Review application.
-- Complete current stage.
-- Reject application.
+Grantor:
 
-Expected:
-- Backend workflow endpoints return `ok: true`.
-- Grantor inbox receives relevant notifications.
-- Student inbox receives archive/unarchive/rejection/stage notifications.
+- Inbox list/read/delete, announcement creation, active-scholarship republishing,
+  slot addition, applicant document visibility, admin-decision confirmation, Invite
+  Back, and archived-account restrictions.
 
-## 9. Student Scholarship Flow
+Admin:
 
-Test:
-- Student matched from grantor roster sees the scholarship.
-- Student applies from announcement.
-- Student cannot apply to another grantor while one active application exists.
-- Archived/frozen application blocks next steps and SOE.
-- Unarchived application restores access.
+- Inbox list/read/delete, student/grantor/application review, material review,
+  preserved archived-grantor scholars, grantor archive/restore, and all six report
+  previews plus PDF/CSV downloads.
 
-Expected:
-- Scholarship control center reflects the correct grantor/application.
-- Inbox number changes dynamically.
-- Mark all as read works.
+Root:
 
-## 10. Reports
+- Fixed-password and permanent-code login, Overview, Health, Data Explorer, files,
+  reports, administrators, support, logs, settings, branding, integration status,
+  session logout, and SQL presets when `ROOT_DATABASE_URL` is configured.
 
-Test:
-- Admin student management report preview.
-- Pagination in report modal.
-- Export PDF.
-- Export Excel.
+Lifecycle cases:
 
-Expected:
-- Preview data matches the current filtered table.
-- PDF uses the BulSU template without `Content Starts Here`.
-- PDF column is `Grantor`, not `Current Stage`.
-- Excel downloads all filtered rows.
+- Rejected applications reapply only after the same-grantor cooldown.
+- Manual archives remain invitation-only.
+- Archived grantor scholars choose Keep or Change without losing the original slot.
+- Replacement commitment releases the original slot exactly once.
+- Restoring a grantor follows the stored archive-choice behavior.
+- Grantor confirmation advances the stored tracking step without stranding stage 6.
 
-## 11. Common Production Errors
+## 10. Reports and Interface
 
-`CORS policy`
-- Check Railway `DOCUMENT_SCAN_ALLOWED_ORIGINS`.
-- Check Railway `DOCUMENT_SCAN_ALLOWED_ORIGIN_REGEX`.
-- Redeploy Railway.
+- Central reports start unfiltered and filter inside the preview.
+- Section reports inherit the section's active tab/search/filter state.
+- Previewed PDF and downloaded PDF are the same blob.
+- PDF and CSV contain the same canonical rows and columns.
+- Export every matching row, not only the visible page.
+- Verify semantic buttons in light/dark mode and desktop/mobile layouts:
+  positive green, destructive/cancel red, and neutral gray/light-outline.
+- Verify loading overlay, toasts, nested modals, backdrop dismissal, and discard
+  confirmation layering.
+- Confirm there are no browser console errors or failed production network requests.
 
-`missing_supabase_server_config`
-- Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Railway.
-- Redeploy Railway.
+## 11. Release Decision
 
-`PGRST205`
-- Run missing Supabase SQL.
-- Run `notify pgrst, 'reload schema';`
-- Wait a few seconds, then test again.
+The release is ready only when:
 
-`Password decryption failed`
-- Add the same `VITE_PASSWORD_SECRET` used locally to Vercel.
-- If old accounts used another key, add it to `VITE_PASSWORD_LEGACY_SECRETS`.
-
-`Backend is unavailable`
-- Check the Railway deployment and service logs.
-- Open `/deployment/health`.
-- Confirm Vercel `VITE_BACKEND_API_URL`.
-
-## Priority 2-4 Production Pass
-
-1. Run `supabase/priority-two-four.sql` once in the Supabase SQL Editor. It is idempotent and may be rerun after schema changes.
-2. Confirm Vercel has `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_STORAGE_BUCKET`, `VITE_BACKEND_API_URL`, `VITE_DOCUMENT_SCAN_API_URL`, `VITE_APP_URL`, and `VITE_PUBLIC_SITE_URL`.
-3. Confirm Railway has `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_URL`, `DOCUMENT_SCAN_ALLOWED_ORIGINS`, `ENFORCE_PORTAL_ACTOR_HEADERS=true`, email settings, and optional OpenAI settings.
-4. Keep `WEB_CONCURRENCY=1` until workflow concurrency has been load-tested. Raise it only when the hosting memory limit and Supabase connection usage are known.
-5. In Supabase Auth, set the site URL to `https://bulsuscholar.com` and allow its `/confirm-email` and `/reset-password` routes. Keep the Vercel aliases in the redirect allow-list for deployment diagnostics.
-6. Confirm the `bulsuscholar` bucket policies permit authenticated uploads and the application-required preview/download reads. Match the application limit of 10 MB and the supported PDF/image/spreadsheet MIME types.
-7. Run `npm run verify:deployment` from a shell containing the production environment values. This checks backend health routes and production CORS without writing data or sending email.
-8. Manually test one student, one grantor, and one admin session. Verify own-record isolation, grantor ownership filtering, audit logs, and inbox delivery.
-
-### Access Compatibility Note
-
-Student requests include their Supabase bearer token. Existing legacy admin and grantor accounts still use signed-in portal identity headers until those accounts are fully migrated to Supabase Auth. `ENFORCE_PORTAL_ACTOR_HEADERS=true` rejects missing or mismatched role/owner identity, but the final security target is Supabase Auth for every role plus database RLS policies.
+- Supabase confirmation and reset emails are delivered through Brevo.
+- `support@bulsuscholar.com` receives forwarded mail.
+- Railway CORS is restricted and every health endpoint passes.
+- Root SQL works, or the SQL Console is explicitly excluded from launch scope.
+- All local checks pass with zero errors.
+- Student, grantor, admin, and root smoke tests pass.
+- Browser traffic uses only the apex domain, custom API, Supabase, and required Brevo
+  delivery infrastructure.
+- Maintenance mode is off and student signup is set to the intended release state.

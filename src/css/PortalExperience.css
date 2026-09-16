@@ -82,6 +82,77 @@ textarea:focus-visible,
 button[aria-busy="true"] { cursor: wait; }
 button[aria-busy="true"] svg { animation: portal-spin 0.8s linear infinite; }
 
+/* Shared semantic command buttons. Navigation, tabs, selectors, and toggles keep
+   their purpose-specific presentation and are excluded by ButtonSemantics. */
+html body button[data-button-variant] {
+	border-style: solid !important;
+	border-width: 1px !important;
+	font-weight: 700;
+	box-shadow: none;
+}
+
+html body button[data-button-variant="positive"] {
+	border-color: #067647 !important;
+	background-color: #067647 !important;
+	color: #ffffff !important;
+}
+
+html body button[data-button-variant="positive"]:not(:disabled):hover {
+	border-color: #055f39 !important;
+	background-color: #055f39 !important;
+}
+
+html body button[data-button-variant="danger"] {
+	border-color: #b42318 !important;
+	background-color: #b42318 !important;
+	color: #ffffff !important;
+}
+
+html body button[data-button-variant="danger"]:not(:disabled):hover {
+	border-color: #8f1c13 !important;
+	background-color: #8f1c13 !important;
+}
+
+html body button[data-button-variant="neutral"] {
+	border-color: #cbd5e1 !important;
+	background-color: #ffffff !important;
+	color: #475569 !important;
+}
+
+html body button[data-button-variant="neutral"]:not(:disabled):hover {
+	border-color: #94a3b8 !important;
+	background-color: #f8fafc !important;
+	color: #334155 !important;
+}
+
+html body button[data-button-variant] svg {
+	color: inherit !important;
+	stroke: currentColor;
+}
+
+html body button[data-button-variant]:disabled {
+	cursor: not-allowed;
+	opacity: 0.55;
+}
+
+html[data-theme="dark"] body button[data-button-variant="neutral"],
+body:has(.student-dashboard--dark) button[data-button-variant="neutral"],
+body:has(.grantor-portal--dark) button[data-button-variant="neutral"],
+body:has(.admin-portal--dark) button[data-button-variant="neutral"] {
+	border-color: #94a3b8 !important;
+	background-color: transparent !important;
+	color: #f8fafc !important;
+}
+
+html[data-theme="dark"] body button[data-button-variant="neutral"]:not(:disabled):hover,
+body:has(.student-dashboard--dark) button[data-button-variant="neutral"]:not(:disabled):hover,
+body:has(.grantor-portal--dark) button[data-button-variant="neutral"]:not(:disabled):hover,
+body:has(.admin-portal--dark) button[data-button-variant="neutral"]:not(:disabled):hover {
+	border-color: #e2e8f0 !important;
+	background-color: rgba(255, 255, 255, 0.08) !important;
+	color: #ffffff !important;
+}
+
 .portal-page-loading {
 	min-height: 100dvh;
 	display: grid;

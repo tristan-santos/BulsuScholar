@@ -3,6 +3,7 @@ import {
 	triggerBlobDownload,
 	validatePdfBlob,
 } from "./supabaseStorageService"
+import { trackOperation } from "./operationTracker"
 
 const DEFAULT_APPLICATION_FORM_TEMPLATE_URL = "/Templates/AplicationForm_Format.pdf"
 const STUDENT_PROFILE_TEMPLATE_URL = "/Templates/STUDENT PROFILE_APPLICATION-FORMAT.pdf"
@@ -12,11 +13,13 @@ function hasStoredFileReference(file = null) {
 }
 
 async function downloadStaticPdfTemplate(url, fileName) {
-	const response = await fetch(url)
-	if (!response.ok) throw new Error(`template_load_failed_${response.status}`)
-	const blob = await validatePdfBlob(await response.blob())
-	triggerBlobDownload(blob, fileName)
-	return { blob, fileName, source: "template" }
+	return trackOperation(async () => {
+		const response = await fetch(url)
+		if (!response.ok) throw new Error(`template_load_failed_${response.status}`)
+		const blob = await validatePdfBlob(await response.blob())
+		triggerBlobDownload(blob, fileName)
+		return { blob, fileName, source: "template" }
+	}, "document.download")
 }
 
 export function downloadStudentProfileTemplate() {

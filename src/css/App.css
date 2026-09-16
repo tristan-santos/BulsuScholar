@@ -44,30 +44,60 @@ html body .modal-overlay--nested {
 	z-index: var(--bulsu-layer-loading);
 	display: grid;
 	place-content: center;
-	justify-items: center;
-	gap: 0.75rem;
-	background: rgba(247, 250, 249, 0.88);
-	backdrop-filter: blur(4px);
+	padding: 1rem;
+	background: rgba(237, 243, 240, 0.52);
+	backdrop-filter: blur(3px);
 	color: #063d29;
 	animation: operation-overlay-in 160ms ease-out both;
+	cursor: wait;
+}
+
+.operation-overlay--exiting {
+	pointer-events: none;
+	animation: operation-overlay-out 180ms ease-in both;
+}
+
+.operation-overlay-content {
+	display: grid;
+	justify-items: center;
+	gap: 1rem;
+	width: min(360px, calc(100vw - 2rem));
+	padding: 1.4rem 1.5rem;
+	border: 1px solid rgba(0, 99, 60, 0.2);
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.96);
+	box-shadow: 0 20px 55px rgba(15, 42, 31, 0.2);
+	text-align: center;
 }
 
 .operation-overlay-indicator {
+	position: relative;
 	display: grid;
 	place-items: center;
-	width: 58px;
-	height: 58px;
+	width: 76px;
+	height: 76px;
 	border-radius: 50%;
 	background: #ffffff;
-	box-shadow: 0 10px 32px rgba(0, 68, 43, 0.18);
-	font-size: 2rem;
+	box-shadow: 0 8px 24px rgba(0, 68, 43, 0.16);
+	font-size: 2.35rem;
+	overflow: hidden;
 }
 
-.operation-overlay-spinner {
-	width: 30px;
-	height: 30px;
+.operation-overlay-indicator img {
+	position: relative;
+	z-index: 1;
+	display: block;
+	width: 54px;
+	height: 54px;
+	object-fit: contain;
+}
+
+.operation-overlay-ring {
+	position: absolute;
+	inset: 3px;
 	border: 4px solid #cfe9de;
-	border-top-color: var(--bulsu-primary);
+	border-top-color: #00633c;
+	border-right-color: #d69e2e;
 	border-radius: 50%;
 	animation: operation-overlay-spin 700ms linear infinite;
 }
@@ -75,20 +105,46 @@ html body .modal-overlay--nested {
 .operation-overlay--success .operation-overlay-indicator {
 	background: #087a4d;
 	color: #ffffff;
+	animation: operation-result-in 220ms ease-out both;
 }
 
 .operation-overlay--success svg {
-	stroke-width: 3;
+	width: 42px;
+	height: 42px;
+	stroke-width: 1.5;
 }
 
 .operation-overlay--error .operation-overlay-indicator {
 	background: #b42318;
 	color: #ffffff;
+	animation: operation-result-in 220ms ease-out both;
 }
 
-.operation-overlay strong {
-	font-size: 0.95rem;
+.operation-overlay--error svg {
+	width: 38px;
+	height: 38px;
+}
+
+.operation-overlay-copy {
+	display: grid;
+	gap: 0.35rem;
+	min-height: 3.25rem;
+	align-content: start;
+	justify-items: center;
+}
+
+.operation-overlay-copy strong {
+	font-size: 1rem;
+	line-height: 1.35;
 	letter-spacing: 0;
+	overflow-wrap: anywhere;
+}
+
+.operation-overlay-copy span {
+	color: #5b6f66;
+	font-size: 0.8rem;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
 }
 
 .student-roster-modal-layer {
@@ -176,15 +232,54 @@ html body .modal-overlay--nested {
 
 @keyframes operation-overlay-spin { to { transform: rotate(360deg); } }
 @keyframes operation-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes operation-overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes operation-result-in {
+	from { opacity: 0.4; transform: scale(0.82); }
+	to { opacity: 1; transform: scale(1); }
+}
 
 @media (prefers-color-scheme: dark) {
-	.operation-overlay { background: rgba(5, 20, 15, 0.9); color: #ecfdf5; }
-	.operation-overlay-indicator { background: #102a20; }
+	.operation-overlay { background: rgba(5, 20, 15, 0.52); color: #ecfdf5; }
+	.operation-overlay-content { border-color: rgba(142, 224, 184, 0.3); background: rgba(16, 35, 28, 0.97); }
+	.operation-overlay-indicator { background: #f8fafc; }
+	.operation-overlay-copy span { color: #bed0c8; }
+}
+
+html[data-theme="dark"] .operation-overlay,
+body:has(.student-dashboard--dark) .operation-overlay,
+body:has(.grantor-portal--dark) .operation-overlay,
+body:has(.admin-portal--dark) .operation-overlay {
+	background: rgba(5, 20, 15, 0.52);
+	color: #ecfdf5;
+}
+
+html[data-theme="dark"] .operation-overlay-content,
+body:has(.student-dashboard--dark) .operation-overlay-content,
+body:has(.grantor-portal--dark) .operation-overlay-content,
+body:has(.admin-portal--dark) .operation-overlay-content {
+	border-color: rgba(142, 224, 184, 0.3);
+	background: rgba(16, 35, 28, 0.97);
+}
+
+html[data-theme="dark"] .operation-overlay-copy span,
+body:has(.student-dashboard--dark) .operation-overlay-copy span,
+body:has(.grantor-portal--dark) .operation-overlay-copy span,
+body:has(.admin-portal--dark) .operation-overlay-copy span {
+	color: #bed0c8;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.operation-overlay { animation: none; }
-	.operation-overlay-spinner { animation-duration: 1.6s; }
+	.operation-overlay,
+	.operation-overlay--exiting,
+	.operation-overlay--success .operation-overlay-indicator,
+	.operation-overlay--error .operation-overlay-indicator { animation: none; }
+	.operation-overlay-ring { animation: none; border-color: #7fb99f; border-top-color: #00633c; }
+}
+
+@media (max-width: 480px) {
+	.operation-overlay-content { padding: 1.2rem 1rem; }
+	.operation-overlay-indicator { width: 68px; height: 68px; }
+	.operation-overlay-indicator img { width: 48px; height: 48px; }
 }
 
 @media (max-width: 560px) {

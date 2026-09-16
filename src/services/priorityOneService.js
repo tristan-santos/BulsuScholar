@@ -1,9 +1,10 @@
 import { requireBackendApiUrl } from "../config/backendApi"
 import { buildPortalRequestHeaders } from "./portalApi"
 
-async function postPriorityOne(path, payload = {}) {
+async function postPriorityOne(path, payload = {}, operation = "generic.foreground") {
 	const response = await fetch(`${requireBackendApiUrl("Portal backend")}${path}`, {
 		method: "POST",
+		operation,
 		headers: await buildPortalRequestHeaders(),
 		body: JSON.stringify(payload),
 	})
@@ -15,4 +16,4 @@ async function postPriorityOne(path, payload = {}) {
 }
 
 export const askHelpAssistant = (message) => postPriorityOne("/support/chat", { message })
-export const submitSupportFeedback = (payload) => postPriorityOne("/support/feedback", payload)
+export const submitSupportFeedback = (payload) => postPriorityOne("/support/feedback", payload, "record.save")

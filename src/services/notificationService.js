@@ -18,19 +18,19 @@ async function loadNotificationInbox(path, portalLabel) {
 }
 
 export function createStudentNotification(payload = {}) {
-	return postNotification("/notifications/student/create", payload)
+	return postNotification("/notifications/student/create", payload, { operation: "generic.background" })
 }
 
 export function broadcastStudentNotification(payload = {}) {
-	return postNotification("/notifications/student/broadcast", payload)
+	return postNotification("/notifications/student/broadcast", payload, { operation: "generic.background" })
 }
 
 export function createAdminNotification(payload = {}) {
-	return postNotification("/notifications/admin/create", payload)
+	return postNotification("/notifications/admin/create", payload, { operation: "generic.background" })
 }
 
 export function updateAdminNotification(id = "", data = {}) {
-	return postNotification("/notifications/admin/update", { id, data })
+	return postNotification("/notifications/admin/update", { id, data }, { operation: "generic.background" })
 }
 
 export async function loadAdminNotifications() {
@@ -46,33 +46,33 @@ export function loadGrantorNotifications() {
 }
 
 export function deleteAdminNotification(id = "") {
-	return postNotification("/notifications/admin/delete", { id })
+	return postNotification("/notifications/admin/delete", { id }, { operation: "record.delete" })
 }
 
 export function createGrantorNotification(payload = {}) {
-	return postNotification("/notifications/grantor/create", payload, { timeoutMs: 45000 })
+	return postNotification("/notifications/grantor/create", payload, { timeoutMs: 45000, operation: "generic.background" })
 }
 
 export function updateStudentNotification(id = "", data = {}, sourceTable = "studentNotifications") {
-	return postNotification("/notifications/student/update", { id, data, sourceTable })
+	return postNotification("/notifications/student/update", { id, data, sourceTable }, { operation: "generic.background" })
 }
 
 export function updateStudentNotifications(ids = [], data = {}, sourceTable = "studentNotifications") {
-	return postNotification("/notifications/student/update-many", { ids, data, sourceTable })
+	return postNotification("/notifications/student/update-many", { ids, data, sourceTable }, { operation: "generic.background" })
 }
 
 export function updateGrantorNotification(id = "", data = {}, sourceTable = "grantorNotifications") {
-	return postNotification("/notifications/grantor/update", { id, data, sourceTable })
+	return postNotification("/notifications/grantor/update", { id, data, sourceTable }, { operation: "generic.background" })
 }
 
 export function updateGrantorNotifications(ids = [], data = {}, sourceTable = "grantorNotifications") {
-	return postNotification("/notifications/grantor/update-many", { ids, data, sourceTable })
+	return postNotification("/notifications/grantor/update-many", { ids, data, sourceTable }, { operation: "generic.background" })
 }
 
 export function deleteStudentNotification(id = "", sourceTable = "studentNotifications") {
-	return postNotification("/notifications/student/delete", { id, sourceTable })
+	return postNotification("/notifications/student/delete", { id, sourceTable }, { operation: "record.delete" })
 }
 
 export function deleteGrantorNotification(id = "", sourceTable = "grantorNotifications") {
-	return postNotification("/notifications/grantor/delete", { id, sourceTable })
+	return postNotification("/notifications/grantor/delete", { id, sourceTable }, { operation: "record.delete" })
 }

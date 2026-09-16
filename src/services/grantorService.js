@@ -403,6 +403,7 @@ function _comparableSimilarity(left, right, normalizer = normalizeMatchValue) {
 async function postGrantorAlgorithm(path, payload) {
 	const response = await fetch(`${requireBackendApiUrl("Grantor backend")}${path}`, {
 		method: "POST",
+		operation: "generic.background",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(payload),
 	})

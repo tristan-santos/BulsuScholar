@@ -14,6 +14,7 @@ export async function scanStudentDocument(file, documentType = "cor") {
 			{
 				method: "POST",
 				body: formData,
+				operation: "document.upload",
 			},
 		)
 	} catch (error) {

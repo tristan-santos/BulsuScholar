@@ -16,6 +16,7 @@ import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
+import { beginOperation } from "../services/operationTracker"
 
 export default function ResetPasswordPage() {
 	const brandLogo = usePublicConfiguration().branding?.logoUrl || logo
@@ -77,6 +78,9 @@ export default function ResetPasswordPage() {
 			return
 		}
 
+		const finishPasswordOperation = beginOperation("auth.password-update")
+		let passwordUpdated = false
+		let passwordError = null
 		setIsSubmitting(true)
 		try {
 			const [{ data: sessionData }, studentSnap] = await Promise.all([
@@ -109,13 +113,16 @@ export default function ResetPasswordPage() {
 				{ merge: true },
 			)
 
+			passwordUpdated = true
 			await supabase.auth.signOut()
 			toast.success("Password updated. Please log in with your new password.")
 			navigate("/", { replace: true })
 		} catch (error) {
+			passwordError = error
 			console.error(error)
 			toast.error(error.message || "Unable to update password.")
 		} finally {
+			finishPasswordOperation(passwordUpdated ? null : passwordError || new Error("password_update_not_completed"))
 			setIsSubmitting(false)
 		}
 	}

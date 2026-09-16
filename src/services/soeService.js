@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts } from "pdf-lib"
+import { trackOperation } from "./operationTracker"
 import { resolveSoeRequestNumber } from "./soeRequestNumberService"
 import { sanitizeDownloadFileName, triggerBlobDownload } from "./supabaseStorageService"
 
@@ -59,7 +60,7 @@ async function fetchTemplateBytes() {
 	return new Uint8Array(await response.arrayBuffer())
 }
 
-export async function exportSoePdfDocument({
+async function buildSoePdfDocument({
 	student = {},
 	studentId = "",
 	expenses = [],
@@ -202,6 +203,10 @@ export async function exportSoePdfDocument({
 		requestNumber: soeRequestNumber,
 		pdfBytes,
 	}
+}
+
+export function exportSoePdfDocument(options = {}) {
+	return trackOperation(() => buildSoePdfDocument(options), "document.download")
 }
 
 export function downloadSoePdfBytes(pdfBytes, fileName = "SOE.pdf") {

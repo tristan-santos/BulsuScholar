@@ -20,6 +20,7 @@ import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import { requirePublicAppUrl } from "../config/publicUrls"
+import { beginOperation } from "../services/operationTracker"
 
 const RESET_EMAIL_COOLDOWN_MS = 60 * 1000
 const RESET_EMAIL_COOLDOWN_KEY = "bulsuscholar_reset_email_next_allowed_at"
@@ -208,6 +209,9 @@ export default function LoginPage() {
 			return
 		}
 
+		const finishLoginOperation = beginOperation("auth.login")
+		let loginSucceeded = false
+		let loginError = null
 		setIsLoading(true)
 		try {
 			let found = await findAccountById(id)
@@ -297,6 +301,7 @@ export default function LoginPage() {
 			}
 
 			if (found.type === "provider" && grantorMustChangePassword(found.data)) {
+				loginSucceeded = true
 				sessionStorage.setItem(GRANTOR_PASSWORD_CHANGE_ID_KEY, id)
 				sessionStorage.removeItem("bulsuscholar_userId")
 				sessionStorage.removeItem("bulsuscholar_userType")
@@ -306,6 +311,7 @@ export default function LoginPage() {
 			}
 
 			if (found.type === "admin" && found.data?.mustChangePassword === true) {
+				loginSucceeded = true
 				sessionStorage.setItem("bulsuscholar_userId", id)
 				sessionStorage.setItem("bulsuscholar_userType", "admin")
 				toast.info("Replace the temporary password before accessing the admin portal.")
@@ -313,7 +319,7 @@ export default function LoginPage() {
 				return
 			}
 
-			toast.info("Logging in...", { autoClose: 1500 })
+			loginSucceeded = true
 			sessionStorage.setItem("bulsuscholar_userId", id)
 			sessionStorage.setItem("bulsuscholar_userType", found.type)
 			setTimeout(() => {
@@ -322,9 +328,11 @@ export default function LoginPage() {
 				})
 			}, 500)
 		} catch (error) {
+			loginError = error
 			console.error(error)
 			toast.error("Login failed. Please try again.")
 		} finally {
+			finishLoginOperation(loginSucceeded ? null : loginError || new Error("login_not_completed"))
 			setIsLoading(false)
 		}
 	}

@@ -44,6 +44,7 @@ import "../css/SignupPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
+import { beginOperation } from "../services/operationTracker"
 import { requirePublicAppUrl } from "../config/publicUrls"
 
 const COURSES = [
@@ -1495,6 +1496,9 @@ export default function SignupPage() {
 		const studentId = userId.trim()
 		const normalizedSignupEmail = normalizeEmail(email)
 		const normalizedSignupCpNumber = normalizeCpNumber(cpNumber)
+		const finishSignupOperation = beginOperation("auth.signup")
+		let signupSucceeded = false
+		let signupError = null
 		try {
 			const [studentExists, pendingExists, providerExists, adminExists] =
 				await Promise.all([
@@ -1732,15 +1736,19 @@ export default function SignupPage() {
 
 			console.log("SignupPage: Student document saved through Python workflow", finalizeResult)
 
+			signupSucceeded = true
 			toast.success("Account created. Confirm your email before signing in.")
 			setVerificationStatus("email-confirmation")
 			setIsPending(true)
 			return
 
 		} catch (err) {
+			signupError = err
 			console.error("Error saving student:", err)
 			const message = getSignupWorkflowErrorMessage(err)
 			toast.error(message.length > 220 ? `${message.slice(0, 217)}...` : message)
+		} finally {
+			finishSignupOperation(signupSucceeded ? null : signupError || new Error("signup_not_completed"))
 		}
 	}
 

@@ -6,7 +6,7 @@ export const changeAdminTemporaryPassword = (newPassword) => postPortalJson(
 	"/admin/account/change-temporary-password",
 	{ newPassword },
 	"Administrator password change",
-	{ timeoutMs: 20000 },
+	{ timeoutMs: 20000, operation: "auth.password-update" },
 )
 
 export const updateAdminContact = (contactNumber) => postPortalJson(
@@ -14,5 +14,5 @@ export const updateAdminContact = (contactNumber) => postPortalJson(
 	"/admin/account/contact",
 	{ contactNumber },
 	"Administrator contact update",
-	{ timeoutMs: 20000 },
+	{ timeoutMs: 20000, operation: "record.save" },
 )

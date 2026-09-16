@@ -38,7 +38,7 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 			headers: await buildPortalRequestHeaders(options.actor || {}),
 			body: JSON.stringify(payload),
 			...(controller ? { signal: controller.signal } : {}),
-		})
+		}, options.operation || null)
 	} catch (error) {
 		if (error?.name === "AbortError") {
 			throw new PortalApiError(`${errorLabel} timed out. Please try again.`, {

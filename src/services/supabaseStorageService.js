@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient"
+import { trackOperation } from "./operationTracker"
 
 const DEFAULT_BUCKET = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || "bulsuscholar"
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -126,15 +127,17 @@ export function triggerBlobDownload(blob, fileName = "document.pdf") {
 }
 
 export async function downloadStorageObject(file = {}, options = {}) {
-	const blob = await getStorageObjectBlob(file)
-	if (options.validatePdf === true) await validatePdfBlob(blob)
-	const fallbackName = options.validatePdf === true ? "document.pdf" : "document"
-	const fileName = sanitizeDownloadFileName(
-		options.fileName || file.name || file.fileName || fallbackName,
-		fallbackName,
-	)
-	triggerBlobDownload(blob, fileName)
-	return { blob, fileName }
+	return trackOperation(async () => {
+		const blob = await getStorageObjectBlob(file)
+		if (options.validatePdf === true) await validatePdfBlob(blob)
+		const fallbackName = options.validatePdf === true ? "document.pdf" : "document"
+		const fileName = sanitizeDownloadFileName(
+			options.fileName || file.name || file.fileName || fallbackName,
+			fallbackName,
+		)
+		triggerBlobDownload(blob, fileName)
+		return { blob, fileName }
+	}, "document.download")
 }
 
 export function getDocumentDownloadErrorMessage(error, label = "document") {
@@ -168,7 +171,7 @@ export function normalizeStoragePublicUrl(url = "") {
 	}
 }
 
-export async function uploadToSupabaseStorage(file, options = {}) {
+async function performSupabaseStorageUpload(file, options = {}) {
 	if (!file) throw new Error("No file provided for upload.")
 	validateUpload(file, options)
 	const bucket = options.bucket || DEFAULT_BUCKET
@@ -207,6 +210,10 @@ export async function uploadToSupabaseStorage(file, options = {}) {
 		size: file.size,
 		bytes: file.size,
 	}
+}
+
+export function uploadToSupabaseStorage(file, options = {}) {
+	return trackOperation(() => performSupabaseStorageUpload(file, options), "document.upload")
 }
 
 export const uploadFile = uploadToSupabaseStorage

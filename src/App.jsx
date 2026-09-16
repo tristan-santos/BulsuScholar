@@ -9,6 +9,7 @@ import { PageLoading } from "./components/PortalLoading"
 import ModalDiscardConfirmation from "./components/ModalDiscardConfirmation"
 import StudentRosterDecisionGate from "./components/StudentRosterDecisionGate"
 import OperationStatusProvider from "./components/OperationStatusProvider"
+import ButtonSemantics from "./components/ButtonSemantics"
 import { trackedFetch } from "./services/operationTracker"
 import { PublicConfigurationContext } from "./contexts/PublicConfigurationContext"
 
@@ -90,6 +91,7 @@ export default function App() {
 	return (
 		<BrowserRouter>
 			<OperationStatusProvider>
+			<ButtonSemantics />
 			<MaintenanceGate>
 				<Suspense fallback={<PageLoading />}>
 				<Routes>

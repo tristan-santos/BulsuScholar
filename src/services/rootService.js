@@ -13,11 +13,12 @@ async function rootHeaders(json = true, accessToken = "") {
 	}
 }
 
-async function rootRequest(path, { method = "GET", payload, accessToken = "", signal } = {}) {
+async function rootRequest(path, { method = "GET", payload, accessToken = "", signal, operation } = {}) {
 	let response
 	try {
 		response = await fetch(`${requireBackendApiUrl("Root administration backend")}${path}`, {
 			method,
+			...(operation ? { operation } : {}),
 			headers: await rootHeaders(payload !== undefined, accessToken),
 			...(payload !== undefined ? { body: JSON.stringify(payload) } : {}),
 			...(signal ? { signal } : {}),
@@ -38,10 +39,10 @@ async function rootRequest(path, { method = "GET", payload, accessToken = "", si
 }
 
 export async function rootLogin(userId, password) {
-	return rootRequest("/root/auth/login", { method: "POST", payload: { userId, password } })
+	return rootRequest("/root/auth/login", { method: "POST", payload: { userId, password }, operation: "auth.login" })
 }
 
-export const verifyRootCode = (accessToken, code) => rootRequest("/root/auth/verify-code", { method: "POST", accessToken, payload: { code } })
+export const verifyRootCode = (accessToken, code) => rootRequest("/root/auth/verify-code", { method: "POST", accessToken, payload: { code }, operation: "auth.login" })
 
 export async function establishRootSession(result, authTokens) {
 	localStorage.setItem(ROOT_SESSION_KEY, result.rootSession)
@@ -74,21 +75,21 @@ export async function getAllRootData(dataset, search = "") {
 	return rows
 }
 export const getRootSqlPresets = () => rootRequest("/root/sql/presets")
-export const executeRootSql = (sql) => rootRequest("/root/sql/query", { method: "POST", payload: { sql } })
-export const executeRootSqlMaintenance = (action) => rootRequest("/root/sql/maintenance", { method: "POST", payload: { action } })
+export const executeRootSql = (sql) => rootRequest("/root/sql/query", { method: "POST", payload: { sql }, operation: "generic.foreground" })
+export const executeRootSqlMaintenance = (action) => rootRequest("/root/sql/maintenance", { method: "POST", payload: { action }, operation: "record.save" })
 export const getRootAdmins = () => rootRequest("/root/admins")
-export const saveRootAdmin = (payload) => rootRequest("/root/admins/save", { method: "POST", payload })
+export const saveRootAdmin = (payload) => rootRequest("/root/admins/save", { method: "POST", payload, operation: "record.save" })
 export const getRootSupport = () => rootRequest("/root/support")
-export const updateRootSupport = (payload) => rootRequest("/root/support/update", { method: "POST", payload })
+export const updateRootSupport = (payload) => rootRequest("/root/support/update", { method: "POST", payload, operation: "record.save" })
 export const getRootLogs = () => rootRequest("/root/logs")
-export const saveRootSetting = (id, payload) => rootRequest(`/root/settings/${id}`, { method: "POST", payload })
+export const saveRootSetting = (id, payload) => rootRequest(`/root/settings/${id}`, { method: "POST", payload, operation: "record.save" })
 export const getRootBrandingVersions = () => rootRequest("/root/branding/versions")
-export const saveRootBrandingDraft = (payload) => rootRequest("/root/branding/drafts", { method: "POST", payload })
-export const publishRootBrandingVersion = (id) => rootRequest(`/root/branding/${encodeURIComponent(id)}/publish`, { method: "POST", payload: {} })
+export const saveRootBrandingDraft = (payload) => rootRequest("/root/branding/drafts", { method: "POST", payload, operation: "record.save" })
+export const publishRootBrandingVersion = (id) => rootRequest(`/root/branding/${encodeURIComponent(id)}/publish`, { method: "POST", payload: {}, operation: "record.save" })
 export async function uploadRootBrandingAsset(file) {
 	const form = new FormData()
 	form.append("file", file)
-	const response = await fetch(`${requireBackendApiUrl("Root branding backend")}/root/branding/assets`, { method: "POST", headers: await rootHeaders(false), body: form })
+	const response = await fetch(`${requireBackendApiUrl("Root branding backend")}/root/branding/assets`, { method: "POST", headers: await rootHeaders(false), body: form, operation: "document.upload" })
 	const data = await response.json().catch(() => ({}))
 	if (!response.ok) throw new Error(String(data.detail || "Branding asset upload failed.").replaceAll("_", " "))
 	return data
@@ -96,9 +97,9 @@ export async function uploadRootBrandingAsset(file) {
 export const getRootFiles = () => rootRequest("/root/files?limit=500")
 export const getRootCanonicalReport = (reportType) => rootRequest(`/root/reports/data/${encodeURIComponent(reportType)}`)
 export const getRootIntegrations = () => rootRequest("/root/integrations")
-export const runRootIntegrationAction = (payload) => rootRequest("/root/integrations/action", { method: "POST", payload })
+export const runRootIntegrationAction = (payload) => rootRequest("/root/integrations/action", { method: "POST", payload, operation: "deployment.manage" })
 export const getRootSessions = () => rootRequest("/root/security/sessions")
-export const revokeRootSession = (id) => rootRequest(`/root/security/sessions/${encodeURIComponent(id)}`, { method: "DELETE" })
+export const revokeRootSession = (id) => rootRequest(`/root/security/sessions/${encodeURIComponent(id)}`, { method: "DELETE", operation: "record.delete" })
 
 export async function downloadRootPdf(title, sourceRows) {
 	if (!sourceRows?.length) throw new Error("There are no records to export.")
@@ -111,7 +112,7 @@ export async function downloadRootPdf(title, sourceRows) {
 		generatedAt: new Date().toISOString(),
 		filterLabel: "All records",
 	}
-	const response = await fetch(`${requireBackendApiUrl("Root report backend")}/root/reports/pdf`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(payload) })
+	const response = await fetch(`${requireBackendApiUrl("Root report backend")}/root/reports/pdf`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(payload), operation: "report.generate" })
 	if (!response.ok) throw new Error("The root PDF report could not be generated.")
 	const blob = await response.blob()
 	if (!blob.size || !blob.type.includes("pdf")) throw new Error("The report backend returned an invalid PDF.")
@@ -131,7 +132,7 @@ export async function downloadRootCanonicalPdf(report) {
 		filterLabel: report.filterLabel || "All records",
 		stats: [{ label: "Total Records", value: report.rowCount || report.rows.length }],
 	}
-	const response = await fetch(`${requireBackendApiUrl("Root report backend")}/root/reports/pdf`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(payload) })
+	const response = await fetch(`${requireBackendApiUrl("Root report backend")}/root/reports/pdf`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(payload), operation: "report.generate" })
 	if (!response.ok) throw new Error("The root PDF report could not be generated.")
 	const blob = await response.blob()
 	if (!blob.size || !blob.type.includes("pdf")) throw new Error("The report backend returned an invalid PDF.")
@@ -140,7 +141,7 @@ export async function downloadRootCanonicalPdf(report) {
 }
 
 export async function downloadRootStudentFile(file) {
-	const response = await fetch(`${requireBackendApiUrl("Root file backend")}/root/files/download`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(file) })
+	const response = await fetch(`${requireBackendApiUrl("Root file backend")}/root/files/download`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(file), operation: "document.download" })
 	if (!response.ok) throw new Error("The student file is unavailable or access was denied.")
 	const blob = await response.blob()
 	if (!blob.size) throw new Error("The downloaded student file is empty.")
