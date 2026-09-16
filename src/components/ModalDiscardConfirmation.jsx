@@ -39,7 +39,7 @@ export default function ModalDiscardConfirmation() {
 				aria-modal="true"
 				aria-labelledby="bulsuscholar-discard-title"
 			>
-				<button type="button" className="bulsuscholar-discard-close" onClick={cancel} aria-label="Keep editing">
+				<button type="button" className="bulsuscholar-discard-close" data-button-variant="none" onClick={cancel} aria-label="Keep editing" title="Close discard confirmation">
 					<HiX />
 				</button>
 				<span className="bulsuscholar-discard-icon" aria-hidden="true"><HiOutlineExclamation /></span>
@@ -48,8 +48,8 @@ export default function ModalDiscardConfirmation() {
 					<p>Your changes in this form have not been saved.</p>
 				</div>
 				<footer>
-					<button type="button" className="bulsuscholar-discard-cancel" onClick={cancel}>Keep Editing</button>
-					<button type="button" className="bulsuscholar-discard-confirm" onClick={discard}>Discard Changes</button>
+					<button type="button" className="bulsuscholar-discard-cancel" data-button-variant="neutral" onClick={cancel}>Keep Editing</button>
+					<button type="button" className="bulsuscholar-discard-confirm" data-button-variant="danger" onClick={discard}>Discard Changes</button>
 				</footer>
 			</section>
 		</div>

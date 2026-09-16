@@ -432,7 +432,7 @@ export default function LoginPage() {
 							{isCheckingForgotAccount ? "Checking account..." : "Forgot password?"}
 						</button>
 
-						<button type="submit" className="login-submit" disabled={isLoading}>
+						<button type="submit" className="login-submit" data-button-variant="positive" disabled={isLoading}>
 							<HiOutlineLockClosed aria-hidden /> {isLoading ? "Logging in..." : "Enter"}
 						</button>
 
@@ -478,7 +478,7 @@ export default function LoginPage() {
 									required
 								/>
 							</div>
-							<button type="submit" className="login-submit" disabled={isSendingReset || resetCooldownSeconds > 0} style={{ width: "100%" }}>
+							<button type="submit" className="login-submit" data-button-variant="positive" disabled={isSendingReset || resetCooldownSeconds > 0} style={{ width: "100%" }}>
 								<HiOutlineMail aria-hidden />
 								{isSendingReset
 									? "Sending..."
@@ -524,6 +524,7 @@ export default function LoginPage() {
 							<button
 								type="submit"
 								className="login-submit"
+								data-button-variant="positive"
 								disabled={isRequestingGrantorPassword}
 								style={{ width: "100%" }}
 							>

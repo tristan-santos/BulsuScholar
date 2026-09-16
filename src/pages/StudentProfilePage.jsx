@@ -14,9 +14,11 @@ import {
 } from "../services/supabaseDataService"
 import {
 	HiOutlineCamera,
+	HiOutlineArrowLeft,
 	HiOutlineDocumentText,
 	HiOutlineDownload,
 	HiOutlineEye,
+	HiOutlineSave,
 	HiOutlineX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
@@ -39,6 +41,7 @@ import {
 	getBarangaysByLocation,
 } from "../data/philippineLocations"
 import StudentTopbar from "../components/StudentTopbar"
+import StudentFooter from "../components/StudentFooter"
 import CustomSelect from "../components/CustomSelect"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import { downloadStudentProfileTemplate } from "../services/applicationFormService"
@@ -799,17 +802,20 @@ export default function StudentProfilePage() {
 							<button
 								type="button"
 								className="student-profile-cancel-btn student-mini-btn student-mini-btn--secondary"
+								data-button-variant="neutral"
 								onClick={() => navigate("/student-dashboard")}
 							>
+								<HiOutlineArrowLeft aria-hidden />
 								Back to Dashboard
 							</button>
 							<button
 								type="button"
 								className="student-profile-save-btn student-mini-btn student-mini-btn--primary"
+								data-button-variant="positive"
 								onClick={handleSaveProfile}
 								disabled={isSaving}
 							>
-								{isSaving ? "Saving..." : "Save Profile"}
+								<HiOutlineSave aria-hidden /> {isSaving ? "Saving..." : "Save Profile"}
 							</button>
 						</div>
 					</div>
@@ -1359,62 +1365,7 @@ export default function StudentProfilePage() {
 						</div>
 					)}
 
-					<footer className="student-footer">
-						<div className="student-footer-grid">
-							<div className="student-footer-brand">
-								<h3>BulsuScholar</h3>
-								<p>
-									Institutional Student Programs and Services scholarship portal.
-									Manage your records, profile, and scholarship information in one workspace.
-								</p>
-							</div>
-							<div className="student-footer-col">
-								<h4>Support</h4>
-								<p>Office of Scholarships</p>
-								<p>Email: scholarships@bulsu.edu.ph</p>
-								<p>Mon-Fri, 8:00 AM - 5:00 PM</p>
-							</div>
-							<div className="student-footer-col">
-								<h4>Quick Links</h4>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard")}
-								>
-									Dashboard Home
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/announcements")}
-								>
-									Announcements
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/inbox")}
-								>
-									Inbox
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/scholarships")}
-								>
-									My Scholarships
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/profile")}
-								>
-									My Profile
-								</button>
-							</div>
-						</div>
-						<p className="student-footer-bottom">(c) {new Date().getFullYear()} BulsuScholar. All rights reserved.</p>
-					</footer>
+					<StudentFooter description="Manage your records, profile, and scholarship information in one workspace." />
 				</div>
 			</main>
 		</div>

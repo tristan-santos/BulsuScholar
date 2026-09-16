@@ -695,8 +695,8 @@
 .grantor-inbox-item-copy small { overflow: hidden; color: #64748b; font-size: 0.76rem; font-weight: 400; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .grantor-inbox-item-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.7rem; padding-right: 1.2rem; white-space: nowrap; }
 .grantor-inbox-item-actions time { color: #789087; font-size: 0.68rem; white-space: nowrap; }
-.grantor-inbox-item-actions button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: #94a3b8; cursor: pointer; }
-.grantor-inbox-item-actions button:hover { color: #dc2626; }
+.grantor-inbox-item-actions button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: #b42318ba; cursor: pointer; }
+.grantor-inbox-item-actions button:hover { color: #b42318ba; }
 .grantor-inbox-item-actions > i { width: 7px; height: 7px; border-radius: 50%; background: #00633c; }
 .grantor-inbox-read-check { width: 0.9rem; height: 0.9rem; color: #94a3b8; }
 .grantor-inbox-detail-backdrop {
@@ -715,7 +715,7 @@
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
-	border: 1px solid #cbd8d1;
+	border: 0;
 	border-radius: 10px;
 	background: #fff;
 	box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
@@ -946,9 +946,7 @@
 	.grantor-inbox-item-copy small { white-space: normal; }
 	.grantor-inbox-detail-backdrop { align-items: stretch; place-items: stretch; padding: 0.75rem; }
 	.grantor-inbox-detail-modal { max-height: calc(100dvh - 1.5rem); }
-	.grantor-inbox-detail-head,
 	.grantor-inbox-detail-actions { flex-direction: column; }
-	.grantor-inbox-detail-head > button,
 	.grantor-inbox-detail-actions button { width: 100%; }
 	.grantor-inbox-detail-meta,
 	.grantor-inbox-detail-grid { grid-template-columns: 1fr; }

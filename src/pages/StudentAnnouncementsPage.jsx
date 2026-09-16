@@ -7,6 +7,7 @@ import {
 	HiOutlineCalendar,
 	HiOutlineClock,
 	HiOutlineExclamation,
+	HiOutlineEye,
 	HiOutlineInbox,
 	HiOutlineSearch,
 	HiOutlineXCircle,
@@ -231,6 +232,7 @@ export default function StudentAnnouncementsPage() {
 				<button
 					key={announcement.id}
 					type="button"
+					data-button-variant="none"
 					className={`student-announcement-card student-announcement-card--action student-announcement-page-card ${variant === "previous" ? "student-announcement-page-card--previous" : ""}`}
 					onClick={() => handleAnnouncementRedirect(announcement)}
 				>
@@ -261,7 +263,7 @@ export default function StudentAnnouncementsPage() {
 								Not Available
 							</>
 						) : (
-							announcement.applicationEnabled ? "Apply Now" : "View Announcement"
+							announcement.applicationEnabled ? <><HiOutlineAcademicCap aria-hidden /> Apply Now</> : <><HiOutlineEye aria-hidden /> View Announcement</>
 						)}
 					</span>
 				</button>
@@ -329,7 +331,8 @@ export default function StudentAnnouncementsPage() {
 							</button>
 							<button
 								type="button"
-								className="student-mini-btn student-mini-btn--secondary"
+							className="student-mini-btn student-mini-btn--secondary"
+							data-button-variant="neutral"
 								onClick={() => navigate("/student-dashboard")}
 							>
 								<HiOutlineArrowLeft aria-hidden />

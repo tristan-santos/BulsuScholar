@@ -7,8 +7,6 @@ import {
 	HiOutlineInbox,
 	HiOutlineLogout,
 	HiOutlineMenu,
-	HiOutlineMoon,
-	HiOutlineSun,
 	HiOutlineUser,
 } from "react-icons/hi"
 import {
@@ -28,6 +26,7 @@ import { GRANTOR_SUBCOLLECTIONS } from "../services/grantorService"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import logo2 from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
+import ThemeToggle from "./ThemeToggle"
 
 function getReadAnnouncementStorageKey(studentId = "") {
 	return `bulsuscholar_student_read_announcements_${studentId || "guest"}`
@@ -311,26 +310,9 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 								</nav>
 								<div className="student-verified-dropdown-theme">
 									<span className="student-verified-dropdown-theme-label">Theme</span>
-									<div className="student-verified-dropdown-theme-btns">
-										<button
-											type="button"
-											className={`student-verified-dropdown-theme-btn ${theme === "light" ? "active" : ""}`}
-											onClick={() => setTheme("light")}
-										>
-											<HiOutlineSun />
-											Light
-										</button>
-										<button
-											type="button"
-											className={`student-verified-dropdown-theme-btn ${theme === "dark" ? "active" : ""}`}
-											onClick={() => setTheme("dark")}
-										>
-											<HiOutlineMoon />
-											Dark
-										</button>
-									</div>
+									<ThemeToggle theme={theme} setTheme={setTheme} />
 								</div>
-								<button type="button" className="student-verified-dropdown-logout" onClick={handleLogout}>
+								<button type="button" className="student-verified-dropdown-logout" data-button-variant="danger" onClick={handleLogout}>
 									<HiOutlineLogout className="student-verified-dropdown-logout-icon" />
 									Logout
 								</button>

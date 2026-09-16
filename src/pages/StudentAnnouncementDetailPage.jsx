@@ -9,6 +9,7 @@ import {
 	HiOutlineClock,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
+	HiOutlineEye,
 	HiOutlineInbox,
 	HiChevronLeft,
 	HiChevronRight,
@@ -723,6 +724,7 @@ export default function StudentAnnouncementDetailPage() {
 						<button
 							type="button"
 							className="student-mini-btn student-mini-btn--secondary"
+							data-button-variant="neutral"
 							onClick={() => navigate("/student-dashboard/announcements")}
 						>
 							<HiOutlineArrowLeft aria-hidden />
@@ -732,7 +734,8 @@ export default function StudentAnnouncementDetailPage() {
 							<div className="student-announcement-apply-wrap">
 								<button
 									type="button"
-									className={`student-mini-btn student-mini-btn--primary student-announcement-apply-btn ${!applyAvailability.canApply ? "student-announcement-apply-btn--disabled" : ""}`}
+								className={`student-mini-btn student-mini-btn--primary student-announcement-apply-btn ${!applyAvailability.canApply ? "student-announcement-apply-btn--disabled" : ""}`}
+								data-button-variant="positive"
 									onClick={applyFromAnnouncement}
 									disabled={isApplying || !applyAvailability.canApply}
 								>
@@ -773,6 +776,7 @@ export default function StudentAnnouncementDetailPage() {
 										<>
 											<button
 												type="button"
+												data-button-variant="none"
 												className="student-announcement-carousel-btn student-announcement-carousel-btn--prev"
 												onClick={() => moveCarousel(-1)}
 												aria-label="Previous announcement image"
@@ -906,9 +910,10 @@ export default function StudentAnnouncementDetailPage() {
 													item.authorImageUrl ||
 													""
 												return (
-													<button
-														key={`${item.source}-${item.id}`}
-														type="button"
+											<button
+												key={`${item.source}-${item.id}`}
+												type="button"
+												data-button-variant="none"
 														className="student-announcement-card student-announcement-card--action student-announcement-page-card"
 														onClick={() =>
 															navigate(`/student-dashboard/announcements/${item.source || "grantor"}/${encodeURIComponent(item.id)}`)
@@ -928,7 +933,7 @@ export default function StudentAnnouncementDetailPage() {
 															<h4>{item.title || "Announcement"}</h4>
 															<p>{item.previewText || item.subtitle || item.description || "No preview text provided."}</p>
 														</div>
-														<span className="student-announcement-card-action">View Announcement</span>
+												<span className="student-announcement-card-action"><HiOutlineEye aria-hidden /> View Announcement</span>
 													</button>
 												)
 											})}

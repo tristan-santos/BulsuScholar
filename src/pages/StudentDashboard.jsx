@@ -28,18 +28,18 @@ import {
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
 	HiOutlineExternalLink,
+	HiOutlineEye,
 	HiOutlineInbox,
 	HiOutlineLogout,
 	HiOutlineMail,
 	HiOutlineMenu,
-	HiOutlineMoon,
-	HiOutlineSun,
 	HiOutlineUser,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import useThemeMode from "../hooks/useThemeMode"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
+import StudentFooter from "../components/StudentFooter"
 import { getCurrentSemesterTag, normalizeScholarshipList, validateScholarshipDocuments } from "../services/scholarshipService"
 import {
 	isPreviousStudentAnnouncement,
@@ -1159,10 +1159,11 @@ export default function StudentDashboard() {
 											{slotState.managed ? <span className={`student-slot-badge ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}>{slotState.label}</span> : null}
 												<button
 													type="button"
-													className={isApplyBlocked ? "student-modern-announcement-apply--blocked" : ""}
+											className={isApplyBlocked ? "student-modern-announcement-apply--blocked" : ""}
+											data-button-variant={announcement.applicationEnabled ? "positive" : "neutral"}
 													onClick={() => handleAnnouncementRedirect(announcement)}
 												>
-													{announcement.applicationEnabled ? "Apply Now" : "View Announcement"}
+											{announcement.applicationEnabled ? <><HiOutlineAcademicCap aria-hidden /> Apply Now</> : <><HiOutlineEye aria-hidden /> View Announcement</>}
 												</button>
 											</div>
 										</article>
@@ -1310,64 +1311,7 @@ export default function StudentDashboard() {
 						</div>
 					</section>
 
-					<footer className="student-footer">
-						<div className="student-footer-grid">
-							<div className="student-footer-brand">
-								<h3>BulsuScholar</h3>
-								<p>
-									Institutional Student Programs and Services scholarship portal.
-									Manage your records, documents, and application updates in one place.
-								</p>
-							</div>
-							<div className="student-footer-col">
-								<h4>Support</h4>
-								<p>Office of Scholarships</p>
-								<p>Email: scholarships@bulsu.edu.ph</p>
-								<p>Mon-Fri, 8:00 AM - 5:00 PM</p>
-							</div>
-							<div className="student-footer-col">
-								<h4>Quick Links</h4>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard")}
-								>
-									Dashboard Home
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/announcements")}
-								>
-									Announcements
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/inbox")}
-								>
-									Inbox
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/profile")}
-								>
-									My Profile
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/scholarships")}
-								>
-									My Scholarships
-								</button>
-							</div>
-						</div>
-						<p className="student-footer-bottom">
-							(c) {new Date().getFullYear()} BulsuScholar. All rights reserved.
-						</p>
-					</footer>
+					<StudentFooter />
 				</div>
 			</main>
 		</div>

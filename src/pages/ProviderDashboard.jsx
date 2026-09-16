@@ -53,7 +53,6 @@ import {
 	HiOutlineLogout,
 	HiOutlineMail,
 	HiOutlineMenu,
-	HiOutlineMoon,
 	HiOutlinePhone,
 	HiOutlinePencil,
 	HiOutlinePlus,
@@ -62,7 +61,6 @@ import {
 	HiOutlineSave,
 	HiOutlineCheckCircle,
 	HiOutlineSparkles,
-	HiOutlineSun,
 	HiOutlineTag,
 	HiOutlineTrash,
 	HiOutlineUserGroup,
@@ -78,6 +76,7 @@ import "../css/AdminDashboard.css"
 import "../css/ProviderDashboard.css"
 import TablePagination from "../components/TablePagination"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
+import ThemeToggle from "../components/ThemeToggle"
 import CustomSelect from "../components/CustomSelect"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
@@ -3900,7 +3899,7 @@ export default function ProviderDashboard() {
 				<footer className="grantor-announcement-card-actions">
 					<button type="button" className="grantor-announcement-view-btn" onClick={() => setSelectedAnnouncement(item)}><HiOutlineEye /> View</button>
 					{item.applicationEnabled === true && !archived ? <button type="button" className="grantor-announcement-slots-btn" onClick={() => openSlotCapacityModal(item)}><HiOutlineUsers /> {slotState.configured ? "Edit Slots" : "Set Slots"}</button> : null}
-					{archived ? <span className="grantor-announcement-archived-note">Archived</span> : <button type="button" className="grantor-announcement-archive-btn" onClick={() => handleArchiveAnnouncement(item.id)} disabled={busy === `archive-announcement-${item.id}`}><HiOutlineTrash /> Archive</button>}
+					{archived ? <span className="grantor-announcement-archived-note">Archived</span> : <button type="button" className="grantor-announcement-archive-btn" data-button-variant="danger" onClick={() => handleArchiveAnnouncement(item.id)} disabled={busy === `archive-announcement-${item.id}`}><HiOutlineTrash /> Archive</button>}
 				</footer>
 			</article>
 		)
@@ -4217,12 +4216,9 @@ export default function ProviderDashboard() {
 								</nav>
 								<div className="grantor-account-theme">
 									<span>Theme</span>
-									<div>
-										<button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}><HiOutlineSun /> Light</button>
-										<button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}><HiOutlineMoon /> Dark</button>
-									</div>
+									<ThemeToggle theme={theme} setTheme={setTheme} />
 								</div>
-								<button type="button" className="grantor-account-logout" onClick={() => { sessionStorage.removeItem("bulsuscholar_userId"); sessionStorage.removeItem("bulsuscholar_userType"); navigate("/", { replace: true }) }}><HiOutlineLogout /> Logout</button>
+								<button type="button" className="grantor-account-logout" data-button-variant="danger" onClick={() => { sessionStorage.removeItem("bulsuscholar_userId"); sessionStorage.removeItem("bulsuscholar_userType"); navigate("/", { replace: true }) }}><HiOutlineLogout /> Logout</button>
 							</div>
 						) : null}
 					</div>
@@ -4988,8 +4984,8 @@ export default function ProviderDashboard() {
 						<header className="grantor-inbox-head">
 							<div className="grantor-inbox-title"><h2>Messages</h2>{unreadPersonalNotifications.length > 0 ? <span>{unreadPersonalNotifications.length}</span> : null}</div>
 							<div className="grantor-inbox-actions">
-								<button type="button" className="grantor-inbox-tab active"><HiOutlineInbox /> Notifications</button>
-								<button type="button" className="grantor-inbox-mark-read" onClick={markAllGrantorNotificationsRead} disabled={unreadPersonalNotifications.length === 0}>Mark all read</button>
+								<span className="grantor-inbox-tab active"><HiOutlineInbox /> Notifications</span>
+								<button type="button" className="grantor-inbox-mark-read" data-button-variant="neutral" onClick={markAllGrantorNotificationsRead} disabled={unreadPersonalNotifications.length === 0}>Mark all read</button>
 							</div>
 						</header>
 						<div className="grantor-inbox-list">
@@ -5000,11 +4996,11 @@ export default function ProviderDashboard() {
 									<header><span><HiOutlineCheckCircle />{group.category}</span><small>{group.items.length} {group.items.length === 1 ? "notification" : "notifications"}</small></header>
 									{group.items.map((notification) => (
 										<article key={notification.id} className={`grantor-inbox-item ${notification.read === true ? "" : "unread"}`}>
-											<button type="button" className="grantor-inbox-item-main" onClick={() => openGrantorNotificationDetail(notification)}>
+										<button type="button" className="grantor-inbox-item-main" data-button-variant="none" onClick={() => openGrantorNotificationDetail(notification)}>
 												<span className="grantor-inbox-item-icon"><HiOutlineLockClosed /></span>
 												<span className="grantor-inbox-item-copy"><strong>{notification.title || "Account Update"}</strong><small>{notification.message || "You have a new account notification."}</small></span>
 											</button>
-											<div className="grantor-inbox-item-actions"><time>{formatRelativeDate(notification.createdAt)}</time><button type="button" onClick={() => deleteGrantorNotification(notification)} aria-label="Delete notification"><HiOutlineTrash /></button>{notification.read !== true ? <i aria-label="Unread" /> : <HiCheck className="grantor-inbox-read-check" aria-label="Read" />}</div>
+										<div className="grantor-inbox-item-actions"><time>{formatRelativeDate(notification.createdAt)}</time><button type="button" data-button-variant="none" onClick={() => deleteGrantorNotification(notification)} aria-label="Delete notification" title="Delete notification"><HiOutlineTrash /></button>{notification.read !== true ? <i aria-label="Unread" /> : <HiCheck className="grantor-inbox-read-check" aria-label="Read" />}</div>
 										</article>
 									))}
 								</section>
@@ -5024,7 +5020,7 @@ export default function ProviderDashboard() {
 									<h3>{selectedGrantorNotification.title || "Inbox Message"}</h3>
 								</div>
 							</div>
-							<button type="button" onClick={() => setSelectedGrantorNotification(null)} aria-label="Close inbox message"><HiX /></button>
+							<button type="button" data-button-variant="none" onClick={() => setSelectedGrantorNotification(null)} aria-label="Close inbox message" title="Close"><HiX /></button>
 						</header>
 						<div className="grantor-inbox-detail-body">
 							<div className="grantor-inbox-detail-meta">
@@ -5063,11 +5059,8 @@ export default function ProviderDashboard() {
 							) : null}
 						</div>
 						<footer className="grantor-inbox-detail-actions">
-							<button type="button" className="grantor-inbox-detail-delete" onClick={async () => { await deleteGrantorNotification(selectedGrantorNotification); setSelectedGrantorNotification(null) }}>
+							<button type="button" className="grantor-inbox-detail-delete" data-button-variant="danger" onClick={async () => { await deleteGrantorNotification(selectedGrantorNotification); setSelectedGrantorNotification(null) }}>
 								<HiOutlineTrash /> Delete Message
-							</button>
-							<button type="button" className="grantor-inbox-detail-close" onClick={() => setSelectedGrantorNotification(null)}>
-								Close
 							</button>
 						</footer>
 					</section>

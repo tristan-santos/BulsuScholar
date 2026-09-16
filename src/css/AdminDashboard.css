@@ -18834,7 +18834,7 @@
 .admin-notification-detail-message > span,
 .admin-notification-detail-meta span { color: #617188; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
 .admin-notification-detail-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: #00633c; background: rgba(0, 99, 60, 0.09); font-size: 1.25rem; }
-.admin-notification-detail-modal header button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid rgba(0, 99, 60, 0.2); border-radius: 50%; color: #244137; background: #fff; }
+.admin-notification-detail-modal header button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; color: #244137; background: transparent; }
 .admin-notification-detail-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; padding: 1rem 1.15rem 0; }
 .admin-notification-detail-meta > div { display: grid; gap: 0.35rem; padding: 0.85rem; border: 1px solid rgba(0, 99, 60, 0.14); border-radius: 6px; background: rgba(0, 99, 60, 0.025); }
 .admin-notification-detail-message { margin: 1rem 1.15rem; padding: 1rem; border: 1px solid rgba(0, 99, 60, 0.18); border-radius: 6px; background: rgba(0, 99, 60, 0.045); }
@@ -18846,6 +18846,7 @@
 .admin-portal--dark .admin-notification-detail-modal,
 .admin-portal--dark .admin-notification-detail-modal header button,
 .admin-portal--dark .admin-notification-detail-modal footer button { color: #e9f5ef; background: #15231e; }
+.admin-portal--dark .admin-notification-detail-modal header button { border-color: transparent; background: transparent; }
 
 @media (max-width: 640px) {
 	.admin-notification-detail-meta { grid-template-columns: 1fr; }

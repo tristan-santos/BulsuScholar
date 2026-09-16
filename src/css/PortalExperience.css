@@ -82,9 +82,9 @@ textarea:focus-visible,
 button[aria-busy="true"] { cursor: wait; }
 button[aria-busy="true"] svg { animation: portal-spin 0.8s linear infinite; }
 
-/* Shared semantic command buttons. Navigation, tabs, selectors, and toggles keep
-   their purpose-specific presentation and are excluded by ButtonSemantics. */
-html body button[data-button-variant] {
+/* Shared semantic command buttons are opt-in. Navigation, tabs, selectors,
+   toggles, card surfaces, and icon controls keep their purpose-specific styles. */
+html body button[data-button-variant]:not([data-button-variant="none"]) {
 	border-style: solid !important;
 	border-width: 1px !important;
 	font-weight: 700;
@@ -103,8 +103,8 @@ html body button[data-button-variant="positive"]:not(:disabled):hover {
 }
 
 html body button[data-button-variant="danger"] {
-	border-color: #b42318 !important;
-	background-color: #b42318 !important;
+	border-color: #b42318ba !important;
+	background-color: #b42318ba !important;
 	color: #ffffff !important;
 }
 
@@ -125,15 +125,73 @@ html body button[data-button-variant="neutral"]:not(:disabled):hover {
 	color: #334155 !important;
 }
 
-html body button[data-button-variant] svg {
+html body button[data-button-variant]:not([data-button-variant="none"]) svg {
 	color: inherit !important;
 	stroke: currentColor;
 }
 
-html body button[data-button-variant]:disabled {
+html body button[data-button-variant]:not([data-button-variant="none"]):disabled {
 	cursor: not-allowed;
 	opacity: 0.55;
 }
+
+.portal-theme-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	width: 100%;
+	min-height: 42px;
+	padding: 0.45rem 0.55rem;
+	border: 1px solid #cbd5e1;
+	border-radius: 6px;
+	background: #ffffff;
+	color: #334155;
+	font: inherit;
+	font-weight: 650;
+	cursor: pointer;
+}
+
+.portal-theme-toggle__track {
+	position: relative;
+	display: block;
+	flex: 0 0 auto;
+	width: 46px;
+	height: 26px;
+	border-radius: 999px;
+	background: #dbe7e1;
+	transition: background 160ms ease;
+}
+
+.portal-theme-toggle__thumb {
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	display: grid;
+	place-items: center;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background: #ffffff;
+	color: #00633c;
+	box-shadow: 0 1px 4px rgba(15, 23, 42, 0.24);
+	transition: transform 160ms ease;
+}
+
+.portal-theme-toggle[aria-checked="true"] .portal-theme-toggle__track { background: #00633c; }
+.portal-theme-toggle[aria-checked="true"] .portal-theme-toggle__thumb { transform: translateX(20px); }
+.portal-theme-toggle__thumb svg { width: 15px; height: 15px; }
+.portal-theme-toggle__label { flex: 1; text-align: left; }
+.portal-theme-toggle:hover { border-color: #94a3b8; background: #f8fafc; }
+.portal-theme-toggle--compact { width: auto; min-width: 142px; }
+
+html[data-theme="dark"] .portal-theme-toggle {
+	border-color: #64748b;
+	background: transparent;
+	color: #f8fafc;
+}
+
+html[data-theme="dark"] .portal-theme-toggle:hover { border-color: #e2e8f0; background: rgba(255, 255, 255, 0.08); }
 
 html[data-theme="dark"] body button[data-button-variant="neutral"],
 body:has(.student-dashboard--dark) button[data-button-variant="neutral"],

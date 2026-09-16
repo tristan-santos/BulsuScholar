@@ -1,0 +1,284 @@
+.application-scroll-stack {
+	display: grid;
+	gap: 0.9rem;
+	width: 100%;
+	margin: 0 auto 1.25rem;
+	outline: none;
+}
+
+.application-scroll-stack:focus-visible {
+	border-radius: 6px;
+	outline: 3px solid rgba(0, 99, 60, 0.2);
+	outline-offset: 5px;
+}
+
+.application-scroll-stack-stage {
+	position: relative;
+	height: min(calc(var(--application-stack-card-height, 320px) + 2rem), 72dvh);
+	min-height: min(8rem, 72dvh);
+	touch-action: pan-y;
+}
+
+.application-scroll-stack-layer {
+	position: absolute;
+	inset: 0 0 1.75rem;
+	min-width: 0;
+	overflow: hidden;
+	border-radius: 12px;
+	transform-origin: center top;
+	pointer-events: none;
+}
+
+.application-scroll-stack-layer--active {
+	overflow-x: hidden;
+	overflow-y: auto;
+	pointer-events: auto;
+}
+
+.application-scroll-stack-card,
+.application-scroll-stack-card > .student-scholarship-card {
+	width: 100%;
+	min-width: 0;
+}
+
+.application-scroll-stack-layer:not(.application-scroll-stack-layer--active) .student-scholarship-card {
+	box-shadow: 0 12px 28px rgba(15, 45, 34, 0.1);
+}
+
+.application-scroll-stack-layer:not(.application-scroll-stack-layer--active) .student-scholarship-card > * {
+	visibility: hidden;
+}
+
+.application-scroll-stack-navigation {
+	display: grid;
+	grid-template-columns: minmax(8.5rem, auto) minmax(10rem, 1fr) minmax(8.5rem, auto);
+	align-items: center;
+	gap: 0.8rem;
+}
+
+.application-scroll-stack-nav-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	min-height: 40px;
+}
+
+.application-scroll-stack-nav-btn svg {
+	flex: 0 0 auto;
+	width: 1rem;
+	height: 1rem;
+}
+
+.application-scroll-stack-position {
+	display: grid;
+	justify-items: center;
+	gap: 0.45rem;
+	min-width: 0;
+	color: #475569;
+	font-size: 0.76rem;
+}
+
+.application-scroll-stack-position strong {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.application-scroll-stack-dots {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 0.05rem;
+}
+
+.application-scroll-stack-dots button {
+	position: relative;
+	width: 28px;
+	height: 28px;
+	min-width: 28px;
+	min-height: 28px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	box-shadow: none;
+	cursor: pointer;
+}
+
+.application-scroll-stack-dots button::before {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: #cbd5e1;
+	content: "";
+	transform: translate(-50%, -50%);
+}
+
+.application-scroll-stack-dots button.is-active::before {
+	background: #007a4a;
+	box-shadow: 0 0 0 3px rgba(0, 122, 74, 0.16);
+}
+
+.student-scholarship-history {
+	margin: 0.25rem 0 1.25rem;
+	border-top: 1px solid #e2e8f0;
+}
+
+.student-scholarship-history > summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	min-height: 48px;
+	padding: 0.75rem 0;
+	color: #475569;
+	font-size: 0.82rem;
+	font-weight: 700;
+	cursor: pointer;
+	list-style: none;
+}
+
+.student-scholarship-history > summary::-webkit-details-marker {
+	display: none;
+}
+
+.student-scholarship-history > summary::after {
+	content: "+";
+	font-size: 1.15rem;
+	font-weight: 500;
+}
+
+.student-scholarship-history[open] > summary::after {
+	content: "−";
+}
+
+.student-scholarship-history-count {
+	margin-left: auto;
+	color: #64748b;
+	font-weight: 600;
+}
+
+.student-scholarship-history-list {
+	display: grid;
+	gap: 0.65rem;
+	padding-bottom: 0.85rem;
+}
+
+.student-scholarship-history-card {
+	display: grid;
+	grid-template-columns: 36px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.8rem;
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+	background: #f8fafc;
+}
+
+.student-scholarship-history-card > svg {
+	width: 1.2rem;
+	height: 1.2rem;
+	margin: auto;
+	color: #64748b;
+}
+
+.student-scholarship-history-card h4,
+.student-scholarship-history-card p {
+	margin: 0;
+}
+
+.student-scholarship-history-card h4 {
+	color: #334155;
+	font-size: 0.84rem;
+}
+
+.student-scholarship-history-card p,
+.student-scholarship-history-card > span {
+	margin-top: 0.18rem;
+	color: #64748b;
+	font-size: 0.72rem;
+}
+
+.student-scholarship-history-card > span {
+	margin: 0;
+	font-weight: 700;
+	text-align: right;
+}
+
+.student-dashboard--dark .application-scroll-stack:focus-visible {
+	outline-color: rgba(110, 231, 183, 0.4);
+}
+
+.student-dashboard--dark .application-scroll-stack-position,
+.student-dashboard--dark .student-scholarship-history > summary,
+.student-dashboard--dark .student-scholarship-history-count {
+	color: #cbd5e1;
+}
+
+.student-dashboard--dark .application-scroll-stack-dots button::before {
+	background: #475569;
+}
+
+.student-dashboard--dark .application-scroll-stack-dots button.is-active::before {
+	background: #6ee7b7;
+	box-shadow: 0 0 0 3px rgba(110, 231, 183, 0.18);
+}
+
+.student-dashboard--dark .student-scholarship-history {
+	border-color: #334155;
+}
+
+.student-dashboard--dark .student-scholarship-history-card {
+	border-color: #334155;
+	background: #0f172a;
+}
+
+.student-dashboard--dark .student-scholarship-history-card h4 {
+	color: #e2e8f0;
+}
+
+.student-dashboard--dark .student-scholarship-history-card p,
+.student-dashboard--dark .student-scholarship-history-card > span,
+.student-dashboard--dark .student-scholarship-history-card > svg {
+	color: #94a3b8;
+}
+
+@media (max-width: 640px) {
+	.application-scroll-stack-stage {
+		height: min(calc(var(--application-stack-card-height, 320px) + 2rem), 74dvh);
+		min-height: min(8rem, 74dvh);
+	}
+
+	.application-scroll-stack-navigation {
+		grid-template-columns: 1fr 1fr;
+	}
+
+	.application-scroll-stack-position {
+		grid-column: 1 / -1;
+		grid-row: 1;
+	}
+
+	.application-scroll-stack-nav-btn {
+		width: 100%;
+	}
+
+	.student-scholarship-history-card {
+		grid-template-columns: 32px minmax(0, 1fr);
+	}
+
+	.student-scholarship-history-card > span {
+		grid-column: 2;
+		text-align: left;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.application-scroll-stack-layer {
+		transition: none !important;
+	}
+}

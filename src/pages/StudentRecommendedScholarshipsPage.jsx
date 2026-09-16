@@ -408,7 +408,8 @@ export default function StudentRecommendedScholarshipsPage() {
 						<div className="student-recommendation-nav-row">
 							<button
 								type="button"
-								className="student-recommendation-back-btn"
+							className="student-recommendation-back-btn"
+							data-button-variant="neutral"
 								onClick={() => navigate("/student-dashboard")}
 							>
 								<HiOutlineArrowLeft aria-hidden />

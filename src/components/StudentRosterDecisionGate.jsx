@@ -100,8 +100,8 @@ export default function StudentRosterDecisionGate({ children }) {
 							? `Confirm that ${selected?.scholarshipName || "this scholarship"} from ${selected?.grantorName || "this grantor"} belongs to you? This becomes your locked active scholarship.`
 							: "Confirm that this record does not belong to you? It will be archived as disputed history and sent to the administrator and grantor for review."}</p>
 						<div className="admin-confirmation-actions">
-							<button type="button" className="admin-confirmation-cancel" disabled={busy} onClick={() => setConfirmAction("")}>Cancel</button>
-							<button type="button" className={confirmAction === "decline" ? "admin-confirmation-danger" : "admin-confirmation-confirm"} disabled={busy} onClick={submitDecision}>{busy ? "Saving..." : "Confirm"}</button>
+							<button type="button" className="admin-confirmation-cancel" data-button-variant="neutral" disabled={busy} onClick={() => setConfirmAction("")}>Cancel</button>
+							<button type="button" className={confirmAction === "decline" ? "admin-confirmation-danger" : "admin-confirmation-confirm"} data-button-variant={confirmAction === "decline" ? "danger" : "positive"} disabled={busy} onClick={submitDecision}>{busy ? "Saving..." : "Confirm"}</button>
 						</div>
 					</section>
 				</div>

@@ -34,14 +34,12 @@ import {
 	HiOutlineInbox,
 	HiOutlineLogout,
 	HiOutlineMenu,
-	HiOutlineMoon,
 	HiOutlineRefresh,
 	HiOutlineSave,
 	HiOutlineIdentification,
 	HiOutlineSearch,
 	HiOutlineCheckCircle,
 	HiOutlineSparkles,
-	HiOutlineSun,
 	HiOutlineTrash,
 	HiOutlineUserAdd,
 	HiOutlineUserGroup,
@@ -61,6 +59,7 @@ import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
 import TablePagination from "../components/TablePagination"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
+import ThemeToggle from "../components/ThemeToggle"
 import CustomSelect from "../components/CustomSelect"
 import NotFoundPage from "./NotFoundPage"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
@@ -8421,14 +8420,14 @@ export default function AdminDashboard() {
 					<div className="admin-mail-toolbar">
 						<label className="admin-mail-search"><HiOutlineSearch /><input value={notificationSearch} onChange={(event) => setNotificationSearch(event.target.value)} placeholder="Search notifications" /></label>
 						<select value={notificationFilter} onChange={(event) => { setNotificationFilter(event.target.value); setSelectedAdminNotificationIds([]) }} aria-label="Filter notifications"><option value="inbox">Inbox</option><option value="unread">Unread</option><option value="read">Read</option><option value="archived">Archived</option></select>
-						<button type="button" onClick={markAllAdminNotificationsRead} disabled={unreadAdminNotifications.length === 0}><HiOutlineCheckCircle /> Mark all read</button>
-						<button type="button" onClick={() => archiveAdminNotifications(selectedRows)} disabled={selectedRows.length === 0}><HiOutlineArchive /> Archive{selectedRows.length ? ` (${selectedRows.length})` : ""}</button>
+						<button type="button" data-button-variant="neutral" onClick={markAllAdminNotificationsRead} disabled={unreadAdminNotifications.length === 0}><HiOutlineCheckCircle /> Mark all read</button>
+						<button type="button" data-button-variant="danger" onClick={() => archiveAdminNotifications(selectedRows)} disabled={selectedRows.length === 0}><HiOutlineArchive /> Archive{selectedRows.length ? ` (${selectedRows.length})` : ""}</button>
 					</div>
 					<div className="admin-mail-list">
 						{visibleAdminNotifications.length === 0 ? <div className="admin-inbox-empty"><HiOutlineInbox /><strong>No matching notifications.</strong><span>Try another search or filter.</span></div> : visibleAdminNotifications.map((notification) => (
 							<div key={notification.id} className={`admin-mail-row ${notification.read === true ? "" : "unread"}`}>
 								<input type="checkbox" checked={selectedAdminNotificationIds.includes(notification.id)} onChange={(event) => setSelectedAdminNotificationIds((current) => event.target.checked ? [...new Set([...current, notification.id])] : current.filter((id) => id !== notification.id))} aria-label={`Select ${toAdminNotificationTitle(notification)}`} />
-								<button type="button" className="admin-mail-row-main" onClick={() => openAdminNotification(notification)}>
+								<button type="button" className="admin-mail-row-main" data-button-variant="none" onClick={() => openAdminNotification(notification)}>
 									<span className="admin-mail-sender">{notification.actorType || "BulsuScholar"}</span><span className="admin-mail-subject"><strong>{toAdminNotificationTitle(notification)}</strong><small>{toAdminNotificationMessage(notification)}</small></span><time>{formatRelativeTime(notification.createdAt || notification.created_at)}</time>
 								</button>
 								{notification.archived !== true ? <button type="button" className="admin-mail-archive" onClick={() => archiveAdminNotifications([notification])} aria-label="Archive notification"><HiOutlineArchive /></button> : null}
@@ -10315,7 +10314,7 @@ export default function AdminDashboard() {
 											{isAnnouncementArchived(item) || item.sourceType !== "admin" ? (
 												<span className="admin-announcement-archived-note">{isAnnouncementArchived(item) ? "Archived" : "Grantor Post"}</span>
 											) : (
-												<button type="button" className="is-danger" onClick={() => archiveAnnouncement(item.id)}>
+											<button type="button" className="is-danger" data-button-variant="danger" onClick={() => archiveAnnouncement(item.id)}>
 													<HiOutlineTrash />
 													Archive
 												</button>
@@ -10383,7 +10382,7 @@ export default function AdminDashboard() {
 										<div className="admin-announcement-card-actions">
 											<button type="button" onClick={() => setSelectedAdminAnnouncement(item)}><HiOutlineEye /> View</button>
 											{item.sourceType === "admin" ? (
-												<button type="button" className="is-danger" onClick={() => archiveAnnouncement(item.id)}>
+												<button type="button" className="is-danger" data-button-variant="danger" onClick={() => archiveAnnouncement(item.id)}>
 													<HiOutlineTrash />
 													Archive
 												</button>
@@ -10436,12 +10435,9 @@ export default function AdminDashboard() {
 								</nav>
 								<div className="admin-account-theme">
 									<span>Theme</span>
-									<div>
-										<button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}><HiOutlineSun /> Light</button>
-										<button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}><HiOutlineMoon /> Dark</button>
-									</div>
+									<ThemeToggle theme={theme} setTheme={setTheme} />
 								</div>
-								<button type="button" className="admin-account-logout" onClick={handleLogout}><HiOutlineLogout /> Logout</button>
+								<button type="button" className="admin-account-logout" data-button-variant="danger" onClick={handleLogout}><HiOutlineLogout /> Logout</button>
 							</div>
 						) : null}
 					</div>
@@ -10469,7 +10465,7 @@ export default function AdminDashboard() {
 						<header>
 							<span className="admin-notification-detail-icon"><HiOutlineInbox /></span>
 							<div><small>Administrator notification</small><h3 id="admin-notification-detail-title">{toAdminNotificationTitle(selectedAdminNotification)}</h3></div>
-							<button type="button" onClick={() => setSelectedAdminNotification(null)} aria-label="Close notification"><HiX /></button>
+							<button type="button" data-button-variant="none" onClick={() => setSelectedAdminNotification(null)} aria-label="Close notification" title="Close"><HiX /></button>
 						</header>
 						<div className="admin-notification-detail-meta">
 							<div><span>From</span><strong>{selectedAdminNotification.actorName || selectedAdminNotification.authorName || selectedAdminNotification.actorType || "BulsuScholar"}</strong></div>
@@ -10477,10 +10473,7 @@ export default function AdminDashboard() {
 							<div><span>Status</span><strong>{selectedAdminNotification.read === true ? "Read" : "Unread"}</strong></div>
 						</div>
 						<div className="admin-notification-detail-message"><span>Message</span><p>{toAdminNotificationMessage(selectedAdminNotification)}</p></div>
-						<footer>
-							{getSafeAdminNotificationRoute(selectedAdminNotification) ? <button type="button" className="admin-notification-open-action" onClick={() => { const route = getSafeAdminNotificationRoute(selectedAdminNotification); setSelectedAdminNotification(null); navigate(route) }}><HiOutlineEye /> Open related page</button> : null}
-							<button type="button" onClick={() => setSelectedAdminNotification(null)}><HiX /> Close</button>
-						</footer>
+					{getSafeAdminNotificationRoute(selectedAdminNotification) ? <footer><button type="button" className="admin-notification-open-action" data-button-variant="neutral" onClick={() => { const route = getSafeAdminNotificationRoute(selectedAdminNotification); setSelectedAdminNotification(null); navigate(route) }}><HiOutlineEye /> Open related page</button></footer> : null}
 					</section>
 				</div>
 			) : null}
@@ -12038,7 +12031,7 @@ export default function AdminDashboard() {
 									)}
 								</section>
 								<footer className="admin-scholarship-announcement-actions">
-									<button type="button" className="admin-primary-action" onClick={openScholarshipAnnouncementInAdminBoard}>
+									<button type="button" className="admin-primary-action" data-button-variant="neutral" onClick={openScholarshipAnnouncementInAdminBoard}>
 										<HiOutlineEye />
 										View Announcement
 									</button>

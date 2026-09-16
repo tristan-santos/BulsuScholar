@@ -28,6 +28,8 @@ import {
 } from "react-icons/hi"
 import { db } from "../services/supabaseDataService"
 import StudentTopbar from "../components/StudentTopbar"
+import StudentFooter from "../components/StudentFooter"
+import ApplicationScrollStack from "../components/ApplicationScrollStack"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
 import "../css/StudentPortalRefresh.css"
@@ -160,6 +162,19 @@ function isScholarshipRejected(entry = {}) {
 	return (
 		entry?.rejected === true ||
 		["rejected", "denied", "declined"].some((keyword) => normalized.includes(keyword))
+	)
+}
+
+function isPreviousScholarshipApplication(entry = {}) {
+	const status = String(entry?.status || entry?.reviewStatus || "").trim().toLowerCase()
+	const closureReason = String(entry?.closureReason || "").trim().toLowerCase()
+	return (
+		entry?.previousScholar === true ||
+		entry?.readOnly === true ||
+		entry?.rejected === true ||
+		["selected_another_scholarship", "student_withdrawal", "application_rejected"].includes(closureReason) ||
+		["rejected", "denied", "declined", "cancelled", "canceled", "withdrawn", "resolved", "expired"]
+			.some((keyword) => status.includes(keyword))
 	)
 }
 
@@ -766,6 +781,30 @@ export default function StudentScholarshipsPage() {
 		(entry) => isOriginalArchivedGrantorScholarship(user || {}, entry) &&
 			["pending", "change"].includes(String(archivedGrantorChoice?.decision || "").trim().toLowerCase()),
 		[archivedGrantorChoice?.decision, user],
+	)
+	const currentScholarshipApplications = useMemo(
+		() => scholarships.filter((entry) =>
+			isArchivedGrantorWorkflowPaused(entry) || !isPreviousScholarshipApplication(entry)),
+		[isArchivedGrantorWorkflowPaused, scholarships],
+	)
+	const previousScholarshipApplications = useMemo(
+		() => {
+			const archivedApplications = Array.isArray(user?.previousScholars) ? user.previousScholars : []
+			const seen = new Set()
+			return [
+				...scholarships.filter((entry) =>
+					!isArchivedGrantorWorkflowPaused(entry) && isPreviousScholarshipApplication(entry)),
+				...archivedApplications,
+			].filter((entry, index) => {
+				const identity = String(
+					entry?.applicationId || entry?.id || entry?.requestNumber || entry?.applicationNumber || `history-${index}`,
+				)
+				if (seen.has(identity)) return false
+				seen.add(identity)
+				return true
+			})
+		},
+		[isArchivedGrantorWorkflowPaused, scholarships, user?.previousScholars],
 	)
 
 	const saveArchivedGrantorDecision = async (action) => {
@@ -3176,12 +3215,6 @@ export default function StudentScholarshipsPage() {
 								Track your current application, request approved materials, and review available scholarship programs in one place.
 							</p>
 						</div>
-						{SCHOLARSHIP_CHOICE_ENABLED && (!hasScholarshipCommitment(user || {}) || archivedGrantorReplacementMode) ? (
-							<button type="button" className="student-mini-btn student-mini-btn--secondary"
-								onClick={() => navigate("/student-dashboard/recommended-scholarships")}>
-								<HiOutlineAcademicCap /> Recommended Scholarships
-							</button>
-						) : null}
 					</section>
 
 					{hasBlockedScholarshipBanner ? (
@@ -3419,7 +3452,7 @@ export default function StudentScholarshipsPage() {
 													</div>
 											{renderOtherRequirementUploads(entry)}
 											{SCHOLARSHIP_CHOICE_ENABLED && (!hasScholarshipCommitment(user || {}) || isReplacementApplication(user || {}, entry)) ? (
-														<button type="button" className="student-mini-btn student-mini-btn--danger"
+												<button type="button" className="student-mini-btn student-mini-btn--danger" data-button-variant="danger"
 															disabled={isMutating} onClick={() => setWithdrawTarget(entry)}>
 															<HiX aria-hidden /> Withdraw Application
 														</button>
@@ -3474,7 +3507,7 @@ export default function StudentScholarshipsPage() {
 									<span>Current Records</span>
 									<h3>My Scholarship Applications</h3>
 								</div>
-								<strong>{scholarships.length} total</strong>
+								<strong>{currentScholarshipApplications.length} current</strong>
 							</div>
 							{hasMultipleScholarshipChoices ? (
 								<p className="dashboard-placeholder">
@@ -3486,8 +3519,11 @@ export default function StudentScholarshipsPage() {
 									No scholarship application yet. Apply from the available programs below.
 								</p>
 							) : (
-								<div className="student-scholarship-cards">
-									{scholarships.map((entry) => {
+								<ApplicationScrollStack
+									disabled={hasMultipleScholarshipConflict}
+									ariaLabel="Current scholarship applications"
+								>
+									{currentScholarshipApplications.map((entry) => {
 										const entryFrozen = isScholarshipFrozen(entry)
 										const entryRejected = isScholarshipRejected(entry)
 										const archiveWorkflowPaused = isArchivedGrantorWorkflowPaused(entry)
@@ -3510,7 +3546,7 @@ export default function StudentScholarshipsPage() {
 
 										return (
 											<article
-												key={entry.id}
+											key={entry.applicationId || entry.id || entry.requestNumber}
 												className={`student-scholarship-card ${
 													entry.adminBlocked === true || hasScholarshipActionBlock
 													|| entryFrozen || entryRejected || archiveWorkflowPaused
@@ -3683,8 +3719,33 @@ export default function StudentScholarshipsPage() {
 											</article>
 										)
 									})}
-								</div>
+								</ApplicationScrollStack>
 							)}
+							{previousScholarshipApplications.length > 0 ? (
+								<details className="student-scholarship-history">
+									<summary>
+										<span>Previous Applications</span>
+										<span className="student-scholarship-history-count">
+											{previousScholarshipApplications.length} {previousScholarshipApplications.length === 1 ? "record" : "records"}
+										</span>
+									</summary>
+									<div className="student-scholarship-history-list">
+										{previousScholarshipApplications.map((entry, index) => (
+											<article
+												key={entry.applicationId || entry.id || entry.requestNumber || entry.applicationNumber || `history-${index}`}
+												className="student-scholarship-history-card"
+											>
+												<HiOutlineAcademicCap aria-hidden />
+												<div>
+													<h4>{entry.name || entry.scholarshipName || "Scholarship Application"}</h4>
+													<p>{entry.grantorName || entry.provider || entry.matchedGrantorName || "Scholarship provider"}</p>
+												</div>
+												<span>{entry.status || "Closed"}</span>
+											</article>
+										))}
+									</div>
+								</details>
+							) : null}
 						</div>
 
 						{!hasActiveOrPendingScholarship ? (
@@ -3814,64 +3875,7 @@ export default function StudentScholarshipsPage() {
 						</section>
 					) : null}
 
-					<footer className="student-footer">
-						<div className="student-footer-grid">
-							<div className="student-footer-brand">
-								<h3>BulsuScholar</h3>
-								<p>
-									Institutional Student Programs and Services scholarship portal.
-									Track and manage your scholarship declarations and requests.
-								</p>
-							</div>
-							<div className="student-footer-col">
-								<h4>Support</h4>
-								<p>Office of Scholarships</p>
-								<p>Email: scholarships@bulsu.edu.ph</p>
-								<p>Mon-Fri, 8:00 AM - 5:00 PM</p>
-							</div>
-							<div className="student-footer-col">
-								<h4>Quick Links</h4>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard")}
-								>
-									Dashboard Home
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/announcements")}
-								>
-									Announcements
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/inbox")}
-								>
-									Inbox
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/scholarships")}
-								>
-									My Scholarships
-								</button>
-								<button
-									type="button"
-									className="student-footer-link"
-									onClick={() => navigate("/student-dashboard/profile")}
-								>
-									My Profile
-								</button>
-							</div>
-						</div>
-						<p className="student-footer-bottom">
-							(c) {new Date().getFullYear()} BulsuScholar. All rights reserved.
-						</p>
-					</footer>
+					<StudentFooter description="Track and manage your scholarship declarations and requests." />
 				</div>
 			</main>
 
@@ -3987,7 +3991,7 @@ export default function StudentScholarshipsPage() {
 			{withdrawTarget ? (
 				<div className={`admin-detail-backdrop ${theme === "dark" ? "admin-portal--dark" : ""}`} role="presentation" onClick={() => setWithdrawTarget(null)}>
 					<div className="admin-detail-shell admin-detail-shell--confirm" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" aria-label="Close withdrawal confirmation" onClick={() => setWithdrawTarget(null)}><HiX aria-hidden /></button>
+						<button type="button" className="admin-detail-close" data-button-variant="none" aria-label="Close withdrawal confirmation" title="Close" onClick={() => setWithdrawTarget(null)}><HiX aria-hidden /></button>
 						<div className="admin-detail-modal admin-detail-modal--confirm admin-detail-modal--confirm-danger" role="dialog" aria-modal="true" aria-label="Withdraw application">
 						<div className="admin-detail-confirm-head">
 							<span className="admin-detail-confirm-icon admin-detail-confirm-icon--danger" aria-hidden="true"><HiOutlineExclamation /></span>
@@ -3999,9 +4003,9 @@ export default function StudentScholarshipsPage() {
 							</div>
 						</div>
 						<div className="admin-detail-actions admin-detail-actions--confirm">
-							<button type="button" className="admin-table-btn" disabled={isMutating}
+							<button type="button" className="admin-table-btn" data-button-variant="neutral" disabled={isMutating}
 								onClick={() => setWithdrawTarget(null)}><HiX aria-hidden /> Cancel</button>
-							<button type="button" className="admin-danger-btn" disabled={isMutating}
+							<button type="button" className="admin-danger-btn" data-button-variant="danger" disabled={isMutating}
 								onClick={async () => {
 									setIsMutating(true)
 									try {

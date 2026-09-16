@@ -195,7 +195,7 @@ export default function GrantorChangePasswordPage() {
 								/>
 							</div>
 
-							<button type="submit" className="login-submit" disabled={isSubmitting}>
+							<button type="submit" className="login-submit" data-button-variant="positive" disabled={isSubmitting}>
 								<HiOutlineCheckCircle aria-hidden /> {isSubmitting ? "Saving..." : "Save New Password"}
 							</button>
 

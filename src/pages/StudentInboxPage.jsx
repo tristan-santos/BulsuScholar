@@ -514,7 +514,7 @@ export default function StudentInboxPage() {
 						<header className="student-inbox-head">
 							<div className="student-inbox-title"><h2>Messages</h2>{unreadItems.length > 0 ? <span>{unreadItems.length}</span> : null}</div>
 							<div className="student-inbox-actions">
-								<button type="button" className="student-inbox-mark-read" onClick={markAllNotificationsRead} disabled={unreadItems.length === 0}>Mark all read</button>
+								<button type="button" className="student-inbox-mark-read" data-button-variant="neutral" onClick={markAllNotificationsRead} disabled={unreadItems.length === 0}>Mark all read</button>
 							</div>
 						</header>
 						<div className="student-inbox-list">
@@ -525,13 +525,13 @@ export default function StudentInboxPage() {
 									<header><span><HiOutlineMail />{group.category}</span><small>{group.items.length} {group.items.length === 1 ? "notification" : "notifications"}</small></header>
 									{group.items.map((notification) => (
 										<article key={notification.id} className={`student-inbox-item ${notification.read === true ? "" : "unread"}`}>
-											<button type="button" className="student-inbox-item-main" onClick={() => openInboxItem(notification)}>
+											<button type="button" className="student-inbox-item-main" data-button-variant="none" onClick={() => openInboxItem(notification)}>
 												<span className="student-inbox-item-icon">{renderInboxItemIcon(notification)}</span>
 												<span className="student-inbox-item-copy"><strong>{notification.title}</strong><small>{notification.message}</small></span>
 											</button>
 											<div className="student-inbox-item-actions">
 												<time>{formatRelativeDate(notification.createdAt)}</time>
-												{notification.source === "personal" ? <button type="button" onClick={() => deleteNotification(notification)} aria-label="Delete notification"><HiOutlineTrash /></button> : null}
+												{notification.source === "personal" ? <button type="button" data-button-variant="none" onClick={() => deleteNotification(notification)} aria-label="Delete notification" title="Delete notification"><HiOutlineTrash /></button> : null}
 												{notification.read !== true ? <i aria-label="Unread" /> : <HiCheck className="student-inbox-read-check" aria-label="Read" />}
 											</div>
 										</article>
@@ -555,7 +555,7 @@ export default function StudentInboxPage() {
 									<h3 id="student-inbox-detail-title">{selectedNotification.title || "Inbox Message"}</h3>
 								</div>
 							</div>
-							<button type="button" onClick={() => setSelectedNotification(null)} aria-label="Close inbox details">
+							<button type="button" data-button-variant="none" onClick={() => setSelectedNotification(null)} aria-label="Close inbox details" title="Close">
 								<HiOutlineX aria-hidden />
 							</button>
 						</header>
@@ -580,18 +580,17 @@ export default function StudentInboxPage() {
 						<footer className="student-inbox-detail-actions">
 							{selectedNotificationIsInvitation ? (
 								<>
-									<button type="button" className="student-inbox-detail-delete" onClick={() => navigate(`/student-dashboard/scholarships?invitation=${encodeURIComponent(selectedNotification.invitationId)}&action=reject`)}>
+									<button type="button" className="student-inbox-detail-delete" data-button-variant="danger" onClick={() => navigate(`/student-dashboard/scholarships?invitation=${encodeURIComponent(selectedNotification.invitationId)}&action=reject`)}>
 										<HiOutlineX aria-hidden /> Reject Invitation
 									</button>
-									<button type="button" className="student-inbox-detail-close" onClick={() => navigate(`/student-dashboard/scholarships?invitation=${encodeURIComponent(selectedNotification.invitationId)}&action=accept`)}>
+									<button type="button" className="student-inbox-detail-close" data-button-variant="positive" onClick={() => navigate(`/student-dashboard/scholarships?invitation=${encodeURIComponent(selectedNotification.invitationId)}&action=accept`)}>
 										<HiCheck aria-hidden /> Accept Invitation
 									</button>
 								</>
 							) : null}
-							<button type="button" className="student-inbox-detail-delete" onClick={async () => { await deleteNotification(selectedNotification) }}>
+							<button type="button" className="student-inbox-detail-delete" data-button-variant="danger" onClick={async () => { await deleteNotification(selectedNotification) }}>
 								<HiOutlineTrash aria-hidden /> Delete Message
 							</button>
-							<button type="button" className="student-inbox-detail-close" onClick={() => setSelectedNotification(null)}>Close</button>
 						</footer>
 					</section>
 				</div>

@@ -45,7 +45,7 @@ html body .modal-overlay--nested {
 	display: grid;
 	place-content: center;
 	padding: 1rem;
-	background: rgba(0, 99, 60, 0.85);
+	background: rgba(0, 79, 48, 0.85);
 	color: #ffffff;
 	animation: operation-overlay-in 160ms ease-out both;
 	cursor: wait;
@@ -237,7 +237,7 @@ html body .modal-overlay--nested {
 }
 
 @media (prefers-color-scheme: dark) {
-	.operation-overlay { background: rgba(0, 99, 60, 0.85); color: #ffffff; }
+	.operation-overlay { background: rgba(0, 79, 48, 0.85); color: #ffffff; }
 	.operation-overlay-indicator { background: #f8fafc; }
 	.operation-overlay-copy span { color: rgba(255, 255, 255, 0.82); }
 }
@@ -246,7 +246,7 @@ html[data-theme="dark"] .operation-overlay,
 body:has(.student-dashboard--dark) .operation-overlay,
 body:has(.grantor-portal--dark) .operation-overlay,
 body:has(.admin-portal--dark) .operation-overlay {
-	background: rgba(0, 99, 60, 0.85);
+	background: rgba(0, 79, 48, 0.85);
 	color: #ffffff;
 }
 

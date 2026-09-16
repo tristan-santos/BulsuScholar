@@ -200,7 +200,7 @@ export default function ResetPasswordPage() {
 								/>
 							</div>
 
-							<button type="submit" className="login-submit" disabled={isSubmitting}>
+							<button type="submit" className="login-submit" data-button-variant="positive" disabled={isSubmitting}>
 								<HiOutlineCheckCircle aria-hidden /> {isSubmitting ? "Updating..." : "Update Password"}
 							</button>
 						</form>

@@ -2570,6 +2570,7 @@ export default function SignupPage() {
 								<button
 									type="submit"
 									className="login-submit login-submit--full"
+									data-button-variant="positive"
 								>
 									Review & Submit
 								</button>
