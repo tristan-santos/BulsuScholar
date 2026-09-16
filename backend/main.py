@@ -43,6 +43,7 @@ try:
     from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student, resolve_roster_scholarship
     from .support_service import ask_support_assistant
     from .priority_one_service import save_support_feedback
+    from .support_ticket_service import add_portal_message, create_portal_ticket, delete_portal_ticket, get_portal_ticket, list_portal_tickets
     from .root_router import router as root_router
     from .root_service import is_maintenance_enabled, metric_finished, metric_started, public_config
     from .supabase_ops import (
@@ -114,6 +115,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student, resolve_roster_scholarship
     from support_service import ask_support_assistant
     from priority_one_service import save_support_feedback
+    from support_ticket_service import add_portal_message, create_portal_ticket, delete_portal_ticket, get_portal_ticket, list_portal_tickets
     from root_router import router as root_router
     from root_service import is_maintenance_enabled, metric_finished, metric_started, public_config
     from supabase_ops import (
@@ -266,6 +268,8 @@ REQUIRED_SUPABASE_TABLES = [
     "grantorNotifications",
     "student_document_usage",
     "systemLogs",
+    "support_feedback",
+    "support_ticket_messages",
 ]
 
 
@@ -829,6 +833,39 @@ def support_feedback_endpoint(request: Request, payload: dict[str, Any] = Body(.
         payload["userType"] = "guest"
     payload["_clientIp"] = request.client.host if request.client else "unknown"
     return save_support_feedback(payload)
+
+
+@app.post("/support/tickets")
+def create_support_ticket_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "grantor", "admin"})
+    return create_portal_ticket(payload)
+
+
+@app.get("/support/tickets")
+def list_support_tickets_endpoint(request: Request) -> dict[str, Any]:
+    identity: dict[str, Any] = {}
+    enforce_portal_scope(request, identity, {"student", "grantor", "admin"})
+    return {"ok": True, "tickets": list_portal_tickets(str(identity.get("actorId") or ""), str(identity.get("actorType") or ""))}
+
+
+@app.get("/support/tickets/{ticket_id}")
+def get_support_ticket_endpoint(ticket_id: str, request: Request) -> dict[str, Any]:
+    identity: dict[str, Any] = {}
+    enforce_portal_scope(request, identity, {"student", "grantor", "admin"})
+    return {"ok": True, "ticket": get_portal_ticket(ticket_id, str(identity.get("actorId") or ""), str(identity.get("actorType") or ""))}
+
+
+@app.post("/support/tickets/{ticket_id}/messages")
+def add_support_ticket_message_endpoint(ticket_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student", "grantor", "admin"})
+    return add_portal_message(ticket_id, str(payload.get("actorId") or ""), str(payload.get("actorType") or ""), str(payload.get("message") or ""))
+
+
+@app.delete("/support/tickets/{ticket_id}")
+def delete_support_ticket_endpoint(ticket_id: str, request: Request) -> dict[str, Any]:
+    identity: dict[str, Any] = {}
+    enforce_portal_scope(request, identity, {"student", "grantor", "admin"})
+    return delete_portal_ticket(ticket_id, str(identity.get("actorId") or ""), str(identity.get("actorType") or ""))
 
 
 @app.post("/reports/pdf")

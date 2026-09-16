@@ -67,6 +67,7 @@ import {
 	HiOutlineUsers,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
+import { getNameInitials } from "../utils/nameInitials"
 import { grantorMustChangePassword, GRANTOR_PASSWORD_CHANGE_ID_KEY } from "../constants/grantorAuth"
 import { read, utils } from "xlsx"
 import { db } from "../services/supabaseDataService"
@@ -1037,8 +1038,7 @@ export default function ProviderDashboard() {
 		return profile?.archived === true || ["archived", "inactive", "disabled"].includes(status)
 	}, [profile])
 	const grantorInitials = useMemo(() => {
-		const parts = String(grantorName || "Grantor").trim().split(/\s+/).filter(Boolean)
-		return `${parts[0]?.[0] || "G"}${parts.length > 1 ? parts[parts.length - 1][0] : ""}`.toUpperCase()
+		return getNameInitials(grantorName, "G")
 	}, [grantorName])
 	const grantorProfileImageUrl = profile?.profileImageUrl || profile?.imageUrl || ""
 	const isPreviewPdf = (file = {}) => {
@@ -1083,7 +1083,7 @@ export default function ProviderDashboard() {
 		const isCurrentGrantor = !item.grantorId || item.grantorId === grantorId
 		const authorName = isCurrentGrantor ? "You" : item.grantorName || item.providerLabel || "Grantor"
 		const authorImage = isCurrentGrantor ? grantorProfileImageUrl : item.profileImageUrl || item.authorImageUrl || ""
-		const initials = isCurrentGrantor ? grantorInitials : String(authorName || "G").trim().slice(0, 2).toUpperCase()
+		const initials = isCurrentGrantor ? grantorInitials : getNameInitials(authorName, "G")
 		return (
 			<div className="grantor-announcement-author">
 				<span>{authorImage ? <img src={authorImage} alt="" /> : initials}</span>
@@ -5222,11 +5222,11 @@ export default function ProviderDashboard() {
 								</div>
 							</div>
 							<div className="admin-detail-actions admin-detail-actions--confirm">
-								<button type="button" className="admin-table-btn" data-button-variant="neutral" onClick={() => setAnnouncementArchiveConfirmId("")} disabled={Boolean(busy)}>
+								<button type="button" className="admin-table-btn" data-button-variant="neutral" onClick={() => setAnnouncementArchiveConfirmId("")} disabled={busy === `archive-announcement-${announcementArchiveConfirmId}`}>
 									<HiX />
 									Cancel
 								</button>
-								<button type="button" className="admin-danger-btn" data-button-variant="danger" onClick={confirmArchiveAnnouncement} disabled={Boolean(busy)}>
+								<button type="button" className="admin-danger-btn" data-button-variant="danger" onClick={confirmArchiveAnnouncement} disabled={busy === `archive-announcement-${announcementArchiveConfirmId}`}>
 									<HiOutlineArchive />
 									Archive
 								</button>

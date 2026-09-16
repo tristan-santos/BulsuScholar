@@ -27,6 +27,7 @@ const RESET_TABLES = [
 	"grantor_portals",
 	"providers",
 	"admins",
+	"support_ticket_messages",
 	"support_feedback",
 	"branding_versions",
 	"request_metric_buckets",

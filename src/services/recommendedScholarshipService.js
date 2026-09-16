@@ -30,6 +30,20 @@ function normalizeText(value = "") {
 		.trim()
 }
 
+export function getRecommendationImageUrl(recommendation = {}) {
+	const imageUrls = Array.isArray(recommendation.imageUrls) ? recommendation.imageUrls : []
+	const imageObjects = Array.isArray(recommendation.images)
+		? recommendation.images.map((image) => image?.url).filter(Boolean)
+		: []
+	return [recommendation.imageUrl, ...imageUrls, ...imageObjects].find(Boolean) || ""
+}
+
+export function getRecommendationAnnouncementPath(recommendation = {}) {
+	const announcementId = String(recommendation.announcementId || "").trim()
+	if (!announcementId) return ""
+	return `/student-dashboard/announcements/grantor/${encodeURIComponent(announcementId)}`
+}
+
 function getLocationScore(student = {}, grantor = {}) {
 	const studentProvince = normalizeText(student.province)
 	const studentCity = normalizeText(student.city)
@@ -243,6 +257,9 @@ export async function loadRecommendedScholarships(student = {}) {
 					scholarshipTitle: announcement?.scholarshipTitle || announcement?.title || "",
 					scholarshipKey: announcement?.scholarshipKey || "",
 					announcementSubtitle: announcement?.subtitle || announcement?.previewText || "",
+					imageUrl: announcement?.imageUrl || "",
+					imageUrls: Array.isArray(announcement?.imageUrls) ? announcement.imageUrls : [],
+					images: Array.isArray(announcement?.images) ? announcement.images : [],
 					applicationWindow: announcement?.applicationWindow || "",
 					requiredDocuments: announcement?.requiredDocuments || {},
 					otherRequirements: announcement?.otherRequirements || [],

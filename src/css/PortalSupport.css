@@ -67,3 +67,44 @@
 	.support-assistant-panel .help-messages { height: 320px; padding: 16px; }
 	.support-request-panel { padding: 19px; }
 }
+
+/* Persistent support ticket workspace */
+.support-ticket-workspace { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); min-height: 620px; margin-top: 8px; border: 1px solid var(--support-line); border-radius: 7px; overflow: hidden; background: #fff; }
+.support-ticket-sidebar { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--support-line); background: #f8fbf9; }
+.support-ticket-sidebar > header, .support-ticket-thread > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px; border-bottom: 1px solid var(--support-line); background: #fff; }
+.support-ticket-sidebar > header span, .support-ticket-thread > header span { color: var(--support-green); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.support-ticket-sidebar h2, .support-ticket-thread h2 { margin: 3px 0 0; font-size: 18px; }
+.support-ticket-sidebar > header button { width: 38px; min-height: 38px; padding: 0; display: grid; place-items: center; border: 0; background: transparent; color: var(--support-green); font-size: 20px; }
+.support-ticket-auth, .support-ticket-thread-empty { display: grid; justify-items: center; gap: 7px; padding: 28px 20px; color: var(--support-muted); text-align: center; }
+.support-ticket-auth > svg, .support-ticket-thread-empty > svg { color: var(--support-green); font-size: 30px; }
+.support-ticket-auth p, .support-ticket-thread-empty p { margin: 0; line-height: 1.5; }
+.support-ticket-list { max-height: 280px; overflow-y: auto; }
+.support-ticket-list > button { width: 100%; min-height: 92px; padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; border: 0; border-bottom: 1px solid var(--support-line); border-radius: 0; background: transparent; color: var(--support-text); text-align: left; }
+.support-ticket-list > button:hover, .support-ticket-list > button.active { background: #e9f5ef; }
+.support-ticket-list > button.active { box-shadow: inset 4px 0 var(--support-green); }
+.support-ticket-list > button strong, .support-ticket-list > button small { grid-column: 1 / -1; }
+.support-ticket-list > button small { color: var(--support-muted); }
+.support-ticket-status { justify-self: end; padding: 3px 7px; border-radius: 4px; background: #e8f2ed; color: #3f5f52; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.support-ticket-status--open, .support-ticket-status--in_progress { color: #00633c; background: #daf3e7; }
+.support-ticket-status--resolved { color: #245b91; background: #e4f0fb; }
+.support-ticket-empty { padding: 18px; color: var(--support-muted); text-align: center; }
+.support-ticket-create { margin-top: auto; padding: 18px; display: grid; gap: 12px; border-top: 1px solid var(--support-line); background: #fff; }
+.support-ticket-create > header { display: flex; align-items: center; gap: 8px; color: var(--support-green); }
+.support-ticket-create label { display: grid; gap: 5px; color: #385047; font-size: 12px; font-weight: 750; }
+.support-ticket-create input, .support-ticket-create select, .support-ticket-create textarea, .support-ticket-composer textarea { width: 100%; box-sizing: border-box; padding: 10px 11px; border: 1px solid var(--support-line); border-radius: 5px; background: #fff; color: var(--support-text); font: inherit; }
+.support-ticket-create textarea { min-height: 88px; resize: vertical; }
+.support-ticket-create > button, .support-ticket-composer > button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; }
+.support-ticket-thread { min-width: 0; display: flex; flex-direction: column; background: #fbfdfc; }
+.support-ticket-thread > header p { margin: 5px 0 0; display: flex; align-items: center; gap: 6px; color: var(--support-muted); font-size: 12px; }
+.support-ticket-thread-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.support-ticket-thread-actions button { min-height: 36px; }
+.support-ticket-messages { height: 430px; overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+.support-ticket-messages article { width: min(76%, 620px); padding: 12px 14px; border: 1px solid var(--support-line); border-radius: 7px; background: #fff; }
+.support-ticket-messages article.user { align-self: flex-end; border-color: var(--support-green); background: var(--support-green); color: #fff; }
+.support-ticket-messages article > div { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; }
+.support-ticket-messages article time { opacity: .75; }
+.support-ticket-messages article p { margin: 7px 0 0; line-height: 1.55; white-space: pre-wrap; }
+.support-ticket-composer { padding: 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; border-top: 1px solid var(--support-line); background: #fff; }
+.support-ticket-composer textarea { min-height: 56px; resize: vertical; }
+@media (max-width: 850px) { .support-ticket-workspace { grid-template-columns: 1fr; } .support-ticket-sidebar { border-right: 0; border-bottom: 1px solid var(--support-line); } .support-ticket-list { max-height: 240px; } }
+@media (max-width: 560px) { .support-ticket-workspace { min-height: 0; } .support-ticket-sidebar > header, .support-ticket-thread > header { align-items: stretch; flex-direction: column; } .support-ticket-thread-actions { justify-content: flex-start; } .support-ticket-messages { height: 380px; padding: 14px; } .support-ticket-messages article { width: 88%; } .support-ticket-composer { grid-template-columns: 1fr; } }

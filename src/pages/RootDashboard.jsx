@@ -3,9 +3,9 @@ import { toast } from "react-toastify"
 import {
 	HiOutlineAdjustments, HiOutlineChartBar, HiOutlineCloud, HiOutlineCode,
 	HiOutlineColorSwatch, HiOutlineDatabase, HiOutlineDocumentDownload,
-	HiOutlineDocumentText, HiOutlineHome, HiOutlineKey,
+	HiOutlineDocumentText, HiOutlineHome, HiOutlineKey, HiOutlinePaperAirplane,
 	HiOutlineLogout, HiOutlineMenu, HiOutlineRefresh, HiOutlineSearch,
-	HiOutlineServer, HiOutlineShieldCheck, HiOutlineSupport, HiOutlineUsers, HiX,
+	HiOutlineServer, HiOutlineShieldCheck, HiOutlineSupport, HiOutlineTrash, HiOutlineUsers, HiX,
 } from "react-icons/hi"
 import useThemeMode from "../hooks/useThemeMode"
 import ThemeToggle from "../components/ThemeToggle"
@@ -13,7 +13,7 @@ import {
 	clearRootSession, establishRootSession, executeRootSql, executeRootSqlMaintenance,
 	downloadRootCanonicalPdf, downloadRootPdf, downloadRootStudentFile,
 	getAllRootData, getRootAdmins, getRootBrandingVersions, getRootData, getRootFiles, getRootIntegrations,
-	getRootCanonicalReport, getRootLogs, getRootMetrics, getRootOverview, getRootSqlPresets, getRootSupport,
+	deleteRootSupport, getRootCanonicalReport, getRootLogs, getRootMetrics, getRootOverview, getRootSqlPresets, getRootSupport, getRootSupportReport,
 	hasRootSession, rootLogin, runRootIntegrationAction,
 	publishRootBrandingVersion, saveRootAdmin, saveRootBrandingDraft, saveRootSetting, updateRootSupport, uploadRootBrandingAsset, verifyRootCode,
 } from "../services/rootService"
@@ -28,7 +28,7 @@ const SECTIONS = [
 	["integrations", "Integrations", <HiOutlineCloud key="integrations" />],
 ]
 const DATASETS = ["students", "grantors", "scholarships", "applications", "announcements", "requirements", "materials", "notifications"]
-const REPORTS = ["Students", "Grantors", "Scholarships", "Requirements", "Compliance", "Top Students per Grantor", "Root Audit", "Support Tickets", "Administrator Access", "Student File Inventory", "Operational Metrics"]
+const REPORTS = ["Students", "Grantors", "Scholarships", "Requirements", "Compliance", "Top Students per Grantor", "Root Audit", "Support Conversations", "Administrator Access", "Student File Inventory", "Operational Metrics"]
 const CANONICAL_REPORT_KEYS = { Students: "students", Grantors: "grantors", Scholarships: "scholarships", Requirements: "requirements", Compliance: "compliance", "Top Students per Grantor": "top_students" }
 const EMPTY_CONFIG = { portal: {}, academicCycle: {}, branding: {} }
 
@@ -93,6 +93,52 @@ function DataTable({ rows }) {
 function FileTable({ rows, onDownload }) {
 	if (!rows?.length) return <div className="root-empty">No student file references found.</div>
 	return <div className="root-table-wrap"><table><thead><tr><th>Student</th><th>Document</th><th>Filename</th><th>Size</th><th>Action</th></tr></thead><tbody>{rows.map((file, index) => <tr key={`${file.studentId}-${file.path}-${index}`}><td>{file.studentId || "-"}</td><td>{file.document || "-"}</td><td>{file.name || "Document"}</td><td>{file.size ? `${(Number(file.size) / 1024).toFixed(1)} KB` : "Unknown"}</td><td><button onClick={() => onDownload(file)} disabled={!file.path && !file.url}><HiOutlineDocumentDownload /> Download</button></td></tr>)}</tbody></table></div>
+}
+
+function RootSupportWorkspace({ tickets, busy, onRefresh, onSave, onDelete }) {
+	const [selectedId, setSelectedId] = useState("")
+	const [reply, setReply] = useState("")
+	const [confirmDelete, setConfirmDelete] = useState(false)
+	const selected = tickets.find((ticket) => ticket.id === selectedId) || tickets[0] || null
+
+	const updateField = async (field, value) => {
+		if (!selected) return
+		await onSave({ ticketId: selected.id, status: selected.status, priority: selected.priority, internalNotes: selected.internalNotes, [field]: value })
+	}
+	const sendReply = async (event) => {
+		event.preventDefault()
+		if (!selected || !reply.trim()) return
+		const saved = await onSave({ ticketId: selected.id, status: selected.status === "open" ? "in_progress" : selected.status, priority: selected.priority, internalNotes: selected.internalNotes, reply: reply.trim() })
+		if (saved) setReply("")
+	}
+	const deleteSelected = async () => {
+		if (!selected) return
+		const deleted = await onDelete(selected.id)
+		if (deleted) setConfirmDelete(false)
+	}
+
+	return <section className="root-panel root-support-workspace">
+		<header className="root-support-heading"><div><span>FIFO queue</span><h2>Support conversations</h2><p>Oldest active request appears first. Replies stay inside the ticket.</p></div><button type="button" data-button-variant="neutral" onClick={onRefresh} disabled={busy}><HiOutlineRefresh /> Refresh</button></header>
+		<div className="root-support-layout">
+			<aside className="root-support-queue" aria-label="Support ticket queue">
+				{tickets.map((ticket) => <button type="button" data-button-variant="none" className={selected?.id === ticket.id ? "active" : ""} key={ticket.id} onClick={() => { setSelectedId(ticket.id); setConfirmDelete(false) }}>
+					<span className={`priority ${ticket.priority}`}>{ticket.status === "open" || ticket.status === "in_progress" ? `Queue ${ticket.queuePosition || "-"}` : ticket.status}</span>
+					<strong>{ticket.subject || "Support request"}</strong>
+					<p>{ticket.reason || ticket.message}</p>
+					<small>{ticket.ticketId} | {ticket.userType} | {formatDate(ticket.createdAt)}</small>
+				</button>)}
+				{!tickets.length ? <div className="root-empty">No support tickets.</div> : null}
+			</aside>
+			<div className="root-support-thread">
+				{selected ? <>
+					<header><div><span>{selected.ticketId}</span><h3>{selected.subject}</h3><p>{selected.userType} | Opened {formatDate(selected.createdAt)}</p></div><div className="root-support-thread-controls"><label>Status<select value={selected.status || "open"} onChange={(event) => updateField("status", event.target.value)} disabled={busy}><option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></label><label>Priority<select value={selected.priority || "normal"} onChange={(event) => updateField("priority", event.target.value)} disabled={busy}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label></div></header>
+					<div className="root-support-messages" aria-live="polite">{(selected.messages || []).map((message) => <article className={message.senderType === "root" ? "root" : "user"} key={message.id}><div><strong>{message.senderType === "root" ? "Root Support" : `${selected.userType} user`}</strong><time>{formatDate(message.createdAt)}</time></div><p>{message.body}</p></article>)}</div>
+					<form className="root-support-composer" onSubmit={sendReply}><textarea value={reply} onChange={(event) => setReply(event.target.value)} maxLength={4000} placeholder="Write a reply to this ticket..." aria-label="Reply to support ticket" /><button type="submit" data-button-variant="positive" disabled={busy || !reply.trim()}><HiOutlinePaperAirplane /> Send Reply</button></form>
+					<footer>{confirmDelete ? <><span>Delete this ticket and its complete conversation?</span><button type="button" data-button-variant="neutral" onClick={() => setConfirmDelete(false)}>Keep Ticket</button><button type="button" data-button-variant="danger" onClick={deleteSelected} disabled={busy}><HiOutlineTrash /> Confirm Delete</button></> : <button type="button" data-button-variant="danger" onClick={() => setConfirmDelete(true)}><HiOutlineTrash /> Delete Ticket</button>}</footer>
+				</> : <div className="root-empty">Select a support ticket to view its conversation.</div>}
+			</div>
+		</div>
+	</section>
 }
 
 export default function RootDashboard() {
@@ -162,7 +208,7 @@ export default function RootDashboard() {
 				return
 			}
 			else if (report === "Root Audit") rows = (await getRootLogs()).auditLogs || []
-			else if (report === "Support Tickets") rows = (await getRootSupport()).tickets || []
+			else if (report === "Support Conversations") rows = (await getRootSupportReport()).rows || []
 			else if (report === "Administrator Access") rows = (await getRootAdmins()).admins || []
 			else if (report === "Student File Inventory") rows = (await getRootFiles()).files || []
 			else rows = [{ generatedAt: new Date().toISOString(), ...((await getRootMetrics()).metrics || {}) }]
@@ -188,7 +234,7 @@ export default function RootDashboard() {
 
 			{section === "admins" ? <section className="root-panel"><div className="root-toolbar"><div><h2>Administrator access</h2><p>Roles are enforced by the portal and backend.</p></div><button onClick={() => setModal({ type: "admin", data: { active: true, role: "full_admin" } })}>Add Administrator</button></div><DataTable rows={admins.map((admin) => ({ id: admin.id, name: admin.fullName || admin.name, email: admin.email, role: admin.role, status: admin.status, contact: admin.contactNumber, updated: admin.updatedAt }))} />{admins.map((admin) => <button className="root-row-action" key={admin.id} onClick={() => setModal({ type: "admin", data: { ...admin, adminId: admin.id, active: String(admin.status).toLowerCase() !== "disabled" } })}>Edit {admin.id}</button>)}</section> : null}
 
-			{section === "support" ? <section className="root-panel"><div className="root-toolbar"><h2>Root-only ticket queue</h2><span>{tickets.filter((ticket) => ticket.status !== "resolved").length} open</span></div><div className="root-ticket-list">{tickets.map((ticket) => <button key={ticket.id} onClick={() => setModal({ type: "ticket", data: ticket })}><span className={`priority ${ticket.priority}`}>{ticket.priority}</span><strong>{ticket.category || "Support request"}</strong><p>{ticket.message}</p><small>{ticket.userType} · {formatDate(ticket.createdAt)} · {ticket.status}</small></button>)}</div>{!tickets.length ? <div className="root-empty">No support tickets.</div> : null}</section> : null}
+			{section === "support" ? <RootSupportWorkspace tickets={tickets} busy={loading} onRefresh={() => guard(async () => setTickets((await getRootSupport()).tickets || []))} onSave={(payload) => guard(async () => { await updateRootSupport(payload); setTickets((await getRootSupport()).tickets || []); toast.success(payload.reply ? "Reply sent." : "Ticket updated."); return true })} onDelete={(ticketId) => guard(async () => { await deleteRootSupport(ticketId); setTickets((await getRootSupport()).tickets || []); toast.success("Support ticket deleted."); return true })} /> : null}
 
 			{section === "logs" ? <><section className="root-panel"><h2>System logs</h2><DataTable rows={logs.systemLogs} /></section><section className="root-panel"><h2>Immutable root audit</h2><DataTable rows={logs.auditLogs} /></section></> : null}
 
@@ -201,7 +247,6 @@ export default function RootDashboard() {
 		</main>
 		{modal ? <RootModal modal={modal} close={() => setModal(null)} action={async (type, data) => {
 			if (type === "admin") await guard(async () => { await saveRootAdmin(data); setAdmins((await getRootAdmins()).admins); setModal(null); toast.success("Administrator saved.") })
-			if (type === "ticket") await guard(async () => { await updateRootSupport(data); setTickets((await getRootSupport()).tickets); setModal(null); toast.success("Ticket updated.") })
 			if (type === "integration") await guard(async () => { await runRootIntegrationAction(data); setModal(null); toast.success("Infrastructure action requested.") })
 			if (type === "setting") await guard(async () => { const result = await saveRootSetting(data.settingId, data.values); setConfig((current) => ({ ...current, [data.settingId === "academic_cycle" ? "academicCycle" : data.settingId]: result.data })); setModal(null); toast.success(data.settingId === "academic_cycle" ? "Academic cycle activated." : "Portal controls updated.") })
 			if (type === "sql-maintenance") await guard(async () => { await executeRootSqlMaintenance(data.id); setModal(null); toast.success("Approved database maintenance completed.") })
@@ -226,7 +271,7 @@ function BrandingCard({ value, versions, onUpload, onSaveDraft, onPublish }) {
 function RootModal({ modal, close, action }) {
 	const [form, setForm] = useState(modal.data || {})
 	const [showDiscard, setShowDiscard] = useState(false)
-	const isDirty = ["admin", "ticket", "integration"].includes(modal.type) && JSON.stringify(form) !== JSON.stringify(modal.data || {})
+	const isDirty = ["admin", "integration"].includes(modal.type) && JSON.stringify(form) !== JSON.stringify(modal.data || {})
 	const requestClose = () => isDirty ? setShowDiscard(true) : close()
 	return <div className="root-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose() }}><section className="root-modal" onMouseDown={(event) => event.stopPropagation()}><button className="close" data-button-variant="none" onClick={requestClose} aria-label="Close dialog" title="Close"><HiX /></button>
 		{modal.type === "admin" ? <><h2>{form.adminId ? "Edit Administrator" : "Add Administrator"}</h2><div className="root-form-grid"><label>User ID<input value={form.adminId || ""} disabled={Boolean(modal.data?.adminId)} onChange={(event) => setForm({ ...form, adminId: event.target.value })} /></label><label>Full name<input value={form.fullName || ""} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></label><label>Email<input type="email" value={form.email || ""} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label>Role<select value={form.role || "full_admin"} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="full_admin">Full Admin</option><option value="student_reviewer">Student Reviewer</option><option value="grantor_manager">Grantor Manager</option><option value="reports_viewer">Reports Viewer</option></select></label><label>{modal.data?.adminId ? "New temporary password (optional)" : "Temporary password"}<input type="password" value={form.temporaryPassword || ""} onChange={(event) => setForm({ ...form, temporaryPassword: event.target.value })} /><small>At least 12 characters with uppercase, lowercase, number, and symbol.</small></label><label className="check"><input type="checkbox" checked={form.active !== false} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Active account</label></div><footer><button data-button-variant="neutral" onClick={close}>Cancel</button><button className="primary" data-button-variant="positive" onClick={() => {
@@ -234,7 +279,6 @@ function RootModal({ modal, close, action }) {
 			if (!modal.data?.adminId && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(form.temporaryPassword || "")) return toast.error("The temporary password must be at least 12 characters and include uppercase, lowercase, number, and symbol.")
 			action("admin", form)
 		}}>Save Administrator</button></footer></> : null}
-		{modal.type === "ticket" ? <><h2>Support Ticket</h2><p>{form.message}</p><div className="root-form-grid"><label>Status<select value={form.status || "open"} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="open">Open</option><option value="in_progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></label><label>Priority<select value={form.priority || "normal"} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>low</option><option>normal</option><option>high</option><option>urgent</option></select></label><label className="wide">Internal notes<textarea value={form.internalNotes || ""} onChange={(event) => setForm({ ...form, internalNotes: event.target.value })} /></label><label className="wide">Reply by email<textarea value={form.reply || ""} onChange={(event) => setForm({ ...form, reply: event.target.value })} /></label></div><footer><button data-button-variant="neutral" onClick={close}>Cancel</button><button className="primary" data-button-variant="positive" onClick={() => action("ticket", { ticketId: form.id, ...form })}>Save Ticket</button></footer></> : null}
 		{modal.type === "integration" ? <><h2>Confirm Infrastructure Action</h2><p>This operation is audited and may briefly interrupt service.</p>{form.action === "railway_restart" ? <label>Railway deployment ID<input value={form.deploymentId || ""} onChange={(event) => setForm({ ...form, deploymentId: event.target.value })} /></label> : null}<footer><button data-button-variant="neutral" onClick={close}>Cancel</button><button className="danger" data-button-variant="danger" onClick={() => action("integration", form)}>Confirm</button></footer></> : null}
 		{modal.type === "setting" ? <><h2>{form.settingId === "academic_cycle" ? "Activate Academic Cycle" : "Apply Portal Controls"}</h2><p>{form.settingId === "academic_cycle" ? `This immediately makes ${form.values?.academicYear || "the selected year"}-${form.values?.semester || "semester"} authoritative for eligibility and current-cycle documents. Historical records remain unchanged.` : form.values?.maintenanceMode ? "Maintenance mode signs normal users out and blocks non-root portal operations until it is disabled." : "These controls take effect across student, grantor, and normal-admin portals."}</p><DataTable rows={[form.values || {}]} /><footer><button data-button-variant="neutral" onClick={close}>Cancel</button><button className="primary" data-button-variant="positive" onClick={() => action("setting", form)}><HiOutlineShieldCheck aria-hidden /> Confirm Change</button></footer></> : null}
 		{modal.type === "sql-maintenance" ? <><h2>Confirm Database Maintenance</h2><p>{form.label}. This reviewed operation is recorded in the immutable root audit.</p><footer><button data-button-variant="neutral" onClick={close}>Cancel</button><button className="danger" data-button-variant="danger" onClick={() => action("sql-maintenance", form)}>Execute Operation</button></footer></> : null}

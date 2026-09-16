@@ -42,6 +42,8 @@ try:
         update_admin_contact,
         update_config,
         update_support,
+        remove_support,
+        support_conversation_report,
         upload_branding_asset,
         verify_root_code,
     )
@@ -56,6 +58,7 @@ except ImportError:  # pragma: no cover
         revoke_session, run_sql_maintenance, save_branding_draft, sql_query, update_admin,
         update_admin_contact,
         update_config, update_support, upload_branding_asset,
+        remove_support, support_conversation_report,
         verify_root_code,
     )
 
@@ -178,6 +181,17 @@ def root_support(request: Request) -> dict[str, Any]:
 def root_support_update(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     identity = require_root(request)
     return update_support(request, identity, payload)
+
+
+@router.delete("/root/support/{ticket_id}")
+def root_support_delete(ticket_id: str, request: Request) -> dict[str, Any]:
+    return remove_support(request, require_root(request), ticket_id)
+
+
+@router.get("/root/support/report")
+def root_support_report(request: Request) -> dict[str, Any]:
+    require_root(request)
+    return {"ok": True, "rows": support_conversation_report()}
 
 
 @router.get("/root/logs")

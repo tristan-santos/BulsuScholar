@@ -1,7 +1,6 @@
 import csv
 import hashlib
 import hmac
-import html
 import io
 import json
 import os
@@ -37,11 +36,11 @@ except ImportError:  # pragma: no cover - SQL is disabled until configured
     dict_row = None
 
 try:
-    from .email_service import send_email_notification
     from .scholarship_rules import recommend_scholarships
+    from .support_ticket_service import delete_root_ticket, list_root_tickets, support_message_report_rows, update_root_ticket
 except ImportError:  # pragma: no cover
-    from email_service import send_email_notification
     from scholarship_rules import recommend_scholarships
+    from support_ticket_service import delete_root_ticket, list_root_tickets, support_message_report_rows, update_root_ticket
 
 
 ROOT_SESSION_HOURS = 8
@@ -970,56 +969,23 @@ def update_admin_contact(admin_id: str, record: dict[str, Any], contact_number: 
 
 
 def list_support() -> list[dict[str, Any]]:
-    rows = _rest("support_feedback", query="select=*&order=created_at.desc&limit=500") or []
-    return [_redact_sensitive({"id": row.get("id"), **(row.get("data") or {}), "status": row.get("status") or (row.get("data") or {}).get("status") or "open", "priority": row.get("priority") or "normal", "assignedTo": row.get("assigned_to"), "createdAt": row.get("created_at")}) for row in rows]
+    return _redact_sensitive(list_root_tickets())
+
+
+def support_conversation_report() -> list[dict[str, Any]]:
+    return _redact_sensitive(support_message_report_rows())
 
 
 def update_support(request: Request, identity: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    ticket_id = str(payload.get("ticketId") or "")
-    status = str(payload.get("status") or "open")
-    priority = str(payload.get("priority") or "normal")
-    if status not in {"open", "in_progress", "resolved", "closed"} or priority not in {"low", "normal", "high", "urgent"}:
-        raise HTTPException(status_code=422, detail="invalid_ticket_update")
-    row = _first("support_feedback", f"id=eq.{urllib.parse.quote(ticket_id)}&select=*")
-    if not row:
-        raise HTTPException(status_code=404, detail="support_ticket_not_found")
-    data = {**(row.get("data") or {}), "status": status, "priority": priority, "assignedTo": payload.get("assignedTo") or identity["root"]["id"], "internalNotes": payload.get("internalNotes") or (row.get("data") or {}).get("internalNotes") or "", "updatedAt": now_iso()}
-    _rest("support_feedback", method="PATCH", query=f"id=eq.{urllib.parse.quote(ticket_id)}", payload={"data": data, "status": status, "priority": priority, "assigned_to": data["assignedTo"], "resolved_at": now_iso() if status == "resolved" else None, "updated_at": now_iso()})
-    reply = str(payload.get("reply") or "").strip()
-    delivery = None
-    in_app_delivery = None
-    if reply and data.get("email"):
-        delivery = send_email_notification({"to": data["email"], "subject": "BulsuScholar support update", "html": f'<div data-bulsuscholar-email="true"><p>{html.escape(reply)}</p></div>'})
-    user_id = str(data.get("userId") or "").strip()
-    user_type = str(data.get("userType") or "").strip().lower()
-    notification_table = {"student": "studentNotifications", "grantor": "grantorNotifications", "provider": "grantorNotifications", "admin": "adminNotifications"}.get(user_type)
-    if reply and user_id and user_id != "guest" and notification_table:
-        notification_id = f"support-reply-{ticket_id}-{hashlib.sha256(reply.encode('utf-8')).hexdigest()[:16]}"
-        notification = {
-            "id": notification_id,
-            "userId": user_id,
-            "studentId": user_id if user_type == "student" else "",
-            "grantorId": user_id if user_type in {"grantor", "provider"} else "",
-            "adminId": user_id if user_type == "admin" else "",
-            "type": "support_reply",
-            "title": "Support ticket update",
-            "message": reply[:1000],
-            "ticketId": ticket_id,
-            "read": False,
-            "createdAt": now_iso(),
-        }
-        try:
-            in_app_delivery = _rest(
-                notification_table,
-                method="POST",
-                query="on_conflict=id",
-                payload={"id": notification_id, "data": notification, "updated_at": now_iso()},
-                prefer="resolution=merge-duplicates,return=representation",
-            )
-        except HTTPException:
-            in_app_delivery = {"ok": False}
-    audit(request, identity["root"]["id"], "support_ticket_updated", ticket_id, {"status": status, "priority": priority, "emailReplySent": bool(delivery and delivery.get("sent")), "inAppReplySent": bool(in_app_delivery)})
-    return {"ok": True, "ticket": data, "delivery": delivery, "inAppDelivery": in_app_delivery}
+    result = update_root_ticket(payload, identity["root"]["id"])
+    audit(request, identity["root"]["id"], "support_ticket_updated", str(payload.get("ticketId") or ""), {"status": payload.get("status"), "priority": payload.get("priority"), "replyAdded": bool(str(payload.get("reply") or "").strip())})
+    return result
+
+
+def remove_support(request: Request, identity: dict[str, Any], ticket_id: str) -> dict[str, Any]:
+    result = delete_root_ticket(ticket_id)
+    audit(request, identity["root"]["id"], "support_ticket_deleted", ticket_id)
+    return result
 
 
 def list_logs() -> dict[str, Any]:

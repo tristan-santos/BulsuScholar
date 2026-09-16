@@ -4830,6 +4830,7 @@
 	background: transparent;
 	font-size: 0.72rem;
 	font-weight: 500;
+	border-style: solid !important;
 	cursor: pointer;
 }
 
@@ -6479,6 +6480,11 @@
 	width: 38px;
 	height: 38px;
 	margin: 0;
+	display: flex;
+    justify-content: center;
+    font-size: 0.98rem;
+	color: #004f30;
+	font-weight: 650;
 }
 
 .student-announcement-detail-summary-card span,
@@ -8507,6 +8513,7 @@
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: 0.55rem;
+		margin-bottom: 100px;
 	}
 
 	.student-inbox-tab,
@@ -9448,6 +9455,28 @@
 	background: #08734d;
 	color: #ffffff;
 }
+
+/* Shared announcement cards outside the dashboard retain the dashboard treatment. */
+.student-shared-announcement-card { min-width: 0; overflow: hidden; border: 1px solid var(--dashboard-line, #d7e4de); border-radius: 8px; background: var(--dashboard-surface, #fff); }
+.student-shared-announcement-card .student-modern-announcement-body { padding: .95rem; }
+.student-shared-announcement-card .student-slot-badge { margin-left: 0; }
+.student-shared-announcement-card .student-modern-announcement-body > button { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; }
+.student-dashboard--dark .student-shared-announcement-card { border-color: #31453d; background: #111c18; color: #ecfdf5; }
+.student-dashboard--dark .student-shared-announcement-card .student-modern-announcement-media { background: #0e1814; }
+.student-dashboard--dark .student-shared-announcement-card .student-modern-announcement-author strong,
+.student-dashboard--dark .student-shared-announcement-card .student-modern-announcement-body h4 { color: #ecfdf5; }
+.student-dashboard--dark .student-shared-announcement-card .student-modern-announcement-author small,
+.student-dashboard--dark .student-shared-announcement-card .student-modern-announcement-body p { color: #a8bbb3; }
+.student-dashboard--dark .student-announcement-page-section,
+.student-dashboard--dark .student-recommendation-page-card,
+.student-dashboard--dark .student-scholarship-board { border-color: #31453d; background: #111c18; color: #ecfdf5; }
+.student-dashboard--dark .student-announcement-page-section h2,
+.student-dashboard--dark .student-announcement-page-section h3,
+.student-dashboard--dark .student-recommendation-page-card h3,
+.student-dashboard--dark .student-scholarship-board h3 { color: #ecfdf5; }
+.student-dashboard--dark .student-announcement-page-section p,
+.student-dashboard--dark .student-recommendation-page-card p,
+.student-dashboard--dark .student-scholarship-board p { color: #a8bbb3; }
 
 @media (max-width: 1050px) {
 	.student-dashboard-home .student-detail-profile {

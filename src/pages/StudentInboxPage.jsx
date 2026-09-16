@@ -36,6 +36,7 @@ import {
 	updateStudentNotifications,
 } from "../services/notificationService"
 import StudentTopbar from "../components/StudentTopbar"
+import { getNameInitials } from "../utils/nameInitials"
 import "../css/StudentDashboard.css"
 import "../css/StudentPortalRefresh.css"
 
@@ -174,9 +175,7 @@ function announcementToInboxItem(announcement = {}, readAnnouncementIds = []) {
 }
 
 function getAuthorInitials(name = "") {
-	const parts = String(name || "").trim().split(/\s+/).filter(Boolean)
-	if (parts.length === 0) return "SO"
-	return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("")
+	return getNameInitials(name, "SO")
 }
 
 function isSystemInboxItem(notification = {}) {
@@ -514,7 +513,7 @@ export default function StudentInboxPage() {
 						<header className="student-inbox-head">
 							<div className="student-inbox-title"><h2>Messages</h2>{unreadItems.length > 0 ? <span>{unreadItems.length}</span> : null}</div>
 							<div className="student-inbox-actions">
-								<button type="button" className="student-inbox-mark-read" data-button-variant="neutral" onClick={markAllNotificationsRead} disabled={unreadItems.length === 0}>Mark all read</button>
+								<button type="button" className="student-inbox-mark-read" data-button-variant="none" onClick={markAllNotificationsRead} disabled={unreadItems.length === 0}>Mark all read</button>
 							</div>
 						</header>
 						<div className="student-inbox-list">

@@ -7,10 +7,8 @@ import {
 	HiOutlineCalendar,
 	HiOutlineClock,
 	HiOutlineExclamation,
-	HiOutlineEye,
 	HiOutlineInbox,
 	HiOutlineSearch,
-	HiOutlineXCircle,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
@@ -19,6 +17,7 @@ import "../css/StudentPortalRefresh.css"
 import useThemeMode from "../hooks/useThemeMode"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import StudentTopbar from "../components/StudentTopbar"
+import StudentAnnouncementCard from "../components/StudentAnnouncementCard"
 import {
 	isPreviousStudentAnnouncement,
 	normalizeStudentAnnouncement,
@@ -30,8 +29,6 @@ import {
 	getStudentAccessState,
 	getStudentBlockedBannerMessage,
 } from "../services/studentAccessService"
-import { getAnnouncementApplyAvailability } from "../services/announcementApplyEligibilityService"
-import { getScholarshipSlotState } from "../services/scholarshipSlotService"
 
 function formatRelativeDate(value) {
 	const date = value?.toDate ? value.toDate() : new Date(value)
@@ -51,12 +48,6 @@ function formatRelativeDate(value) {
 		}
 	}
 	return "Just now"
-}
-
-function buildAnnouncementImageList(item = {}) {
-	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
-	const imageObjects = Array.isArray(item.images) ? item.images.map((image) => image?.url).filter(Boolean) : []
-	return [...new Set([item.imageUrl, ...imageUrls, ...imageObjects].filter(Boolean))]
 }
 
 export default function StudentAnnouncementsPage() {
@@ -214,61 +205,15 @@ export default function StudentAnnouncementsPage() {
 		[announcements],
 	)
 	const renderAnnouncementCard = (announcement, variant = "current") => (
-		(() => {
-			const imageUrls = buildAnnouncementImageList(announcement)
-			const isUnavailable = variant === "previous" || isPreviousStudentAnnouncement(announcement)
-			const applyAvailability = getAnnouncementApplyAvailability({
-				announcement,
-				user,
-				studentAccessState,
-				isPreviousAnnouncement: isUnavailable,
-			})
-			const isApplyBlocked =
-				!isUnavailable &&
-				announcement.applicationEnabled === true &&
-				!applyAvailability.canApply
-			const slotState = getScholarshipSlotState(announcement)
-			return (
-				<button
-					key={announcement.id}
-					type="button"
-					data-button-variant="none"
-					className={`student-announcement-card student-announcement-card--action student-announcement-page-card ${variant === "previous" ? "student-announcement-page-card--previous" : ""}`}
-					onClick={() => handleAnnouncementRedirect(announcement)}
-				>
-					<div className="student-announcement-card-media">
-						{imageUrls[0] ? <img src={imageUrls[0]} alt={announcement.title || "Announcement"} /> : <HiOutlineInbox />}
-					</div>
-					<div className="student-announcement-card-head">
-						<span className="student-announcement-author-badge">{announcement.source === "grantor" ? "G" : "SO"}</span>
-						<div>
-							<strong>{announcement.sourceLabel || "Scholarship Office"}</strong>
-						</div>
-						<i>{formatRelativeDate(announcement.createdAt || announcement.date)}</i>
-					</div>
-					<div className="student-announcement-content">
-						<h4>{announcement.title || "Announcement"}</h4>
-						<p>
-							{announcement.previewText ||
-								announcement.content ||
-								announcement.description ||
-								"No preview text provided."}
-							</p>
-					</div>
-					{slotState.managed ? <span className={`student-slot-badge ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}>{slotState.label}</span> : null}
-					<span className={`student-announcement-card-action ${isUnavailable ? "student-announcement-card-action--unavailable" : ""} ${isApplyBlocked ? "student-announcement-card-action--blocked" : ""}`}>
-						{isUnavailable ? (
-							<>
-								<HiOutlineXCircle aria-hidden />
-								Not Available
-							</>
-						) : (
-							announcement.applicationEnabled ? <><HiOutlineAcademicCap aria-hidden /> Apply Now</> : <><HiOutlineEye aria-hidden /> View Announcement</>
-						)}
-					</span>
-				</button>
-			)
-		})()
+		<StudentAnnouncementCard
+			key={announcement.id}
+			announcement={announcement}
+			formatRelativeDate={formatRelativeDate}
+			onOpen={handleAnnouncementRedirect}
+			studentAccessState={studentAccessState}
+			user={user}
+			isPrevious={variant === "previous" || isPreviousStudentAnnouncement(announcement)}
+		/>
 	)
 
 	const handleAnnouncementRedirect = useCallback(

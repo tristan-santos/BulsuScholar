@@ -6,6 +6,7 @@ const FOOTER_LINKS = [
 	["Inbox", "/student-dashboard/inbox"],
 	["My Profile", "/student-dashboard/profile"],
 	["My Scholarships", "/student-dashboard/scholarships"],
+	["Help & Support", "/help"],
 ]
 
 export default function StudentFooter({ description = "Manage your records, documents, and application updates in one place." }) {

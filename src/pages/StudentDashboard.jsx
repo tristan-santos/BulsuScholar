@@ -40,6 +40,7 @@ import { db } from "../services/supabaseDataService"
 import useThemeMode from "../hooks/useThemeMode"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import StudentFooter from "../components/StudentFooter"
+import StudentAnnouncementCard from "../components/StudentAnnouncementCard"
 import { getCurrentSemesterTag, normalizeScholarshipList, validateScholarshipDocuments } from "../services/scholarshipService"
 import {
 	isPreviousStudentAnnouncement,
@@ -55,15 +56,18 @@ import {
 } from "../services/studentAccessService"
 import {
 	buildRecommendationApplyPayload,
+	getRecommendationAnnouncementPath,
+	getRecommendationImageUrl,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
-import { getAnnouncementApplyAvailability, isScholarshipActiveOrPending } from "../services/announcementApplyEligibilityService"
+import { isScholarshipActiveOrPending } from "../services/announcementApplyEligibilityService"
 import { applyScholarshipWorkflow } from "../services/workflowService"
 import { formatCooldownDuration, splitExpiredRejectedScholarships } from "../services/rejectionCooldownService"
 import { getScholarshipSlotState } from "../services/scholarshipSlotService"
 import { getScholarshipTrackingProgress, getScholarshipTrackingStatusLabel } from "../services/scholarshipTrackingService"
 import { findMatchingPendingInvitation, getGrantorRejectionCooldown, markInvitationAccepted } from "../services/grantorReapplicationService"
 import StudentTopbar from "../components/StudentTopbar"
+import { getNameInitials } from "../utils/nameInitials"
 import "../css/StudentDashboard.css"
 
 function checkValidated(userData) {
@@ -122,12 +126,6 @@ function getMultipleScholarshipBannerCopy(user, scholarships) {
 		return "Your scholarship eligibility is temporarily on hold. Choose one scholarship only to comply with the one scholarship per student policy."
 	}
 	return "Your scholarship eligibility is temporarily on hold until you choose one scholarship only."
-}
-
-function buildAnnouncementImageList(item = {}) {
-	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
-	const imageObjects = Array.isArray(item.images) ? item.images.map((image) => image?.url).filter(Boolean) : []
-	return [...new Set([item.imageUrl, ...imageUrls, ...imageObjects].filter(Boolean))]
 }
 
 function buildScholarshipPreviewTracking(
@@ -664,9 +662,8 @@ export default function StudentDashboard() {
 	const userInitials = `${user?.fname?.[0]?.toUpperCase() || ""}${user?.lname?.[0]?.toUpperCase() || ""}` || "ST"
 
 	const handleContactSupport = useCallback(() => {
-		window.location.href =
-			"mailto:scholarships@bulsu.edu.ph?subject=BulsuScholar%20Student%20Support"
-	}, [])
+		navigate("/help")
+	}, [navigate])
 
 	const handleLogout = useCallback(() => {
 		sessionStorage.removeItem("bulsuscholar_userId")
@@ -1132,43 +1129,16 @@ export default function StudentDashboard() {
 							<div className="student-modern-announcement-grid">
 								{latestAnnouncements.length === 0 ? (
 									<div className="student-modern-empty"><HiOutlineBell /><strong>No announcements available.</strong><p>Latest notices will appear here.</p></div>
-								) : latestAnnouncements.map((announcement) => {
-									const imageUrls = buildAnnouncementImageList(announcement)
-									const authorName = formatDisplayText(announcement.sourceLabel || (announcement.source === "grantor" ? "Grantor" : "Scholarship Office"))
-									const authorInitials = String(authorName || "SO").trim().slice(0, 2).toUpperCase()
-									const authorImage = announcement.profileImageUrl || announcement.authorImageUrl || ""
-									const applyAvailability = getAnnouncementApplyAvailability({
-										announcement,
-										user,
-										studentAccessState,
-									})
-									const isApplyBlocked =
-										announcement.applicationEnabled === true &&
-										!applyAvailability.canApply
-									const slotState = getScholarshipSlotState(announcement)
-									return (
-										<article key={announcement.id} className="student-modern-announcement-card">
-											<div className="student-modern-announcement-media">{imageUrls[0] ? <img src={imageUrls[0]} alt={formatDisplayText(announcement.title, "Announcement")} /> : <HiOutlineBell />}</div>
-											<div className="student-modern-announcement-body">
-												<div className="student-modern-announcement-author">
-													<span>{authorImage ? <img src={authorImage} alt="" /> : authorInitials}</span>
-													<div><strong>{authorName}</strong><small>{formatRelativeDate(announcement.date || announcement.createdAt)}</small></div>
-												</div>
-												<h4>{formatDisplayText(announcement.title, "Announcement")}</h4>
-											<p>{formatDisplayText(announcement.previewText || announcement.content || announcement.description, "No Preview Text Provided.")}</p>
-											{slotState.managed ? <span className={`student-slot-badge ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}>{slotState.label}</span> : null}
-												<button
-													type="button"
-											className={isApplyBlocked ? "student-modern-announcement-apply--blocked" : ""}
-											data-button-variant={announcement.applicationEnabled ? "positive" : "neutral"}
-													onClick={() => handleAnnouncementRedirect(announcement)}
-												>
-											{announcement.applicationEnabled ? <><HiOutlineAcademicCap aria-hidden /> Apply Now</> : <><HiOutlineEye aria-hidden /> View Announcement</>}
-												</button>
-											</div>
-										</article>
-									)
-								})}
+								) : latestAnnouncements.map((announcement) => (
+									<StudentAnnouncementCard
+										key={announcement.id}
+										announcement={announcement}
+										formatRelativeDate={formatRelativeDate}
+										onOpen={handleAnnouncementRedirect}
+										studentAccessState={studentAccessState}
+										user={user}
+									/>
+								))}
 							</div>
 						</section>
 
@@ -1206,14 +1176,16 @@ export default function StudentDashboard() {
 							) : (
 								<div className="student-modern-recommendation-grid">
 							{recommendationPreview.map((recommendation) => {
-										const grantorInitials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
+										const grantorInitials = getNameInitials(recommendation.grantorName, "GR")
 								const applyingId = recommendation.grantorId || recommendation.id
 								const slotState = getScholarshipSlotState({ ...recommendation, source: "grantor" })
+								const recommendationImage = getRecommendationImageUrl(recommendation)
+								const announcementPath = getRecommendationAnnouncementPath(recommendation)
 										return (
 											<article key={applyingId} className="student-modern-recommendation-card">
 												<div className="student-modern-recommendation-media">
-													{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
-														<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt={`${recommendation.grantorName || "Grantor"} profile`} />
+											{recommendationImage ? (
+												<img src={recommendationImage} alt={recommendation.announcementTitle || "Recommended scholarship"} />
 													) : <span>{grantorInitials}</span>}
 												</div>
 												<div className="student-modern-recommendation-top">
@@ -1235,11 +1207,11 @@ export default function StudentDashboard() {
 												</div>
 												<button
 													type="button"
-													onClick={() => applyRecommendedScholarship(recommendation)}
-											disabled={Boolean(applyingRecommendationId) || !slotState.configured || slotState.full}
+													onClick={() => announcementPath ? navigate(announcementPath) : applyRecommendedScholarship(recommendation)}
+									disabled={!announcementPath && (Boolean(applyingRecommendationId) || !slotState.configured || slotState.full)}
 												>
-													<HiOutlineAcademicCap />
-													{applyingRecommendationId === applyingId ? "Applying..." : "Apply"}
+													{announcementPath ? <HiOutlineEye /> : <HiOutlineAcademicCap />}
+													{announcementPath ? "View Scholarship" : applyingRecommendationId === applyingId ? "Applying..." : "Apply"}
 												</button>
 											</article>
 										)

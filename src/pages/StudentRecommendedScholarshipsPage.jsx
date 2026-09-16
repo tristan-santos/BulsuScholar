@@ -15,6 +15,7 @@ import {
 	HiOutlineArrowLeft,
 	HiOutlineCheckCircle,
 	HiOutlineExclamation,
+	HiOutlineEye,
 	HiOutlineLocationMarker,
 } from "react-icons/hi"
 import StudentTopbar from "../components/StudentTopbar"
@@ -25,8 +26,11 @@ import {
 } from "../services/scholarshipService"
 import {
 	buildRecommendationApplyPayload,
+	getRecommendationAnnouncementPath,
+	getRecommendationImageUrl,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
+import { getNameInitials } from "../utils/nameInitials"
 import { applyScholarshipWorkflow } from "../services/workflowService"
 import { SCHOLARSHIP_CHOICE_ENABLED, hasScholarshipCommitment, getGrantorApplicationBlock } from "../services/scholarshipChoiceService"
 import {
@@ -465,14 +469,16 @@ export default function StudentRecommendedScholarshipsPage() {
 							{displayRecommendations.map((recommendation, index) => {
 								const itemId = recommendationKey(recommendation) || recommendation.grantorId || recommendation.id
 								const isInvitation = recommendation.recommendationSource === "grantor_invitation"
-				const initials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
+				const initials = getNameInitials(recommendation.grantorName, "GR")
 				const slotState = getScholarshipSlotState({ ...recommendation, source: "grantor" })
+				const recommendationImage = getRecommendationImageUrl(recommendation)
+				const announcementPath = getRecommendationAnnouncementPath(recommendation)
 								return (
 									<article key={itemId} className="student-recommendation-page-card">
 										<div className="student-recommendation-rank">#{index + 1}</div>
 										<div className="student-modern-recommendation-media">
-											{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
-												<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt={`${recommendation.grantorName || "Grantor"} profile`} />
+											{recommendationImage ? (
+												<img src={recommendationImage} alt={recommendation.announcementTitle || "Recommended scholarship"} />
 											) : <span>{initials}</span>}
 										</div>
 										<div className="student-modern-recommendation-top">
@@ -500,11 +506,11 @@ export default function StudentRecommendedScholarshipsPage() {
 										<button
 											type="button"
 											className="student-mini-btn student-mini-btn--primary"
-											onClick={() => applyRecommendation(recommendation)}
-						disabled={Boolean(applyingId) || !slotState.configured || slotState.full}
+											onClick={() => announcementPath ? navigate(announcementPath) : applyRecommendation(recommendation)}
+											disabled={!announcementPath && (Boolean(applyingId) || !slotState.configured || slotState.full)}
 										>
-											<HiOutlineAcademicCap />
-											{applyingId === itemId ? "Applying..." : isInvitation ? "Accept Invitation" : "Apply"}
+											{announcementPath ? <HiOutlineEye /> : <HiOutlineAcademicCap />}
+											{announcementPath ? "View Scholarship" : applyingId === itemId ? "Applying..." : isInvitation ? "Accept Invitation" : "Apply"}
 										</button>
 									</article>
 								)

@@ -9,7 +9,6 @@ import {
 	HiOutlineClock,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
-	HiOutlineEye,
 	HiOutlineInbox,
 	HiChevronLeft,
 	HiChevronRight,
@@ -29,6 +28,7 @@ import "../css/StudentPortalRefresh.css"
 import useThemeMode from "../hooks/useThemeMode"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import StudentTopbar from "../components/StudentTopbar"
+import StudentAnnouncementCard from "../components/StudentAnnouncementCard"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import {
 	isPreviousStudentAnnouncement,
@@ -56,6 +56,7 @@ import {
 } from "../services/rejectionCooldownService"
 import { getScholarshipSlotState } from "../services/scholarshipSlotService"
 import { findMatchingPendingInvitation, getGrantorRejectionCooldown, markInvitationAccepted } from "../services/grantorReapplicationService"
+import { getNameInitials } from "../utils/nameInitials"
 
 function buildAnnouncementImageList(item = {}) {
 	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
@@ -130,15 +131,6 @@ function getGrantorDisplayName(profile = {}, announcement = {}) {
 		announcement.sourceLabel ||
 		"This Grantor"
 	)
-}
-
-function getInitials(name = "", fallback = "G") {
-	return String(name || "")
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((part) => part[0]?.toUpperCase())
-		.join("") || fallback
 }
 
 function getMissingAnnouncementDocuments(student = {}, announcement = {}) {
@@ -334,7 +326,7 @@ export default function StudentAnnouncementDetailPage() {
 				announcement.authorImageUrl ||
 				""
 			: ""
-	const authorInitials = getInitials(
+	const authorInitials = getNameInitials(
 		grantorDisplayName,
 		announcement?.source === "grantor" ? "G" : "SO",
 	)
@@ -897,7 +889,6 @@ export default function StudentAnnouncementDetailPage() {
 									{relatedAnnouncements.length ? (
 										<div className="student-announcement-related-grid">
 											{relatedAnnouncements.map((item) => {
-												const relatedImage = buildAnnouncementImageList(item)[0]
 												const relatedProfile = item.grantorId ? grantorProfiles[item.grantorId] || {} : {}
 												const relatedAuthorName =
 													item.source === "grantor"
@@ -910,31 +901,14 @@ export default function StudentAnnouncementDetailPage() {
 													item.authorImageUrl ||
 													""
 												return (
-											<button
-												key={`${item.source}-${item.id}`}
-												type="button"
-												data-button-variant="none"
-														className="student-announcement-card student-announcement-card--action student-announcement-page-card"
-														onClick={() =>
-															navigate(`/student-dashboard/announcements/${item.source || "grantor"}/${encodeURIComponent(item.id)}`)
-														}
-													>
-														<div className="student-announcement-card-media">
-															{relatedImage ? <img src={relatedImage} alt={item.title || "Announcement"} /> : <HiOutlineInbox aria-hidden />}
-														</div>
-														<div className="student-announcement-card-head">
-															<span className="student-announcement-author-badge">
-																{relatedAuthorImage ? <img src={relatedAuthorImage} alt="" /> : getInitials(relatedAuthorName)}
-															</span>
-															<div><strong>{relatedAuthorName}</strong></div>
-															<i>{formatRelativeDate(item.createdAt || item.date)}</i>
-														</div>
-														<div className="student-announcement-content">
-															<h4>{item.title || "Announcement"}</h4>
-															<p>{item.previewText || item.subtitle || item.description || "No preview text provided."}</p>
-														</div>
-												<span className="student-announcement-card-action"><HiOutlineEye aria-hidden /> View Announcement</span>
-													</button>
+													<StudentAnnouncementCard
+														key={`${item.source}-${item.id}`}
+														announcement={{ ...item, sourceLabel: relatedAuthorName, profileImageUrl: relatedAuthorImage }}
+														formatRelativeDate={formatRelativeDate}
+														onOpen={(selected) => navigate(`/student-dashboard/announcements/${selected.source || "grantor"}/${encodeURIComponent(selected.id)}`)}
+														studentAccessState={studentAccessState}
+														user={user}
+													/>
 												)
 											})}
 										</div>

@@ -24,6 +24,7 @@ import {
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
 	HiOutlineExternalLink,
+	HiOutlineEye,
 	HiX,
 } from "react-icons/hi"
 import { db } from "../services/supabaseDataService"
@@ -91,8 +92,11 @@ import {
 import { syncStudentGrantorRosterMatches } from "../services/studentGrantorMatchService"
 import {
 	buildRecommendationApplyPayload,
+	getRecommendationAnnouncementPath,
+	getRecommendationImageUrl,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
+import { getNameInitials } from "../utils/nameInitials"
 import { uploadToStorage } from "../services/storageService"
 import {
 	findMatchingPendingInvitation,
@@ -3804,20 +3808,22 @@ export default function StudentScholarshipsPage() {
 									<div className="student-modern-recommendation-grid">
 										{recommendationDisplayPreview.map((recommendation) => {
 											const recommendationId = recommendationKey(recommendation) || recommendation.grantorId || recommendation.id
-											const grantorInitials = String(recommendation.grantorName || "GR").trim().slice(0, 2).toUpperCase()
+											const grantorInitials = getNameInitials(recommendation.grantorName, "GR")
 											const rejectedMatch = getRejectedCooldownForTarget(recommendation)
 											const hasActiveCooldown = rejectedMatch?.cooldown?.active === true
 											const isInvitation = recommendation.recommendationSource === "grantor_invitation"
 											const archivedBlock = isInvitation ? null : getArchivedGrantorBlockForTarget(recommendation)
 											const isApplying = applyingRecommendationId === recommendationId
+											const recommendationImage = getRecommendationImageUrl(recommendation)
+											const announcementPath = getRecommendationAnnouncementPath(recommendation)
 											return (
 											<article
 												key={recommendationId}
 												className={`student-modern-recommendation-card student-modern-recommendation-card--${recommendation.recommendationSource || "algorithm"}`}
 											>
 												<div className="student-modern-recommendation-media">
-													{recommendation.profileImageUrl || recommendation.authorImageUrl ? (
-														<img src={recommendation.profileImageUrl || recommendation.authorImageUrl} alt={`${recommendation.grantorName || "Grantor"} profile`} />
+													{recommendationImage ? (
+														<img src={recommendationImage} alt={recommendation.announcementTitle || "Recommended scholarship"} />
 													) : <span>{grantorInitials}</span>}
 												</div>
 												<div className="student-modern-recommendation-top">
@@ -3841,14 +3847,16 @@ export default function StudentScholarshipsPage() {
 															</p>
 														) : null}
 													</div>
-													<button
-														type="button"
-														onClick={() => (isInvitation ? acceptScholarshipInvitation(recommendation) : applyRecommendedScholarship(recommendation))}
-														disabled={Boolean(applyingRecommendationId) || isMutating || hasScholarshipActionBlock || hasActiveCooldown || Boolean(archivedBlock)}
-													>
-														{isInvitation ? <HiOutlineCheckCircle /> : <HiOutlineAcademicCap />}
-														{archivedBlock
-															? "Unavailable"
+											<button
+												type="button"
+												onClick={() => announcementPath ? navigate(announcementPath) : (isInvitation ? acceptScholarshipInvitation(recommendation) : applyRecommendedScholarship(recommendation))}
+												disabled={!announcementPath && (Boolean(applyingRecommendationId) || isMutating || hasScholarshipActionBlock || hasActiveCooldown || Boolean(archivedBlock))}
+											>
+												{announcementPath ? <HiOutlineEye /> : isInvitation ? <HiOutlineCheckCircle /> : <HiOutlineAcademicCap />}
+												{announcementPath
+													? "View Scholarship"
+													: archivedBlock
+													? "Unavailable"
 															: isApplying
 																? "Applying..."
 																: isInvitation

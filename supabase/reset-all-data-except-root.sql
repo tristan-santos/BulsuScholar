@@ -90,6 +90,7 @@ truncate table
   public.grantor_portals,
   public.providers,
   public.admins,
+  public.support_ticket_messages,
   public.support_feedback,
   public.branding_versions,
   public.request_metric_buckets,
@@ -167,6 +168,7 @@ union all select 'student_document_usage', count(*) from public.student_document
 union all select 'studentNotifications', count(*) from public."studentNotifications"
 union all select 'grantorNotifications', count(*) from public."grantorNotifications"
 union all select 'systemLogs', count(*) from public."systemLogs"
+union all select 'support_ticket_messages', count(*) from public.support_ticket_messages
 union all select 'support_feedback', count(*) from public.support_feedback
 union all select 'branding_versions', count(*) from public.branding_versions
 union all select 'request_metric_buckets', count(*) from public.request_metric_buckets
