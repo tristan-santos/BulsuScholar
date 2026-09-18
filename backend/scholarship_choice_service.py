@@ -50,7 +50,7 @@ CHOICE_MESSAGES = {
     "slot_reservation_missing": "This application has no active slot reservation. Please contact the scholarship office.",
     "grantor_application_exists": "You already have an active application with this grantor.",
     "reapply_cooldown_active": "Please wait 24 hours before applying to this grantor again.",
-    "scholarship_ineligible": "You do not meet this scholarship's eligibility requirements.",
+    "scholarship_ineligible": "Your current GWA or required COR, ROG, Student ID, or Student Application Profile no longer meets this scholarship's requirements. Update your Profile documents, then ask the scholarship office to review them again.",
     "archive_choice_required": "Choose whether to keep or change your scholarship before continuing.",
     "invalid_archive_choice": "This archived-grantor scholarship decision is not valid.",
     "original_commitment_missing": "The original scholarship commitment could not be verified.",

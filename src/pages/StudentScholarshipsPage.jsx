@@ -382,7 +382,7 @@ function getMultipleScholarshipBannerCopy(user, scholarships) {
 
 function buildDocumentRequirementCopy(documentCheck) {
 	if (documentCheck?.ok) {
-		return `COR and ROG are ready for ${documentCheck?.semesterTag || "the current semester"}.`
+		return `Your required scholarship documents are ready for ${documentCheck?.semesterTag || "the current semester"}.`
 	}
 
 	const notes = []
@@ -392,12 +392,12 @@ function buildDocumentRequirementCopy(documentCheck) {
 	if (Array.isArray(documentCheck?.expired) && documentCheck.expired.length > 0) {
 		notes.push(`Update needed: ${documentCheck.expired.join(", ")}`)
 	}
-	return notes.join(" | ") || "Upload the required COR and ROG."
+	return notes.join(" | ") || "Upload the required scholarship documents."
 }
 
 function buildDocumentRequirementPrompt(documentCheck, scholarshipName = "this scholarship") {
 	if (!documentCheck) {
-		return `Upload the required COR and ROG for ${scholarshipName} before requesting materials.`
+		return `Upload the required scholarship documents for ${scholarshipName} before requesting materials.`
 	}
 
 	const notes = []
@@ -411,7 +411,7 @@ function buildDocumentRequirementPrompt(documentCheck, scholarshipName = "this s
 	}
 
 	return (
-		`Upload the required COR and ROG for ${scholarshipName} before requesting materials.` +
+		`Upload the required scholarship documents for ${scholarshipName} before requesting materials.` +
 		(notes.length > 0 ? ` ${notes.join(" | ")}` : "")
 	)
 }
@@ -2075,7 +2075,7 @@ export default function StudentScholarshipsPage() {
 				announcement_not_open_for_applications: "This scholarship announcement is closed or no longer available.",
 				slots_not_configured: "This scholarship is not accepting applications until its slots are configured.",
 				scholarship_full: "This scholarship has no remaining slots.",
-				scholarship_ineligible: "You no longer meet this scholarship's eligibility requirements.",
+				scholarship_ineligible: "Your current GWA or required scholarship documents no longer meet this scholarship's requirements. Update your Profile documents and request a new review.",
 				grantor_application_exists: "You already have an active application with this grantor.",
 				reapply_cooldown_active: "The 24-hour reapplication cooldown for this grantor has not finished.",
 				archived_grantor_block: "This invitation is missing or no longer valid for the archived application.",
@@ -2435,7 +2435,7 @@ export default function StudentScholarshipsPage() {
 				`${materialConfig.label} request submitted. Wait for admin approval before downloading.`,
 			)
 		} catch (error) {
-			console.error(`Failed to request ${materialKey}:`, error)
+			if (error?.reason !== "scholarship_ineligible") console.error(`Failed to request ${materialKey}:`, error)
 			toast.error(error.message || `${materialConfig?.label || "Material"} request failed. Please try again.`)
 		} finally {
 			setIsMutating(false)

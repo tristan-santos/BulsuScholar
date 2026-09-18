@@ -225,6 +225,7 @@ function getFirstValidDocument(student = {}, keys = []) {
 	for (const key of keys) {
 		const value = student?.[key]
 		if (value?.url) return value
+		if (typeof value === "string" && value.trim()) return { url: value.trim() }
 	}
 	return null
 }
@@ -259,6 +260,12 @@ export function validateScholarshipDocuments(student = {}) {
 
 	const cor = getFirstValidDocument(student, ["corFile", "corDocument", "cor"])
 	const cog = getFirstValidDocument(student, ["rogFile", "cogFile", "rogDocument", "cogDocument", "rog", "cog"])
+	const schoolId = getFirstValidDocument(student, ["schoolIdFile", "studentIdFile", "validIdFile", "idFile"])
+	const applicationProfile = getFirstValidDocument(student, [
+		"scholarshipApplicationFile",
+		"applicationFormFile",
+		"scholarshipFormFile",
+	])
 	if (!cor?.url) {
 		missing.push("COR")
 	} else if (cor.semesterTag && cor.semesterTag !== semesterTag) {
@@ -270,6 +277,8 @@ export function validateScholarshipDocuments(student = {}) {
 	} else if (cog.semesterTag && cog.semesterTag !== semesterTag) {
 		expired.push("ROG")
 	}
+	if (!schoolId?.url) missing.push("Student ID")
+	if (!applicationProfile?.url) missing.push("Student Application Profile")
 
 	return {
 		ok: missing.length === 0 && expired.length === 0,
