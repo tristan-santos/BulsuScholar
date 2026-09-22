@@ -147,6 +147,7 @@ def enforce_portal_scope(
         data = account.get("data") or {}
         if (not account.get("ok") or not account.get("row")
                 or str(data.get("authUserId") or "") != str(user.get("id") or "")
+                or data.get("isPending") is True or data.get("isValidated") is False
                 or data.get("disabled") is True or data.get("archived") is True
                 or str(data.get("status") or "active").lower() in {"disabled", "inactive", "archived"}):
             raise HTTPException(status_code=403, detail="portal_account_not_authorized")

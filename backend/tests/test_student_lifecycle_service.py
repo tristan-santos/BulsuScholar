@@ -10,15 +10,24 @@ from backend.student_lifecycle_service import (
 class StudentLifecycleServiceTests(unittest.TestCase):
     @patch("backend.student_lifecycle_service.supabase_rpc")
     def test_email_confirmation_uses_verified_auth_identity(self, rpc):
-        rpc.return_value = {"ok": True, "data": {"promoted": True}}
+        rpc.return_value = {"ok": True, "data": {"pendingApproval": True}}
         result = promote_email_confirmed_student(
             {"studentId": "20230001"},
-            {"id": "auth-a", "email": "student@example.com", "user_metadata": {"user_id": "20230001"}},
+            {"id": "auth-a", "email": "student@example.com", "email_confirmed_at": "2026-09-22T00:00:00Z", "user_metadata": {"user_id": "20230001"}},
         )
         self.assertTrue(result["ok"])
         rpc.assert_called_once_with("promote_email_confirmed_student", {
             "p_student_id": "20230001", "p_auth_user_id": "auth-a", "p_email": "student@example.com",
         })
+
+    @patch("backend.student_lifecycle_service.supabase_rpc")
+    def test_unconfirmed_email_cannot_enter_approval_queue(self, rpc):
+        result = promote_email_confirmed_student(
+            {"studentId": "20230001"},
+            {"id": "auth-a", "email": "student@example.com", "user_metadata": {"user_id": "20230001"}},
+        )
+        self.assertFalse(result["ok"])
+        rpc.assert_not_called()
 
     @patch("backend.student_lifecycle_service.supabase_document_get")
     @patch("backend.student_lifecycle_service.supabase_rpc")

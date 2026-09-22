@@ -94,7 +94,8 @@ def _record_attempt(account: dict[str, Any], succeeded: bool) -> dict[str, Any]:
 def _account_disabled(account: dict[str, Any]) -> bool:
     data = account.get("data") or {}
     status = str(data.get("status") or data.get("accountStatus") or "active").lower()
-    return data.get("disabled") is True or data.get("archived") is True or status in {"disabled", "inactive", "archived"}
+    return (account.get("table") == "pending_students" or data.get("disabled") is True
+            or data.get("archived") is True or status in {"disabled", "inactive", "archived"})
 
 
 def login(payload: dict[str, Any]) -> dict[str, Any]:

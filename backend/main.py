@@ -42,6 +42,7 @@ try:
     )
     from .signup_service import finalize_student_signup, validate_student_signup
     from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
+    from .student_account_review_service import approve_pending_student_account, list_pending_student_accounts
     from .support_service import ask_support_assistant
     from .priority_one_service import save_support_feedback
     from .support_ticket_service import add_portal_message, create_portal_ticket, delete_portal_ticket, get_portal_ticket, list_portal_tickets
@@ -114,6 +115,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     )
     from signup_service import finalize_student_signup, validate_student_signup
     from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
+    from student_account_review_service import approve_pending_student_account, list_pending_student_accounts
     from support_service import ask_support_assistant
     from priority_one_service import save_support_feedback
     from support_ticket_service import add_portal_message, create_portal_ticket, delete_portal_ticket, get_portal_ticket, list_portal_tickets
@@ -684,6 +686,16 @@ def finalize_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dic
 @app.post("/workflows/student/email-confirmed")
 def student_email_confirmed_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return promote_email_confirmed_student(payload, require_supabase_user(request))
+
+
+@app.get("/admin/students/pending")
+def pending_student_accounts_endpoint(request: Request) -> dict[str, Any]:
+    return list_pending_student_accounts(request)
+
+
+@app.post("/admin/students/pending/{student_id}/approve")
+def approve_pending_student_account_endpoint(request: Request, student_id: str) -> dict[str, Any]:
+    return approve_pending_student_account(request, student_id)
 
 
 @app.post("/workflows/scholarship/apply")

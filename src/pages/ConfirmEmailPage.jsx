@@ -86,8 +86,8 @@ export default function ConfirmEmailPage() {
 		},
 		confirmed: {
 			icon: <HiOutlineCheckCircle className="signup-verified-icon" />,
-			title: "Welcome to BulsuScholar",
-			copy: email ? `${email} is confirmed and your student dashboard is ready. Redirecting you to login...` : "Your account is confirmed and ready. Redirecting you to login...",
+			title: "Email confirmed",
+			copy: email ? `${email} is confirmed. Your account is awaiting scholarship office approval. We will email you when it is ready.` : "Your account is awaiting scholarship office approval. We will email you when it is ready.",
 		},
 		missing: {
 			icon: <HiOutlineXCircle className="signup-verified-icon" />,
@@ -121,7 +121,7 @@ export default function ConfirmEmailPage() {
 						<h2 className="signup-verified-title">{content.title}</h2>
 						<p className="signup-verified-details">{content.copy}</p>
 						<button type="button" className="login-submit login-submit--full" onClick={() => navigate("/")}>
-							Go to Login
+							Back to Login
 						</button>
 					</div>
 				</div>

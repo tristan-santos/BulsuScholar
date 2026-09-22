@@ -15,6 +15,25 @@ ACCOUNT = {
 
 
 class PortalLoginTests(unittest.TestCase):
+    def test_pending_student_cannot_login_or_bootstrap(self):
+        pending = {**ACCOUNT, "table": "pending_students", "data": {**ACCOUNT["data"], "isPending": True}}
+        with patch.object(service, "_find_account", return_value=pending), \
+                patch.object(service, "_security_state") as security, \
+                patch.object(service, "_request_json") as auth_request:
+            with self.assertRaises(HTTPException) as raised:
+                service.login({"userId": pending["id"], "password": "correct"})
+        self.assertEqual(raised.exception.status_code, 403)
+        security.assert_not_called()
+        auth_request.assert_not_called()
+
+        request = Mock()
+        request.headers = {"x-portal-actor-id": pending["id"], "x-portal-actor-type": "student"}
+        with patch.object(service, "require_supabase_user", return_value={"id": pending["data"]["authUserId"]}), \
+                patch.object(service, "_find_account", return_value=pending):
+            with self.assertRaises(HTTPException) as bootstrap_error:
+                service.validate_portal_session(request)
+        self.assertEqual(bootstrap_error.exception.status_code, 403)
+
     def test_failed_login_records_attempt_and_returns_remaining_count(self):
         with patch.object(service, "_find_account", return_value=ACCOUNT), \
                 patch.object(service, "_security_state", return_value={}), \

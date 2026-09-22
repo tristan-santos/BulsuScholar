@@ -33,6 +33,16 @@ class PortalScopeAuthTests(unittest.TestCase):
             access_control.enforce_portal_scope(self.request, payload, {"student"})
         self.assertEqual(payload["actorId"], "student-1")
 
+    def test_pending_student_cannot_use_student_workflow(self):
+        with patch.object(access_control, "require_supabase_user", return_value={"id": "auth-1"}), \
+                patch.object(access_control, "supabase_document_get", return_value={
+                    "ok": True, "row": {"id": "student-1"},
+                    "data": {"authUserId": "auth-1", "isPending": True, "isValidated": False},
+                }):
+            with self.assertRaises(HTTPException) as raised:
+                access_control.enforce_portal_scope(self.request, {}, {"student"})
+        self.assertEqual(raised.exception.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
