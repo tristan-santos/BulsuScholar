@@ -1,4 +1,3 @@
-import os
 import json
 import base64
 import os
@@ -10,13 +9,41 @@ from datetime import datetime
 
 from fastapi import HTTPException, Request
 
+try:
+    from .supabase_ops import supabase_document_get
+except ImportError:  # pragma: no cover
+    from supabase_ops import supabase_document_get
+
+
+def _require_unlocked_auth_user(auth_user_id: str) -> None:
+    url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not auth_user_id or not url or not key:
+        raise HTTPException(status_code=401, detail="authentication_required")
+    query = urllib.parse.urlencode({
+        "auth_user_id": f"eq.{auth_user_id}",
+        "select": "blocked_at",
+        "limit": "1",
+    })
+    try:
+        state_request = urllib.request.Request(
+            f"{url}/rest/v1/login_security_state?{query}",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        )
+        with urllib.request.urlopen(state_request, timeout=10) as response:
+            rows = json.loads(response.read().decode("utf-8") or "[]")
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError) as error:
+        raise HTTPException(status_code=503, detail="login_security_unavailable") from error
+    if rows and rows[0].get("blocked_at"):
+        raise HTTPException(status_code=423, detail="account_locked")
+
 
 def normalize_role(value: Any) -> str:
     role = str(value or "").strip().lower()
     return "grantor" if role in {"provider", "grantor"} else role
 
 
-def require_supabase_user(request: Request) -> dict[str, Any]:
+def require_supabase_user(request: Request, *, allow_locked: bool = False) -> dict[str, Any]:
     """Resolve the authenticated Supabase user without trusting portal headers."""
     authorization = request.headers.get("authorization", "")
     token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
@@ -35,6 +62,8 @@ def require_supabase_user(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="invalid_authentication_session") from error
     if not user.get("id") or not user.get("email"):
         raise HTTPException(status_code=401, detail="invalid_authentication_session")
+    if not allow_locked:
+        _require_unlocked_auth_user(str(user["id"]))
     return user
 
 
@@ -60,6 +89,7 @@ def require_admin_bearer(request: Request, actor_id: str) -> tuple[dict[str, Any
     record = rows[0].get("data", {}) if rows else {}
     if not rows or str(record.get("authUserId") or "") != str(user.get("id") or "") or str(record.get("status") or "active").lower() == "disabled":
         raise HTTPException(status_code=403, detail="admin_account_not_authorized")
+    _require_unlocked_auth_user(str(user.get("id") or ""))
     valid_after = str(record.get("sessionValidAfter") or "")
     if valid_after:
         try:
@@ -90,16 +120,6 @@ def _required_admin_permissions(path: str) -> set[str]:
     return set()
 
 
-def verify_admin_bearer(request: Request, actor_id: str) -> None:
-    if os.getenv("ENFORCE_ADMIN_JWT", "false").lower() not in {"1", "true", "yes"}:
-        return
-    _, record = require_admin_bearer(request, actor_id)
-    required = _required_admin_permissions(request.url.path)
-    permissions = set(record.get("permissions") or [])
-    if required and not required.intersection(permissions):
-        raise HTTPException(status_code=403, detail="admin_permission_required")
-
-
 def enforce_portal_scope(
     request: Request,
     payload: dict[str, Any],
@@ -107,28 +127,29 @@ def enforce_portal_scope(
     *,
     owner_key: str = "",
 ) -> None:
-    """Reject cross-role and cross-owner workflow calls.
-
-    Supabase Auth-backed users also send their bearer token. Legacy grantor/admin
-    accounts use the portal identity headers until their Auth migration is complete.
-    """
+    """Reject cross-role and cross-owner workflow calls."""
 
     actor_id = str(request.headers.get("x-portal-actor-id") or "").strip()
     actor_role = normalize_role(request.headers.get("x-portal-actor-type"))
-    require_headers = os.getenv("ENFORCE_PORTAL_ACTOR_HEADERS", "true").lower() not in {
-        "0",
-        "false",
-        "no",
-    }
-
-    if require_headers and (not actor_id or not actor_role):
+    if not actor_id or not actor_role:
         raise HTTPException(status_code=401, detail="portal_identity_required")
-    if not actor_id and not actor_role:
-        return
     if actor_role not in allowed_roles:
         raise HTTPException(status_code=403, detail="portal_role_not_allowed")
     if actor_role == "admin":
-        verify_admin_bearer(request, actor_id)
+        user, record = require_admin_bearer(request, actor_id)
+        required = _required_admin_permissions(request.url.path)
+        if required and not required.intersection(set(record.get("permissions") or [])):
+            raise HTTPException(status_code=403, detail="admin_permission_required")
+    else:
+        user = require_supabase_user(request)
+        table = "students" if actor_role == "student" else "providers"
+        account = supabase_document_get(table, actor_id)
+        data = account.get("data") or {}
+        if (not account.get("ok") or not account.get("row")
+                or str(data.get("authUserId") or "") != str(user.get("id") or "")
+                or data.get("disabled") is True or data.get("archived") is True
+                or str(data.get("status") or "active").lower() in {"disabled", "inactive", "archived"}):
+            raise HTTPException(status_code=403, detail="portal_account_not_authorized")
 
     payload_role = normalize_role(payload.get("actorType"))
     payload_actor_id = str(payload.get("actorId") or "").strip()

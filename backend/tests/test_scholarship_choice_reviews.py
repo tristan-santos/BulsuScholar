@@ -5,6 +5,17 @@ from backend import workflow_service as service
 
 
 class ScholarshipChoiceReviewTests(unittest.TestCase):
+    def test_compliance_pause_blocks_stage_updates(self):
+        with patch.object(service, "supabase_document_get", return_value={
+            "ok": True,
+            "data": {"tracking": {"compliancePause": {"active": True}}},
+        }), patch.object(service, "supabase_document_update") as update:
+            result = service.update_admin_review({"actorType": "admin", "updates": [
+                {"table": "scholarship_applications", "id": "app", "data": {"status": "Approved"}},
+            ]})
+        self.assertEqual(result["reason"], "document_compliance_required")
+        update.assert_not_called()
+
     def test_closed_application_stops_the_entire_batch(self):
         payload = {"actorType": "admin", "updates": [
             {"table": "students", "id": "student", "data": {"scholarships": []}},

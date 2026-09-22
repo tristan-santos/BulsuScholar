@@ -5,6 +5,8 @@
   Brevo production checklist.
 - `diagrams/` contains the maintained DFD and ERD source documents.
 - `email/` contains the canonical Supabase Auth email templates.
+- `SemiFinalRevisions.md` tracks the step-by-step roadmap for the remaining
+  system revisions and their release gates.
 
 Runtime code lives in `src/` and `backend/`. Database history and transaction
 tests live in `supabase/migrations/` and `supabase/tests/`.

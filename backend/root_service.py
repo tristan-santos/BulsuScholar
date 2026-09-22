@@ -852,7 +852,42 @@ def integration_action(request: Request, identity: dict[str, Any], payload: dict
 
 def list_admins() -> list[dict[str, Any]]:
     rows = _rest("admins", query="select=*&order=updated_at.desc&limit=500") or []
-    return [_redact_sensitive({"id": row.get("id"), **(row.get("data") or {}), "updatedAt": row.get("updated_at")}) for row in rows]
+    security_rows = _rest(
+        "login_security_state",
+        query="select=auth_user_id,failed_attempts,blocked_at,last_failed_at&account_type=eq.admin&limit=500",
+    ) or []
+    security_by_auth_id = {str(row.get("auth_user_id") or ""): row for row in security_rows}
+    result = []
+    for row in rows:
+        data = row.get("data") or {}
+        security = security_by_auth_id.get(str(data.get("authUserId") or ""), {})
+        result.append(_redact_sensitive({
+            "id": row.get("id"),
+            **data,
+            "loginBlocked": bool(security.get("blocked_at")),
+            "failedLoginAttempts": int(security.get("failed_attempts") or 0),
+            "loginBlockedAt": security.get("blocked_at"),
+            "updatedAt": row.get("updated_at"),
+        }))
+    return result
+
+
+def unblock_admin(request: Request, identity: dict[str, Any], admin_id: str) -> dict[str, Any]:
+    admin_id = str(admin_id or "").strip()
+    row = _first("admins", f"id=eq.{urllib.parse.quote(admin_id)}&select=id,data")
+    data = (row or {}).get("data") or {}
+    auth_user_id = str(data.get("authUserId") or "").strip()
+    if not row or not auth_user_id:
+        raise HTTPException(status_code=404, detail="admin_auth_identity_missing")
+    url, key = _supabase_config()
+    result, _ = _http_json(
+        f"{url}/rest/v1/rpc/unblock_portal_account",
+        method="POST",
+        payload={"p_auth_user_id": auth_user_id, "p_unblocked_by": identity["root"]["id"]},
+        headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    audit(request, identity["root"]["id"], "admin_login_unblocked", admin_id)
+    return {"ok": True, "security": result}
 
 
 ADMIN_ROLES = {

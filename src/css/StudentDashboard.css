@@ -1839,6 +1839,19 @@
 	background-color: #b91c1c91;
 }
 
+.student-scholarship-withdraw-btn,
+.student-scholarship-withdraw-btn:hover:not(:disabled),
+.student-scholarship-withdraw-btn:focus-visible,
+.student-scholarship-withdraw-btn:active,
+.student-scholarship-withdraw-btn:disabled {
+	border: 0;
+}
+
+.student-scholarship-withdraw-btn:focus-visible {
+	outline: 2px solid #475569;
+	outline-offset: 2px;
+}
+
 .student-dashboard-scholarship-preview-list {
 	display: grid;
 	gap: 0.6rem;

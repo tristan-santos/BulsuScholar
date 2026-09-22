@@ -1709,7 +1709,6 @@ export default function SignupPage() {
 				scholarships: [],
 				grantorMatches: toGrantorMatchMetadata(matchedGrantors),
 				rosterMatchCount: matchedGrantors.length,
-				rosterDecisionPending: false,
 				rosterMatchNotice: grantorConflictMessage,
 			}
 
@@ -1834,8 +1833,8 @@ export default function SignupPage() {
 									<ul>
 										<li>Verify your email address by clicking the confirmation link</li>
 										<li>Sign in after confirmation to access your dashboard</li>
-										<li>Review any scholarship roster records matched to your student ID</li>
-										<li>Start or track applications after every roster decision is resolved</li>
+										<li>If you have one official roster match, your scholarship will be assigned automatically</li>
+										<li>Complete your required identity documents to finish roster verification</li>
 									</ul>
 								</div>
 								<button

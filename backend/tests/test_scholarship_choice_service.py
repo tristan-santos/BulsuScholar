@@ -58,6 +58,17 @@ class ScholarshipChoiceServiceTests(unittest.TestCase):
 
     @patch("backend.scholarship_choice_service.supabase_document_get")
     @patch("backend.scholarship_choice_service.supabase_rpc")
+    def test_authoritative_roster_application_cannot_be_withdrawn(self, rpc, document_get):
+        document_get.side_effect = [
+            {"ok": True, "data": {"scholarshipCommitment": {"applicationId": "application-a"}}},
+            {"ok": True, "data": {"source": "authoritative_roster", "withdrawalLocked": True}},
+        ]
+        result = mutate_scholarship_choice(self.payload, withdraw=True)
+        self.assertEqual(result["reason"], "authoritative_roster_locked")
+        rpc.assert_not_called()
+
+    @patch("backend.scholarship_choice_service.supabase_document_get")
+    @patch("backend.scholarship_choice_service.supabase_rpc")
     def test_choose_returns_persisted_enriched_material_request(self, rpc, document_get):
         rpc.return_value = {"ok": True, "data": {
             "materialRequest": {"id": "choice_application-a", "materials": {"soe": {"status": "pending"}}},

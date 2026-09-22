@@ -20,7 +20,8 @@ if load_dotenv:
 try:
     from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from .access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
-    from .scholarship_choice_service import mutate_scholarship_choice, resolve_archived_grantor_scholar_choice, update_scholarship_documents
+    from .auth_service import complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, update_security_settings, validate_portal_session
+    from .scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from .grantor_algorithms import (
         check_student_table_duplicates,
         evaluate_scholar_duplicate,
@@ -40,7 +41,7 @@ try:
         validate_scholarship_documents,
     )
     from .signup_service import finalize_student_signup, validate_student_signup
-    from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student, resolve_roster_scholarship
+    from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
     from .support_service import ask_support_assistant
     from .priority_one_service import save_support_feedback
     from .support_ticket_service import add_portal_message, create_portal_ticket, delete_portal_ticket, get_portal_ticket, list_portal_tickets
@@ -77,7 +78,6 @@ try:
         create_grantor_announcement,
         deliver_grantor_announcement_notifications,
         create_grantor_scholars,
-        request_grantor_password_change,
         republish_grantor_announcement,
         update_admin_review,
         update_grantor_announcement,
@@ -92,7 +92,8 @@ try:
 except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backend/
     from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
-    from scholarship_choice_service import mutate_scholarship_choice, resolve_archived_grantor_scholar_choice, update_scholarship_documents
+    from auth_service import complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, update_security_settings, validate_portal_session
+    from scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from grantor_algorithms import (
         check_student_table_duplicates,
         evaluate_scholar_duplicate,
@@ -112,7 +113,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         validate_scholarship_documents,
     )
     from signup_service import finalize_student_signup, validate_student_signup
-    from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student, resolve_roster_scholarship
+    from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
     from support_service import ask_support_assistant
     from priority_one_service import save_support_feedback
     from support_ticket_service import add_portal_message, create_portal_ticket, delete_portal_ticket, get_portal_ticket, list_portal_tickets
@@ -149,7 +150,6 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         create_grantor_announcement,
         deliver_grantor_announcement_notifications,
         create_grantor_scholars,
-        request_grantor_password_change,
         republish_grantor_announcement,
         update_admin_review,
         update_grantor_announcement,
@@ -219,7 +219,7 @@ async def ensure_deployed_cors_headers(request, call_next):
 
     maintenance_allowed = (
         request.url.path.startswith("/root/")
-        or request.url.path in {"/", "/health", "/deployment/health", "/scan-document/health", "/email/health", "/config/public", "/support/chat", "/support/feedback", "/openapi.json", "/docs"}
+        or request.url.path in {"/", "/health", "/deployment/health", "/scan-document/health", "/email/health", "/config/public", "/auth/login", "/auth/recovery/request", "/auth/recovery/complete", "/support/chat", "/support/feedback", "/openapi.json", "/docs"}
     )
     if request.method == "OPTIONS" and cors_origin_allowed:
         response = Response(status_code=204)
@@ -270,6 +270,7 @@ REQUIRED_SUPABASE_TABLES = [
     "systemLogs",
     "support_feedback",
     "support_ticket_messages",
+    "login_security_state",
 ]
 
 
@@ -627,10 +628,43 @@ def recommend_scholarships_endpoint(request: Request, payload: dict[str, Any] = 
     actor_id = str(payload.get("actorId") or "").strip()
     student = supabase_document_get("students", actor_id)
     student_data = student.get("data") or {}
-    if student_data.get("rosterDecisionPending") is True:
-        return {"ok": True, "recommendations": [], "reason": "roster_decision_required"}
     payload["student"] = {"id": actor_id, **student_data}
     return recommend_scholarships(payload)
+
+
+@app.post("/auth/login")
+def portal_login_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return login(payload)
+
+
+@app.get("/auth/session")
+def portal_session_endpoint(request: Request) -> dict[str, Any]:
+    return validate_portal_session(request)
+
+
+@app.post("/auth/recovery/request")
+def password_recovery_request_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return request_password_recovery(payload)
+
+
+@app.post("/auth/recovery/complete")
+def password_recovery_complete_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return complete_password_recovery(request, payload)
+
+
+@app.get("/admin/security/settings")
+def admin_security_settings_endpoint(request: Request) -> dict[str, Any]:
+    return get_security_settings(request)
+
+
+@app.post("/admin/security/settings")
+def admin_update_security_settings_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return update_security_settings(request, payload)
+
+
+@app.post("/admin/grantors/create-account")
+def admin_create_grantor_account_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return create_grantor_account(request, payload)
 
 
 @app.post("/workflows/student/signup/validate")
@@ -650,12 +684,6 @@ def finalize_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dic
 @app.post("/workflows/student/email-confirmed")
 def student_email_confirmed_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return promote_email_confirmed_student(payload, require_supabase_user(request))
-
-
-@app.post("/workflows/student/roster-scholarship-decision")
-def student_roster_scholarship_decision_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
-    return resolve_roster_scholarship(payload, require_supabase_user(request))
 
 
 @app.post("/workflows/scholarship/apply")
@@ -680,12 +708,6 @@ def choose_scholarship_endpoint(request: Request, payload: dict[str, Any] = Body
 def withdraw_scholarship_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
     return mutate_scholarship_choice(payload, withdraw=True)
-
-
-@app.post("/workflows/scholarship/archived-grantor-decision")
-def archived_grantor_decision_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
-    return resolve_archived_grantor_scholar_choice(payload)
 
 
 @app.post("/workflows/grantor/applications/confirm-admin-decision")
@@ -801,12 +823,6 @@ def configure_grantor_announcement_slots_endpoint(request: Request, payload: dic
         raise HTTPException(status_code=403, detail="grantor_announcements_disabled")
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return configure_grantor_announcement_slots(payload)
-
-
-@app.post("/workflows/grantor/password/request")
-def request_grantor_password_change_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
-    return request_grantor_password_change(payload)
 
 
 @app.post("/workflows/grantor/profile/update")

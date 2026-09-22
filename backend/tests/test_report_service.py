@@ -1,5 +1,4 @@
 import io
-import os
 import unittest
 from unittest.mock import patch
 
@@ -81,7 +80,6 @@ class ReportServiceTests(unittest.TestCase):
             self.assertIn("Student 69", text)
             self.assertEqual(text.count("Student ID"), len(pdf.pages))
 
-    @patch.dict(os.environ, {"ENFORCE_PORTAL_ACTOR_HEADERS": "true"})
     def test_top_students_report_requires_admin_identity(self):
         with self.assertRaises(HTTPException) as missing_identity:
             preview_top_students_report_endpoint(self.portal_request(), {"students": [], "offerings": []})
@@ -102,9 +100,10 @@ class ReportServiceTests(unittest.TestCase):
         self.assertEqual(pdf_wrong_role.exception.status_code, 403)
 
     def test_top_students_report_skips_only_student_ineligible_offerings(self):
-        result = preview_top_students_report_endpoint(
-            self.portal_request("admin-1", "admin"),
-            {
+        with patch("backend.access_control.require_admin_bearer", return_value=({}, {"permissions": ["reports"]})):
+            result = preview_top_students_report_endpoint(
+                self.portal_request("admin-1", "admin"),
+                {
                 "actorType": "admin",
                 "students": [{
                     "id": "student-1",
@@ -129,8 +128,8 @@ class ReportServiceTests(unittest.TestCase):
                         "applicationEnabled": True,
                     },
                 ],
-            },
-        )
+                },
+            )
 
         groups = {group["announcementId"]: group for group in result["groups"]}
         self.assertEqual(groups["offering-a"]["rows"], [])

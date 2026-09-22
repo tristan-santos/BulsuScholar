@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import {
 	HiOutlineCheckCircle,
 	HiOutlineEye,
 	HiOutlineEyeOff,
 	HiOutlineLockClosed,
-	HiOutlineMail,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { db, doc, getDoc, serverTimestamp, setDoc } from "../services/supabaseDataService"
-import { encryptPasswordAES256 } from "../services/authService"
 import { isPasswordStrong } from "../utils/passwordValidation"
 import { supabase } from "../services/supabaseClient"
+import { completePasswordRecovery } from "../services/portalAuthService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
@@ -21,13 +19,12 @@ import { beginOperation } from "../services/operationTracker"
 export default function ResetPasswordPage() {
 	const brandLogo = usePublicConfiguration().branding?.logoUrl || logo
 	const navigate = useNavigate()
-	const [searchParams] = useSearchParams()
 	const [password, setPassword] = useState("")
 	const [confirmPassword, setConfirmPassword] = useState("")
 	const [showPassword, setShowPassword] = useState(false)
 	const [hasRecoverySession, setHasRecoverySession] = useState(false)
 	const [isSubmitting, setIsSubmitting] = useState(false)
-	const userId = searchParams.get("userId") || ""
+	const challenge = new URLSearchParams(window.location.search).get("challenge") || ""
 
 	useEffect(() => {
 		let mounted = true
@@ -44,13 +41,13 @@ export default function ResetPasswordPage() {
 			}
 
 			const { data } = await supabase.auth.getSession()
-			if (mounted) setHasRecoverySession(Boolean(data?.session))
+			if (mounted) setHasRecoverySession(Boolean(data?.session && challenge))
 		}
 
 		void checkSession()
 		const { data } = supabase.auth.onAuthStateChange((event, session) => {
 			if (event === "PASSWORD_RECOVERY" || session) {
-				setHasRecoverySession(Boolean(session))
+				setHasRecoverySession(Boolean(session && challenge))
 			}
 		})
 
@@ -58,15 +55,10 @@ export default function ResetPasswordPage() {
 			mounted = false
 			data?.subscription?.unsubscribe?.()
 		}
-	}, [])
+	}, [challenge])
 
 	const handleSubmit = async (event) => {
 		event.preventDefault()
-
-		if (!userId) {
-			toast.error("Student ID is missing from the reset link. Request a new reset email.")
-			return
-		}
 
 		if (!isPasswordStrong(password)) {
 			toast.error("Password must include a capital letter, number, special character, and at least 6 characters.")
@@ -83,35 +75,9 @@ export default function ResetPasswordPage() {
 		let passwordError = null
 		setIsSubmitting(true)
 		try {
-			const [{ data: sessionData }, studentSnap] = await Promise.all([
-				supabase.auth.getSession(),
-				getDoc(doc(db, "students", userId)),
-			])
-			if (!studentSnap.exists()) {
-				toast.error("Student ID was not found.")
-				return
-			}
-
-			const student = studentSnap.data()
-			const sessionEmail = sessionData?.session?.user?.email?.toLowerCase()
-			const studentEmail = student.email?.toLowerCase()
-			if (!sessionEmail || !studentEmail || sessionEmail !== studentEmail) {
-				toast.error("This reset link does not match the Student ID.")
-				return
-			}
-
 			const { error } = await supabase.auth.updateUser({ password })
 			if (error) throw error
-
-			const encryptedPassword = await encryptPasswordAES256(password)
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					password: encryptedPassword,
-					passwordUpdatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
+			await completePasswordRecovery(challenge)
 
 			passwordUpdated = true
 			await supabase.auth.signOut()
@@ -146,7 +112,7 @@ export default function ResetPasswordPage() {
 					<img src={brandLogo} alt="Bulacan State University Office of the Scholarships" className="login-form-logo" />
 					<h2 className="login-form-title">Reset Password</h2>
 					<p className="login-form-subtitle">
-						{userId ? `Updating password for Student ID ${userId}` : "Enter your new password below."}
+						Set a new password for your verified Student or Grantor account.
 					</p>
 
 					{!hasRecoverySession ? (
@@ -159,18 +125,6 @@ export default function ResetPasswordPage() {
 						</div>
 					) : (
 						<form className="login-form" onSubmit={handleSubmit}>
-							<label className="login-label" htmlFor="reset-student-id">Student ID</label>
-							<div className="login-input-wrap">
-								<HiOutlineMail className="login-input-icon" aria-hidden />
-								<input
-									id="reset-student-id"
-									type="text"
-									className="login-input"
-									value={userId}
-									readOnly
-								/>
-							</div>
-
 							<label className="login-label" htmlFor="new-password">New Password</label>
 							<div className="login-input-wrap">
 								<HiOutlineLockClosed className="login-input-icon" aria-hidden />

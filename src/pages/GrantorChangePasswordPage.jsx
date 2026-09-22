@@ -12,8 +12,8 @@ import {
 	GRANTOR_DEFAULT_PASSWORD,
 	GRANTOR_PASSWORD_CHANGE_ID_KEY,
 } from "../constants/grantorAuth"
-import { encryptPasswordAES256 } from "../services/authService"
 import { getRecord, serverTimestamp, upsertProvider } from "../services/supabaseDataService"
+import { supabase } from "../services/supabaseClient"
 import { isPasswordStrong } from "../utils/passwordValidation"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -49,14 +49,6 @@ export default function GrantorChangePasswordPage() {
 				toast.error("Grantor account not found.")
 				sessionStorage.removeItem(GRANTOR_PASSWORD_CHANGE_ID_KEY)
 				navigate("/", { replace: true })
-				return
-			}
-			const isExistingGrantorSession = sessionStorage.getItem("bulsuscholar_userType") === "provider"
-			const requestApproved = provider.passwordChangeRequestStatus === "approved"
-			if (isExistingGrantorSession && !requestApproved) {
-				toast.error("Your password change request must be approved by an administrator first.")
-				sessionStorage.removeItem(GRANTOR_PASSWORD_CHANGE_ID_KEY)
-				navigate("/provider-dashboard/profile", { replace: true })
 				return
 			}
 			setGrantorId(pendingGrantorId)
@@ -97,14 +89,12 @@ export default function GrantorChangePasswordPage() {
 				return
 			}
 
-			const encryptedPassword = await encryptPasswordAES256(password)
+			const { error: authError } = await supabase.auth.updateUser({ password })
+			if (authError) throw authError
 			await upsertProvider(
 				grantorId,
 				{
-					password: encryptedPassword,
 					mustChangePassword: false,
-					passwordChangeRequested: false,
-					passwordChangeRequestStatus: "completed",
 					passwordChangeCompletedAt: serverTimestamp(),
 					passwordUpdatedAt: serverTimestamp(),
 				},
@@ -134,7 +124,7 @@ export default function GrantorChangePasswordPage() {
 					</div>
 					<h1 className="login-info-title">Grantor Account Security</h1>
 					<p className="login-info-desc">
-						Your password change request has been approved. Choose a secure new password for your grantor account.
+						Choose a secure new password for your grantor account.
 					</p>
 				</div>
 			</div>

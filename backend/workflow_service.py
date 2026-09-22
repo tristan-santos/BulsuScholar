@@ -734,6 +734,13 @@ def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
         if not current.get("ok"):
             return {"ok": False, "reason": "application_not_found"}
         current_data = current.get("data") or {}
+        compliance_pause = ((current_data.get("tracking") or {}).get("compliancePause") or {})
+        if compliance_pause.get("active") is True:
+            return {
+                "ok": False,
+                "reason": "document_compliance_required",
+                "message": "The student must restore the required documents before application review can continue.",
+            }
         archive_decision = str(current_data.get("grantorArchiveDecision") or "").strip().lower()
         if current_data.get("workflowPaused") is True or archive_decision in {"pending", "change"}:
             return {
@@ -876,32 +883,8 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
     if actor_type == "grantor" and _archived_grantor_account(actor_id):
         return {"ok": False, "reason": "grantor_archived", "message": "Archived grantors cannot update material requests."}
     results = []
-    for change in [*inserts, *updates]:
-        if change.get("table") not in {"soe_requests", "soeRequests"}:
-            continue
-        current_request = supabase_document_get("soe_requests", str(change.get("id") or ""))
-        request_data = current_request.get("data") or change.get("data") or {}
-        request_student_id = str(request_data.get("studentId") or "").strip()
-        request_application_id = str(request_data.get("applicationId") or "").strip()
-        if not request_student_id or not request_application_id:
-            continue
-        request_student = supabase_document_get("students", request_student_id)
-        archive_choice = (request_student.get("data") or {}).get("grantorArchiveChoice") or {}
-        if (str(archive_choice.get("applicationId") or "") == request_application_id
-                and str(archive_choice.get("decision") or "").strip().lower() in {"pending", "change"}):
-            return {
-                "ok": False,
-                "reason": "archive_choice_required",
-                "message": "This material request is paused while the student decides whether to keep or replace the scholarship.",
-            }
     if actor_type == "student":
         current_student = supabase_document_get("students", actor_id)
-        if (current_student.get("data") or {}).get("rosterDecisionPending") is True:
-            return {
-                "ok": False,
-                "reason": "roster_decision_required",
-                "message": "Resolve your listed scholarship record before requesting or downloading materials.",
-            }
         if (current_student.get("data") or {}).get("scholarshipLifecycleVersion") == 2:
             student = current_student.get("data") or {}
             commitment = student.get("scholarshipCommitment") or {}
@@ -1221,7 +1204,13 @@ def update_grantor_scholar(payload: dict[str, Any]) -> dict[str, Any]:
     data.setdefault("updatedAt", utc_now_iso())
     if payload.get("upsert"):
         return supabase_document_upsert("grantor_portal_scholars", scholar_id, data, merge=True, parent_id=grantor_id)
-    return supabase_document_update("grantor_portal_scholars", scholar_id, data, parent_id=grantor_id)
+    return supabase_rpc("update_authoritative_roster_scholar", {
+        "p_actor_type": actor_type,
+        "p_actor_id": actor_id,
+        "p_grantor_id": grantor_id,
+        "p_roster_id": scholar_id,
+        "p_update": data,
+    })
 
 
 def update_grantor_scholars(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1240,7 +1229,13 @@ def update_grantor_scholars(payload: dict[str, Any]) -> dict[str, Any]:
             continue
         next_data = dict(data)
         next_data.setdefault("updatedAt", utc_now_iso())
-        results.append(supabase_document_update("grantor_portal_scholars", scholar_id, next_data, parent_id=grantor_id))
+        results.append(supabase_rpc("update_authoritative_roster_scholar", {
+            "p_actor_type": actor_type,
+            "p_actor_id": actor_id,
+            "p_grantor_id": grantor_id,
+            "p_roster_id": scholar_id,
+            "p_update": next_data,
+        }))
     return {"ok": all(item.get("ok") for item in results), "results": results}
 
 
@@ -2012,46 +2007,6 @@ def reject_scholarship_invitation(payload: dict[str, Any]) -> dict[str, Any]:
         "grantorId": grantor_id, "read": False, "createdAt": now,
     })
     return {"ok": True, "invitation": next(item for item in next_invitations if isinstance(item, dict) and item.get("id") == invitation_id)}
-
-
-def request_grantor_password_change(payload: dict[str, Any]) -> dict[str, Any]:
-    grantor_id = payload.get("grantorId") or ""
-    provider_update = payload.get("providerUpdate") or {}
-    notification = payload.get("notification") or {}
-    if not grantor_id:
-        return {"ok": False, "reason": "missing_grantor_id"}
-
-    provider_update.setdefault("updatedAt", utc_now_iso())
-    provider_result = supabase_document_upsert("providers", grantor_id, provider_update, merge=True)
-    if not provider_result.get("ok"):
-        return {"ok": False, "step": "provider_update", "result": provider_result}
-
-    notification_result = None
-    if notification:
-        notification_result = create_grantor_notification(notification)
-
-    admin_notification = create_admin_notification({
-        "type": "password_change_request",
-        "title": "Password Change Requested",
-        "message": f"{notification.get('authorName') or grantor_id} requested permission to change their password.",
-        "grantorId": grantor_id,
-        "route": "/admin/grantors",
-        "actorType": "grantor",
-        "actorId": grantor_id,
-        "read": False,
-        "archived": False,
-        "createdAt": utc_now_iso(),
-    })
-    log_result = create_log({
-        "action": "grantor_password_change_requested",
-        "actorId": grantor_id,
-        "actorType": "grantor",
-        "target": grantor_id,
-        "details": {},
-        "createdAt": utc_now_iso(),
-    })
-
-    return {"ok": True, "provider": provider_result, "notification": notification_result, "adminNotification": admin_notification, "log": log_result}
 
 
 def update_grantor_profile(payload: dict[str, Any]) -> dict[str, Any]:

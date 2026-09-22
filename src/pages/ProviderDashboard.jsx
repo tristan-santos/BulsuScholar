@@ -109,7 +109,6 @@ import {
 	createGrantorScholarsWorkflow,
 	inviteArchivedGrantorScholarsWorkflow,
 	republishGrantorAnnouncementWorkflow,
-	requestGrantorPasswordChangeWorkflow,
 	updateGrantorAnnouncementWorkflow,
 	updateGrantorProfileWorkflow,
 	updateGrantorScholarWorkflow,
@@ -985,7 +984,6 @@ export default function ProviderDashboard() {
 	const [profileSaving, setProfileSaving] = useState(false)
 	const [profilePhotoUploading, setProfilePhotoUploading] = useState(false)
 	const [grantorApplicationFormFile, setGrantorApplicationFormFile] = useState(null)
-	const [passwordRequestSubmitting, setPasswordRequestSubmitting] = useState(false)
 	const [grantorProfileForm, setGrantorProfileForm] = useState({
 		providerName: "",
 		organization: "",
@@ -4063,62 +4061,10 @@ export default function ProviderDashboard() {
 		}
 	}
 
-	const passwordChangeRequestStatus = String(profile?.passwordChangeRequestStatus || "").toLowerCase()
-	const canChangeGrantorPassword = passwordChangeRequestStatus === "approved"
-	const passwordChangeRequestPending = passwordChangeRequestStatus === "pending" || profile?.passwordChangeRequested === true
-
-	const handleGrantorPasswordAction = async () => {
-		if (!grantorId || passwordRequestSubmitting || passwordChangeRequestPending) return
-		if (canChangeGrantorPassword) {
-			sessionStorage.setItem(GRANTOR_PASSWORD_CHANGE_ID_KEY, grantorId)
-			navigate("/grantor/change-password")
-			return
-		}
-
-		setPasswordRequestSubmitting(true)
-		try {
-			const passwordResult = await requestGrantorPasswordChangeWorkflow({
-				grantorId,
-				providerUpdate: {
-					passwordChangeRequested: true,
-					passwordChangeRequestStatus: "pending",
-					passwordChangeRequestedAt: serverTimestamp(),
-					passwordChangeApprovedAt: null,
-					updatedAt: serverTimestamp(),
-				},
-				notification: {
-					grantorId,
-					type: "password_change_request",
-					title: "Password Change Requested",
-					message: "Your request was sent to the administrator and is awaiting approval.",
-					authorName: grantorName,
-					authorImageUrl: grantorProfileImageUrl,
-					read: false,
-					createdAt: serverTimestamp(),
-				},
-			})
-			if (passwordResult?.notification?.ok === false) {
-				await setDoc(doc(db, "systemLogs", `password_change_request_${grantorId}_${Date.now()}`), {
-					grantorId,
-					source: "personal",
-					type: "password_change_request",
-					title: "Password Change Requested",
-					message: "Your request was sent to the administrator and is awaiting approval.",
-					authorName: grantorName,
-					authorImageUrl: grantorProfileImageUrl,
-					notificationFallbackTable: "systemLogs",
-					read: false,
-					createdAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
-				}, { merge: true })
-			}
-			toast.success("Password change request sent to the administrator.")
-		} catch (error) {
-			console.error("Unable to request a password change.", error)
-			toast.error("Unable to submit the password change request.")
-		} finally {
-			setPasswordRequestSubmitting(false)
-		}
+	const handleGrantorPasswordAction = () => {
+		if (!grantorId) return
+		sessionStorage.setItem(GRANTOR_PASSWORD_CHANGE_ID_KEY, grantorId)
+		navigate("/grantor/change-password")
 	}
 
 	const markGrantorNotificationRead = async (notification) => {
@@ -4270,9 +4216,9 @@ export default function ProviderDashboard() {
 											<i />
 										</button>
 									</div>
-									<button type="button" className="grantor-profile-password-btn" onClick={handleGrantorPasswordAction} disabled={passwordRequestSubmitting || passwordChangeRequestPending}>
+									<button type="button" className="grantor-profile-password-btn" onClick={handleGrantorPasswordAction}>
 										<HiOutlineLockClosed />
-										{passwordRequestSubmitting ? "Sending Request..." : passwordChangeRequestPending ? "Request Pending" : canChangeGrantorPassword ? "Reset Password" : "Request to Change Password"}
+										Change Password
 									</button>
 								</div>
 							</aside>

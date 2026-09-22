@@ -43,7 +43,22 @@ function isStepCompletedByAuthority(tracking = {}, stepId = "", authorities = []
 	})
 }
 
-function shouldResetToMaterialRequestForCurrentCycle(scholarship = {}, currentSemesterTag = getCurrentSemesterTag()) {
+function getRecoverableCompletedStepIds(tracking = {}) {
+	const pause = tracking?.compliancePause
+	const savedStepIds = Array.isArray(pause?.completedStepIds) ? pause.completedStepIds : []
+	return new Set([
+		...(Array.isArray(tracking.completedStepIds) ? tracking.completedStepIds : []),
+		...savedStepIds,
+	])
+}
+
+function isStepCompletedForCycle(tracking = {}, stepId = "", semesterTag = "") {
+	return (Array.isArray(tracking.history) ? tracking.history : []).some((item) =>
+		item?.stepId === stepId && String(item?.semesterTag || "").trim() === semesterTag,
+	)
+}
+
+function shouldRenewForCurrentCycle(scholarship = {}, currentSemesterTag = getCurrentSemesterTag()) {
 	if (scholarship.lifecycleVersion === 2 && !scholarship.isLocked && !scholarship.committedAt) return false
 	const scholarshipSemesterTag = String(scholarship.semesterTag || "").trim()
 	if (!scholarshipSemesterTag || scholarshipSemesterTag === currentSemesterTag) return false
@@ -75,6 +90,7 @@ function buildKwspSteps(appliedViaAnnouncement = false) {
 		{ id: "request_materials", label: "Request Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
+		{ id: "finish", label: "Finish", owner: "system" },
 	], appliedViaAnnouncement)
 }
 
@@ -88,6 +104,7 @@ function buildStandardSteps(scholarshipName = "Scholarship", appliedViaAnnouncem
 		{ id: "request_materials", label: "Request Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
+		{ id: "finish", label: "Finish", owner: "system" },
 	], appliedViaAnnouncement)
 }
 
@@ -115,6 +132,7 @@ function buildTrackingDetail(stepId, context) {
 		hasDownloadedMaterials,
 		signingComplete,
 		signingAttention,
+		authoritativeRosterComplete,
 		state,
 		isKwspFlow,
 	} = context
@@ -169,6 +187,7 @@ function buildTrackingDetail(stepId, context) {
 				? "Final screening has been completed."
 				: "Final screening must be completed before materials can be requested."
 	case "request_materials":
+		if (authoritativeRosterComplete) return "Completed automatically after the official roster and required identity documents were verified."
 		if (requestedMaterials.length > 0) {
 			return `Requested materials: ${requestedMaterials.map((item) => toMaterialLabel(item)).join(", ")}.`
 		}
@@ -176,6 +195,7 @@ function buildTrackingDetail(stepId, context) {
 			? "Student can request materials after the KWSP review stages are completed."
 			: `Student can request materials for ${scholarshipName}.`
 	case "download_materials":
+		if (authoritativeRosterComplete) return "Completed by authoritative roster verification; no SOE download was fabricated."
 		if (downloadedMaterials.length > 0) {
 			return `Downloaded materials: ${downloadedMaterials.map((item) => toMaterialLabel(item)).join(", ")}.`
 			}
@@ -183,10 +203,15 @@ function buildTrackingDetail(stepId, context) {
 			if (hasPendingMaterialApproval) return "Requested materials are still pending admin approval."
 			return "Materials will become available for download after approval."
 		case "signing_materials":
+			if (authoritativeRosterComplete) return "Completed by authoritative roster verification; no manual signature event was fabricated."
 			if (signingAttention) return "Downloaded SOE was rejected. Download a new SOE and submit it again for signing."
 			if (signingComplete) return "Downloaded SOE already completed the checking and signing stage."
 			if (hasDownloadedMaterials) return "Downloaded SOE is waiting for scholarship office checking and signing."
 			return "Signing starts after the student downloads the approved SOE."
+		case "finish":
+			return signingComplete || authoritativeRosterComplete
+				? "This scholarship cycle is complete. Wait for the next semester to renew your scholarship; renewal will begin again at Uploading of Document."
+				: "Finish is completed automatically after the scholarship office signs the student's SOE."
 		default:
 			return ""
 	}
@@ -206,6 +231,7 @@ export function createScholarshipTrackingState({ providerType = "", scholarshipN
 	const announcementStep = steps.find((step) => step.id === "announcement_apply")
 	const applyStep = steps.find((step) => step.id === applyStepId)
 	const completedAt = new Date().toISOString()
+	const semesterTag = getCurrentSemesterTag()
 
 	return {
 		flowType: normalizeProviderType(providerType) === "kuya_win" ? "kwsp" : "standard",
@@ -220,6 +246,7 @@ export function createScholarshipTrackingState({ providerType = "", scholarshipN
 						label: accountStep.label,
 						completedBy: "system",
 						completedAt,
+						semesterTag,
 					}
 				: null,
 			announcementStep
@@ -228,6 +255,7 @@ export function createScholarshipTrackingState({ providerType = "", scholarshipN
 						label: announcementStep.label,
 						completedBy: "student",
 						completedAt,
+						semesterTag,
 					}
 				: null,
 			applyStep
@@ -236,6 +264,7 @@ export function createScholarshipTrackingState({ providerType = "", scholarshipN
 						label: applyStep.label,
 						completedBy: "student",
 						completedAt,
+						semesterTag,
 					}
 				: null,
 		].filter(Boolean),
@@ -277,19 +306,25 @@ export function normalizeScholarshipTrackingState(
 
 export function completeScholarshipTrackingStep(
 	rawTracking = null,
-	{ providerType = "", scholarshipName = "Scholarship", stepId = "", completedBy = "admin" } = {},
+	{
+		providerType = "",
+		scholarshipName = "Scholarship",
+		stepId = "",
+		completedBy = "admin",
+		semesterTag = getCurrentSemesterTag(),
+	} = {},
 ) {
 	const tracking = normalizeScholarshipTrackingState(rawTracking, { providerType, scholarshipName })
 	const steps = getScholarshipTrackingSteps(providerType, scholarshipName)
 	const step = steps.find((item) => item.id === stepId)
 	if (!step) return tracking
-	if (tracking.completedStepIds.includes(stepId)) return tracking
+	if (tracking.completedStepIds.includes(stepId) && isStepCompletedForCycle(tracking, stepId, semesterTag)) return tracking
 
 	const completedAt = new Date().toISOString()
 
 	return {
 		...tracking,
-		completedStepIds: [...tracking.completedStepIds, stepId],
+		completedStepIds: Array.from(new Set([...tracking.completedStepIds, stepId])),
 		lastCompletedStepId: stepId,
 		updatedAt: completedAt,
 		history: [
@@ -299,6 +334,7 @@ export function completeScholarshipTrackingStep(
 				label: step.label,
 				completedBy,
 				completedAt,
+				semesterTag,
 			},
 		],
 	}
@@ -406,7 +442,7 @@ export function getScholarshipTrackingProgress({
 		scholarship.tracking?.appliedViaAnnouncement === true ||
 		scholarship.tracking?.completedStepIds?.includes?.("announcement_apply")
 	const currentSemesterTag = getCurrentSemesterTag()
-	const resetToMaterialRequest = shouldResetToMaterialRequestForCurrentCycle(scholarship, currentSemesterTag)
+	const renewalCycle = shouldRenewForCurrentCycle(scholarship, currentSemesterTag)
 	const stepsDefinition = getScholarshipTrackingSteps(providerType, scholarshipName, { appliedViaAnnouncement })
 	const baseTracking = normalizeScholarshipTrackingState(scholarship.tracking, {
 		providerType,
@@ -421,7 +457,7 @@ export function getScholarshipTrackingProgress({
 					completedBy: "student",
 				})
 			: baseTracking
-	const completedStepIds = new Set(tracking.completedStepIds)
+	const completedStepIds = getRecoverableCompletedStepIds(tracking)
 	const applyStepId = getApplyStepId(providerType)
 	const documentUrls = {
 		...(scholarship.documentUrls || {}),
@@ -435,8 +471,17 @@ export function getScholarshipTrackingProgress({
 	const requestSemesterTag = String(latestMaterialRequest?.semesterTag || "").trim()
 	const isCurrentCycleMaterialRequest =
 		Boolean(latestMaterialRequest) &&
-		(!resetToMaterialRequest || requestSemesterTag === currentSemesterTag)
+		(!renewalCycle || requestSemesterTag === currentSemesterTag)
 	const normalizedRequest = isCurrentCycleMaterialRequest ? normalizeMaterialRequest(latestMaterialRequest) : null
+	const downloadSemesterTag = String(
+		latestSoeDownload?.semesterTag ||
+		latestSoeDownload?.soeSnapshot?.semesterTag ||
+		latestSoeDownload?.requestSnapshot?.semesterTag ||
+		"",
+	).trim()
+	const currentCycleSoeDownload = latestSoeDownload && (!renewalCycle || downloadSemesterTag === currentSemesterTag)
+		? latestSoeDownload
+		: null
 	const requestedMaterials = ["soe"].filter((materialKey) => {
 		if (!normalizedRequest) return false
 		const materialEntry = getMaterialEntry(normalizedRequest, materialKey)
@@ -461,13 +506,17 @@ export function getScholarshipTrackingProgress({
 	const hasApprovedMaterials = approvedMaterials.length > 0
 	const hasPendingMaterialApproval = pendingMaterials.length > 0
 	const hasDownloadedMaterials =
-		downloadedMaterials.length > 0 || Boolean(latestSoeDownload?.downloadedAt)
+		downloadedMaterials.length > 0 || Boolean(currentCycleSoeDownload?.downloadedAt)
 
 	const signingState = String(
-		latestSoeDownload?.reviewState || latestSoeDownload?.status || "",
+		currentCycleSoeDownload?.reviewState || currentCycleSoeDownload?.status || "",
 	).toLowerCase()
 	const signingComplete = statusIncludesAny(signingState, ["signed"])
 	const signingAttention = statusIncludesAny(signingState, ["non-compliant", "non compliant"])
+	const authoritativeRosterComplete =
+		scholarship.completionSource === "authoritative_roster" &&
+		Boolean(scholarship.rosterVerifiedAt) &&
+		completedStepIds.has("finish")
 	const scholarshipStatus = String(scholarship.status || "").toLowerCase()
 	const payoutComplete =
 		completedStepIds.has("payout") ||
@@ -477,18 +526,30 @@ export function getScholarshipTrackingProgress({
 		account: true,
 		announcement_apply: appliedViaAnnouncement,
 		[applyStepId]: true,
-		document_uploading: resetToMaterialRequest || completedStepIds.has("document_uploading"),
-		application_form: resetToMaterialRequest || completedStepIds.has("application_form") || hasApplicationForm,
-		document_review: resetToMaterialRequest || completedStepIds.has("document_review"),
-		admin_review: resetToMaterialRequest || completedStepIds.has("admin_review"),
-		interview: resetToMaterialRequest || completedStepIds.has("interview"),
-		application_review: resetToMaterialRequest || completedStepIds.has("application_review"),
-		final_screening: resetToMaterialRequest || completedStepIds.has("final_screening"),
+		document_uploading:
+			(documentCheck ? documentCheck.ok === true : completedStepIds.has("document_uploading")),
+		application_form: completedStepIds.has("application_form") || hasApplicationForm,
+		document_review:
+			completedStepIds.has("document_review") &&
+			(!renewalCycle || isStepCompletedForCycle(tracking, "document_review", currentSemesterTag)),
+		admin_review:
+			completedStepIds.has("admin_review") &&
+			(!renewalCycle || isStepCompletedForCycle(tracking, "admin_review", currentSemesterTag)),
+		interview:
+			completedStepIds.has("interview") &&
+			(!renewalCycle || isStepCompletedForCycle(tracking, "interview", currentSemesterTag)),
+		application_review:
+			completedStepIds.has("application_review") &&
+			(!renewalCycle || isStepCompletedForCycle(tracking, "application_review", currentSemesterTag)),
+		final_screening:
+			completedStepIds.has("final_screening") &&
+			(!renewalCycle || isStepCompletedForCycle(tracking, "final_screening", currentSemesterTag)),
 		request_materials:
 			hasApprovedMaterials ||
 			isStepCompletedByAuthority(tracking, "request_materials", ["admin", "grantor", "system"]),
-		download_materials: hasDownloadedMaterials,
-		signing_materials: signingComplete,
+		download_materials: hasDownloadedMaterials || authoritativeRosterComplete,
+		signing_materials: signingComplete || authoritativeRosterComplete,
+		finish: signingComplete || authoritativeRosterComplete,
 		payout: payoutComplete,
 	}
 
@@ -497,7 +558,7 @@ export function getScholarshipTrackingProgress({
 		const isComplete = completionByStepId[step.id] === true
 		let state = "upcoming"
 
-		if (isComplete) {
+		if (!foundCurrentStep && isComplete) {
 			state = "complete"
 		} else if (!foundCurrentStep) {
 			state = step.id === "signing_materials" && signingAttention ? "attention" : "current"
@@ -519,6 +580,7 @@ export function getScholarshipTrackingProgress({
 				hasDownloadedMaterials,
 				signingComplete,
 				signingAttention,
+				authoritativeRosterComplete,
 				payoutComplete,
 				state,
 				isKwspFlow,
@@ -565,6 +627,7 @@ export function getScholarshipTrackingProgress({
 		hasDownloadedMaterials,
 		signingComplete,
 		signingAttention,
+		authoritativeRosterComplete,
 		payoutComplete,
 		requestedMaterials,
 		approvedMaterials,
@@ -574,13 +637,15 @@ export function getScholarshipTrackingProgress({
 		adminCompletionReason,
 		canRequestMaterials:
 			steps.find((step) => step.id === "request_materials")?.state !== "upcoming",
-		resetToMaterialRequest,
+		resetToMaterialRequest: renewalCycle,
+		renewalCycle,
 	}
 }
 
 export function getScholarshipTrackingStatusLabel(progress = null) {
 	if (!progress) return "Applied"
 	if (progress.signingAttention) return "Non-Compliant"
+	if (progress.authoritativeRosterComplete) return "Finished"
 	if (progress.signingComplete) return "Signed"
 	if (progress.hasDownloadedMaterials) return "For Signing"
 	if (progress.hasApprovedMaterials) return "Approved"

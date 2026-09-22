@@ -16,3 +16,11 @@ export const updateAdminContact = (contactNumber) => postPortalJson(
 	"Administrator contact update",
 	{ timeoutMs: 20000, operation: "record.save" },
 )
+
+export const createGrantorAuthAccount = (payload) => postPortalJson(
+	requireBackendApiUrl("Grantor account backend"),
+	"/admin/grantors/create-account",
+	payload,
+	"Grantor account creation",
+	{ timeoutMs: 30000, operation: "record.save" },
+)

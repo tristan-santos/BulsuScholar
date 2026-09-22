@@ -7,10 +7,11 @@ import { BACKEND_API_URL } from "./config/backendApi"
 import FloatingHelpButton from "./components/FloatingHelpButton"
 import { PageLoading } from "./components/PortalLoading"
 import ModalDiscardConfirmation from "./components/ModalDiscardConfirmation"
-import StudentRosterDecisionGate from "./components/StudentRosterDecisionGate"
 import OperationStatusProvider from "./components/OperationStatusProvider"
 import { trackedFetch } from "./services/operationTracker"
 import { PublicConfigurationContext } from "./contexts/PublicConfigurationContext"
+import { supabase } from "./services/supabaseClient"
+import { validatePortalSession } from "./services/portalAuthService"
 
 const LoginPage = lazy(() => import("./pages/LoginPage"))
 const SignupPage = lazy(() => import("./pages/SignupPage"))
@@ -86,11 +87,45 @@ function MaintenanceGate({ children }) {
 	return <PublicConfigurationContext.Provider value={publicConfiguration}>{children}</PublicConfigurationContext.Provider>
 }
 
+function PortalSessionGate({ children }) {
+	const location = useLocation()
+	const [verification, setVerification] = useState({ path: "", state: "checking" })
+	const protectedPath = ["/student-dashboard", "/provider-dashboard", "/admin"].some(
+		(prefix) => location.pathname === prefix || location.pathname.startsWith(`${prefix}/`),
+	)
+
+	useEffect(() => {
+		if (!protectedPath) return undefined
+		const actorId = sessionStorage.getItem("bulsuscholar_userId") || ""
+		const actorType = sessionStorage.getItem("bulsuscholar_userType") || ""
+		let active = true
+		const validation = !actorId || !["student", "provider", "admin"].includes(actorType)
+			? Promise.reject(new Error("portal_identity_required"))
+			: validatePortalSession()
+		validation
+			.then(() => { if (active) setVerification({ path: location.pathname, state: "ready" }) })
+			.catch(async () => {
+				if (!active) return
+				sessionStorage.removeItem("bulsuscholar_userId")
+				sessionStorage.removeItem("bulsuscholar_userType")
+				await supabase.auth.signOut().catch(() => {})
+				if (active) setVerification({ path: location.pathname, state: "denied" })
+			})
+		return () => { active = false }
+	}, [location.pathname, protectedPath])
+
+	if (!protectedPath) return children
+	if (verification.path !== location.pathname) return <PageLoading />
+	if (verification.state === "denied") return <Navigate to="/" replace />
+	return children
+}
+
 export default function App() {
 	return (
 		<BrowserRouter>
 			<OperationStatusProvider>
 			<MaintenanceGate>
+				<PortalSessionGate>
 				<Suspense fallback={<PageLoading />}>
 				<Routes>
 					<Route path="/" element={<LoginPage />} />
@@ -106,18 +141,19 @@ export default function App() {
 					<Route path="/admin/change-password" element={<AdminChangePasswordPage />} />
 					<Route path="/admin/*" element={<AdminDashboard />} />
 					<Route path="/admin-dashboard" element={<Navigate to="/admin/dashboard" replace />} />
-					<Route path="/student-dashboard" element={<StudentRosterDecisionGate><StudentDashboard /></StudentRosterDecisionGate>} />
-					<Route path="/student-dashboard/announcements" element={<StudentRosterDecisionGate><StudentAnnouncementsPage /></StudentRosterDecisionGate>} />
-					<Route path="/student-dashboard/announcements/:source/:announcementId" element={<StudentRosterDecisionGate><StudentAnnouncementDetailPage /></StudentRosterDecisionGate>} />
-					<Route path="/student-dashboard/inbox" element={<StudentRosterDecisionGate><StudentInboxPage /></StudentRosterDecisionGate>} />
-					<Route path="/student-dashboard/scholarships" element={<StudentRosterDecisionGate><StudentScholarshipsPage /></StudentRosterDecisionGate>} />
-					<Route path="/student-dashboard/recommended-scholarships" element={<StudentRosterDecisionGate><StudentRecommendedScholarshipsPage /></StudentRosterDecisionGate>} />
-					<Route path="/student-dashboard/profile" element={<StudentRosterDecisionGate><StudentProfilePage /></StudentRosterDecisionGate>} />
+					<Route path="/student-dashboard" element={<StudentDashboard />} />
+					<Route path="/student-dashboard/announcements" element={<StudentAnnouncementsPage />} />
+					<Route path="/student-dashboard/announcements/:source/:announcementId" element={<StudentAnnouncementDetailPage />} />
+					<Route path="/student-dashboard/inbox" element={<StudentInboxPage />} />
+					<Route path="/student-dashboard/scholarships" element={<StudentScholarshipsPage />} />
+					<Route path="/student-dashboard/recommended-scholarships" element={<StudentRecommendedScholarshipsPage />} />
+					<Route path="/student-dashboard/profile" element={<StudentProfilePage />} />
 					<Route path="/provider-dashboard/*" element={<ProviderDashboard />} />
 					<Route path="*" element={<NotFoundPage />} />
 				</Routes>
 				</Suspense>
 				<FloatingHelpButton />
+				</PortalSessionGate>
 			</MaintenanceGate>
 			<ToastContainer
 				position="top-right"

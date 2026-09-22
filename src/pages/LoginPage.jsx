@@ -8,10 +8,9 @@ import {
 	HiX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { findAccountById, getRecord, TABLES, upsertProvider } from "../services/supabaseDataService"
+import { getRecord, TABLES } from "../services/supabaseDataService"
 import { promoteEmailConfirmedStudentWorkflow } from "../services/workflowService"
 import { supabase } from "../services/supabaseClient"
-import { verifyPassword } from "../services/authService"
 import { grantorMustChangePassword, GRANTOR_PASSWORD_CHANGE_ID_KEY } from "../constants/grantorAuth"
 import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
 import { closeFromModalBackdrop } from "../services/modalLayerService"
@@ -19,8 +18,8 @@ import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
-import { requirePublicAppUrl } from "../config/publicUrls"
 import { beginOperation } from "../services/operationTracker"
+import { loginWithUserId, requestPasswordRecovery } from "../services/portalAuthService"
 
 const RESET_EMAIL_COOLDOWN_MS = 60 * 1000
 const RESET_EMAIL_COOLDOWN_KEY = "bulsuscholar_reset_email_next_allowed_at"
@@ -34,13 +33,9 @@ export default function LoginPage() {
 	const [showPassword, setShowPassword] = useState(false)
 	const [isLoading, setIsLoading] = useState(false)
 	const [showForgotModal, setShowForgotModal] = useState(false)
-	const [showGrantorPasswordModal, setShowGrantorPasswordModal] = useState(false)
 	const [forgotUserId, setForgotUserId] = useState("")
-	const [grantorPasswordAccount, setGrantorPasswordAccount] = useState(null)
-	const [isCheckingForgotAccount, setIsCheckingForgotAccount] = useState(false)
 	const [isSendingReset, setIsSendingReset] = useState(false)
 	const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0)
-	const [isRequestingGrantorPassword, setIsRequestingGrantorPassword] = useState(false)
 	const navigate = useNavigate()
 
 	useEffect(() => {
@@ -58,42 +53,9 @@ export default function LoginPage() {
 		setShowForgotModal(false)
 	}
 
-	const closeGrantorPasswordModal = () => {
-		setShowGrantorPasswordModal(false)
-		setGrantorPasswordAccount(null)
-	}
-
-	const handleForgotPasswordClick = async () => {
-		const id = userId.trim()
-		if (!id) {
-			setForgotUserId("")
-			setShowForgotModal(true)
-			return
-		}
-
-		setIsCheckingForgotAccount(true)
-		try {
-			const found = await findAccountById(id)
-			if (found?.type === "provider") {
-				setGrantorPasswordAccount({
-					id,
-					name: found.data?.providerName || found.data?.name || found.data?.grantorName || "Grantor",
-					email: found.data?.email || "",
-				})
-				setShowForgotModal(false)
-				setShowGrantorPasswordModal(true)
-				return
-			}
-
-			setForgotUserId(id)
-			setShowGrantorPasswordModal(false)
-			setShowForgotModal(true)
-		} catch (error) {
-			console.error(error)
-			toast.error("Unable to check the User ID. Please try again.")
-		} finally {
-			setIsCheckingForgotAccount(false)
-		}
+	const handleForgotPasswordClick = () => {
+		setForgotUserId(userId.trim())
+		setShowForgotModal(true)
 	}
 
 	const handleForgotPassword = async (event) => {
@@ -114,26 +76,12 @@ export default function LoginPage() {
 
 		setIsSendingReset(true)
 		try {
-			const student = await getRecord("students", id)
-			if (!student) {
-				toast.error("Student ID not found.")
-				return
-			}
-
-			if (!student.email) {
-				toast.error("No email is associated with this student account. Please contact support.")
-				return
-			}
-
-			const { error } = await supabase.auth.resetPasswordForEmail(student.email, {
-				redirectTo: `${requirePublicAppUrl()}/reset-password?userId=${encodeURIComponent(id)}`,
-			})
-			if (error) throw error
+			await requestPasswordRecovery(id)
 
 			const nextResetAllowedAt = Date.now() + RESET_EMAIL_COOLDOWN_MS
 			localStorage.setItem(RESET_EMAIL_COOLDOWN_KEY, String(nextResetAllowedAt))
 			setResetCooldownSeconds(Math.ceil(RESET_EMAIL_COOLDOWN_MS / 1000))
-			toast.success("Password reset instructions sent to the registered student email.")
+			toast.success("If this Student or Grantor ID is eligible, reset instructions were sent to its registered email.")
 			setShowForgotModal(false)
 			setForgotUserId("")
 		} catch (error) {
@@ -149,35 +97,6 @@ export default function LoginPage() {
 			}
 		} finally {
 			setIsSendingReset(false)
-		}
-	}
-
-	const handleGrantorPasswordRequest = async (event) => {
-		event.preventDefault()
-		const id = grantorPasswordAccount?.id || userId.trim()
-		if (!id) {
-			toast.error("Grantor ID is required.")
-			return
-		}
-
-		setIsRequestingGrantorPassword(true)
-		try {
-			await upsertProvider(
-				id,
-				{
-					passwordChangeRequested: true,
-					passwordChangeRequestStatus: "pending",
-					passwordChangeRequestedAt: new Date().toISOString(),
-				},
-				{ merge: true },
-			)
-			toast.success("Password change request submitted. Please wait for admin assistance.")
-			closeGrantorPasswordModal()
-		} catch (error) {
-			console.error(error)
-			toast.error("Failed to submit password change request. Please try again later.")
-		} finally {
-			setIsRequestingGrantorPassword(false)
 		}
 	}
 
@@ -214,76 +133,25 @@ export default function LoginPage() {
 		let loginError = null
 		setIsLoading(true)
 		try {
-			let found = await findAccountById(id)
-			if (!found) {
-				toast.error("User ID not found. Please check your credentials.")
-				return
+			const account = await loginWithUserId(id, pwd)
+			let found = {
+				type: account.type,
+				table: account.table,
+				isPending: account.isPending,
+				data: await getRecord(account.table, id),
 			}
-
 			const isPendingStudent = found.type === "student" && found.table === TABLES.pendingStudent
-			const hasEncryptedPassword = Boolean(found.data?.password)
-			const shouldUseSupabaseAuth =
-				["student", "admin"].includes(found.type) &&
-				Boolean(found.data?.email) &&
-				Boolean(found.data?.authUserId)
-
-			let authUser = null
-			if (shouldUseSupabaseAuth) {
-				const { data, error } = await supabase.auth.signInWithPassword({
-					email: found.data.email,
-					password: pwd,
-				})
-
-				if (!error) {
-					authUser = data?.user || null
-					if (isPendingStudent) {
-						const promoted = await promoteEmailConfirmedStudentWorkflow({ studentId: id })
-						if (promoted?.student) {
-							found = {
-								...found,
-								table: TABLES.students,
-								isPending: false,
-								data: { id, ...promoted.student },
-							}
-						}
-					}
-				} else if (!hasEncryptedPassword) {
-					if (isPendingStudent) {
-						const message = String(error.message || "").toLowerCase().includes("email not confirmed")
-							? "Please confirm your email before logging in."
-							: "Your student account is still under review. Please check your email or wait for approval."
-						toast.error(message)
-					} else {
-						toast.error(error.message || "Invalid password. Please try again.")
-					}
-					return
-				}
-			}
-
-			if (!authUser) {
-				if (isPendingStudent) {
-					toast.error("Your student account is still under review. Please wait for approval before logging in.")
-					return
-				}
-				if (!hasEncryptedPassword) {
-					toast.error("Account is not linked to Supabase Auth yet. Please contact support.")
-					return
-				}
-
-				const isPasswordCorrect = await verifyPassword(pwd, found.data.password)
-				if (!isPasswordCorrect) {
-					toast.error("Invalid password. Please try again.")
-					return
-				}
-
-				if (found.type !== "student") {
-					await supabase.auth.signOut()
+			if (isPendingStudent) {
+				const promoted = await promoteEmailConfirmedStudentWorkflow({ studentId: id })
+				if (promoted?.student) {
+					found = { ...found, table: TABLES.students, isPending: false, data: { id, ...promoted.student } }
 				}
 			}
 
 			if (found.type === "student") {
 				const accessState = getStudentAccessState(found.data)
 				if (accessState.isPortalAccessBlocked) {
+					await supabase.auth.signOut().catch(() => {})
 					toast.error(getPortalAccessBlockMessage(found.data))
 					return
 				}
@@ -329,8 +197,20 @@ export default function LoginPage() {
 			}, 500)
 		} catch (error) {
 			loginError = error
+			await supabase.auth.signOut().catch(() => {})
 			console.error(error)
-			toast.error("Login failed. Please try again.")
+			if (error?.reason === "account_locked_reset_required") {
+				toast.error("This account is locked. Use Forgot password to reset it and restore access.")
+			} else if (error?.reason === "admin_account_locked") {
+				toast.error("This administrator account is locked. Ask the Root Administrator to unblock it.")
+			} else if (error?.reason === "invalid_credentials") {
+				const remaining = error?.data?.remainingAttempts
+				toast.error(Number.isFinite(remaining) ? `Invalid credentials. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.` : "Invalid credentials. Please try again.")
+			} else if (error?.reason === "authentication_backend_update_required") {
+				toast.error("Login is temporarily unavailable. Please contact the scholarship office.")
+			} else {
+				toast.error(error?.message || "Login failed. Please try again.")
+			}
 		} finally {
 			finishLoginOperation(loginSucceeded ? null : loginError || new Error("login_not_completed"))
 			setIsLoading(false)
@@ -427,9 +307,8 @@ export default function LoginPage() {
 							type="button"
 							className="login-forgot-btn"
 							onClick={handleForgotPasswordClick}
-							disabled={isCheckingForgotAccount}
 						>
-							{isCheckingForgotAccount ? "Checking account..." : "Forgot password?"}
+							Forgot password?
 						</button>
 
 						<button type="submit" className="login-submit" data-button-variant="positive" disabled={isLoading}>
@@ -463,16 +342,16 @@ export default function LoginPage() {
 						</button>
 						<h3 className="admin-modal-title">Reset Password</h3>
 						<p className="admin-modal-copy">
-							Enter your Student ID and we'll send password reset instructions to your registered email.
+							Enter your Student or Grantor ID. If the account is eligible, reset instructions will be sent to its registered email.
 						</p>
 						<form onSubmit={handleForgotPassword} style={{ marginTop: "1rem" }}>
-							<label className="login-label">Student ID</label>
+							<label className="login-label">Student or Grantor ID</label>
 							<div className="login-input-wrap" style={{ marginBottom: "1.5rem" }}>
 								<HiOutlineMail className="login-input-icon" />
 								<input
 									type="text"
 									className="login-input"
-									placeholder="Enter Student ID"
+									placeholder="Enter User ID"
 									value={forgotUserId}
 									onChange={(event) => setForgotUserId(event.target.value)}
 									required
@@ -491,49 +370,6 @@ export default function LoginPage() {
 				</div>
 			)}
 
-			{showGrantorPasswordModal && (
-				<div
-					className="admin-modal-overlay"
-					style={{ zIndex: 9999 }}
-					onClick={closeGrantorPasswordModal}
-				>
-					<div
-						className="admin-modal-card"
-						style={{ maxWidth: "400px", padding: "2rem" }}
-						onClick={(event) => event.stopPropagation()}
-					>
-						<button className="admin-modal-close" onClick={closeGrantorPasswordModal}>
-							<HiX />
-						</button>
-						<h3 className="admin-modal-title">Request Change Password</h3>
-						<p className="admin-modal-copy">
-							Submit a password change request for {grantorPasswordAccount?.name || "this grantor account"}.
-							The scholarship office will review the request.
-						</p>
-						<form onSubmit={handleGrantorPasswordRequest} style={{ marginTop: "1rem" }}>
-							<label className="login-label">Grantor ID</label>
-							<div className="login-input-wrap" style={{ marginBottom: "1.5rem" }}>
-								<HiOutlineMail className="login-input-icon" />
-								<input
-									type="text"
-									className="login-input"
-									value={grantorPasswordAccount?.id || ""}
-									readOnly
-								/>
-							</div>
-							<button
-								type="submit"
-								className="login-submit"
-								data-button-variant="positive"
-								disabled={isRequestingGrantorPassword}
-								style={{ width: "100%" }}
-							>
-								<HiOutlineLockClosed aria-hidden /> {isRequestingGrantorPassword ? "Submitting..." : "Request Change Password"}
-							</button>
-						</form>
-					</div>
-				</div>
-			)}
 		</div>
 	)
 }

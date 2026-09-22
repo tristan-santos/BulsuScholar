@@ -79,6 +79,7 @@ export const executeRootSql = (sql) => rootRequest("/root/sql/query", { method: 
 export const executeRootSqlMaintenance = (action) => rootRequest("/root/sql/maintenance", { method: "POST", payload: { action }, operation: "record.save" })
 export const getRootAdmins = () => rootRequest("/root/admins")
 export const saveRootAdmin = (payload) => rootRequest("/root/admins/save", { method: "POST", payload, operation: "record.save" })
+export const unblockRootManagedAdmin = (adminId) => rootRequest(`/root/security/admins/${encodeURIComponent(adminId)}/unblock`, { method: "POST", payload: {}, operation: "record.update" })
 export const getRootSupport = () => rootRequest("/root/support")
 export const updateRootSupport = (payload) => rootRequest("/root/support/update", { method: "POST", payload, operation: "record.save" })
 export const deleteRootSupport = (ticketId) => rootRequest(`/root/support/${encodeURIComponent(ticketId)}`, { method: "DELETE", operation: "record.delete" })

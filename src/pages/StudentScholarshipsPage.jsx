@@ -77,15 +77,11 @@ import {
 	GRANTOR_PORTAL_COLLECTION,
 	normalizeGrantorPortalSettings,
 } from "../services/grantorService"
-import { applyScholarshipWorkflow, materialRequestWorkflow, chooseScholarshipWorkflow, rejectScholarshipInvitationWorkflow, resolveArchivedGrantorScholarshipWorkflow, withdrawScholarshipWorkflow, updateScholarshipDocumentsWorkflow } from "../services/workflowService"
+import { applyScholarshipWorkflow, materialRequestWorkflow, chooseScholarshipWorkflow, rejectScholarshipInvitationWorkflow, withdrawScholarshipWorkflow, updateScholarshipDocumentsWorkflow } from "../services/workflowService"
 import {
 	SCHOLARSHIP_CHOICE_ENABLED,
-	getArchivedGrantorChoice,
 	getGrantorApplicationBlock,
 	hasScholarshipCommitment,
-	isArchivedGrantorChoicePending,
-	isArchivedGrantorReplacementMode,
-	isOriginalArchivedGrantorScholarship,
 	isReplacementApplication,
 	isClosedApplication,
 } from "../services/scholarshipChoiceService"
@@ -206,15 +202,24 @@ function getApplicationTimestamp(entry = {}) {
 	)
 }
 
-function getRejectionCooldown(entry = {}) {
+
+function getRejectionCooldown(entry = {}, now = Date.now()) {
+	const explicitReadyAt = toJsDate(entry?.cooldownUntil)?.getTime() || 0
+	if (explicitReadyAt) {
+		return {
+			active: now < explicitReadyAt,
+			remainingMs: Math.max(0, explicitReadyAt - now),
+			readyAt: new Date(explicitReadyAt),
+		}
+	}
 	const rejectedAt = getRejectionTimestamp(entry)
-	if (!rejectedAt) {
+	if (!isScholarshipRejected(entry) || !rejectedAt) {
 		return { active: false, remainingMs: 0, readyAt: null }
 	}
 	const readyAtMs = rejectedAt + REJECTION_REAPPLY_COOLDOWN_MS
 	return {
-		active: Date.now() < readyAtMs,
-		remainingMs: Math.max(0, readyAtMs - Date.now()),
+		active: now < readyAtMs,
+		remainingMs: Math.max(0, readyAtMs - now),
 		readyAt: new Date(readyAtMs),
 	}
 }
@@ -500,7 +505,6 @@ export default function StudentScholarshipsPage() {
 	const [soePreviewBytes, setSoePreviewBytes] = useState(null)
 	const [soePreviewRequestNumber, setSoePreviewRequestNumber] = useState("")
 	const [otherRequirementUploadBusy, setOtherRequirementUploadBusy] = useState("")
-	const [archiveChoiceDialogOpen, setArchiveChoiceDialogOpen] = useState(false)
 	const { theme, setTheme } = useThemeMode()
 	const userMenuRef = useRef(null)
 	const forcedLogoutRef = useRef(false)
@@ -509,10 +513,10 @@ export default function StudentScholarshipsPage() {
 	const recommendationRequestKeyRef = useRef("")
 	const invitationRouteActionRef = useRef("")
 	const acceptInvitationRef = useRef(null)
-	const promptedArchiveChoiceRef = useRef("")
 
 	const scholarshipCatalog = useMemo(() => getScholarshipCatalog(), [])
 	const [withdrawTarget, setWithdrawTarget] = useState(null)
+	const [cooldownClock, setCooldownClock] = useState(() => Date.now())
 	const scholarships = useMemo(
 		() => normalizeScholarshipList(user?.scholarships || []),
 		[user?.scholarships],
@@ -527,27 +531,10 @@ export default function StudentScholarshipsPage() {
 	const activeOrPendingScholarships = scholarships.filter((item) =>
 		!item.isLocked && !isScholarshipRejected(item) && isScholarshipActiveOrPending(item.status),
 	)
-	const archivedGrantorChoice = getArchivedGrantorChoice(user || {})
-	const archivedGrantorChoicePending = isArchivedGrantorChoicePending(user || {})
-	const archivedGrantorReplacementMode = isArchivedGrantorReplacementMode(user || {})
 	const hasActiveOrPendingScholarship = SCHOLARSHIP_CHOICE_ENABLED
-		? hasScholarshipCommitment(user || {}) && !archivedGrantorReplacementMode
+		? hasScholarshipCommitment(user || {})
 		: activeOrPendingScholarships.length > 0
-	const applicationSelectionLocked = (hasLockedScholarship || hasActiveOrPendingScholarship) && !archivedGrantorReplacementMode
-	useEffect(() => {
-		const choiceKey = archivedGrantorChoicePending
-			? `${archivedGrantorChoice?.applicationId || ""}:${archivedGrantorChoice?.archivedAt || ""}`
-			: ""
-		if (!choiceKey) {
-			promptedArchiveChoiceRef.current = ""
-			setArchiveChoiceDialogOpen(false)
-			return
-		}
-		if (promptedArchiveChoiceRef.current !== choiceKey) {
-			promptedArchiveChoiceRef.current = choiceKey
-			setArchiveChoiceDialogOpen(true)
-		}
-	}, [archivedGrantorChoice?.applicationId, archivedGrantorChoice?.archivedAt, archivedGrantorChoicePending])
+	const applicationSelectionLocked = hasLockedScholarship || hasActiveOrPendingScholarship
 	const activeOrPendingProviderTypes = useMemo(
 		() => new Set(activeOrPendingScholarships.map((item) => item.providerType)),
 		[activeOrPendingScholarships],
@@ -781,23 +768,20 @@ export default function StudentScholarshipsPage() {
 		],
 	)
 
-	const isArchivedGrantorWorkflowPaused = useCallback(
-		(entry) => isOriginalArchivedGrantorScholarship(user || {}, entry) &&
-			["pending", "change"].includes(String(archivedGrantorChoice?.decision || "").trim().toLowerCase()),
-		[archivedGrantorChoice?.decision, user],
-	)
 	const currentScholarshipApplications = useMemo(
-		() => scholarships.filter((entry) =>
-			isArchivedGrantorWorkflowPaused(entry) || !isPreviousScholarshipApplication(entry)),
-		[isArchivedGrantorWorkflowPaused, scholarships],
+		() => scholarships.filter((entry) => !isPreviousScholarshipApplication(entry)),
+		[scholarships],
 	)
 	const previousScholarshipApplications = useMemo(
 		() => {
 			const archivedApplications = Array.isArray(user?.previousScholars) ? user.previousScholars : []
+			const applicationHistory = normalizeScholarshipList(
+				Array.isArray(user?.scholarshipApplicationHistory) ? user.scholarshipApplicationHistory : [],
+			)
 			const seen = new Set()
 			return [
-				...scholarships.filter((entry) =>
-					!isArchivedGrantorWorkflowPaused(entry) && isPreviousScholarshipApplication(entry)),
+				...scholarships.filter((entry) => isPreviousScholarshipApplication(entry)),
+				...applicationHistory,
 				...archivedApplications,
 			].filter((entry, index) => {
 				const identity = String(
@@ -808,35 +792,13 @@ export default function StudentScholarshipsPage() {
 				return true
 			})
 		},
-		[isArchivedGrantorWorkflowPaused, scholarships, user?.previousScholars],
+		[scholarships, user?.previousScholars, user?.scholarshipApplicationHistory],
 	)
-
-	const saveArchivedGrantorDecision = async (action) => {
-		if (!userId || !archivedGrantorChoice?.applicationId || isMutating) return
-		setIsMutating(true)
-		try {
-			const result = await resolveArchivedGrantorScholarshipWorkflow({
-				studentId: userId,
-				applicationId: archivedGrantorChoice.applicationId,
-				action,
-				confirmed: true,
-				actorId: userId,
-				actorType: "student",
-			})
-			setUser((current) => ({ ...(current || {}), ...(result.student || {}) }))
-			setArchiveChoiceDialogOpen(false)
-			toast.success(
-				action === "keep"
-					? "Your scholarship is preserved. The scholarship office will manage the remaining steps while the grantor is archived."
-					: "Your original scholarship and slot are protected while you apply to another grantor.",
-			)
-		} catch (error) {
-			console.error("Failed to save archived-grantor scholarship decision:", error)
-			toast.error(error?.message || "Unable to save your scholarship decision. Please try again.")
-		} finally {
-			setIsMutating(false)
-		}
-	}
+	useEffect(() => {
+		if (!previousScholarshipApplications.some((entry) => getRejectionCooldown(entry, cooldownClock).active)) return undefined
+		const timer = window.setInterval(() => setCooldownClock(Date.now()), 60 * 1000)
+		return () => window.clearInterval(timer)
+	}, [cooldownClock, previousScholarshipApplications])
 
 	useEffect(() => {
 		function handleClickOutside(e) {
@@ -1561,11 +1523,12 @@ export default function StudentScholarshipsPage() {
 			summaryTone = "current"
 		} else if (trackingProgress.signingComplete) {
 			nextActionTitle = isKwspFlow
-				? "KWSP tracking completed"
-				: `${trackedScholarshipLabel} tracking completed`
+				? "KWSP cycle finished"
+				: `${trackedScholarshipLabel} cycle finished`
 			nextActionCopy = isKwspFlow
-				? "All tracked KWSP stages are complete for this scholarship cycle."
-				: `All tracked ${trackedScholarshipLabel} stages are complete for this scholarship cycle.`
+				? "Your KWSP scholarship cycle is complete. Wait for the next semester to renew; tracking will begin again at Uploading of Document."
+				: `Your ${trackedScholarshipLabel} scholarship cycle is complete. Wait for the next semester to renew; tracking will begin again at Uploading of Document.`
+			nextActionHelp = "When the academic cycle changes, update your semester documents from Profile to start renewal."
 			summaryTone = "complete"
 		}
 
@@ -1674,10 +1637,6 @@ export default function StudentScholarshipsPage() {
 
 	const handleOtherRequirementUpload = async (target, requirement, index, fileList) => {
 		if (!user || !userId || isMutating || !target || !requirement) return
-		if (isArchivedGrantorWorkflowPaused(target)) {
-			toast.info("Choose Keep Scholarship or Change Scholarship before continuing this scholarship workflow.")
-			return
-		}
 		const selected = scholarships.find((item) => item.id === target.id)
 		if (!selected) {
 			toast.error("Scholarship record not found.")
@@ -1754,12 +1713,10 @@ export default function StudentScholarshipsPage() {
 		if (requirements.length === 0) return null
 		const entryFrozen = isScholarshipFrozen(entry)
 		const entryRejected = isScholarshipRejected(entry)
-		const archiveWorkflowPaused = isArchivedGrantorWorkflowPaused(entry)
 		const disabledByState =
 			isMutating ||
 			entryFrozen ||
 			entryRejected ||
-			archiveWorkflowPaused ||
 			entry?.adminBlocked === true ||
 			hasScholarshipActionBlock
 
@@ -1921,7 +1878,7 @@ export default function StudentScholarshipsPage() {
 			)
 			return
 		}
-		if (hasLockedScholarship && !archivedGrantorReplacementMode) {
+		if (hasLockedScholarship) {
 			toast.info("Your scholarship selection is already locked for this semester.")
 			return
 		}
@@ -1935,7 +1892,7 @@ export default function StudentScholarshipsPage() {
 			toast.info("You already have an active application for this scholarship.")
 			return
 		}
-		if (hasActiveOrPendingScholarship && !archivedGrantorReplacementMode) {
+		if (hasActiveOrPendingScholarship) {
 			toast.info(applicationLockTooltip)
 			return
 		}
@@ -2227,10 +2184,6 @@ export default function StudentScholarshipsPage() {
 	const requestMaterial = async (target, materialKey) => {
 		if (!user || !userId || isMutating || !target) return
 		if (isScholarshipActionBlocked()) return
-		if (isArchivedGrantorWorkflowPaused(target)) {
-			toast.info("This scholarship is protected but paused while your archived-grantor decision is active.")
-			return
-		}
 		const materialConfig = getMaterialRequestType(materialKey)
 		setIsMutating(true)
 		try {
@@ -2446,10 +2399,6 @@ export default function StudentScholarshipsPage() {
 	const handleRequestMaterial = (target, materialKey) => {
 		if (!target) return
 		if (isScholarshipActionBlocked()) return
-		if (isArchivedGrantorWorkflowPaused(target)) {
-			toast.info("This scholarship is protected but paused while your archived-grantor decision is active.")
-			return
-		}
 		if (materialKey === "application_form") {
 			handleDownloadApplicationForm(target)
 			return
@@ -2544,10 +2493,6 @@ export default function StudentScholarshipsPage() {
 	const handleDownloadSoe = (target) => {
 		if (!target) return
 		if (isScholarshipActionBlocked()) return
-		if (isArchivedGrantorWorkflowPaused(target)) {
-			toast.info("Downloads are paused for this scholarship until its archive transition is resolved.")
-			return
-		}
 		if (isScholarshipFrozen(target)) {
 			toast.warning("This scholarship was archived by the grantor. SOE download is unavailable until it is restored.")
 			return
@@ -2668,10 +2613,6 @@ export default function StudentScholarshipsPage() {
 	const handleDownloadApplicationForm = async (target) => {
 		if (!target || !userId) return
 		if (isScholarshipActionBlocked()) return
-		if (isArchivedGrantorWorkflowPaused(target)) {
-			toast.info("Downloads are paused for this scholarship until its archive transition is resolved.")
-			return
-		}
 		const downloadId = String(target.applicationId || target.applicationNumber || target.id || "application-form")
 		if (downloadingApplicationFormId === downloadId) return
 		let materialRequest = getLatestMaterialRequest(target)
@@ -3241,26 +3182,7 @@ export default function StudentScholarshipsPage() {
 						</div>
 					) : null}
 
-					{archivedGrantorChoice ? (
-						<div className="student-compliance-banner" role="status">
-							<HiOutlineExclamation className="student-compliance-icon" aria-hidden />
-							<div className="student-compliance-copy">
-								<p className="student-compliance-title">
-									{archivedGrantorChoicePending ? "Your scholarship grantor was archived" : "Changing scholarships"}
-								</p>
-								<p className="student-compliance-desc">
-									{archivedGrantorChoicePending
-										? "Your current award and occupied slot are protected. Choose how you want the scholarship to continue."
-										: "Your original award remains protected and paused until you commit to a replacement or switch back to Keep Scholarship."}
-								</p>
-							</div>
-							<button type="button" className="student-mini-btn student-mini-btn--primary student-compliance-action" onClick={() => setArchiveChoiceDialogOpen(true)}>
-								{archivedGrantorChoicePending ? "Choose an Option" : "Review Choice"}
-							</button>
-						</div>
-					) : null}
-
-					{lockedScholarship && !archivedGrantorChoice && (
+					{lockedScholarship && (
 						<div className="student-lock-banner">
 							<HiOutlineCheckCircle aria-hidden />
 							<div>
@@ -3352,7 +3274,6 @@ export default function StudentScholarshipsPage() {
 											const entry = kwspEntry
 											const entryFrozen = isScholarshipFrozen(entry)
 											const entryRejected = isScholarshipRejected(entry)
-											const archiveWorkflowPaused = isArchivedGrantorWorkflowPaused(entry)
 											const entryTrackingProgress = getTrackingProgressForScholarship(entry)
 											const soeRequestLabel = getMaterialLabelForScholarship(entry, "soe")
 											const soeRequestButtonState = getMaterialRequestButtonState(entry, "soe")
@@ -3373,9 +3294,7 @@ export default function StudentScholarshipsPage() {
 														<span>Materials Request</span>
 														<strong>{soeRequestLabel.replace("SOE", "Materials")}</strong>
 														<p>
-													{archiveWorkflowPaused
-														? "This award and slot are protected, but its workflow is paused while your archived-grantor choice is active."
-														: entryFrozen
+															{entryFrozen
 																? "This scholarship was archived by the grantor. You cannot proceed to the next step or request materials until it is restored."
 																: entryTrackingProgress.canRequestMaterials
 																		? `Request your SOE and ${applicationFormSource.label}. Downloads become available after scholarship office approval.`
@@ -3390,7 +3309,6 @@ export default function StudentScholarshipsPage() {
 																isMutating ||
 														entryRejected ||
 														entryFrozen ||
-														archiveWorkflowPaused ||
 																entry.adminBlocked === true ||
 																hasScholarshipActionBlock ||
 																!entryTrackingProgress.canRequestMaterials ||
@@ -3418,7 +3336,6 @@ export default function StudentScholarshipsPage() {
 																hasScholarshipActionBlock ||
 													entryRejected ||
 													entryFrozen ||
-													archiveWorkflowPaused ||
 																isExportingSoe ||
 																isDownloadingSoe ||
 																!soeDownloadGate.canDownload
@@ -3446,7 +3363,7 @@ export default function StudentScholarshipsPage() {
 														<button
 															type="button"
 															className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
-													disabled={hasScholarshipActionBlock || entryRejected || entryFrozen || archiveWorkflowPaused || isApplicationFormDownloading(entry) || !applicationFormGate.canDownload}
+													disabled={hasScholarshipActionBlock || entryRejected || entryFrozen || isApplicationFormDownloading(entry) || !applicationFormGate.canDownload}
 															title={applicationFormGate.canDownload ? `Download the approved ${applicationFormSource.label}` : applicationFormGate.reason}
 															onClick={() => handleDownloadApplicationForm(entry)}
 														>
@@ -3456,7 +3373,7 @@ export default function StudentScholarshipsPage() {
 													</div>
 											{renderOtherRequirementUploads(entry)}
 											{SCHOLARSHIP_CHOICE_ENABLED && (!hasScholarshipCommitment(user || {}) || isReplacementApplication(user || {}, entry)) ? (
-												<button type="button" className="student-mini-btn student-mini-btn--danger" data-button-variant="danger"
+												<button type="button" className="student-mini-btn student-mini-btn--danger student-scholarship-withdraw-btn" data-button-variant="none"
 															disabled={isMutating} onClick={() => setWithdrawTarget(entry)}>
 															<HiX aria-hidden /> Withdraw Application
 														</button>
@@ -3530,7 +3447,6 @@ export default function StudentScholarshipsPage() {
 									{currentScholarshipApplications.map((entry) => {
 										const entryFrozen = isScholarshipFrozen(entry)
 										const entryRejected = isScholarshipRejected(entry)
-										const archiveWorkflowPaused = isArchivedGrantorWorkflowPaused(entry)
 										const entryRejectedMatch = entryRejected
 											? { record: entry, cooldown: getRejectionCooldown(entry) }
 											: getRejectedCooldownForTarget(entry)
@@ -3553,7 +3469,7 @@ export default function StudentScholarshipsPage() {
 											key={entry.applicationId || entry.id || entry.requestNumber}
 												className={`student-scholarship-card ${
 													entry.adminBlocked === true || hasScholarshipActionBlock
-													|| entryFrozen || entryRejected || archiveWorkflowPaused
+													|| entryFrozen || entryRejected
 														? "student-scholarship-card--blocked"
 														: ""
 												}`.trim()}
@@ -3578,11 +3494,6 @@ export default function StudentScholarshipsPage() {
 												{entryFrozen ? (
 													<p className="student-scholarship-card-note student-scholarship-card-note--warning">
 														<HiOutlineExclamation aria-hidden /> Archived by grantor. Your application is frozen and cannot proceed until it is restored.
-													</p>
-												) : null}
-												{archiveWorkflowPaused ? (
-													<p className="student-scholarship-card-note student-scholarship-card-note--warning">
-														<HiOutlineExclamation aria-hidden /> Your award and slot are protected. Progress is paused while the archived-grantor transition is active.
 													</p>
 												) : null}
 												{entryRejected ? (
@@ -3624,7 +3535,6 @@ export default function StudentScholarshipsPage() {
 															disabled={
 																isMutating ||
 														entryFrozen ||
-														archiveWorkflowPaused ||
 																studentAccessState.isPortalAccessBlocked ||
 																studentAccessState.soeComplianceBlocked ||
 																(entry.adminBlocked === true && !canResolveMultipleScholarshipConflict)
@@ -3653,7 +3563,6 @@ export default function StudentScholarshipsPage() {
 																	isMutating ||
 																	entryRejected ||
 															entryFrozen ||
-															archiveWorkflowPaused ||
 																	entry.adminBlocked === true ||
 																	hasScholarshipActionBlock ||
 																	!entryTrackingProgress.canRequestMaterials ||
@@ -3708,7 +3617,7 @@ export default function StudentScholarshipsPage() {
 															<button
 																	type="button"
 																	className="student-scholarship-download-soe student-mini-btn student-mini-btn--secondary"
-															disabled={hasScholarshipActionBlock || entryRejected || entryFrozen || archiveWorkflowPaused || isApplicationFormDownloading(entry) || !applicationFormGate.canDownload}
+													disabled={hasScholarshipActionBlock || entryRejected || entryFrozen || isApplicationFormDownloading(entry) || !applicationFormGate.canDownload}
 																	title={applicationFormGate.canDownload ? `Download the approved ${applicationFormSource.label}` : applicationFormGate.reason}
 																	onClick={() => handleDownloadApplicationForm(entry)}
 																>
@@ -3734,7 +3643,10 @@ export default function StudentScholarshipsPage() {
 										</span>
 									</summary>
 									<div className="student-scholarship-history-list">
-										{previousScholarshipApplications.map((entry, index) => (
+										{previousScholarshipApplications.map((entry, index) => {
+											const cooldown = getRejectionCooldown(entry, cooldownClock)
+											const wasWithdrawn = String(entry.closureReason || "").toLowerCase() === "student_withdrawal"
+											return (
 											<article
 												key={entry.applicationId || entry.id || entry.requestNumber || entry.applicationNumber || `history-${index}`}
 												className="student-scholarship-history-card"
@@ -3743,10 +3655,16 @@ export default function StudentScholarshipsPage() {
 												<div>
 													<h4>{entry.name || entry.scholarshipName || "Scholarship Application"}</h4>
 													<p>{entry.grantorName || entry.provider || entry.matchedGrantorName || "Scholarship provider"}</p>
+													{cooldown.active ? (
+														<p className="student-scholarship-history-cooldown">
+															Reapply in {formatCooldownDuration(cooldown.remainingMs)}
+														</p>
+													) : null}
 												</div>
-												<span>{entry.status || "Closed"}</span>
+												<span>{wasWithdrawn ? "Withdrawn" : entry.status || "Closed"}</span>
 											</article>
-										))}
+											)
+										})}
 									</div>
 								</details>
 							) : null}
@@ -3930,36 +3848,6 @@ export default function StudentScholarshipsPage() {
 				</div>
 			) : null}
 
-			{archiveChoiceDialogOpen && archivedGrantorChoice ? (
-				<div className={`admin-detail-backdrop ${theme === "dark" ? "admin-portal--dark" : ""}`} role="presentation" onClick={() => setArchiveChoiceDialogOpen(false)}>
-					<div className="admin-detail-shell admin-detail-shell--confirm" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" aria-label="Close scholarship decision" onClick={() => setArchiveChoiceDialogOpen(false)}><HiX aria-hidden /></button>
-						<div className="admin-detail-modal admin-detail-modal--confirm" role="dialog" aria-modal="true" aria-label="Archived grantor scholarship decision">
-							<div className="admin-detail-confirm-head">
-								<span className="admin-detail-confirm-icon" aria-hidden="true"><HiOutlineAcademicCap /></span>
-								<div className="admin-detail-confirm-copy">
-									<p className="admin-detail-confirm-kicker">Scholarship Protected</p>
-									<h3>{archivedGrantorChoicePending ? "Choose How to Continue" : "Review Your Scholarship Choice"}</h3>
-									<p className="admin-detail-meta">
-										Your scholarship with <strong>{archivedGrantorChoice.grantorName || "the archived grantor"}</strong> and its occupied slot remain protected.
-									</p>
-									<p className="admin-detail-confirm-detail">
-										<strong>Keep Scholarship</strong> lets the scholarship office manage unfinished steps. <strong>Change Scholarship</strong> pauses this award while you apply to another active grantor; the old slot is released only after a replacement is committed.
-									</p>
-								</div>
-							</div>
-							<div className="admin-detail-actions admin-detail-actions--confirm">
-								<button type="button" className="admin-table-btn" disabled={isMutating} onClick={() => setArchiveChoiceDialogOpen(false)}><HiX aria-hidden /> Cancel</button>
-								{archivedGrantorChoicePending ? (
-									<button type="button" className="admin-table-btn" disabled={isMutating} onClick={() => saveArchivedGrantorDecision("change")}><HiOutlineExternalLink aria-hidden /> Change Scholarship</button>
-								) : null}
-								<button type="button" className="admin-safe-btn" disabled={isMutating} onClick={() => saveArchivedGrantorDecision("keep")}><HiOutlineCheckCircle aria-hidden /> {isMutating ? "Saving..." : "Keep Scholarship"}</button>
-							</div>
-						</div>
-					</div>
-				</div>
-			) : null}
-
 			{confirmTarget && (
 				<div className="student-soe-modal-backdrop" role="presentation" onClick={() => setConfirmTarget(null)}>
 					<div
@@ -4023,7 +3911,7 @@ export default function StudentScholarshipsPage() {
 											actorId: userId, actorType: "student", confirmed: true })
 										setUser((prev) => ({ ...(prev || {}), ...result.student }))
 										setWithdrawTarget(null)
-										toast.success("Application withdrawn.")
+										toast.success("Application withdrawn. You can re-apply to this grantor after 24 hours.")
 									} catch (error) { toast.error(error.message || "Unable to withdraw this application.") }
 									finally { setIsMutating(false) }
 								}}><HiX aria-hidden /> {isMutating ? "Withdrawing..." : "Withdraw"}</button>

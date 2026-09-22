@@ -51,7 +51,6 @@ import {
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import { supabase } from "../services/supabaseClient"
-import { encryptPasswordAES256 } from "../services/authService"
 import { GRANTOR_DEFAULT_PASSWORD } from "../constants/grantorAuth"
 import logo2 from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
@@ -126,7 +125,8 @@ import {
 import { loadRecommendedScholarships } from "../services/recommendedScholarshipService"
 import { collectOtherRequirementDocuments } from "../services/otherRequirementService"
 import { closeFromModalBackdrop } from "../services/modalLayerService"
-import { updateAdminContact } from "../services/adminAccountService"
+import { createGrantorAuthAccount, updateAdminContact } from "../services/adminAccountService"
+import { getLoginSecuritySettings, saveLoginSecuritySettings } from "../services/portalAuthService"
 import {
 	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
@@ -743,9 +743,6 @@ function toDisplayStudentId(value = "") {
 
 function toGrantorStatus(grantor = {}) {
 	if (grantor?.archived === true) return "Archived"
-	if (grantor?.passwordChangeRequested === true || grantor?.passwordChangeRequestStatus === "pending") {
-		return "Password Requested"
-	}
 	return grantor?.status || "Active"
 }
 
@@ -1396,6 +1393,8 @@ export default function AdminDashboard() {
 	const [adminProfileForm, setAdminProfileForm] = useState(DEFAULT_ADMIN_PROFILE)
 	const [adminProfileSaving, setAdminProfileSaving] = useState(false)
 	const [adminPermissions, setAdminPermissions] = useState(null)
+	const [loginAttemptLimit, setLoginAttemptLimit] = useState(3)
+	const [savedLoginAttemptLimit, setSavedLoginAttemptLimit] = useState(3)
 	const adminMenuRef = useRef(null)
 	const adminIdentityRef = useRef(null)
 
@@ -1453,6 +1452,24 @@ export default function AdminDashboard() {
 			}).catch(() => setAdminPermissions(null))
 		}
 	}, [navigate])
+
+	useEffect(() => {
+		if (activeSection !== "profile" || adminIdentityRef.current?.role !== "full_admin") return
+		let active = true
+		getLoginSecuritySettings()
+			.then((result) => {
+				if (!active) return
+				const nextLimit = Math.max(3, Math.min(10, Number(result.loginAttemptLimit) || 3))
+				setLoginAttemptLimit(nextLimit)
+				setSavedLoginAttemptLimit(nextLimit)
+			})
+			.catch((error) => {
+				if (!active) return
+				console.error("Unable to load login security settings.", error)
+				toast.error("Unable to load login security settings.")
+			})
+		return () => { active = false }
+	}, [activeSection, adminPermissions])
 
 	useEffect(() => {
 		let active = true
@@ -2301,12 +2318,6 @@ export default function AdminDashboard() {
 		adminScholarImportRows.length > 0 &&
 			selectedAdminScholarImportRows.length === adminScholarImportRows.length,
 	)
-	const selectedGrantorPasswordChangePending = selectedGrantor?.archived !== true && Boolean(
-		selectedGrantor?.passwordChangeRequested === true ||
-			selectedGrantor?.passwordChangeRequestStatus === "pending" ||
-			selectedGrantor?.statusLabel === "Password Requested",
-	)
-
 	const selectedGrantorAnnouncements = useMemo(() => {
 		if (!selectedGrantor?.id) return []
 		const grantorIdKeys = new Set(
@@ -2468,13 +2479,10 @@ export default function AdminDashboard() {
 	)
 
 	const grantorManagementStats = useMemo(() => {
-		const passwordRequests = activeGrantorRows.filter(
-			(row) => row.passwordChangeRequestStatus === "pending" || row.passwordChangeRequested === true || row.statusLabel === "Password Requested",
-		).length
 		return {
 			total: grantorRows.length,
 			active: activeGrantorRows.length,
-			passwordRequests,
+			authProtected: activeGrantorRows.filter((row) => Boolean(row.authUserId)).length,
 			archived: archivedGrantorRows.length,
 		}
 	}, [activeGrantorRows, archivedGrantorRows.length, grantorRows.length])
@@ -6658,7 +6666,6 @@ export default function AdminDashboard() {
 		const targetIds = [...selectedGrantorIds]
 		setAdminConfirmDialog(null)
 		await runAction(async () => {
-			const encryptedPassword = await encryptPasswordAES256(GRANTOR_DEFAULT_PASSWORD)
 			const result = await updateGrantorArchiveStateWorkflow({
 				actorType: "admin",
 				actorId: sessionStorage.getItem("bulsuscholar_userId") || "admin",
@@ -6668,12 +6675,6 @@ export default function AdminDashboard() {
 					archived: false,
 					archivedAt: null,
 					status: "Active",
-					password: encryptedPassword,
-					mustChangePassword: true,
-					passwordChangeRequested: false,
-					passwordChangeRequestStatus: "reset_by_admin",
-					passwordResetBy: "admin",
-					passwordResetAt: new Date().toISOString(),
 				},
 			})
 			if (result.partial) {
@@ -7485,7 +7486,6 @@ export default function AdminDashboard() {
 
 		setIsCreatingGrantor(true)
 		try {
-			const encryptedPassword = await encryptPasswordAES256(GRANTOR_DEFAULT_PASSWORD)
 			const payload = {
 				providerId: grantorId,
 				providerName,
@@ -7496,7 +7496,7 @@ export default function AdminDashboard() {
 				providerType: toProviderType(providerName),
 				organization: grantorForm.organization.trim(),
 				email,
-				password: encryptedPassword,
+				temporaryPassword: GRANTOR_DEFAULT_PASSWORD,
 				mustChangePassword: true,
 				role: "provider",
 				userType: "provider",
@@ -7505,22 +7505,7 @@ export default function AdminDashboard() {
 				createdAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
 			}
-			await Promise.all([
-				setDoc(doc(db, "providers", grantorId), payload),
-				setDoc(doc(db, "grantorPortals", grantorId), {
-					grantorId,
-					providerName,
-					name: providerName,
-					fname,
-					mname,
-					lname,
-					providerType: payload.providerType,
-					organization: payload.organization,
-					email,
-					createdAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
-				}, { merge: true }),
-			])
+			await createGrantorAuthAccount(payload)
 			toast.success("Grantor account created.")
 			closeGrantorModal()
 		} catch (error) {
@@ -7528,35 +7513,6 @@ export default function AdminDashboard() {
 			toast.error("Failed to create grantor.")
 		} finally {
 			setIsCreatingGrantor(false)
-		}
-	}
-
-	const approveGrantorPasswordChange = async (grantorId) => {
-		if (!grantorId) return
-		try {
-			const encryptedPassword = await encryptPasswordAES256(GRANTOR_DEFAULT_PASSWORD)
-			await setDoc(doc(db, "providers", grantorId), {
-				password: encryptedPassword,
-				mustChangePassword: true,
-				passwordChangeRequested: false,
-				passwordChangeRequestStatus: "approved",
-				passwordChangeApprovedAt: serverTimestamp(),
-				passwordResetBy: "admin",
-				passwordResetAt: serverTimestamp(),
-				updatedAt: serverTimestamp(),
-			}, { merge: true })
-			await createGrantorNotification({
-				grantorId,
-				type: "password_change_approved",
-				title: "Password Change Approved",
-				message: "Your administrator approved the request. You can now change your password from your profile.",
-				read: false,
-				createdAt: serverTimestamp(),
-			})
-			toast.success("Password change request approved.")
-		} catch (error) {
-			console.error("Unable to approve password change request.", error)
-			toast.error("Unable to approve the password change request.")
 		}
 	}
 
@@ -7590,8 +7546,14 @@ export default function AdminDashboard() {
 		const changedFields = ["contactNumber"].filter(
 			(key) => JSON.stringify(adminProfile?.[key] ?? "") !== JSON.stringify(adminProfileForm?.[key] ?? ""),
 		)
-		if (changedFields.length === 0) {
+		const canManageLoginSecurity = adminIdentityRef.current?.role === "full_admin"
+		const securityChanged = canManageLoginSecurity && loginAttemptLimit !== savedLoginAttemptLimit
+		if (changedFields.length === 0 && !securityChanged) {
 			toast.info("No admin profile changes to save.")
+			return
+		}
+		if (securityChanged && (!Number.isInteger(loginAttemptLimit) || loginAttemptLimit < 3 || loginAttemptLimit > 10)) {
+			toast.error("Failed login attempts must be a whole number from 3 to 10.")
 			return
 		}
 		if (adminProfileForm.contactNumber && !isValidContactNumber(adminProfileForm.contactNumber)) {
@@ -7602,11 +7564,17 @@ export default function AdminDashboard() {
 		const payload = { ...cleanProfileForm, contactNumber: normalizeContactNumber(cleanProfileForm.contactNumber) }
 		setAdminProfileSaving(true)
 		try {
-			await updateAdminContact(payload.contactNumber)
-			adminIdentityRef.current = { ...(adminIdentityRef.current || {}), contactNumber: payload.contactNumber }
-			localStorage.setItem("bulsuscholar_admin_profile", JSON.stringify(payload))
-			setAdminProfile(payload)
-			toast.success("Administrator contact details saved.")
+			if (changedFields.length > 0) {
+				await updateAdminContact(payload.contactNumber)
+				adminIdentityRef.current = { ...(adminIdentityRef.current || {}), contactNumber: payload.contactNumber }
+				localStorage.setItem("bulsuscholar_admin_profile", JSON.stringify(payload))
+				setAdminProfile(payload)
+			}
+			if (securityChanged) {
+				await saveLoginSecuritySettings(loginAttemptLimit)
+				setSavedLoginAttemptLimit(loginAttemptLimit)
+			}
+			toast.success("Administrator settings saved.")
 		} catch (error) {
 			console.error("Unable to save admin profile settings.", error)
 			toast.error("Unable to save administrator contact details right now.")
@@ -8480,8 +8448,33 @@ export default function AdminDashboard() {
 								</div>
 							</section>
 
+							{adminIdentityRef.current?.role === "full_admin" ? (
+								<section className="admin-profile-section">
+									<div className="admin-profile-section-head">
+										<HiOutlineShieldCheck />
+										<div>
+											<h3>Login Security</h3>
+											<p>Block student, grantor, and administrator accounts after consecutive failed sign-in attempts.</p>
+										</div>
+									</div>
+									<div className="admin-profile-form-grid">
+										<label>
+											<span>Failed Login Attempt Limit</span>
+											<input
+												type="number"
+												min="3"
+												max="10"
+												step="1"
+												value={loginAttemptLimit}
+												onChange={(event) => setLoginAttemptLimit(Number(event.target.value))}
+											/>
+										</label>
+									</div>
+								</section>
+							) : null}
+
 							<div className="admin-profile-actions">
-								<button type="button" className="admin-table-btn" onClick={() => setAdminProfileForm(adminProfile)}>
+								<button type="button" className="admin-table-btn" onClick={() => { setAdminProfileForm(adminProfile); setLoginAttemptLimit(savedLoginAttemptLimit) }}>
 									<HiOutlineRefresh /> Reset
 								</button>
 								<button type="submit" className="admin-safe-btn" disabled={adminProfileSaving}>
@@ -8905,8 +8898,8 @@ export default function AdminDashboard() {
 						</article>
 						<article>
 							<HiOutlineRefresh />
-							<span>Password Requests</span>
-							<strong>{grantorManagementStats.passwordRequests}</strong>
+							<span>Auth Protected</span>
+							<strong>{grantorManagementStats.authProtected}</strong>
 						</article>
 						<article>
 							<HiOutlineArchive />
@@ -10864,19 +10857,6 @@ export default function AdminDashboard() {
 								)}
 							</div>
 							<footer className="admin-detail-actions admin-grantor-detail-actions">
-								<button
-									type="button"
-									className="admin-table-btn"
-									disabled={!selectedGrantorPasswordChangePending}
-									title={
-										selectedGrantorPasswordChangePending
-											? "Approve this grantor password change request"
-											: "No password change request is pending for this grantor"
-									}
-									onClick={() => approveGrantorPasswordChange(selectedGrantor.id)}
-								>
-									<HiOutlineCheckCircle /> Approve Password Change
-								</button>
 								<button
 									type="button"
 									className={selectedGrantor.archived === true ? "admin-table-btn" : "admin-danger-btn"}

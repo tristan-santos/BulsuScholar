@@ -204,6 +204,12 @@
 	font-size: 0.72rem;
 }
 
+.student-scholarship-history-card .student-scholarship-history-cooldown {
+	margin-top: 0.35rem;
+	color: #9a6700;
+	font-weight: 700;
+}
+
 .student-scholarship-history-card > span {
 	margin: 0;
 	font-weight: 700;
@@ -246,6 +252,10 @@
 .student-dashboard--dark .student-scholarship-history-card > span,
 .student-dashboard--dark .student-scholarship-history-card > svg {
 	color: #94a3b8;
+}
+
+.student-dashboard--dark .student-scholarship-history-card .student-scholarship-history-cooldown {
+	color: #fbbf24;
 }
 
 @media (max-width: 640px) {

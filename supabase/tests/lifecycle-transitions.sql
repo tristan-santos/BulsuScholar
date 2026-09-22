@@ -23,58 +23,53 @@ begin
     '__lifecycle_s1', 'auth-lifecycle-s1', 'student1@example.test'
   );
   if result->>'promoted' <> 'true'
-    or jsonb_array_length(result->'rosterMatches') <> 2
-    or result#>>'{student,rosterDecisionPending}' <> 'true' then
-    raise exception 'TEST FAILED: confirmed student roster gate was not created';
+    or result->>'rosterConflict' <> 'true'
+    or result#>>'{student,rosterAssignmentState,status}' <> 'conflict' then
+    raise exception 'TEST FAILED: multiple roster matches were not blocked for correction';
   end if;
   if exists(select 1 from public.pending_students where id = '__lifecycle_s1') then
     raise exception 'TEST FAILED: promoted student remained pending';
   end if;
-
-  result := public.resolve_student_roster_scholarship(
-    '__lifecycle_s1', '__lifecycle_g2', '__lifecycle_r2', 'confirm'
-  );
-  application_id := result#>>'{application,applicationId}';
-  if coalesce(application_id, '') = ''
-    or result#>>'{student,scholarshipCommitment,applicationId}' <> application_id
-    or result#>>'{application,slotReserved}' <> 'false' then
-    raise exception 'TEST FAILED: roster confirmation did not create a no-capacity commitment';
-  end if;
-  if not exists(select 1 from public.grantor_portal_scholars
-    where id = '__lifecycle_r1' and parent_id = '__lifecycle_g1'
-      and data->>'rosterConflictReview' = 'true') then
-    raise exception 'TEST FAILED: competing roster match was not flagged';
-  end if;
-  result := public.resolve_student_roster_scholarship(
-    '__lifecycle_s1', '__lifecycle_g2', '__lifecycle_r2', 'confirm'
-  );
-  if result->>'idempotent' <> 'true' then
-    raise exception 'TEST FAILED: roster confirmation retry was not idempotent';
+  if exists(select 1 from public.scholarship_applications where data->>'studentId' = '__lifecycle_s1') then
+    raise exception 'TEST FAILED: conflicting roster matches created an application';
   end if;
 
   result := public.promote_email_confirmed_student(
     '__lifecycle_s2', 'auth-lifecycle-s2', 'student2@example.test'
   );
-  result := public.resolve_student_roster_scholarship(
-    '__lifecycle_s2', '__lifecycle_g1', '__lifecycle_r3', 'decline'
-  );
-  if result#>>'{student,rosterDecisionPending}' <> 'false'
-    or not exists(select 1 from public.grantor_portal_scholars
-      where id = '__lifecycle_r3' and data->>'rosterDisputed' = 'true'
-        and data->>'archived' = 'true') then
-    raise exception 'TEST FAILED: roster dispute was not archived and resolved';
+  application_id := result#>>'{student,scholarshipCommitment,applicationId}';
+  if result->>'rosterAssigned' <> 'true' or coalesce(application_id, '') = ''
+    or not exists(select 1 from public.scholarship_applications where id = application_id
+      and data->>'source' = 'authoritative_roster' and data->>'withdrawalLocked' = 'true') then
+    raise exception 'TEST FAILED: single roster match was not assigned automatically';
   end if;
-  result := public.resolve_student_roster_scholarship(
-    '__lifecycle_s2', '__lifecycle_g1', '__lifecycle_r3', 'decline'
+  update public.students set data = data || '{"corFile":{"url":"cor"},"rogFile":{"url":"rog"},"schoolIdFile":{"url":"id"}}'::jsonb
+    where id = '__lifecycle_s2';
+  update public.scholarship_applications set data = data || '{"applicationFormFile":{"url":"profile"}}'::jsonb
+    where id = application_id;
+  if not exists(select 1 from public.scholarship_applications where id = application_id
+      and data->>'status' = 'Finished' and data->>'completionSource' = 'authoritative_roster'
+      and data#>'{tracking,completedStepIds}' ? 'finish') then
+    raise exception 'TEST FAILED: valid roster documents did not finish the workflow';
+  end if;
+  if exists(select 1 from public.soe_requests where data->>'applicationId' = application_id)
+    or exists(select 1 from public.soe_downloads where data->>'applicationId' = application_id) then
+    raise exception 'TEST FAILED: roster completion fabricated material artifacts';
+  end if;
+  result := public.update_authoritative_roster_scholar(
+    'admin','__test_admin','__lifecycle_g1','__lifecycle_r3','{"archived":true}'::jsonb
   );
-  if result->>'idempotent' <> 'true' then
-    raise exception 'TEST FAILED: roster dispute retry was not idempotent';
+  if result->>'released' <> 'true'
+    or result#>>'{application,withdrawalLocked}' <> 'false'
+    or coalesce(result#>>'{application,cooldownUntil}','') = ''
+    or exists(select 1 from public.students where id = '__lifecycle_s2' and data ? 'scholarshipCommitment') then
+    raise exception 'TEST FAILED: individual roster archive did not release the commitment and start cooldown';
   end if;
 
   if has_function_privilege('authenticated',
       'public.promote_email_confirmed_student(text,text,text)', 'EXECUTE')
     or has_function_privilege('anon',
-      'public.resolve_student_roster_scholarship(text,text,text,text)', 'EXECUTE') then
+      'public.assign_authoritative_roster_scholarship(text,text,text)', 'EXECUTE') then
     raise exception 'TEST FAILED: lifecycle procedures are browser executable';
   end if;
 end;
@@ -133,23 +128,16 @@ begin
   result := public.sync_archived_grantor_scholar_choices('__lifecycle_g1', true, '__lifecycle_admin');
   if result->>'affectedScholarCount' <> '1'
     or not exists(select 1 from public.students where id = '__lifecycle_archive_student'
-      and data#>>'{grantorArchiveChoice,decision}' = 'pending'
+      and not (data ? 'grantorArchiveChoice')
+      and data#>>'{scholarships,0,grantorArchiveDecision}' = 'auto_keep'
+      and data#>>'{scholarships,0,servicingOwner}' = 'admin'
       and data#>>'{scholarshipCommitment,applicationId}' = '__lifecycle_archive_app') then
-    raise exception 'TEST FAILED: archived grantor scholar was not preserved';
+    raise exception 'TEST FAILED: archived grantor scholar was not moved to administrator servicing';
   end if;
   if (select data->>'remainingSlots' from public.grantor_portal_announcements
       where id = '__lifecycle_archive_offering') <> '24' then
     raise exception 'TEST FAILED: archive released the preserved scholarship slot';
   end if;
-
-  result := public.resolve_archived_grantor_scholar_choice(
-    '__lifecycle_archive_student', '__lifecycle_archive_app', 'keep'
-  );
-  if result#>>'{choice,servicingOwner}' <> 'admin'
-    or result#>>'{choice,workflowPaused}' <> 'false' then
-    raise exception 'TEST FAILED: Keep did not assign continuation to the administrator';
-  end if;
-
   update public.grantor_portals set data = data || '{"archived":false,"status":"Active"}'::jsonb
     where id = '__lifecycle_g1';
   result := public.sync_archived_grantor_scholar_choices('__lifecycle_g1', false, '__lifecycle_admin');
@@ -157,7 +145,7 @@ begin
       and data ? 'grantorArchiveChoice')
     or not exists(select 1 from public.students where id = '__lifecycle_archive_student'
       and data#>>'{scholarships,0,servicingOwner}' = 'grantor') then
-    raise exception 'TEST FAILED: restored Keep record did not return to grantor management';
+    raise exception 'TEST FAILED: restored auto-serviced record did not return to grantor management';
   end if;
 end;
 $$;

@@ -189,7 +189,7 @@ begin
 end;
 $$;
 
--- Shared file replacements invalidate only pending applications' reviews.
+-- Missing shared files pause pending applications and restoration resumes them.
 do $$
 declare r jsonb;
 begin
@@ -207,14 +207,29 @@ begin
   end;
   update public.scholarship_applications set data = jsonb_set(data, '{tracking,completedStepIds}', '["document_review"]')
     where id = '__choice_test_m2';
-  update public.students set data = data || '{"corFile":{"url":"v2-cor-replacement"}}'
+  update public.students set data = data || '{"schoolIdFile":{}}'
     where id = '__choice_test_multi';
-  if exists(select 1 from public.scholarship_applications where id = '__choice_test_m2'
-    and data#>'{tracking,completedStepIds}' ? 'document_review') then
-    raise exception 'TEST FAILED: changed shared document left approval active';
+  if not exists(select 1 from public.scholarship_applications where id = '__choice_test_m2'
+    and data#>>'{tracking,compliancePause,active}' = 'true'
+    and data#>'{tracking,completedStepIds}' ? 'document_review'
+    and data#>'{tracking,compliancePause,completedStepIds}' ? 'document_review') then
+    raise exception 'TEST FAILED: missing document did not pause and preserve progress';
   end if;
-  update public.scholarship_applications set data = jsonb_set(data, '{tracking,completedStepIds}', '["document_review"]')
-    where id = '__choice_test_m2';
+  begin
+    perform public.mutate_scholarship_choice('__choice_test_multi', '__choice_test_m2', 'choose');
+    raise exception 'TEST FAILED: compliance pause allowed scholarship selection';
+  exception when raise_exception then
+    if sqlerrm <> 'scholarship_ineligible' then raise; end if;
+  end;
+  update public.students set data = data || '{"schoolIdFile":{"url":"v2-id-restored"}}'
+    where id = '__choice_test_multi';
+  if not exists(select 1 from public.scholarship_applications where id = '__choice_test_m2'
+    and data#>>'{tracking,compliancePause,active}' = 'false'
+    and data#>'{tracking,completedStepIds}' ? 'document_review'
+    and data->'reviewedDocumentVersions' = public.scholarship_document_versions(
+      (select data from public.students where id = '__choice_test_multi'))) then
+    raise exception 'TEST FAILED: restored document did not resume preserved progress';
+  end if;
   update public.scholarship_applications set data = data || '{"providerType":"kuya_win","customApplicationForm":{"url":"https://example.test/grantor-form.pdf","name":"grantor-form.pdf"}}'
     where id = '__choice_test_m2';
   begin

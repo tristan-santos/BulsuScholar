@@ -75,6 +75,8 @@
 .root-maintenance-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e1ebe6; }
 .root-maintenance-actions h3 { flex: 0 0 100%; margin: 0; font-size: .9rem; }
 .root-row-action { margin: .75rem .5rem 0 0; }
+.root-row-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-right: .75rem; }
+.root-row-actions .root-row-action { margin-right: 0; }
 .root-ticket-list { display: grid; gap: .55rem; }
 .root-ticket-list > button { display: grid; grid-template-columns: auto 1fr; gap: .25rem .75rem; padding: .85rem; border: 1px solid #d5e3dd; border-radius: 5px; background: #fff; color: inherit; text-align: left; cursor: pointer; }
 .root-ticket-list p, .root-ticket-list small { grid-column: 2; margin: 0; }

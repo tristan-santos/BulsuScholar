@@ -23,10 +23,6 @@ export function withdrawScholarshipWorkflow(payload = {}) {
 	return postWorkflow("/workflows/scholarship/withdraw", payload, { operation: "application.withdraw" })
 }
 
-export function resolveArchivedGrantorScholarshipWorkflow(payload = {}) {
-	return postWorkflow("/workflows/scholarship/archived-grantor-decision", payload, { operation: "record.save" })
-}
-
 export function updateScholarshipDocumentsWorkflow(payload = {}) {
 	return postWorkflow("/workflows/scholarship/documents", payload, { operation: "document.upload" })
 }
@@ -72,10 +68,6 @@ export function promoteEmailConfirmedStudentWorkflow(payload = {}) {
 	return postWorkflow("/workflows/student/email-confirmed", payload, { operation: "auth.confirm" })
 }
 
-export function resolveRosterScholarshipWorkflow(payload = {}) {
-	return postWorkflow("/workflows/student/roster-scholarship-decision", payload, { operation: "record.save" })
-}
-
 export function confirmGrantorAdminDecisionWorkflow(payload = {}) {
 	return postWorkflow("/workflows/grantor/applications/confirm-admin-decision", payload, { operation: "workflow.complete" })
 }
@@ -106,10 +98,6 @@ export function updateGrantorAnnouncementWorkflow(payload = {}) {
 
 export function configureGrantorAnnouncementSlotsWorkflow(payload = {}) {
 	return postWorkflow("/workflows/grantor/announcements/slots", payload, { operation: "record.save" })
-}
-
-export function requestGrantorPasswordChangeWorkflow(payload = {}) {
-	return postWorkflow("/workflows/grantor/password/request", payload, { operation: "auth.password-request" })
 }
 
 export function updateGrantorProfileWorkflow(payload = {}) {

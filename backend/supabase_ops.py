@@ -253,7 +253,7 @@ def supabase_rpc(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "status": error.code, "reason": reason, "detail": detail}
 
 
-def supabase_admin_create_user(email: str, password: str, user_metadata: dict[str, Any] | None = None, email_confirm: bool = False) -> dict[str, Any]:
+def supabase_admin_create_user(email: str, password: str, user_metadata: dict[str, Any] | None = None, email_confirm: bool = False, app_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     if not supabase_url or not service_key:
@@ -266,6 +266,7 @@ def supabase_admin_create_user(email: str, password: str, user_metadata: dict[st
         "password": password,
         "email_confirm": bool(email_confirm),
         "user_metadata": user_metadata or {},
+        "app_metadata": app_metadata or {},
     }
     request = urllib.request.Request(
         f"{supabase_url}/auth/v1/admin/users",

@@ -72,10 +72,15 @@ export function getGrantorRejectionCooldown(student = {}, target = {}, now = Dat
 		...(Array.isArray(student.scholarships) ? student.scholarships : []),
 		...(Array.isArray(student.scholarshipApplicationHistory) ? student.scholarshipApplicationHistory : []),
 	]
-		.filter((record) => isRejectedGrantorRecord(record) && sameGrantorIdentity(record, target))
+		.filter((record) => sameGrantorIdentity(record, target))
 		.map((record) => {
+			const explicitReadyAt = Date.parse(record.cooldownUntil || "")
 			const rejectedAt = Date.parse(record.rejectedAt || record.archivedAt || record.updatedAt || record.applicationDate || record.appliedAt || record.createdAt || "")
-			const readyAt = Number.isFinite(rejectedAt) ? rejectedAt + 24 * 60 * 60 * 1000 : 0
+			const readyAt = Number.isFinite(explicitReadyAt)
+				? explicitReadyAt
+				: isRejectedGrantorRecord(record) && Number.isFinite(rejectedAt)
+					? rejectedAt + 24 * 60 * 60 * 1000
+					: 0
 			return { record, active: readyAt > now, remainingMs: Math.max(0, readyAt - now), readyAt: readyAt ? new Date(readyAt) : null }
 		})
 		.filter((item) => item.active)

@@ -39,6 +39,7 @@ try:
         sql_query,
         save_branding_draft,
         update_admin,
+        unblock_admin,
         update_admin_contact,
         update_config,
         update_support,
@@ -56,6 +57,7 @@ except ImportError:  # pragma: no cover
         list_sessions, metrics_snapshot, overview, public_config,
         publish_branding_version, require_root,
         revoke_session, run_sql_maintenance, save_branding_draft, sql_query, update_admin,
+        unblock_admin,
         update_admin_contact,
         update_config, update_support, upload_branding_asset,
         remove_support, support_conversation_report,
@@ -109,6 +111,11 @@ def root_logout(request: Request) -> dict[str, Any]:
 def root_sessions(request: Request) -> dict[str, Any]:
     identity = require_root(request)
     return {"ok": True, "sessions": list_sessions(identity), "currentSessionId": identity["session"]["id"]}
+
+
+@router.post("/root/security/admins/{admin_id}/unblock")
+def root_unblock_admin(admin_id: str, request: Request) -> dict[str, Any]:
+    return unblock_admin(request, require_root(request), admin_id)
 
 
 @router.delete("/root/security/sessions/{session_id}")
