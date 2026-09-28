@@ -60,8 +60,10 @@ try:
         profile_snapshot_content,
         review_document_submission,
         save_student_profile_draft,
+        student_profile_photo_content,
         submit_student_profile,
         update_document_policy,
+        upload_student_profile_photo,
         upload_student_document,
     )
     from .scope_announcement_waitlist_service import (
@@ -171,8 +173,10 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         profile_snapshot_content,
         review_document_submission,
         save_student_profile_draft,
+        student_profile_photo_content,
         submit_student_profile,
         update_document_policy,
+        upload_student_profile_photo,
         upload_student_document,
     )
     from scope_announcement_waitlist_service import (
@@ -838,6 +842,16 @@ def student_profile_workspace_endpoint(request: Request) -> dict[str, Any]:
 @app.put("/student/profile/draft")
 def save_student_profile_draft_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return save_student_profile_draft(request, payload)
+
+
+@app.post("/student/profile/photo")
+async def upload_student_profile_photo_endpoint(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+    return await upload_student_profile_photo(request, file)
+
+
+@app.get("/student/profile/photo/content")
+def student_profile_photo_content_endpoint(request: Request) -> Response:
+    return student_profile_photo_content(request)
 
 
 @app.post("/student/profile/preview")

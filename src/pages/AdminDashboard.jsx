@@ -75,7 +75,6 @@ import {
 } from "../data/philippineLocations"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import useThemeMode from "../hooks/useThemeMode"
-import { uploadToStorage } from "../services/storageService"
 import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
 import { createAdminNotification, createGrantorNotification, createStudentNotification, loadAdminNotifications, updateAdminNotification } from "../services/notificationService"
 import { commitRosterImportWorkflow, correctStudentNumberWorkflow, getGrantorScopeWorkflow, listRosterConflictsWorkflow, materialRequestWorkflow, previewAnnouncementAudienceWorkflow, previewRosterImportWorkflow, publishTargetedAnnouncementWorkflow, resolveRosterConflictWorkflow, saveGrantorScopeWorkflow, updateGrantorArchiveStateWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
@@ -759,11 +758,8 @@ function toMaterialStatusSummary(request = {}) {
 }
 
 function buildAnnouncementImageList(item) {
-	const imageUrls = Array.isArray(item?.imageUrls) ? item.imageUrls : []
-	const imageObjects = Array.isArray(item?.images)
-		? item.images.map((image) => image?.url || image?.publicUrl || image?.src || "").filter(Boolean)
-		: []
-	return [...new Set([item?.imageUrl, ...imageUrls, ...imageObjects].filter(Boolean).map((url) => normalizeStoragePublicUrl(url)))]
+	void item
+	return []
 }
 
 function getRequiredDocumentLabels(item = {}) {
@@ -1227,6 +1223,7 @@ export default function AdminDashboard() {
 	const [documentReviewNotes, setDocumentReviewNotes] = useState({})
 	const [documentReviewFieldErrors, setDocumentReviewFieldErrors] = useState({})
 	const [documentPolicyMode, setDocumentPolicyMode] = useState("cor_only")
+	const [manualDocumentReviewEnabled, setManualDocumentReviewEnabled] = useState(true)
 	const [documentExceptionForm, setDocumentExceptionForm] = useState({ studentId: "", exceptionType: "advising_slip", reason: "" })
 	const [studentArchiveTrendRange, setStudentArchiveTrendRange] = useState("monthly")
 	const [selectedStudentId, setSelectedStudentId] = useState("")
@@ -1264,6 +1261,9 @@ export default function AdminDashboard() {
 		email: "",
 		organization: "",
 		classification: "other",
+		scopeEnabled: false,
+		scopeName: "",
+		municipalities: "",
 	})
 	const [grantorScopeForm, setGrantorScopeForm] = useState({ classification: "other", enabled: false, name: "", municipalities: "" })
 	const [grantorScopeBusy, setGrantorScopeBusy] = useState(false)
@@ -6482,7 +6482,7 @@ export default function AdminDashboard() {
 				return
 			}
 			setSelectedGrantorIds([])
-			toast.success(`Archived ${targetIds.length} grantor${targetIds.length === 1 ? "" : "s"}, ${result.announcementCount || 0} announcement${result.announcementCount === 1 ? "" : "s"}, and transferred ${result.affectedScholarCount || 0} committed scholar${result.affectedScholarCount === 1 ? "" : "s"} to administrator servicing.`)
+			toast.success(`Archived ${targetIds.length} grantor${targetIds.length === 1 ? "" : "s"}, ${result.announcementCount || 0} announcement${result.announcementCount === 1 ? "" : "s"}, and transferred ${result.affectedScholarCount || 0} committed scholar${result.affectedScholarCount === 1 ? "" : "s"} to Scholarship Office Managed status.`)
 		})
 	}
 
@@ -7239,14 +7239,6 @@ export default function AdminDashboard() {
 		setShowAnnouncementSchedule(false)
 	}
 
-	const handleAnnouncementFiles = (event) => {
-		setAnnouncementImageFiles(Array.from(event.target.files || []))
-	}
-
-	const removeAnnouncementImage = (index) => {
-		setAnnouncementImageFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
-	}
-
 	const openAnnouncementImagePreview = (url) => {
 		setAnnouncementImagePreview(url)
 	}
@@ -7306,8 +7298,7 @@ export default function AdminDashboard() {
 				toast.info(`Audience preview ready: ${preview.recipientCount} recipient${preview.recipientCount === 1 ? "" : "s"}. Review the count, then publish.`)
 				return
 			}
-			const uploads = await Promise.all(announcementImageFiles.map((file) => uploadToStorage(file)))
-			const imageUrls = uploads.map((item) => item.url).filter(Boolean)
+			const imageUrls = []
 			const announcementRef = await addDoc(collection(db, "announcements"), {
 				title: announcementTitle.trim(),
 				description: announcementDescription.trim(),
@@ -7384,6 +7375,9 @@ export default function AdminDashboard() {
 			email: "",
 			organization: "",
 			classification: "other",
+			scopeEnabled: false,
+			scopeName: "",
+			municipalities: "",
 		})
 	}
 
@@ -7404,6 +7398,11 @@ export default function AdminDashboard() {
 			toast.error("First name, last name, and email are required.")
 			return
 		}
+		const municipalities = [...new Set(grantorForm.municipalities.split(/[\n,;]+/).map((value) => value.trim()).filter(Boolean))]
+		if (grantorForm.scopeEnabled && municipalities.length === 0) {
+			toast.error("Add at least one approved city or municipality when location scope is enabled.")
+			return
+		}
 		if (providersRaw.some((provider) => provider.id === grantorId)) {
 			toast.error("Grantor ID already exists.")
 			return
@@ -7421,6 +7420,11 @@ export default function AdminDashboard() {
 				providerType: toProviderType(providerName),
 				organization: grantorForm.organization.trim(),
 				grantorClassification: grantorForm.classification,
+				locationScope: {
+					enabled: grantorForm.scopeEnabled,
+					name: grantorForm.scopeName.trim(),
+					municipalities,
+				},
 				email,
 				temporaryPassword: GRANTOR_DEFAULT_PASSWORD,
 				mustChangePassword: true,
@@ -8327,6 +8331,7 @@ export default function AdminDashboard() {
 			})
 			setDocumentReviewRows(result.submissions || [])
 			setDocumentPolicyMode(result.policy?.corMode || "cor_only")
+			setManualDocumentReviewEnabled(result.policy?.manualReviewEnabled !== false)
 		} catch (error) {
 			console.error("Unable to load document review queue.", error)
 			toast.error(error.message || "Unable to load document reviews.")
@@ -8390,11 +8395,23 @@ export default function AdminDashboard() {
 		const previous = documentPolicyMode
 		setDocumentPolicyMode(mode)
 		try {
-			await updateDocumentPolicy(mode)
+			await updateDocumentPolicy({ corMode: mode, manualReviewEnabled: manualDocumentReviewEnabled })
 			toast.success("COR intake policy updated.")
 		} catch (error) {
 			setDocumentPolicyMode(previous)
 			toast.error(error.message || "Unable to update the document policy.")
+		}
+	}
+
+	const toggleManualDocumentReview = async () => {
+		const next = !manualDocumentReviewEnabled
+		setManualDocumentReviewEnabled(next)
+		try {
+			await updateDocumentPolicy({ corMode: documentPolicyMode, manualReviewEnabled: next })
+			toast.success(next ? "Manual document review enabled." : "Automatic approval enabled for new validated submissions.")
+		} catch (error) {
+			setManualDocumentReviewEnabled(!next)
+			toast.error(error.message || "Unable to update the review policy.")
 		}
 	}
 
@@ -8712,7 +8729,8 @@ export default function AdminDashboard() {
 								<label>Status<select value={documentReviewFilter} onChange={(event) => setDocumentReviewFilter(event.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All statuses</option></select></label>
 								<label>Document<select value={documentReviewType} onChange={(event) => setDocumentReviewType(event.target.value)}><option value="">All documents</option><option value="cor">COR</option><option value="rog">ROG</option><option value="identity">Identity document</option><option value="profile">Application profile</option></select></label>
 								{adminIdentityRef.current?.role === "full_admin" ? <label>COR intake policy<select value={documentPolicyMode} onChange={(event) => saveDocumentPolicyMode(event.target.value)}><option value="cor_only">COR only</option><option value="advising_only">Advising Slip only</option><option value="either">COR or Advising Slip</option></select></label> : null}
-								<button type="button" data-button-variant="neutral" disabled={documentReviewLoading} onClick={loadDocumentReviewQueue}><HiOutlineRefresh /> Refresh</button>
+								{adminIdentityRef.current?.role === "full_admin" ? <div className="admin-document-review-toggle"><span><strong>Manual Document Review</strong><small>{manualDocumentReviewEnabled ? "New submissions wait for staff approval." : "New validated submissions are approved by the system."}</small></span><button type="button" className={`grantor-profile-switch ${manualDocumentReviewEnabled ? "active" : ""}`} role="switch" aria-checked={manualDocumentReviewEnabled} onClick={toggleManualDocumentReview} title="Toggle manual document review"><i /></button></div> : null}
+								<button type="button" className="admin-icon-button" data-button-variant="neutral" disabled={documentReviewLoading} onClick={loadDocumentReviewQueue} aria-label="Refresh document review queue" title="Refresh document review queue"><HiOutlineRefresh /></button>
 							</div>
 							{adminIdentityRef.current?.role === "full_admin" ? <div className="admin-document-exception-form"><strong>Individual exception</strong><input placeholder="Student ID" value={documentExceptionForm.studentId} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, studentId: event.target.value }))} /><select value={documentExceptionForm.exceptionType} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, exceptionType: event.target.value }))}><option value="advising_slip">Advising Slip</option><option value="lost_student_id">Lost Student ID</option></select><input placeholder="Required reason" value={documentExceptionForm.reason} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, reason: event.target.value }))} /><button type="button" data-button-variant="positive" onClick={grantDocumentException}><HiOutlineCheckCircle /> Record Exception</button></div> : null}
 							{documentReviewLoading ? <LoadingBars note="Loading document review queue..." /> : documentReviewRows.length === 0 ? (
@@ -9174,7 +9192,7 @@ export default function AdminDashboard() {
 								{ id: "scholarships", label: "Scholarships", count: scholarshipTabCounts.scholarships, icon: HiOutlineDocumentText },
 								{ id: "scholars", label: "Scholars", count: scholarshipTabCounts.scholars, icon: HiOutlineUsers },
 								{ id: "tracking", label: "Tracking", count: scholarshipTabCounts.tracking, icon: HiOutlineClock },
-								{ id: "serviced", label: "Administrator Serviced", count: scholarshipTabCounts.serviced, icon: HiOutlineArchive },
+								{ id: "serviced", label: "Scholarship Office Managed", count: scholarshipTabCounts.serviced, icon: HiOutlineArchive },
 								{ id: "warning", label: "Warning", count: scholarshipTabCounts.warning, icon: HiOutlineExclamation },
 								{ id: "archived", label: "Archived", count: scholarshipTabCounts.archived, icon: HiOutlineTrash },
 							]}
@@ -9371,7 +9389,7 @@ export default function AdminDashboard() {
 												: scholarshipTab === "tracking"
 													? "Search by student ID, student name, scholarship, current step, or status"
 											: scholarshipTab === "serviced"
-												? "Search administrator-serviced scholars by student, scholarship, or grantor"
+											? "Search Scholarship Office Managed records by student, scholarship, or grantor"
 													: scholarshipTab === "archived"
 															? "Search by student ID, student name, scholarship, or grantor"
 															: "Search by student ID, student name, scholarship, contact number, or grantor"
@@ -9388,6 +9406,7 @@ export default function AdminDashboard() {
 									/>
 								</div>
 							</div>
+							{scholarshipTab === "serviced" ? <div className="admin-managed-scholarship-note"><HiOutlineInformationCircle /><div><strong>Scholarship Office Managed</strong><p>The grantor account was archived, but the student's scholarship remains active. The scholarship office now manages the workflow, and the student cannot change or withdraw until the individual scholar record is archived.</p></div></div> : null}
 							<div className="admin-table-wrap admin-table-wrap--scholarships">
 								<table className={`admin-management-table admin-management-table--roomy admin-scholarship-table ${scholarshipTab === "tracking" ? "admin-scholarship-table--tracking" : ""}`}>
 									<thead>
@@ -10365,9 +10384,6 @@ export default function AdminDashboard() {
 							) : (
 								adminAnnouncementRows.map((item) => (
 									<article key={item.id} className={`admin-announcement-card-modern ${isAnnouncementArchived(item) ? "is-archived" : ""}`}>
-										<div className="admin-announcement-card-media">
-											{buildAnnouncementImageList(item)[0] ? <img src={buildAnnouncementImageList(item)[0]} alt={item.title || "Announcement"} /> : <span>{isAnnouncementArchived(item) ? <HiOutlineArchive /> : <HiOutlineBell />}</span>}
-										</div>
 										<div className="admin-announcement-card-body">
 											<div className="admin-announcement-card-top">
 												<span className={`type-badge-modern ${isAnnouncementArchived(item) ? "type-Archived" : `type-${item.type || "Update"}`}`}>{isAnnouncementArchived(item) ? "Archived" : item.type || "Update"}</span>
@@ -10435,9 +10451,6 @@ export default function AdminDashboard() {
 							) : (
 								compactAdminAnnouncements.map((item) => (
 									<article key={item.id} className="admin-announcement-card-modern">
-										<div className="admin-announcement-card-media">
-											{buildAnnouncementImageList(item)[0] ? <img src={buildAnnouncementImageList(item)[0]} alt={item.title || "Announcement"} /> : <span><HiOutlineBell /></span>}
-										</div>
 										<div className="admin-announcement-card-body">
 											<div className="admin-announcement-card-top">
 												<span className={`type-badge-modern type-${item.type || "Update"}`}>{item.type || "Update"}</span>
@@ -10617,34 +10630,6 @@ export default function AdminDashboard() {
 									onChange={(event) => { setAnnouncementDescription(event.target.value); setAnnouncementAudiencePreview(null) }}
 								/>
 							</label>
-							<div className="admin-announcement-images-field">
-								<input
-									id="announcement-images"
-									type="file"
-									accept="image/*"
-									multiple
-									onChange={handleAnnouncementFiles}
-								/>
-								<label htmlFor="announcement-images">
-									<HiOutlineCloudUpload />
-									<span>Add Images</span>
-									<small>{announcementImageFiles.length} selected</small>
-								</label>
-								{announcementDraftPreviews.length > 0 ? (
-									<div className="admin-announcement-preview-grid-modern">
-										{announcementDraftPreviews.map((item, index) => (
-											<article key={`${item.name}_${index}`}>
-												<button type="button" className="admin-announcement-preview-open" onClick={() => openAnnouncementImagePreview(item.url)} aria-label={`Preview ${item.name || "announcement image"}`}>
-													<img src={item.url} alt={item.name} />
-												</button>
-												<button type="button" className="admin-announcement-preview-remove" onClick={() => removeAnnouncementImage(index)} aria-label={`Remove ${item.name || "image"}`}>
-													<HiX />
-												</button>
-											</article>
-										))}
-									</div>
-								) : null}
-							</div>
 							<footer>
 								{announcementAudiencePreview ? <span className="admin-audience-preview-count"><HiOutlineUsers /> {announcementAudiencePreview.recipientCount} recipients in this 15-minute preview</span> : null}
 								<button type="button" className="admin-announcement-cancel-btn" onClick={closeCreateAdminAnnouncementModal} disabled={isPostingAnnouncement}>
@@ -10674,15 +10659,6 @@ export default function AdminDashboard() {
 							</div>
 							<button type="button" onClick={() => setSelectedAdminAnnouncement(null)} aria-label="Close announcement details"><HiX /></button>
 						</header>
-						{buildAnnouncementImageList(selectedAdminAnnouncement).length > 0 ? (
-							<div className="admin-announcement-view-gallery">
-								{buildAnnouncementImageList(selectedAdminAnnouncement).map((url) => (
-									<button key={`${selectedAdminAnnouncement.id}_${url}`} type="button" onClick={() => openAnnouncementImagePreview(url)}>
-										<img src={url} alt={selectedAdminAnnouncement.title || "Announcement"} />
-									</button>
-								))}
-							</div>
-						) : null}
 						<p className="admin-announcement-view-message">{selectedAdminAnnouncement.description || selectedAdminAnnouncement.content || "-"}</p>
 						<footer>
 							<span><HiOutlineClock /> {selectedAdminAnnouncement.startDate || selectedAdminAnnouncement.endDate ? `${toDateString(selectedAdminAnnouncement.startDate)} - ${toDateString(selectedAdminAnnouncement.endDate)}` : "No schedule set"}</span>
@@ -10844,6 +10820,14 @@ export default function AdminDashboard() {
 									<span>Classification</span>
 									<select value={grantorForm.classification} onChange={(event) => updateGrantorForm("classification", event.target.value)}><option value="government">Government</option><option value="private">Private</option><option value="other">Others</option></select>
 								</label>
+								<div className="admin-grantor-field admin-grantor-scope-toggle">
+									<span>Enforce Location Scope</span>
+									<button type="button" className={`grantor-profile-switch ${grantorForm.scopeEnabled ? "active" : ""}`} role="switch" aria-checked={grantorForm.scopeEnabled} onClick={() => updateGrantorForm("scopeEnabled", !grantorForm.scopeEnabled)}><i /></button>
+								</div>
+								{grantorForm.scopeEnabled ? <>
+									<label className="admin-grantor-field"><span>Scope Name</span><input type="text" value={grantorForm.scopeName} onChange={(event) => updateGrantorForm("scopeName", event.target.value)} placeholder="Example: District 2" /></label>
+									<label className="admin-grantor-field admin-grantor-field--wide"><span>Approved Cities / Municipalities</span><textarea value={grantorForm.municipalities} onChange={(event) => updateGrantorForm("municipalities", event.target.value)} placeholder="One city or municipality per line" rows="4" /><small>Applications are checked against the student's self-declared permanent address.</small></label>
+								</> : null}
 								<label className="admin-grantor-field">
 									<span>Grantor ID</span>
 									<input

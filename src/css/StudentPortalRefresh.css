@@ -1148,6 +1148,55 @@
 
 .student-history-error { color: #b42318; }
 
+.student-history-hero { grid-template-columns: 1fr; }
+.student-history-table-wrap { overflow-x: auto; border: 1px solid #d7e4df; border-radius: 6px; }
+.student-history-table { width: 100%; min-width: 780px; border-collapse: collapse; background: #fff; }
+.student-history-table th,
+.student-history-table td { padding: .9rem 1rem; border-bottom: 1px solid #e2ebe7; text-align: left; vertical-align: top; }
+.student-history-table th { background: #f1f7f4; color: #25443a; font-size: .78rem; text-transform: uppercase; }
+.student-history-table td { color: #344c44; }
+.student-history-table td:nth-child(2) { min-width: 280px; color: #102a22; font-weight: 700; }
+.student-history-table td:nth-child(4) { text-transform: capitalize; }
+.student-history-view { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+.student-history-detail-row > td { background: #f7fbf9; padding: 1rem 1.25rem; }
+.student-history-detail-row dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: .75rem 0 0; }
+.student-history-detail-row dl > div { min-width: 0; }
+.student-history-detail-row dt { color: #60766d; font-size: .72rem; font-weight: 700; text-transform: capitalize; }
+.student-history-detail-row dd { margin: .2rem 0 0; overflow-wrap: anywhere; color: #17342a; }
+.student-dashboard--dark .student-history-table-wrap { border-color: #31554a; }
+.student-dashboard--dark .student-history-table { background: #122a23; }
+.student-dashboard--dark .student-history-table th { background: #19372e; color: #b9e8d4; }
+.student-dashboard--dark .student-history-table td { border-color: #29483f; color: #d3e6de; }
+.student-dashboard--dark .student-history-table td:nth-child(2),
+.student-dashboard--dark .student-history-detail-row dd { color: #f1faf6; }
+.student-dashboard--dark .student-history-detail-row > td { background: #17332b; }
+
+.student-account-profile-card { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 1.5rem; align-items: center; margin-bottom: 1.25rem; padding: 1.35rem; border: 1px solid #d6e5df; border-radius: 6px; background: #fff; }
+.student-account-profile-photo { display: grid; justify-items: center; gap: .65rem; text-align: center; }
+.student-account-profile-photo > img,
+.student-account-profile-photo > span { width: 112px; height: 112px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: #e2f2eb; color: #006d46; font-size: 1.65rem; font-weight: 800; }
+.student-account-profile-photo label { display: inline-flex; align-items: center; gap: .4rem; color: #006d46; font-weight: 700; cursor: pointer; }
+.student-account-profile-photo label input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.student-account-profile-photo small { color: #62766f; line-height: 1.45; }
+.student-account-profile-main > span,
+.student-document-vault header span { color: #00734a; font-size: .75rem; font-weight: 800; text-transform: uppercase; }
+.student-account-profile-main h2 { margin: .25rem 0; color: #102a22; font-size: 1.75rem; }
+.student-account-profile-main p { margin: 0 0 .5rem; color: #61756e; }
+.student-profile-editor--account { margin-bottom: 1.25rem; }
+.student-document-vault header { margin-bottom: 1rem; }
+.student-document-disabled-reason { display: block; margin-top: .45rem; color: #9b4f00; font-weight: 700; }
+.student-withdrawal-cooldown { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: .9rem; align-items: start; margin: 0 0 1rem; padding: 1rem 1.1rem; border: 1px solid #e5ae49; border-left: 5px solid #c77900; border-radius: 6px; background: #fff8e8; color: #563500; }
+.student-withdrawal-cooldown > svg { width: 26px; height: 26px; margin-top: .15rem; }
+.student-withdrawal-cooldown span { font-size: .72rem; font-weight: 900; text-transform: uppercase; }
+.student-withdrawal-cooldown h3 { margin: .2rem 0; font-size: 1.05rem; }
+.student-withdrawal-cooldown p { margin: 0 0 .35rem; }
+.student-withdrawal-cooldown strong { display: block; }
+.student-dashboard--dark .student-withdrawal-cooldown { border-color: #ad781e; background: #382b13; color: #ffe6ad; }
+.student-dashboard--dark .student-account-profile-card { background: #122a23; border-color: #31554a; }
+.student-dashboard--dark .student-account-profile-main h2 { color: #f2fbf7; }
+.student-dashboard--dark .student-account-profile-photo small,
+.student-dashboard--dark .student-account-profile-main p { color: #a9c1b8; }
+
 .student-dashboard--dark .student-history-icon { background: #173c31; color: #75ddb6; }
 
 .student-signed-soe-upload {
@@ -1163,5 +1212,7 @@
 
 @media (max-width: 640px) {
 	.student-history-filters { grid-template-columns: 1fr; }
-	.student-history-entry { grid-template-columns: 42px 1fr 36px; }
+	.student-history-detail-row dl { grid-template-columns: 1fr; }
+	.student-account-profile-card { grid-template-columns: 1fr; text-align: center; }
+	.student-account-profile-main { min-width: 0; }
 }

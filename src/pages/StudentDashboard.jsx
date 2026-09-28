@@ -55,7 +55,6 @@ import {
 import {
 	buildRecommendationApplyPayload,
 	getRecommendationAnnouncementPath,
-	getRecommendationImageUrl,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
 import { isScholarshipActiveOrPending } from "../services/announcementApplyEligibilityService"
@@ -1149,15 +1148,9 @@ export default function StudentDashboard() {
 										const grantorInitials = getNameInitials(recommendation.grantorName, "GR")
 								const applyingId = recommendation.grantorId || recommendation.id
 								const slotState = getScholarshipSlotState({ ...recommendation, source: "grantor" })
-								const recommendationImage = getRecommendationImageUrl(recommendation)
 								const announcementPath = getRecommendationAnnouncementPath(recommendation)
 										return (
 											<article key={applyingId} className="student-modern-recommendation-card">
-												<div className="student-modern-recommendation-media">
-											{recommendationImage ? (
-												<img src={recommendationImage} alt={recommendation.announcementTitle || "Recommended scholarship"} />
-													) : <span>{grantorInitials}</span>}
-												</div>
 												<div className="student-modern-recommendation-top">
 													<span className="student-modern-recommendation-avatar">
 														{recommendation.profileImageUrl || recommendation.authorImageUrl ? (

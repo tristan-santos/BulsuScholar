@@ -93,7 +93,13 @@ def list_student_history(request: Request, page: int, page_size: int, cycle: str
     offset = (page - 1) * page_size
     query = "&".join([*filters, "select=id,event_type,academic_cycle,occurred_at,related_type,related_id,route,description,safe_data", "order=occurred_at.desc,id.desc", f"limit={page_size}", f"offset={offset}"])
     rows = _rest("student_history_events", query=query) or []
-    return {"ok": True, "events": rows, "page": page, "pageSize": page_size, "hasMore": len(rows) == page_size}
+    cycle_query = "&".join([
+        f"student_id=eq.{urllib.parse.quote(student_id, safe='')}",
+        "select=academic_cycle", "academic_cycle=not.is.null", "order=academic_cycle.desc", "limit=1000",
+    ])
+    cycle_rows = _rest("student_history_events", query=cycle_query) or []
+    cycles = sorted({str(item.get("academic_cycle") or "").strip() for item in cycle_rows if item.get("academic_cycle")}, reverse=True)
+    return {"ok": True, "events": rows, "cycles": cycles, "page": page, "pageSize": page_size, "hasMore": len(rows) == page_size}
 
 
 async def upload_signed_soe(request: Request, application_id: str, file: UploadFile) -> dict[str, Any]:

@@ -15,11 +15,11 @@ from fastapi import HTTPException, Request
 try:
     from .access_control import require_admin_bearer, require_supabase_user
     from .email_service import send_email_notification
-    from .supabase_ops import supabase_admin_create_user, supabase_document_get, supabase_document_upsert, supabase_rpc, supabase_select
+    from .supabase_ops import supabase_admin_create_user, supabase_document_delete, supabase_document_get, supabase_document_upsert, supabase_rpc, supabase_select
 except ImportError:  # pragma: no cover
     from access_control import require_admin_bearer, require_supabase_user
     from email_service import send_email_notification
-    from supabase_ops import supabase_admin_create_user, supabase_document_get, supabase_document_upsert, supabase_rpc, supabase_select
+    from supabase_ops import supabase_admin_create_user, supabase_document_delete, supabase_document_get, supabase_document_upsert, supabase_rpc, supabase_select
 
 
 ACCOUNT_TABLES = (
@@ -451,8 +451,17 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
     grantor_id = str(payload.get("providerId") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
     password = str(payload.get("temporaryPassword") or "")
+    classification = str(payload.get("grantorClassification") or "other").strip().lower()
+    scope = payload.get("locationScope") if isinstance(payload.get("locationScope"), dict) else {}
+    municipalities = list(dict.fromkeys(
+        str(value or "").strip()[:100] for value in scope.get("municipalities") or [] if str(value or "").strip()
+    ))
     if not grantor_id or not email or len(password) < 8:
         raise HTTPException(status_code=422, detail="invalid_grantor_auth_record")
+    if classification not in {"government", "private", "other"}:
+        raise HTTPException(status_code=422, detail="invalid_grantor_classification")
+    if scope.get("enabled") is True and not municipalities:
+        raise HTTPException(status_code=422, detail="scope_municipalities_required")
     if supabase_document_get("providers", grantor_id).get("row"):
         raise HTTPException(status_code=409, detail="grantor_id_already_exists")
     auth = supabase_admin_create_user(
@@ -465,6 +474,23 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
     if not auth.get("ok"):
         raise HTTPException(status_code=409, detail=auth.get("reason") or "grantor_auth_creation_failed")
     auth_user_id = str((auth.get("user") or {}).get("id") or "")
+
+    def compensate_created_grantor() -> None:
+        supabase_document_delete("grantor_portals", grantor_id)
+        supabase_document_delete("providers", grantor_id)
+        if not auth_user_id:
+            return
+        try:
+            supabase_url, service_key = _config()
+            delete_request = urllib.request.Request(
+                f"{supabase_url}/auth/v1/admin/users/{urllib.parse.quote(auth_user_id)}",
+                headers={"apikey": service_key, "Authorization": f"Bearer {service_key}"},
+                method="DELETE",
+            )
+            urllib.request.urlopen(delete_request, timeout=20).close()
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+            pass
+
     record = {
         **{key: value for key, value in payload.items() if key not in {"temporaryPassword", "password"}},
         "providerId": grantor_id,
@@ -479,5 +505,19 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
     provider = supabase_document_upsert("providers", grantor_id, record, merge=False)
     portal = supabase_document_upsert("grantor_portals", grantor_id, record, merge=True)
     if not provider.get("ok") or not portal.get("ok"):
+        compensate_created_grantor()
         raise HTTPException(status_code=503, detail="grantor_record_creation_failed")
-    return {"ok": True, "grantor": {key: value for key, value in record.items() if "password" not in key.lower()}}
+    scope_result = supabase_rpc("save_grantor_scope_policy", {
+        "p_grantor_id": grantor_id, "p_classification": classification,
+        "p_name": str(scope.get("name") or "").strip()[:120],
+        "p_enabled": scope.get("enabled") is True,
+        "p_municipalities": municipalities, "p_actor_id": actor_id,
+    })
+    if not scope_result.get("ok"):
+        compensate_created_grantor()
+        raise HTTPException(status_code=503, detail=scope_result.get("reason") or "grantor_scope_creation_failed")
+    return {
+        "ok": True,
+        "grantor": {key: value for key, value in record.items() if "password" not in key.lower()},
+        "scope": scope_result.get("data") or {},
+    }

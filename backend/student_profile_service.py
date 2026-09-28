@@ -47,11 +47,13 @@ except ImportError:  # pragma: no cover
 PROFILE_FIELDS = {
     "fname", "mname", "lname", "extension", "email", "cpNumber", "birthDate",
     "guardianName", "guardianContact", "college", "course", "major", "year", "section",
-    "profileImageUrl", "permanentAddress", "currentAddress",
+    "profileImage", "profileImageUrl", "permanentAddress", "currentAddress",
 }
 DOCUMENT_TYPES = {"cor", "rog", "identity"}
 ALLOWED_DOCUMENT_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
+ALLOWED_PHOTO_TYPES = {"image/png", "image/jpeg", "image/webp"}
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
+MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
 
 def _now() -> str:
@@ -117,7 +119,11 @@ def _data_rows(table: str, filters: dict[str, Any], limit: int = 500) -> list[di
 def _policy() -> dict[str, Any]:
     data = (supabase_document_get("system_configuration", "document_policy").get("data") or {})
     mode = str(data.get("corMode") or "cor_only")
-    return {**data, "corMode": mode if mode in {"cor_only", "advising_only", "either"} else "cor_only"}
+    return {
+        **data,
+        "corMode": mode if mode in {"cor_only", "advising_only", "either"} else "cor_only",
+        "manualReviewEnabled": data.get("manualReviewEnabled") is not False,
+    }
 
 
 def _requirements(student: dict[str, Any], cycle: str, semester: str) -> dict[str, Any]:
@@ -210,6 +216,13 @@ def _address_text(address: dict[str, Any]) -> str:
 
 
 def _profile_photo_bytes(profile: dict[str, Any]) -> bytes | None:
+    reference = profile.get("profileImage") if isinstance(profile.get("profileImage"), dict) else {}
+    if reference.get("path"):
+        try:
+            body = _read_storage(reference)
+            return body if 0 < len(body) <= MAX_PHOTO_BYTES else None
+        except HTTPException:
+            return None
     raw_url = str(profile.get("profileImageUrl") or "").strip()
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -245,6 +258,8 @@ def _validate_profile(profile: dict[str, Any]) -> None:
     missing.extend(f"permanentAddress.{key}" for key in ("street", "barangay", "city", "province", "postalCode") if not str(address.get(key) or "").strip())
     if missing:
         raise HTTPException(status_code=422, detail={"code": "profile_incomplete", "fields": missing})
+    if not _profile_photo_bytes(profile):
+        raise HTTPException(status_code=422, detail={"code": "profile_photo_required", "fields": ["profileImage"]})
 
 
 def _profile_pdf(
@@ -429,6 +444,56 @@ def get_student_profile_workspace(request: Request) -> dict[str, Any]:
     }
 
 
+async def upload_student_profile_photo(request: Request, file: UploadFile) -> dict[str, Any]:
+    student_id = _student_id(request)
+    student = _require_student(student_id)
+    body = await file.read(MAX_PHOTO_BYTES + 1)
+    content_type = str(file.content_type or "").lower()
+    if not body or len(body) > MAX_PHOTO_BYTES or content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(status_code=422, detail="invalid_profile_photo")
+    try:
+        image = Image.open(io.BytesIO(body))
+        image.verify()
+    except Exception as error:
+        raise HTTPException(status_code=422, detail="invalid_profile_photo") from error
+    extension = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[content_type]
+    reference = _store_bytes(
+        f"students/{student_id}/profile-photo/{uuid4().hex}{extension}",
+        body,
+        content_type,
+    )
+    photo = {**reference, "uploadedAt": _now(), "name": file.filename or f"profile-photo{extension}"}
+    update = {
+        "profileImage": photo,
+        "profileImageUrl": "/student/profile/photo/content",
+        "updatedAt": _now(),
+    }
+    if not supabase_document_update("students", student_id, update).get("ok"):
+        raise HTTPException(status_code=503, detail="profile_photo_save_failed")
+    draft = supabase_document_get("student_profile_drafts", student_id)
+    if draft.get("row"):
+        supabase_document_update("student_profile_drafts", student_id, update)
+    create_log({
+        "action": "student_profile_photo_updated", "actorId": student_id,
+        "actorType": "student", "target": student_id, "createdAt": _now(),
+    })
+    return {"ok": True, "photo": photo, "profileImageUrl": update["profileImageUrl"]}
+
+
+def student_profile_photo_content(request: Request) -> Response:
+    student_id = _student_id(request)
+    student = _require_student(student_id)
+    reference = student.get("profileImage") if isinstance(student.get("profileImage"), dict) else {}
+    if not reference.get("path"):
+        raise HTTPException(status_code=404, detail="profile_photo_not_found")
+    body = _read_storage(reference)
+    return Response(
+        content=body,
+        media_type=str(reference.get("type") or "image/jpeg"),
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 def save_student_profile_draft(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     student_id = _student_id(request)
     student = _require_student(student_id)
@@ -467,6 +532,48 @@ def preview_student_profile(request: Request, payload: dict[str, Any]) -> Respon
         media_type="application/pdf",
         headers={"Content-Disposition": 'inline; filename="Student_Application_Profile_Draft.pdf"'},
     )
+
+
+def _system_approve_submission(submission_id: str, submission: dict[str, Any], student: dict[str, Any]) -> dict[str, Any]:
+    reviewed_at = _now()
+    update = {
+        "status": "approved", "rejectionReason": "", "reviewNotes": "",
+        "fieldErrors": {}, "reviewedBy": "system", "reviewedAt": reviewed_at,
+        "updatedAt": reviewed_at, "completionSource": "automatic_document_policy",
+    }
+    if not supabase_document_update("student_document_submissions", submission_id, update).get("ok"):
+        raise HTTPException(status_code=503, detail="automatic_document_review_failed")
+    supabase_document_upsert("student_document_reviews", f"review_{submission_id}_system", {
+        "submissionId": submission_id, "studentId": submission.get("studentId"),
+        "reviewerId": "system", "reviewerRole": "system", "decision": "approved",
+        "reason": "", "notes": "Automatically approved under the active document policy.",
+        "fieldErrors": {}, "completionSource": "automatic_document_policy", "createdAt": reviewed_at,
+    }, merge=False)
+    if submission.get("profileRevisionId"):
+        supabase_document_update("student_profile_revisions", str(submission["profileRevisionId"]), update)
+    student_id = str(submission.get("studentId") or "")
+    student = _require_student(student_id)
+    cycle, semester = _cycle()
+    compatibility_key = {"cor": "corFile", "rog": "cogFile", "identity": "schoolIdFile"}.get(str(submission.get("documentType")))
+    if compatibility_key:
+        old_file = student.get(compatibility_key) if isinstance(student.get(compatibility_key), dict) else {}
+        if old_file.get("submissionId") == submission_id:
+            supabase_document_update("students", student_id, {compatibility_key: {**old_file, "reviewStatus": "approved", "rejectionReason": ""}})
+    if submission.get("documentType") == "profile":
+        _create_application_snapshots(student_id, submission, str(submission.get("profileRevisionId") or ""))
+    summary = _sync_verification(student_id, student, cycle, semester)
+    _notify_once(
+        student_id, str(submission.get("academicCycle") or cycle), f"{submission_id}:approved",
+        "Document approved", f"Your {str(submission.get('documentType') or 'document').replace('_', ' ')} was approved automatically.",
+        f"/student-dashboard/profile#{submission.get('documentType')}",
+    )
+    _notify_next_requirement(student_id, str(submission.get("academicCycle") or cycle), summary)
+    create_log({
+        "action": "student_document_auto_approved", "actorId": "system", "actorType": "system",
+        "target": submission_id, "details": {"decision": "approved", "studentId": student_id},
+        "createdAt": reviewed_at,
+    })
+    return {**submission, **update}
 
 
 def submit_student_profile(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
@@ -509,8 +616,12 @@ def submit_student_profile(request: Request, payload: dict[str, Any]) -> dict[st
         "updatedAt": _now(),
     })
     supabase_document_update("student_profile_drafts", student_id, {"status": "submitted", "submittedRevisionId": revision_id})
-    _sync_verification(student_id, student, cycle, semester)
-    _notify_once(student_id, cycle, f"profile:{submission_id}:pending", "Profile submitted", "Your Student Application Profile is waiting for document review.", "/student-dashboard/profile#application-profile")
+    if not _policy()["manualReviewEnabled"]:
+        submission = _system_approve_submission(submission_id, submission, student)
+        revision = {**revision, "status": "approved", "reviewedBy": "system"}
+    else:
+        _sync_verification(student_id, student, cycle, semester)
+        _notify_once(student_id, cycle, f"profile:{submission_id}:pending", "Profile submitted", "Your Student Application Profile is waiting for document review.", "/student-dashboard/profile#profile")
     return {"ok": True, "revision": {"id": revision_id, **revision}, "submission": {"id": submission_id, **submission}}
 
 
@@ -574,8 +685,11 @@ async def upload_student_document(request: Request, document_type: str, file: Up
         "semesterTag": cycle, "submissionId": submission_id, "reviewStatus": "pending",
     }
     supabase_document_update("students", student_id, {compatibility_key: compatibility, "updatedAt": _now()})
-    _sync_verification(student_id, student, cycle, semester)
-    _notify_once(student_id, cycle, f"{document_type}:{submission_id}:pending", f"{document_type.upper()} submitted", "Your document is waiting for review.", f"/student-dashboard/profile#{document_type}")
+    if not _policy()["manualReviewEnabled"]:
+        submission = _system_approve_submission(submission_id, submission, student)
+    else:
+        _sync_verification(student_id, student, cycle, semester)
+        _notify_once(student_id, cycle, f"{document_type}:{submission_id}:pending", f"{document_type.upper()} submitted", "Your document is waiting for review.", f"/student-dashboard/profile#{document_type}")
     return {"ok": True, "submission": {"id": submission_id, **submission}}
 
 
@@ -773,12 +887,19 @@ def document_content(request: Request, submission_id: str) -> Response:
 
 def update_document_policy(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     reviewer_id, _ = _reviewer(request, full_admin=True)
-    mode = str(payload.get("corMode") or "")
+    current = _policy()
+    mode = str(payload.get("corMode") or current["corMode"])
     if mode not in {"cor_only", "advising_only", "either"}:
         raise HTTPException(status_code=422, detail="invalid_cor_mode")
-    data = {**_policy(), "corMode": mode, "updatedBy": reviewer_id, "updatedAt": _now()}
+    manual_review_enabled = payload.get("manualReviewEnabled", current["manualReviewEnabled"])
+    if not isinstance(manual_review_enabled, bool):
+        raise HTTPException(status_code=422, detail="invalid_manual_review_policy")
+    data = {
+        **current, "corMode": mode, "manualReviewEnabled": manual_review_enabled,
+        "updatedBy": reviewer_id, "updatedAt": _now(),
+    }
     supabase_document_upsert("system_configuration", "document_policy", data, merge=False)
-    create_log({"action": "document_policy_updated", "actorId": reviewer_id, "actorType": "admin", "target": "document_policy", "details": {"corMode": mode}, "createdAt": _now()})
+    create_log({"action": "document_policy_updated", "actorId": reviewer_id, "actorType": "admin", "target": "document_policy", "details": {"corMode": mode, "manualReviewEnabled": manual_review_enabled}, "createdAt": _now()})
     return {"ok": True, "policy": data}
 
 

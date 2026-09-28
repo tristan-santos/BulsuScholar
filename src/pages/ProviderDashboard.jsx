@@ -541,12 +541,6 @@ function formatAnnouncementWindow(startDate, endDate) {
 	return endDate ? `${format(startDate)} - ${format(endDate)}` : `${format(startDate)} - Select end date`
 }
 
-function buildAnnouncementImageList(item = {}) {
-	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
-	const imageObjects = Array.isArray(item.images) ? item.images.map((image) => image?.url).filter(Boolean) : []
-	return [...new Set([item.imageUrl, ...imageUrls, ...imageObjects].filter(Boolean))]
-}
-
 function getGrantorNotificationCategory(notification = {}) {
 	const type = String(notification.type || "").toLowerCase()
 	if (type.includes("password") || type.includes("security")) return "Account Security"
@@ -940,7 +934,7 @@ export default function ProviderDashboard() {
 	const [editScholarLockedProfile, setEditScholarLockedProfile] = useState(null)
 	const [announcementForm, setAnnouncementForm] = useState(ANNOUNCEMENT_FORM)
 	const [announcementSubmitAttempted, setAnnouncementSubmitAttempted] = useState(false)
-	const [announcementAudience, setAnnouncementAudience] = useState({ type: "scholarship_applicants", applicationStatus: "", documentState: "", trackingStage: "", academicCycle: "", course: "", yearLevel: "" })
+	const [announcementAudience, setAnnouncementAudience] = useState({ type: "scholarship_applicants", applicationStatus: "", course: "", yearLevel: "" })
 	const [announcementAudiencePreview, setAnnouncementAudiencePreview] = useState(null)
 	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
 	const [announcementImagePreviews, setAnnouncementImagePreviews] = useState([])
@@ -1581,6 +1575,19 @@ export default function ProviderDashboard() {
 			}
 		})
 	}, [applicationMaterialRequests, applicationSoeDownloads, applicationStudents, applications, grantorName, scholars])
+	const applicationFilterOptions = useMemo(() => {
+		const unique = (values) => [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+		return {
+			status: unique(enrichedApplications.map((row) => row.status)),
+			location: unique(enrichedApplications.map((row) => row.city || row.location || row.permanentAddress?.city)),
+			scholarship: unique(enrichedApplications.map((row) => row.scholarshipName)),
+			cycle: unique(enrichedApplications.map((row) => row.academicCycle || row.semesterTag)),
+			documentState: unique(enrichedApplications.map((row) => row.documentReviewStatus || row.documentState)),
+			trackingStage: unique(enrichedApplications.map((row) => row.currentStep || row.trackingStage)),
+			course: unique(enrichedApplications.map((row) => row.course || applicationStudents[row.studentId]?.course)),
+			yearLevel: unique(enrichedApplications.map((row) => row.yearLevel || applicationStudents[row.studentId]?.year)),
+		}
+	}, [applicationStudents, enrichedApplications])
 
 	const isRejectedApplication = (row = {}) => {
 		const status = String(row.status || "").toLowerCase()
@@ -3419,37 +3426,6 @@ export default function ProviderDashboard() {
 		}
 	}
 
-	const handleAnnouncementImageSelect = (event) => {
-		const selectedFiles = Array.from(event.target.files || [])
-		const imageFiles = selectedFiles.filter((file) => file.type?.startsWith("image/"))
-		if (selectedFiles.length !== imageFiles.length) {
-			toast.warning("Only image files can be attached to announcements.")
-		}
-		if (imageFiles.length === 0) {
-			event.target.value = ""
-			return
-		}
-		const availableSlots = Math.max(0, 5 - announcementImageFiles.length)
-		if (availableSlots === 0) {
-			toast.warning("You can upload up to 5 announcement images only.")
-			event.target.value = ""
-			return
-		}
-		if (imageFiles.length > availableSlots) {
-			toast.warning(`Only ${availableSlots} more image${availableSlots === 1 ? "" : "s"} can be added.`)
-		}
-		setAnnouncementImageFiles((prev) => [...prev, ...imageFiles.slice(0, availableSlots)])
-		event.target.value = ""
-	}
-
-	const removeAnnouncementImage = (index) => {
-		setAnnouncementImageFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
-	}
-
-	const openAnnouncementImagePreview = (url) => {
-		setAnnouncementImagePreview(url)
-	}
-
 	const closeAnnouncementImagePreview = () => {
 		setAnnouncementImagePreview("")
 	}
@@ -3639,9 +3615,6 @@ export default function ProviderDashboard() {
 				grantorId,
 				announcementId: selectedActiveScholarshipOffering?.id || "",
 				applicationStatus: announcementAudience.applicationStatus,
-				documentState: announcementAudience.documentState,
-				trackingStage: announcementAudience.trackingStage,
-				academicCycle: announcementAudience.academicCycle,
 				course: announcementAudience.course,
 				yearLevel: announcementAudience.yearLevel,
 			}
@@ -3657,7 +3630,7 @@ export default function ProviderDashboard() {
 				composerSlotDraft,
 				windowStart: announcementWindowStart,
 				windowEnd: announcementWindowEnd,
-				images: announcementImageFiles.map((file) => [file.name, file.size, file.lastModified]),
+				images: [],
 				applicationForm: announcementApplicationProfileFile
 					? [announcementApplicationProfileFile.name, announcementApplicationProfileFile.size, announcementApplicationProfileFile.lastModified]
 					: null,
@@ -3668,10 +3641,8 @@ export default function ProviderDashboard() {
 					id: globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`,
 				}
 			}
-			const uploads = await withPublishTimeout(
-				Promise.all(announcementImageFiles.map((file) => uploadToStorage(file, { folder: `grantor-announcements/${grantorId}` }))),
-			)
-			const imageUrls = uploads.map((item) => item.url).filter(Boolean)
+			const uploads = []
+			const imageUrls = []
 			const applicationProfileUpload = announcementApplicationProfileFile
 				? await withPublishTimeout(uploadToStorage(announcementApplicationProfileFile, {
 					folder: `grantor-application-profiles/${grantorId}`,
@@ -3923,14 +3894,10 @@ export default function ProviderDashboard() {
 	}
 
 	const renderAnnouncementCard = (item) => {
-		const imageUrls = buildAnnouncementImageList(item)
 		const archived = isAnnouncementArchived(item)
 		const slotState = getScholarshipSlotState(item)
 		return (
 			<article key={item.id} className={`grantor-announcement-card ${archived ? "is-archived" : ""}`}>
-				<div className="grantor-announcement-card-media">
-					{imageUrls[0] ? <img src={imageUrls[0]} alt={item.title || "Announcement"} /> : <span><HiOutlineBell /></span>}
-				</div>
 				<div className="grantor-announcement-card-body">
 					<div className="grantor-announcement-card-top"><span className={`grantor-announcement-status ${archived ? "is-archived" : ""}`}>{archived ? "Archived" : item.status || "Open"}</span><time>{formatRelativeDate(item.createdAt)}</time></div>
 					{renderAnnouncementAuthor(item)}
@@ -4616,12 +4583,7 @@ export default function ProviderDashboard() {
 						</div>
 						<div className="grantor-applications-filters">
 							<label className="grantor-search-field"><HiOutlineSearch /><input type="text" aria-label="Search applications" placeholder="Search applicant, ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
-							<label><span>Status</span><input value={applicationFilters.status} onChange={(event) => setApplicationFilters((current) => ({ ...current, status: event.target.value }))} placeholder="Any status" /></label>
-							<label><span>Location</span><input value={applicationFilters.location} onChange={(event) => setApplicationFilters((current) => ({ ...current, location: event.target.value }))} placeholder="City or municipality" /></label>
-							<label><span>Scholarship</span><input value={applicationFilters.scholarship} onChange={(event) => setApplicationFilters((current) => ({ ...current, scholarship: event.target.value }))} placeholder="Any scholarship" /></label>
-							<label><span>Academic cycle</span><input value={applicationFilters.cycle} onChange={(event) => setApplicationFilters((current) => ({ ...current, cycle: event.target.value }))} placeholder="Example: 2026-2027-1ST" /></label>
-							<label><span>Document review</span><input value={applicationFilters.documentState} onChange={(event) => setApplicationFilters((current) => ({ ...current, documentState: event.target.value }))} placeholder="Pending, approved..." /></label>
-							<label><span>Tracking stage</span><input value={applicationFilters.trackingStage} onChange={(event) => setApplicationFilters((current) => ({ ...current, trackingStage: event.target.value }))} placeholder="Current stage" /></label>
+							{[["status", "Status", "Any status"], ["location", "Location", "Any location"], ["scholarship", "Scholarship", "Any scholarship"], ["cycle", "Academic cycle", "Any cycle"], ["documentState", "Document review", "Any review state"], ["trackingStage", "Tracking stage", "Any stage"]].map(([key, label, allLabel]) => <label key={key}><span>{label}</span><select value={applicationFilters[key]} onChange={(event) => setApplicationFilters((current) => ({ ...current, [key]: event.target.value }))}><option value="">{allLabel}</option>{applicationFilterOptions[key].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>)}
 							<button
 								type="button"
 								className="grantor-date-sort-btn"
@@ -4923,30 +4885,8 @@ export default function ProviderDashboard() {
 												</label>
 											) : null}
 										</div>
-										<div className="grantor-announcement-audience-grid"><label><span>Recipients</span><select value={announcementAudience.type} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, type: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="scholarship_applicants">Scholarship applicants</option><option value="active_scholars">Active scholars</option></select></label><label><span>Application status (optional)</span><input value={announcementAudience.applicationStatus} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, applicationStatus: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: Under Review" /></label><label><span>Document review state (optional)</span><input value={announcementAudience.documentState} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, documentState: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: Approved" /></label><label><span>Tracking stage (optional)</span><input value={announcementAudience.trackingStage} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, trackingStage: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: document_review" /></label><label><span>Academic cycle (optional)</span><input value={announcementAudience.academicCycle} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, academicCycle: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: 2026-2027-1ST" /></label><label><span>Course (optional)</span><input value={announcementAudience.course} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, course: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Exact course name" /></label><label><span>Year level (optional)</span><input value={announcementAudience.yearLevel} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, yearLevel: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: 2" /></label></div>
+										<div className="grantor-announcement-audience-grid"><label><span>Recipients</span><select value={announcementAudience.type} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, type: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="all_active">All Students</option><option value="scholarship_applicants">Scholarship Applicants</option><option value="active_scholars">Active Scholars</option></select></label><label><span>Application status (optional)</span><select value={announcementAudience.applicationStatus} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, applicationStatus: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any status</option>{applicationFilterOptions.status.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span>Course (optional)</span><select value={announcementAudience.course} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, course: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any course</option>{applicationFilterOptions.course.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span>Year level (optional)</span><select value={announcementAudience.yearLevel} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, yearLevel: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any year</option>{applicationFilterOptions.yearLevel.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div>
 										<label className="grantor-announcement-message"><span>Message</span><textarea className={announcementSubmitAttempted && announcementMissingFields.description ? "is-missing" : ""} placeholder="Describe the scholarship opening, deadlines, requirements, and next steps." value={announcementForm.description} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, description: event.target.value }))} /></label>
-										<div className="grantor-announcement-images">
-											<input id="grantor-announcement-images" type="file" accept="image/*" multiple onChange={handleAnnouncementImageSelect} disabled={announcementImageFiles.length >= 5 || busy === "announcement"} />
-											<label htmlFor="grantor-announcement-images" className={announcementImageFiles.length >= 5 ? "is-disabled" : ""}>
-												<HiOutlineCamera />
-												<span>Add Images</span>
-												<small>{announcementImageFiles.length}/5 selected</small>
-											</label>
-											{announcementImagePreviews.length > 0 ? (
-												<div className="grantor-announcement-preview-grid">
-													{announcementImagePreviews.map((item, index) => (
-														<article key={`${item.name}_${index}`} className="grantor-announcement-preview-card">
-															<button type="button" className="grantor-announcement-preview-open" onClick={() => openAnnouncementImagePreview(item.url)} aria-label={`Preview ${item.name || "announcement image"}`}>
-																<img src={item.url} alt={item.name || "Announcement preview"} />
-															</button>
-															<button type="button" className="grantor-announcement-preview-remove" onClick={() => removeAnnouncementImage(index)} aria-label={`Remove ${item.name || "image"}`}>
-																<HiX />
-															</button>
-														</article>
-													))}
-												</div>
-											) : null}
-										</div>
 										<div className="grantor-announcement-compose-actions"><small>{announcementAudiencePreview ? `${announcementAudiencePreview.recipientCount} recipients in this 15-minute preview.` : announcementForm.applicationEnabled ? "Students can apply from this announcement." : "This announcement will be visible to the selected students."}</small><button type="submit" disabled={busy === "announcement"}><HiOutlineCloudUpload /> {busy === "announcement" ? "Working..." : announcementAudiencePreview ? "Publish Announcement" : "Preview Recipients"}</button></div>
 									</form>
 								</section>
@@ -5078,15 +5018,6 @@ export default function ProviderDashboard() {
 							</div>
 							<button type="button" onClick={() => setSelectedAnnouncement(null)} aria-label="Close announcement preview"><HiX /></button>
 						</header>
-						{buildAnnouncementImageList(selectedAnnouncement).length > 0 ? (
-							<div className="grantor-announcement-view-gallery">
-								{buildAnnouncementImageList(selectedAnnouncement).map((url) => (
-									<button key={`${selectedAnnouncement.id}_${url}`} type="button" onClick={() => openAnnouncementImagePreview(url)} aria-label={`Preview ${selectedAnnouncement.title || "announcement"} image`}>
-										<img src={url} alt={selectedAnnouncement.title || "Announcement"} />
-									</button>
-								))}
-							</div>
-						) : null}
 						<p className="grantor-announcement-view-message">{selectedAnnouncement.description || selectedAnnouncement.content || "-"}</p>
 						{selectedAnnouncement.applicationEnabled === true ? (() => {
 							const slotState = getScholarshipSlotState(selectedAnnouncement)

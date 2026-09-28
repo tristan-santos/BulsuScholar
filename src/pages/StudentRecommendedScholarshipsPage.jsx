@@ -27,7 +27,6 @@ import {
 import {
 	buildRecommendationApplyPayload,
 	getRecommendationAnnouncementPath,
-	getRecommendationImageUrl,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
 import { getNameInitials } from "../utils/nameInitials"
@@ -471,16 +470,10 @@ export default function StudentRecommendedScholarshipsPage() {
 								const isInvitation = recommendation.recommendationSource === "grantor_invitation"
 				const initials = getNameInitials(recommendation.grantorName, "GR")
 				const slotState = getScholarshipSlotState({ ...recommendation, source: "grantor" })
-				const recommendationImage = getRecommendationImageUrl(recommendation)
 				const announcementPath = getRecommendationAnnouncementPath(recommendation)
 								return (
 									<article key={itemId} className="student-recommendation-page-card">
 										<div className="student-recommendation-rank">#{index + 1}</div>
-										<div className="student-modern-recommendation-media">
-											{recommendationImage ? (
-												<img src={recommendationImage} alt={recommendation.announcementTitle || "Recommended scholarship"} />
-											) : <span>{initials}</span>}
-										</div>
 										<div className="student-modern-recommendation-top">
 											<span className="student-modern-recommendation-avatar">
 												{recommendation.profileImageUrl || recommendation.authorImageUrl ? (

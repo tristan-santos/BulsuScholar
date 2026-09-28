@@ -1195,8 +1195,8 @@ export default function SignupPage() {
 	}, [fname, lname, cpNumber, street, city, province, barangay, postalCode, isValidCpNumber])
 
 	const isDocumentStageComplete = useMemo(() => {
-		return Boolean(corFile && (isCogOptional || (cogFile && gwa.trim())))
-	}, [cogFile, corFile, gwa, isCogOptional])
+		return Boolean(year && corFile && (isCogOptional || (cogFile && gwa.trim())))
+	}, [cogFile, corFile, gwa, isCogOptional, year])
 	const showStudentFormStage = isDocumentStageComplete
 
 	// Automatically move to next sections if complete
@@ -1734,7 +1734,7 @@ export default function SignupPage() {
 							<div className="signup-process-step signup-process-step--documents">
 								<span>Step 1</span>
 								<strong>Submit Required Documents</strong>
-								<p>Upload your COR and ROG first before completing the student account form.</p>
+								<p>Select your year level, then upload the documents required for your current semester.</p>
 							</div>
 
 							{/* Document Upload Section */}
@@ -1745,6 +1745,26 @@ export default function SignupPage() {
 									</div>
 									<h3 className="signup-section-title">Required Documents</h3>
 								</div>
+
+								<label className="login-label" htmlFor="signup-requirement-year">
+									Year Level <span className="required">*</span>
+								</label>
+								<select
+									id="signup-requirement-year"
+									className="login-input"
+									value={year}
+									onChange={(event) => setYear(event.target.value)}
+								>
+									<option value="">Select year level</option>
+									<option value="1">Year 1</option>
+									<option value="2">Year 2</option>
+									<option value="3">Year 3</option>
+									<option value="4">Year 4</option>
+									<option value="5">Year 5</option>
+								</select>
+								<p className="signup-document-rule-help">
+									First-year students in the first semester do not need to upload an ROG.
+								</p>
 
 								{/* Certificate of Registration / Advising Slip Upload */}
 								<label className="login-label" htmlFor="signup-cor-upload">

@@ -330,10 +330,9 @@ export function resolveOperationProfile(metadata, input, init = {}) {
 		success: normalizeMessage(explicit.successText, explicit.success || base.success),
 		error: normalizeMessage(explicit.errorText, explicit.error || base.error),
 		showSuccess: explicit.showCompletion ?? explicit.showSuccess ?? base.showSuccess,
-		delayMs: Number.isFinite(Number(explicit.delayMs))
-			? Math.max(0, Number(explicit.delayMs))
-			: base.delayMs ?? (base.kind === "background" ? 3000 : 250),
-		stageTimes: explicit.stageTimes || base.stageTimes || [0, 1800, 4500],
+		// Inline controls react immediately. The blocking overlay is reserved for genuinely long operations.
+		delayMs: 10000,
+		stageTimes: [10000, 15000, 22000],
 		priority: Number.isFinite(Number(explicit.priority))
 			? Number(explicit.priority)
 			: (explicit.key || typeof metadata === "string" ? 100 : base.kind === "foreground" ? 50 : 10),

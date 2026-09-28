@@ -35,6 +35,27 @@ export function saveStudentProfileDraft(profile) {
 	return jsonRequest("/student/profile/draft", { method: "PUT", payload: { profile } })
 }
 
+export async function uploadStudentProfilePhoto(file) {
+	const form = new FormData()
+	form.append("file", file)
+	const headers = await buildPortalRequestHeaders()
+	delete headers["Content-Type"]
+	const response = await trackedFetch(`${baseUrl()}/student/profile/photo`, {
+		method: "POST",
+		headers,
+		body: form,
+	}, "document.upload")
+	return parseResponse(response, "Profile photo upload failed")
+}
+
+export async function getStudentProfilePhotoBlob() {
+	const response = await trackedFetch(`${baseUrl()}/student/profile/photo/content`, {
+		headers: await buildPortalRequestHeaders(),
+	}, "generic.background")
+	if (!response.ok) throw new PortalApiError("Unable to open your profile photo.", { status: response.status })
+	return response.blob()
+}
+
 export async function previewStudentProfileDraft(profile) {
 	const response = await trackedFetch(`${baseUrl()}/student/profile/preview`, {
 		method: "POST",
@@ -84,8 +105,9 @@ export function reviewStudentDocument(submissionId, decision) {
 	})
 }
 
-export function updateDocumentPolicy(corMode) {
-	return jsonRequest("/admin/document-policy", { method: "POST", payload: { corMode } })
+export function updateDocumentPolicy(policy) {
+	const payload = typeof policy === "string" ? { corMode: policy } : policy
+	return jsonRequest("/admin/document-policy", { method: "POST", payload })
 }
 
 export function createDocumentException(payload) {

@@ -9472,7 +9472,7 @@
 }
 
 .admin-announcement-images-field {
-	display: grid;
+	display: none;
 	gap: 0.65rem;
 }
 
@@ -9978,6 +9978,15 @@
 	color: #17372c;
 	padding: .55rem .7rem;
 }
+.admin-document-review-toggle { display: flex; align-items: center; gap: .75rem; min-height: 48px; padding: .35rem .65rem; border: 1px solid #c9d9d2; border-radius: 6px; background: #fff; }
+.admin-document-review-toggle > span { display: grid; gap: .1rem; }
+.admin-document-review-toggle strong { color: #17372c; font-size: .78rem; }
+.admin-document-review-toggle small { color: #65766f; font-size: .68rem; }
+.admin-icon-button { display: inline-grid; place-items: center; width: 42px; height: 42px; padding: 0; }
+.admin-icon-button svg { width: 18px; height: 18px; }
+.admin-managed-scholarship-note { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: .75rem; margin: 0 0 1rem; padding: 1rem; border: 1px solid #b7d8c9; border-left: 4px solid #087044; border-radius: 6px; background: #f2faf6; color: #17372c; }
+.admin-managed-scholarship-note > svg { width: 24px; height: 24px; color: #087044; }
+.admin-managed-scholarship-note p { margin: .25rem 0 0; color: #566d64; }
 
 .admin-document-review-list { display: grid; gap: .75rem; }
 
@@ -10048,6 +10057,11 @@
 	background: #15231e;
 	border-color: #36564b;
 }
+.admin-portal--dark .admin-document-review-toggle,
+.admin-portal--dark .admin-managed-scholarship-note { background: #15231e; border-color: #36564b; color: #eef8f4; }
+.admin-portal--dark .admin-document-review-toggle strong { color: #eef8f4; }
+.admin-portal--dark .admin-document-review-toggle small,
+.admin-portal--dark .admin-managed-scholarship-note p { color: #b8cbc4; }
 
 .admin-portal--dark .admin-document-review-controls select,
 .admin-portal--dark .admin-document-review-actions input,
@@ -10474,7 +10488,8 @@
 }
 
 .admin-grantor-field input,
-.admin-grantor-field select {
+.admin-grantor-field select,
+.admin-grantor-field textarea {
 	width: 100%;
 	min-height: 42px;
 	border: 1px solid #cbd5e1;
@@ -10491,11 +10506,15 @@
 }
 
 .admin-grantor-field input:focus,
-.admin-grantor-field select:focus {
+.admin-grantor-field select:focus,
+.admin-grantor-field textarea:focus {
 	border-color: #16a34a;
 	background: #ffffff;
 	box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16);
 }
+.admin-grantor-field textarea { resize: vertical; }
+.admin-grantor-field small { color: #64748b; line-height: 1.4; }
+.admin-grantor-scope-toggle { display: flex; align-items: center; justify-content: space-between; min-height: 42px; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; }
 
 .admin-grantor-modal-actions {
 	display: flex;
@@ -16935,6 +16954,7 @@
 }
 
 .admin-scholarship-announcement-section--images {
+	display: none;
 	padding-bottom: 1rem;
 }
 

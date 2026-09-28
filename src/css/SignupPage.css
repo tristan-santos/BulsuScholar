@@ -1306,6 +1306,21 @@
 	background: #084320;
 }
 
+.signup-document-rule-help {
+	margin: -0.45rem 0 0;
+	color: #52665c;
+	font-size: 0.875rem;
+	line-height: 1.45;
+}
+
+@media (max-width: 899px) {
+	.signup-scrollable-form {
+		max-height: none;
+		overflow-y: visible;
+		padding-right: 0;
+	}
+}
+
 .signup-form-section {
 	display: flex;
 	flex-direction: column;

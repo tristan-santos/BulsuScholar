@@ -20,6 +20,7 @@ import {
 	HiOutlineAcademicCap,
 	HiCheck,
 	HiOutlineCheckCircle,
+	HiOutlineClock,
 	HiOutlineCloudUpload,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
@@ -88,7 +89,6 @@ import {
 import {
 	buildRecommendationApplyPayload,
 	getRecommendationAnnouncementPath,
-	getRecommendationImageUrl,
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
 import { getNameInitials } from "../utils/nameInitials"
@@ -847,9 +847,14 @@ export default function StudentScholarshipsPage() {
 		},
 		[scholarships, user?.previousScholars, user?.scholarshipApplicationHistory],
 	)
+	const activeWithdrawalCooldowns = useMemo(() => previousScholarshipApplications.map((entry) => {
+		const availableAt = toJsDate(entry.cooldownUntil)
+		const remainingMs = availableAt ? Math.max(0, availableAt.getTime() - cooldownClock) : 0
+		return { entry, availableAt, remainingMs }
+	}).filter((item) => String(item.entry.closureReason || "").toLowerCase() === "student_withdrawal" && item.remainingMs > 0), [cooldownClock, previousScholarshipApplications])
 	useEffect(() => {
-		if (!previousScholarshipApplications.some((entry) => getRejectionCooldown(entry, cooldownClock).active)) return undefined
-		const timer = window.setInterval(() => setCooldownClock(Date.now()), 60 * 1000)
+		if (!previousScholarshipApplications.some((entry) => getRejectionCooldown(entry, cooldownClock).active || (String(entry.closureReason || "").toLowerCase() === "student_withdrawal" && (toJsDate(entry.cooldownUntil)?.getTime() || 0) > cooldownClock))) return undefined
+		const timer = window.setInterval(() => setCooldownClock(Date.now()), 1000)
 		return () => window.clearInterval(timer)
 	}, [cooldownClock, previousScholarshipApplications])
 
@@ -3270,6 +3275,8 @@ export default function StudentScholarshipsPage() {
 						</section>
 					) : null}
 
+					{activeWithdrawalCooldowns.map(({ entry, availableAt, remainingMs }) => <section key={entry.applicationId || entry.id || `${entry.grantorId}-${availableAt?.toISOString()}`} className="student-withdrawal-cooldown" role="status"><HiOutlineClock aria-hidden /><div><span>Application Withdrawn</span><h3>{entry.scholarshipName || entry.name || entry.providerLabel || "Scholarship application"}</h3><p>{entry.grantorName || entry.providerLabel ? `${entry.grantorName || entry.providerLabel} application` : "This grantor application"} is in a 24-hour withdrawal cooldown.</p><strong>Available again {availableAt?.toLocaleString()} ({formatCooldownDuration(remainingMs)} remaining)</strong></div></section>)}
+
 					{visibleRejectedApplication ? (
 						<section className="student-rejection-panel" role="status">
 							<div className="student-rejection-panel-icon">
@@ -3815,18 +3822,12 @@ export default function StudentScholarshipsPage() {
 											const isInvitation = recommendation.recommendationSource === "grantor_invitation"
 											const archivedBlock = isInvitation ? null : getArchivedGrantorBlockForTarget(recommendation)
 											const isApplying = applyingRecommendationId === recommendationId
-											const recommendationImage = getRecommendationImageUrl(recommendation)
 											const announcementPath = getRecommendationAnnouncementPath(recommendation)
 											return (
 											<article
 												key={recommendationId}
 												className={`student-modern-recommendation-card student-modern-recommendation-card--${recommendation.recommendationSource || "algorithm"}`}
 											>
-												<div className="student-modern-recommendation-media">
-													{recommendationImage ? (
-														<img src={recommendationImage} alt={recommendation.announcementTitle || "Recommended scholarship"} />
-													) : <span>{grantorInitials}</span>}
-												</div>
 												<div className="student-modern-recommendation-top">
 														<span className="student-modern-recommendation-avatar">
 															{recommendation.profileImageUrl || recommendation.authorImageUrl ? (

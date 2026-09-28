@@ -59,12 +59,6 @@ import { getScholarshipSlotState } from "../services/scholarshipSlotService"
 import { findMatchingPendingInvitation, getGrantorRejectionCooldown, markInvitationAccepted } from "../services/grantorReapplicationService"
 import { getNameInitials } from "../utils/nameInitials"
 
-function buildAnnouncementImageList(item = {}) {
-	const imageUrls = Array.isArray(item.imageUrls) ? item.imageUrls : []
-	const imageObjects = Array.isArray(item.images) ? item.images.map((image) => image?.url).filter(Boolean) : []
-	return [...new Set([item.imageUrl, ...imageUrls, ...imageObjects].filter(Boolean))]
-}
-
 function formatRelativeDate(value) {
 	const date = toJsDate(value)
 	if (!date) return "Date unavailable"
@@ -285,7 +279,8 @@ export default function StudentAnnouncementDetailPage() {
 	const hasBlockedScholarshipBanner =
 		studentAccessState.scholarshipEligibilityBlocked || studentAccessState.soeComplianceBlocked
 	const blockedScholarshipBannerCopy = getStudentBlockedBannerMessage(user || {})
-	const imageUrls = buildAnnouncementImageList(announcement)
+	// Legacy announcement image metadata remains stored, but artwork is intentionally not rendered.
+	const imageUrls = []
 	const isPreviousAnnouncement = announcement ? isPreviousStudentAnnouncement(announcement) : false
 	const isAnnouncementApplication = announcement?.applicationEnabled === true
 	const slotState = getScholarshipSlotState(announcement || {})

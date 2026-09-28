@@ -29,6 +29,27 @@ class ScopeAndApplicantTests(unittest.TestCase):
 
 
 class AnnouncementAudienceTests(unittest.TestCase):
+    def test_grantor_all_active_reaches_every_active_student_without_exposing_records(self):
+        fixtures = {
+            "students": [
+                {"id": "one", "status": "Active"},
+                {"id": "two", "status": "Active"},
+                {"id": "disabled", "status": "Disabled"},
+            ],
+            "scholarship_applications": [],
+            "grantor_portal_scholars": [],
+        }
+        inserted = []
+        with patch.object(service, "_actor", return_value=("grantor", "grantor-a")), \
+                patch.object(service, "_all", side_effect=lambda table: fixtures[table]), \
+                patch.object(service, "supabase_rest_insert", return_value={"ok": True}), \
+                patch.object(service, "supabase_rest_upsert_many", side_effect=lambda table, rows: inserted.extend(rows) or {"ok": True}):
+            result = service.preview_announcement_audience(object(), {
+                "target": {"type": "all_active", "grantorId": "grantor-a"},
+            })
+        self.assertEqual(2, result["recipientCount"])
+        self.assertEqual({"one", "two"}, {row["student_id"] for row in inserted})
+
     def test_grantor_specific_recipients_are_intersected_with_owned_students(self):
         fixtures = {
             "students": [

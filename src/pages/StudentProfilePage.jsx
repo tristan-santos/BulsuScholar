@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
 	HiOutlineArrowLeft,
+	HiOutlineCamera,
 	HiOutlineCheckCircle,
 	HiOutlineDocumentText,
+	HiOutlineDownload,
 	HiOutlineEye,
 	HiOutlineRefresh,
 	HiOutlineSave,
@@ -16,10 +18,12 @@ import StudentFooter from "../components/StudentFooter"
 import useThemeMode from "../hooks/useThemeMode"
 import {
 	getStudentProfileWorkspace,
+	getStudentProfilePhotoBlob,
 	getStudentVerificationDocumentBlob,
 	previewStudentProfileDraft,
 	saveStudentProfileDraft,
 	submitStudentProfile,
+	uploadStudentProfilePhoto,
 	uploadStudentVerificationDocument,
 } from "../services/studentProfileService"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
@@ -146,7 +150,7 @@ function AddressFields({ title, value, onChange, required = false }) {
 	)
 }
 
-export default function StudentProfilePage() {
+export default function StudentProfilePage({ formMode = false }) {
 	const navigate = useNavigate()
 	const { theme, setTheme } = useThemeMode()
 	const [workspace, setWorkspace] = useState(null)
@@ -155,6 +159,7 @@ export default function StudentProfilePage() {
 	const [busy, setBusy] = useState("")
 	const [identityKind, setIdentityKind] = useState("student_id")
 	const [showCurrentAddress, setShowCurrentAddress] = useState(false)
+	const [profilePhotoUrl, setProfilePhotoUrl] = useState("")
 
 	const load = useCallback(async () => {
 		try {
@@ -169,6 +174,20 @@ export default function StudentProfilePage() {
 	}, [])
 
 	useEffect(() => { load() }, [load])
+	useEffect(() => {
+		if (!workspace?.student?.profileImage && !workspace?.draft?.profileImage && !workspace?.student?.profileImageUrl) {
+			setProfilePhotoUrl("")
+			return undefined
+		}
+		let active = true
+		let objectUrl = ""
+		getStudentProfilePhotoBlob().then((blob) => {
+			if (!active) return
+			objectUrl = URL.createObjectURL(blob)
+			setProfilePhotoUrl(objectUrl)
+		}).catch(() => setProfilePhotoUrl(""))
+		return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+	}, [workspace?.draft?.profileImage, workspace?.student?.profileImage, workspace?.student?.profileImageUrl])
 
 	const latestSubmissions = useMemo(() => {
 		const result = {}
@@ -197,13 +216,14 @@ export default function StudentProfilePage() {
 		} finally { setBusy("") }
 	}
 	const submitProfile = async () => {
+		if (!hasProfilePhoto) return toast.error("Upload a profile photo from the Document Vault before submitting this form.")
 		if (!signature) return toast.error("Draw or upload your signature before submitting.")
 		setBusy("submit")
 		try {
 			await saveStudentProfileDraft({ ...profile, currentAddress: showCurrentAddress ? profile.currentAddress : EMPTY_ADDRESS })
-			await submitStudentProfile(signature)
+			const result = await submitStudentProfile(signature)
 			setSignature("")
-			toast.success("Profile submitted for review.")
+			toast.success(result.submission?.status === "approved" ? "Profile submitted and approved automatically." : "Profile submitted for review.")
 			await load()
 		} catch (error) {
 			const fields = error.data?.detail?.fields
@@ -240,23 +260,90 @@ export default function StudentProfilePage() {
 			setTimeout(() => URL.revokeObjectURL(url), 60000)
 		} catch (error) { toast.error(error.message || "Unable to open the document.") }
 	}
+	const download = async (submission) => {
+		try {
+			const blob = await getStudentVerificationDocumentBlob(submission.id)
+			const url = URL.createObjectURL(blob)
+			const anchor = document.createElement("a")
+			anchor.href = url
+			anchor.download = submission.name || "Student_Application_Profile.pdf"
+			anchor.click()
+			setTimeout(() => URL.revokeObjectURL(url), 1000)
+		} catch (error) { toast.error(error.message || "Unable to download the document.") }
+	}
+	const uploadPhoto = async (file) => {
+		if (!file) return
+		setBusy("photo")
+		try {
+			await uploadStudentProfilePhoto(file)
+			toast.success("Profile photo updated.")
+			await load()
+		} catch (error) { toast.error(error.message || "Unable to upload your profile photo.") }
+		finally { setBusy("") }
+	}
 
 	if (!workspace) return <div className="student-profile-loading">Loading profile workspace...</div>
 	const user = workspace.student || profile
 	const requirements = workspace.requirements || {}
+	const hasProfilePhoto = Boolean(workspace.student?.profileImage?.path || workspace.draft?.profileImage?.path || profilePhotoUrl)
+
+	if (!formMode) return (
+		<div className={`student-portal student-dashboard student-portal-view student-profile-workspace ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
+			<main className="student-shell student-profile-account-page">
+				<div className="student-profile-page-head">
+					<button type="button" data-button-variant="neutral" onClick={() => navigate("/student-dashboard")}><HiOutlineArrowLeft /> Back to Dashboard</button>
+					<div><span>Student records</span><h1>My Profile</h1><p>Manage your account information and current-cycle documents.</p></div>
+					<span className="student-profile-cycle">{workspace.academicCycle}</span>
+				</div>
+				<section className="student-account-profile-card">
+					<div className="student-account-profile-photo">
+						{profilePhotoUrl ? <img src={profilePhotoUrl} alt={`${profile.fname || "Student"} profile`} /> : <span>{`${profile.fname?.[0] || ""}${profile.lname?.[0] || ""}` || "ST"}</span>}
+						<label><HiOutlineCamera /> {busy === "photo" ? "Uploading..." : hasProfilePhoto ? "Change photo" : "Upload photo"}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; uploadPhoto(file) }} /></label>
+						<small>PNG, JPG, or WebP up to 5 MB. Required before creating the application profile.</small>
+					</div>
+					<div className="student-account-profile-main"><span>Student account</span><h2>{[profile.fname, profile.mname, profile.lname].filter(Boolean).join(" ") || "Student"}</h2><p>{user.id || user.studentId || ""}</p><strong>{profile.course || "Course not set"}{profile.year ? ` | Year ${profile.year}` : ""}</strong></div>
+				</section>
+				<section className="student-profile-editor student-profile-editor--account">
+					<header><div><h2>Personal Information</h2><p>These details are used to prefill your Student Application Profile.</p></div></header>
+					<div className="student-profile-form-grid student-profile-form-grid--new">
+						<label>First Name *<input value={profile.fname} onChange={(event) => update("fname", event.target.value)} /></label>
+						<label>Middle Name<input value={profile.mname} onChange={(event) => update("mname", event.target.value)} /></label>
+						<label>Last Name *<input value={profile.lname} onChange={(event) => update("lname", event.target.value)} /></label>
+						<label>Email *<input type="email" value={profile.email} onChange={(event) => update("email", event.target.value)} /></label>
+						<label>Contact Number *<input value={profile.cpNumber} onChange={(event) => update("cpNumber", sanitizeContactNumber(event.target.value))} inputMode="numeric" maxLength={11} /></label>
+						<label>Course *<input value={profile.course} onChange={(event) => update("course", event.target.value)} /></label>
+						<label>Year Level *<select value={profile.year} onChange={(event) => update("year", event.target.value)}><option value="">Select year</option>{[1,2,3,4,5].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
+						<label>Section *<input value={profile.section} onChange={(event) => update("section", event.target.value)} /></label>
+					</div>
+					<div className="student-profile-editor-actions"><button type="button" data-button-variant="positive" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave /> {busy === "save" ? "Saving..." : "Save Profile"}</button></div>
+				</section>
+				<section className="student-verification-documents student-document-vault">
+					<header><div><span>Document Vault</span><h2>Current Academic-Cycle Documents</h2><p>Only approved current versions complete scholarship document requirements.</p></div></header>
+					<div className="student-document-review-grid">
+						<article id="cor"><HiOutlineDocumentText /><div><h3>Certificate of Registration</h3><p>University-issued COR for the current academic cycle.</p><strong>{statusLabel(workspace.verification?.cor)}</strong>{workspace.verification?.cor?.reason ? <small>{workspace.verification.cor.reason}</small> : null}</div><div className="student-document-actions">{latestSubmissions.cor ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.cor)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {latestSubmissions.cor ? "Replace PDF" : "Upload PDF"}<input type="file" accept="application/pdf" disabled={Boolean(busy)} onChange={(event) => uploadDocument("cor", event.target.files?.[0])} /></label></div></article>
+						<article id="rog" className={!requirements.rogRequired ? "student-document-review-card--optional" : ""}><HiOutlineDocumentText /><div><h3>Report of Grades</h3><p>{requirements.rogRequired ? "Report of Grades from the previous semester." : "Not required for first-year, first-semester students."}</p><strong>{statusLabel(workspace.verification?.rog)}</strong></div>{requirements.rogRequired ? <div className="student-document-actions">{latestSubmissions.rog ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.rog)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {latestSubmissions.rog ? "Replace PDF" : "Upload PDF"}<input type="file" accept="application/pdf" disabled={Boolean(busy)} onChange={(event) => uploadDocument("rog", event.target.files?.[0])} /></label></div> : <HiOutlineCheckCircle className="student-document-exempt-icon" />}</article>
+						<article id="identity"><HiOutlineDocumentText /><div><h3>Identity Document</h3><p>{requirements.identityRule === "alternative_photo_id_allowed" ? "Student, previous-school, or government photo ID." : "Current Student ID."}</p><strong>{statusLabel(workspace.verification?.identity)}</strong>{workspace.verification?.identity?.reason ? <small>{workspace.verification.identity.reason}</small> : null}</div><div className="student-document-actions"><select value={identityKind} onChange={(event) => setIdentityKind(event.target.value)}><option value="student_id">Student ID</option>{requirements.identityRule === "alternative_photo_id_allowed" ? <><option value="previous_school_id">Previous-school ID</option><option value="government_id">Government ID</option></> : null}</select>{latestSubmissions.identity ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.identity)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {latestSubmissions.identity ? "Replace file" : "Upload file"}<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={(event) => uploadDocument("identity", event.target.files?.[0], identityKind)} /></label></div></article>
+						<article id="profile"><HiOutlineDocumentText /><div><h3>Student Application Profile</h3><p>Complete and sign the official profile form. The generated PDF is submitted automatically.</p><strong>{statusLabel(workspace.verification?.profile)}</strong>{workspace.verification?.profile?.reason ? <small>{workspace.verification.profile.reason}</small> : null}{!hasProfilePhoto ? <small className="student-document-disabled-reason">Upload a profile photo first to enable profile creation.</small> : null}</div><div className="student-document-actions">{latestSubmissions.profile ? <><button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.profile)}><HiOutlineEye /> View</button><button type="button" data-button-variant="none" onClick={() => download(latestSubmissions.profile)}><HiOutlineDownload /> Download PDF</button></> : null}<button type="button" data-button-variant="positive" disabled={!hasProfilePhoto || Boolean(busy)} onClick={() => navigate("/student-dashboard/profile/form")}><HiOutlineDocumentText /> Create Student Profile Form</button></div></article>
+					</div>
+				</section>
+			</main>
+			<StudentFooter />
+		</div>
+	)
 
 	return (
 		<div className={`student-portal student-dashboard student-portal-view student-profile-workspace ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 			<main className="student-shell">
 				<div className="student-profile-page-head">
-					<button type="button" data-button-variant="neutral" onClick={() => navigate("/student-dashboard")}><HiOutlineArrowLeft /> Back to Dashboard</button>
+					<button type="button" data-button-variant="neutral" onClick={() => navigate("/student-dashboard/profile")}><HiOutlineArrowLeft /> Back to Document Vault</button>
 					<div><span>Student records</span><h1>Profile and document verification</h1><p>Save your information as a draft, then submit one signed revision for staff review.</p></div>
 					<span className="student-profile-cycle">{workspace.academicCycle}</span>
 				</div>
 
 				<section className="student-profile-editor" id="application-profile">
-					<header><div className="student-profile-editor-title">{profile.profileImageUrl ? <img src={profile.profileImageUrl} alt={`${profile.fname || "Student"} profile`} /> : <span className="student-profile-photo-fallback" aria-hidden>{`${profile.fname?.[0] || ""}${profile.lname?.[0] || ""}` || "ST"}</span>}<div><h2>Student Application Profile</h2><p>Your approved revision can be reused by scholarship applications in this academic cycle.</p></div></div><span className={`student-review-status student-review-status--${workspace.verification?.profile?.status || "missing"}`}>{statusLabel(workspace.verification?.profile)}</span></header>
+					<header><div className="student-profile-editor-title">{profilePhotoUrl ? <img src={profilePhotoUrl} alt={`${profile.fname || "Student"} profile`} /> : <span className="student-profile-photo-fallback" aria-hidden>{`${profile.fname?.[0] || ""}${profile.lname?.[0] || ""}` || "ST"}</span>}<div><h2>Student Application Profile</h2><p>Your approved revision can be reused by scholarship applications in this academic cycle.</p></div></div><span className={`student-review-status student-review-status--${workspace.verification?.profile?.status || "missing"}`}>{statusLabel(workspace.verification?.profile)}</span></header>
 					<div className="student-profile-completeness"><div><strong>Required information</strong><span>{profileCompleteness.completed} of {profileCompleteness.total} complete</span></div><progress value={profileCompleteness.completed} max={profileCompleteness.total}>{profileCompleteness.percent}%</progress></div>
 					<div className="student-profile-form-grid student-profile-form-grid--new">
 						<label>First Name *<input value={profile.fname} onChange={(event) => update("fname", event.target.value)} /></label>
@@ -281,9 +368,10 @@ export default function StudentProfilePage() {
 					<div className="student-profile-editor-actions">
 						<button type="button" data-button-variant="neutral" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave /> {busy === "save" ? "Saving..." : "Save Draft"}</button>
 						<button type="button" data-button-variant="neutral" disabled={Boolean(busy)} onClick={previewDraft}><HiOutlineEye /> {busy === "preview" ? "Preparing..." : "Preview"}</button>
-						<button type="button" data-button-variant="positive" disabled={Boolean(busy)} onClick={submitProfile}><HiOutlineCheckCircle /> {busy === "submit" ? "Submitting..." : "Submit for Review"}</button>
-						{latestSubmissions.profile ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.profile)}><HiOutlineEye /> Preview latest submission</button> : null}
+						<button type="button" data-button-variant="positive" disabled={!hasProfilePhoto || Boolean(busy)} onClick={submitProfile}><HiOutlineCheckCircle /> {busy === "submit" ? "Submitting..." : "Submit for Review"}</button>
+						{latestSubmissions.profile ? <><button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.profile)}><HiOutlineEye /> View generated PDF</button><button type="button" data-button-variant="none" onClick={() => download(latestSubmissions.profile)}><HiOutlineDownload /> Download PDF</button></> : null}
 					</div>
+					{!hasProfilePhoto ? <p className="student-document-disabled-reason">Return to Document Vault and upload a profile photo before submitting.</p> : null}
 					{workspace.verification?.profile?.reason ? <p className="student-profile-rejection"><HiOutlineXCircle /> {workspace.verification.profile.reason}</p> : null}
 					{Object.keys(workspace.verification?.profile?.fieldErrors || {}).length ? <ul className="student-profile-field-errors">{Object.entries(workspace.verification.profile.fieldErrors).map(([field, message]) => <li key={field}><strong>{field}:</strong> {message}</li>)}</ul> : null}
 				</section>

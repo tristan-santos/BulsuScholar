@@ -50,11 +50,19 @@ class StudentProfileValidationTests(unittest.TestCase):
         }
 
     def test_complete_profile_is_accepted(self):
-        service._validate_profile(self.profile)
+        with patch.object(service, "_profile_photo_bytes", return_value=b"photo"):
+            service._validate_profile(self.profile)
+
+    def test_profile_photo_is_required(self):
+        with patch.object(service, "_profile_photo_bytes", return_value=b""):
+            with self.assertRaises(HTTPException) as raised:
+                service._validate_profile(self.profile)
+        self.assertEqual("profile_photo_required", raised.exception.detail["code"])
 
     def test_permanent_address_is_required(self):
         self.profile["permanentAddress"]["city"] = ""
-        with self.assertRaises(HTTPException) as raised:
+        with patch.object(service, "_profile_photo_bytes", return_value=b"photo"), \
+                self.assertRaises(HTTPException) as raised:
             service._validate_profile(self.profile)
         self.assertIn("permanentAddress.city", raised.exception.detail["fields"])
 
@@ -88,6 +96,13 @@ class StudentDocumentReviewTests(unittest.TestCase):
         with patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"})):
             with self.assertRaises(HTTPException) as raised:
                 service.update_document_policy(object(), {"corMode": "client_override"})
+        self.assertEqual(422, raised.exception.status_code)
+
+    def test_manual_review_policy_must_be_boolean(self):
+        with patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"})), \
+                patch.object(service, "_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True}):
+            with self.assertRaises(HTTPException) as raised:
+                service.update_document_policy(object(), {"manualReviewEnabled": "no"})
         self.assertEqual(422, raised.exception.status_code)
 
 

@@ -296,7 +296,7 @@ def preview_announcement_audience(request: Request, payload: dict[str, Any]) -> 
     if target_type == "specific_students":
         requested = {_text(value) for value in target.get("studentIds") or [] if _text(value)}
         allowed_ids = requested if actor_type == "admin" else requested.intersection(grantor_related_ids)
-    elif target_type == "all_active" and actor_type == "admin":
+    elif target_type == "all_active":
         allowed_ids = {row["id"] for row in students}
     else:
         related = [row for row in applications if not grantor_id or _text(row.get("grantorId") or row.get("providerId")) == grantor_id]
@@ -324,7 +324,7 @@ def preview_announcement_audience(request: Request, payload: dict[str, Any]) -> 
             continue
         if target.get("course") and _normalized(target.get("course")) != _normalized(student.get("course")):
             continue
-        if target.get("yearLevel") and _normalized(target.get("yearLevel")) != _normalized(student.get("yearLevel")):
+        if target.get("yearLevel") and _normalized(target.get("yearLevel")) != _normalized(student.get("yearLevel") or student.get("year")):
             continue
         recipients.append(student)
     preview_id = f"audience_{uuid4().hex}"
@@ -337,7 +337,7 @@ def preview_announcement_audience(request: Request, payload: dict[str, Any]) -> 
     snapshot_rows = [{
         "id": f"{preview_id}_{hashlib.sha256(row['id'].encode()).hexdigest()[:20]}",
         "parent_id": preview_id, "student_id": row["id"],
-        "data": {"studentId": row["id"], "course": row.get("course"), "yearLevel": row.get("yearLevel")},
+        "data": {"studentId": row["id"], "course": row.get("course"), "yearLevel": row.get("yearLevel") or row.get("year")},
     } for row in recipients]
     if snapshot_rows:
         supabase_rest_upsert_many("announcement_recipient_snapshots", snapshot_rows)
