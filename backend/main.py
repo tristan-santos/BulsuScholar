@@ -21,6 +21,7 @@ try:
     from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from .access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
     from .auth_service import complete_email_verification, complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, resend_email_verification, update_security_settings, validate_portal_session
+    from .portal_data_service import delete_portal_data, mutate_portal_data, query_portal_data
     from .scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from .grantor_algorithms import (
         check_student_table_duplicates,
@@ -131,6 +132,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
     from auth_service import complete_email_verification, complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, resend_email_verification, update_security_settings, validate_portal_session
+    from portal_data_service import delete_portal_data, mutate_portal_data, query_portal_data
     from scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from grantor_algorithms import (
         check_student_table_duplicates,
@@ -747,6 +749,21 @@ def portal_login_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
 @app.get("/auth/session")
 def portal_session_endpoint(request: Request) -> dict[str, Any]:
     return validate_portal_session(request)
+
+
+@app.post("/portal/data/query")
+def portal_data_query_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return query_portal_data(request, payload)
+
+
+@app.post("/portal/data/mutate")
+def portal_data_mutate_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return mutate_portal_data(request, payload)
+
+
+@app.post("/portal/data/delete")
+def portal_data_delete_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return delete_portal_data(request, payload)
 
 
 @app.post("/auth/email-verification/resend")
