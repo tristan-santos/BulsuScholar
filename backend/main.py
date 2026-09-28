@@ -20,7 +20,7 @@ if load_dotenv:
 try:
     from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from .access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
-    from .auth_service import complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, update_security_settings, validate_portal_session
+    from .auth_service import complete_email_verification, complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, resend_email_verification, update_security_settings, validate_portal_session
     from .scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from .grantor_algorithms import (
         check_student_table_duplicates,
@@ -43,6 +43,43 @@ try:
     from .signup_service import finalize_student_signup, validate_student_signup
     from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
     from .student_account_review_service import approve_pending_student_account, list_pending_student_accounts
+    from .roster_workflow_service import (
+        commit_roster_import,
+        list_roster_conflicts,
+        preview_roster_import,
+        resolve_roster_conflict,
+        request_student_materials,
+    )
+    from .student_profile_service import (
+        create_document_exception,
+        document_content,
+        get_student_profile_workspace,
+        list_document_review_queue,
+        preview_student_profile,
+        profile_snapshot_content,
+        review_document_submission,
+        save_student_profile_draft,
+        submit_student_profile,
+        update_document_policy,
+        upload_student_document,
+    )
+    from .scope_announcement_waitlist_service import (
+        build_applicant_export,
+        correct_student_number,
+        expire_waitlist,
+        get_grantor_scope,
+        list_filtered_applicants,
+        list_waitlist,
+        preview_announcement_audience,
+        publish_targeted_announcement,
+        resolve_waitlist,
+        save_grantor_scope,
+    )
+    from .security_history_service import (
+        add_public_recovery_message, confirm_public_recovery_email, create_public_recovery_ticket,
+        get_public_recovery_ticket, list_signed_soe, list_student_history, reopen_signed_soe,
+        signed_soe_content, upload_public_recovery_attachment, upload_signed_soe,
+    )
     from .support_service import ask_support_assistant
     from .priority_one_service import save_support_feedback
     from .support_ticket_service import add_portal_message, create_portal_ticket, delete_portal_ticket, get_portal_ticket, list_portal_tickets
@@ -93,7 +130,7 @@ try:
 except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backend/
     from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
-    from auth_service import complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, update_security_settings, validate_portal_session
+    from auth_service import complete_email_verification, complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, resend_email_verification, update_security_settings, validate_portal_session
     from scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from grantor_algorithms import (
         check_student_table_duplicates,
@@ -116,6 +153,43 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from signup_service import finalize_student_signup, validate_student_signup
     from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
     from student_account_review_service import approve_pending_student_account, list_pending_student_accounts
+    from roster_workflow_service import (
+        commit_roster_import,
+        list_roster_conflicts,
+        preview_roster_import,
+        resolve_roster_conflict,
+        request_student_materials,
+    )
+    from student_profile_service import (
+        create_document_exception,
+        document_content,
+        get_student_profile_workspace,
+        list_document_review_queue,
+        preview_student_profile,
+        profile_snapshot_content,
+        review_document_submission,
+        save_student_profile_draft,
+        submit_student_profile,
+        update_document_policy,
+        upload_student_document,
+    )
+    from scope_announcement_waitlist_service import (
+        build_applicant_export,
+        correct_student_number,
+        expire_waitlist,
+        get_grantor_scope,
+        list_filtered_applicants,
+        list_waitlist,
+        preview_announcement_audience,
+        publish_targeted_announcement,
+        resolve_waitlist,
+        save_grantor_scope,
+    )
+    from security_history_service import (
+        add_public_recovery_message, confirm_public_recovery_email, create_public_recovery_ticket,
+        get_public_recovery_ticket, list_signed_soe, list_student_history, reopen_signed_soe,
+        signed_soe_content, upload_public_recovery_attachment, upload_signed_soe,
+    )
     from support_service import ask_support_assistant
     from priority_one_service import save_support_feedback
     from support_ticket_service import add_portal_message, create_portal_ticket, delete_portal_ticket, get_portal_ticket, list_portal_tickets
@@ -221,7 +295,9 @@ async def ensure_deployed_cors_headers(request, call_next):
 
     maintenance_allowed = (
         request.url.path.startswith("/root/")
-        or request.url.path in {"/", "/health", "/deployment/health", "/scan-document/health", "/email/health", "/config/public", "/auth/login", "/auth/recovery/request", "/auth/recovery/complete", "/support/chat", "/support/feedback", "/openapi.json", "/docs"}
+        or request.url.path.startswith("/internal/cron/")
+        or request.url.path.startswith("/support/recovery/")
+        or request.url.path in {"/", "/health", "/deployment/health", "/scan-document/health", "/email/health", "/config/public", "/auth/login", "/auth/email-verification/resend", "/auth/email-verification/complete", "/auth/recovery/request", "/auth/recovery/complete", "/support/chat", "/support/feedback", "/openapi.json", "/docs"}
     )
     if request.method == "OPTIONS" and cors_origin_allowed:
         response = Response(status_code=204)
@@ -273,6 +349,34 @@ REQUIRED_SUPABASE_TABLES = [
     "support_feedback",
     "support_ticket_messages",
     "login_security_state",
+    "student_profile_drafts",
+    "student_profile_revisions",
+    "student_document_submissions",
+    "student_document_reviews",
+    "student_document_exceptions",
+    "student_profile_application_snapshots",
+    "student_next_action_events",
+    "roster_import_batches",
+    "roster_import_rows",
+    "roster_assignment_conflicts",
+    "portal_email_challenges",
+    "portal_verified_sessions",
+    "public_recovery_tickets",
+    "public_recovery_messages",
+    "public_recovery_attachments",
+    "student_history_events",
+    "signed_soe_submissions",
+    "roster_import_audit_events",
+    "grantor_scope_policies",
+    "grantor_scope_policy_versions",
+    "portal_report_audit_events",
+    "student_number_change_events",
+    "announcement_audience_previews",
+    "announcement_recipient_snapshots",
+    "notification_delivery_events",
+    "scholarship_waitlist_entries",
+    "scholarship_waitlist_offers",
+    "scholarship_waitlist_audit_events",
 ]
 
 
@@ -333,12 +437,13 @@ def deployment_health() -> dict[str, Any]:
             "hasBrevoSenderEmail": bool(brevo_sender_email),
             "hasRootSessionSecret": len(os.getenv("ROOT_SESSION_SECRET", "").strip()) >= 32,
             "hasRootDatabaseUrl": bool(os.getenv("ROOT_DATABASE_URL") or os.getenv("SUPABASE_DB_URL")),
+            "hasCronSecret": len(os.getenv("CRON_SECRET", "").strip()) >= 32,
         },
         "scannerDependencies": get_scanner_dependency_status(),
         "tables": table_results,
         "missingTables": missing_tables,
         "failedTables": failed_tables,
-        "nextStep": "Run supabase/security-hardening.sql if tables are missing. Redeploy the backend using the repository Dockerfile if scannerDependencies.tesseractInstalled is false.",
+        "nextStep": "Apply only the missing versioned migrations in order. Do not run the legacy permissive security-hardening.sql. Redeploy with the repository Dockerfile if scannerDependencies.tesseractInstalled is false.",
     }
 
 
@@ -644,6 +749,16 @@ def portal_session_endpoint(request: Request) -> dict[str, Any]:
     return validate_portal_session(request)
 
 
+@app.post("/auth/email-verification/resend")
+def email_verification_resend_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return resend_email_verification(payload)
+
+
+@app.post("/auth/email-verification/complete")
+def email_verification_complete_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return complete_email_verification(payload)
+
+
 @app.post("/auth/recovery/request")
 def password_recovery_request_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return request_password_recovery(payload)
@@ -696,6 +811,71 @@ def pending_student_accounts_endpoint(request: Request) -> dict[str, Any]:
 @app.post("/admin/students/pending/{student_id}/approve")
 def approve_pending_student_account_endpoint(request: Request, student_id: str) -> dict[str, Any]:
     return approve_pending_student_account(request, student_id)
+
+
+@app.get("/student/profile/workspace")
+def student_profile_workspace_endpoint(request: Request) -> dict[str, Any]:
+    return get_student_profile_workspace(request)
+
+
+@app.put("/student/profile/draft")
+def save_student_profile_draft_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return save_student_profile_draft(request, payload)
+
+
+@app.post("/student/profile/preview")
+def preview_student_profile_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    return preview_student_profile(request, payload)
+
+
+@app.post("/student/profile/submit")
+def submit_student_profile_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return submit_student_profile(request, payload)
+
+
+@app.post("/student/profile/documents/{document_type}")
+async def upload_student_profile_document_endpoint(
+    request: Request,
+    document_type: str,
+    file: UploadFile = File(...),
+    document_kind: str = "",
+) -> dict[str, Any]:
+    return await upload_student_document(request, document_type, file, document_kind)
+
+
+@app.get("/student/profile/documents/{submission_id}/content")
+def student_profile_document_content_endpoint(request: Request, submission_id: str) -> Response:
+    return document_content(request, submission_id)
+
+
+@app.get("/student/profile/snapshots/{snapshot_id}/content")
+def student_profile_snapshot_content_endpoint(request: Request, snapshot_id: str) -> Response:
+    return profile_snapshot_content(request, snapshot_id)
+
+
+@app.get("/admin/document-reviews")
+def document_review_queue_endpoint(
+    request: Request,
+    status: str = "",
+    document_type: str = "",
+    academic_cycle: str = "",
+) -> dict[str, Any]:
+    return list_document_review_queue(request, status, document_type, academic_cycle)
+
+
+@app.post("/admin/document-reviews/{submission_id}")
+def review_document_submission_endpoint(request: Request, submission_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return review_document_submission(request, submission_id, payload)
+
+
+@app.post("/admin/document-policy")
+def update_document_policy_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return update_document_policy(request, payload)
+
+
+@app.post("/admin/document-exceptions")
+def create_document_exception_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return create_document_exception(request, payload)
 
 
 @app.post("/workflows/scholarship/apply")
@@ -759,6 +939,31 @@ def material_request_update_endpoint(request: Request, payload: dict[str, Any] =
     return update_material_request(payload)
 
 
+@app.post("/workflows/scholarship/materials/request")
+def request_student_materials_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return request_student_materials(request, payload)
+
+
+@app.post("/workflows/grantor/scholars/import/preview")
+def preview_roster_import_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return preview_roster_import(request, payload)
+
+
+@app.post("/workflows/grantor/scholars/import/commit")
+def commit_roster_import_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return commit_roster_import(request, payload)
+
+
+@app.post("/workflows/admin/roster-conflicts")
+def list_roster_conflicts_endpoint(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    return list_roster_conflicts(request, payload)
+
+
+@app.post("/workflows/admin/roster-conflicts/resolve")
+def resolve_roster_conflict_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return resolve_roster_conflict(request, payload)
+
+
 @app.post("/workflows/grantor/scholars/create")
 def create_grantor_scholars_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"admin", "grantor"}, owner_key="grantorId")
@@ -789,13 +994,24 @@ def create_grantor_announcement_endpoint(
     result = create_grantor_announcement(payload, defer_notifications=True)
     announcement_data = result.pop("_announcementData", None)
     if result.get("ok") and result.get("id") and isinstance(announcement_data, dict):
-        background_tasks.add_task(
-            deliver_grantor_announcement_notifications,
-            result["id"],
-            announcement_data,
-            str(payload.get("grantorId") or ""),
-            result.get("duplicate") is True,
-        )
+        if payload.get("audiencePreviewId"):
+            targeted = publish_targeted_announcement(request, {
+                **payload,
+                "previewId": payload["audiencePreviewId"],
+                "announcementId": result["id"],
+                "title": announcement_data.get("title") or "Scholarship announcement",
+                "message": announcement_data.get("description") or announcement_data.get("content") or "A new scholarship notice is available.",
+                "route": f"/student-dashboard/announcements/{result['id']}?source=grantor",
+            })
+            result["targetedDelivery"] = targeted
+        else:
+            background_tasks.add_task(
+                deliver_grantor_announcement_notifications,
+                result["id"],
+                announcement_data,
+                str(payload.get("grantorId") or ""),
+                result.get("duplicate") is True,
+            )
     return result
 
 
@@ -811,13 +1027,18 @@ def republish_grantor_announcement_endpoint(
     result = republish_grantor_announcement(payload, defer_notifications=True)
     announcement_data = result.pop("_announcementData", None)
     if result.get("ok") and result.get("id") and isinstance(announcement_data, dict):
-        background_tasks.add_task(
-            deliver_grantor_announcement_notifications,
-            result["id"],
-            announcement_data,
-            str(payload.get("grantorId") or ""),
-            result.get("duplicate") is True,
-        )
+        if payload.get("audiencePreviewId"):
+            result["targetedDelivery"] = publish_targeted_announcement(request, {
+                **payload, "previewId": payload["audiencePreviewId"], "announcementId": result["id"],
+                "title": announcement_data.get("title") or "Scholarship announcement",
+                "message": announcement_data.get("description") or announcement_data.get("content") or "A scholarship notice was updated.",
+                "route": f"/student-dashboard/announcements/{result['id']}?source=grantor",
+            })
+        else:
+            background_tasks.add_task(
+                deliver_grantor_announcement_notifications,
+                result["id"], announcement_data, str(payload.get("grantorId") or ""), result.get("duplicate") is True,
+            )
     return result
 
 
@@ -841,6 +1062,57 @@ def configure_grantor_announcement_slots_endpoint(request: Request, payload: dic
 def update_grantor_profile_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"grantor"}, owner_key="grantorId")
     return update_grantor_profile(payload)
+
+
+@app.post("/workflows/grantor-scope/get")
+def get_grantor_scope_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return get_grantor_scope(request, payload)
+
+
+@app.post("/workflows/admin/grantor-scope/save")
+def save_grantor_scope_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return save_grantor_scope(request, payload)
+
+
+@app.post("/workflows/applicants/list")
+def list_filtered_applicants_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return list_filtered_applicants(request, payload)
+
+
+@app.post("/workflows/applicants/export")
+def export_filtered_applicants_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    content, content_type, filename = build_applicant_export(request, payload)
+    return Response(content=content, media_type=content_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.post("/workflows/admin/student-number/correct")
+def correct_student_number_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return correct_student_number(request, payload)
+
+
+@app.post("/workflows/announcements/audience/preview")
+def preview_announcement_audience_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return preview_announcement_audience(request, payload)
+
+
+@app.post("/workflows/announcements/publish")
+def publish_targeted_announcement_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return publish_targeted_announcement(request, payload)
+
+
+@app.post("/workflows/waitlist/status")
+def waitlist_status_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return list_waitlist(request, payload)
+
+
+@app.post("/workflows/waitlist/offer")
+def waitlist_offer_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return resolve_waitlist(request, payload)
+
+
+@app.post("/internal/cron/waitlist/expire")
+def waitlist_expiry_endpoint(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    return expire_waitlist(request, payload)
 
 
 @app.post("/support/chat")
@@ -887,13 +1159,63 @@ def get_support_ticket_endpoint(ticket_id: str, request: Request) -> dict[str, A
 def add_support_ticket_message_endpoint(ticket_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student", "grantor", "admin"})
     return add_portal_message(ticket_id, str(payload.get("actorId") or ""), str(payload.get("actorType") or ""), str(payload.get("message") or ""))
-
+    
 
 @app.delete("/support/tickets/{ticket_id}")
 def delete_support_ticket_endpoint(ticket_id: str, request: Request) -> dict[str, Any]:
     identity: dict[str, Any] = {}
     enforce_portal_scope(request, identity, {"student", "grantor", "admin"})
     return delete_portal_ticket(ticket_id, str(identity.get("actorId") or ""), str(identity.get("actorType") or ""))
+
+
+@app.post("/support/recovery/tickets")
+def create_recovery_ticket_endpoint(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return create_public_recovery_ticket(payload)
+
+
+@app.get("/support/recovery/tickets/{ticket_id}")
+def get_recovery_ticket_endpoint(ticket_id: str, secret: str) -> dict[str, Any]:
+    return get_public_recovery_ticket(ticket_id, secret)
+
+
+@app.post("/support/recovery/tickets/{ticket_id}/messages")
+def add_recovery_ticket_message_endpoint(ticket_id: str, secret: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return add_public_recovery_message(ticket_id, secret, str(payload.get("message") or ""))
+
+
+@app.post("/support/recovery/tickets/{ticket_id}/attachments")
+async def upload_recovery_ticket_attachment_endpoint(ticket_id: str, secret: str, file: UploadFile = File(...)) -> dict[str, Any]:
+    return await upload_public_recovery_attachment(ticket_id, secret, file)
+
+
+@app.post("/support/recovery/tickets/{ticket_id}/confirm-email")
+def confirm_recovery_email_endpoint(ticket_id: str, secret: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return confirm_public_recovery_email(ticket_id, secret, str(payload.get("code") or ""))
+
+
+@app.get("/student/history")
+def student_history_endpoint(request: Request, page: int = 1, page_size: int = 20, cycle: str = "", event_type: str = "") -> dict[str, Any]:
+    return list_student_history(request, max(1, page), max(1, min(100, page_size)), cycle, event_type)
+
+
+@app.post("/student/applications/{application_id}/signed-soe")
+async def signed_soe_upload_endpoint(application_id: str, request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+    return await upload_signed_soe(request, application_id, file)
+
+
+@app.get("/student/applications/{application_id}/signed-soe")
+def signed_soe_list_endpoint(application_id: str, request: Request) -> dict[str, Any]:
+    return list_signed_soe(request, application_id)
+
+
+@app.get("/signed-soe/{submission_id}/content")
+def signed_soe_content_endpoint(submission_id: str, request: Request) -> Response:
+    return signed_soe_content(request, submission_id)
+
+
+@app.post("/admin/signed-soe/{submission_id}/reopen")
+def signed_soe_reopen_endpoint(submission_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return reopen_signed_soe(request, submission_id, str(payload.get("reason") or ""))
 
 
 @app.post("/reports/pdf")

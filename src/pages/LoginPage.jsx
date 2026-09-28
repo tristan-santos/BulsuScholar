@@ -8,18 +8,16 @@ import {
 	HiX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { getRecord, TABLES } from "../services/supabaseDataService"
-import { promoteEmailConfirmedStudentWorkflow } from "../services/workflowService"
 import { supabase } from "../services/supabaseClient"
-import { grantorMustChangePassword, GRANTOR_PASSWORD_CHANGE_ID_KEY } from "../constants/grantorAuth"
-import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
+import { GRANTOR_PASSWORD_CHANGE_ID_KEY } from "../constants/grantorAuth"
 import { closeFromModalBackdrop } from "../services/modalLayerService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import { beginOperation } from "../services/operationTracker"
-import { loginWithUserId, requestPasswordRecovery } from "../services/portalAuthService"
+import { completeEmailVerification, loginWithUserId, requestPasswordRecovery, resendEmailVerification } from "../services/portalAuthService"
+import { setPortalIdentity } from "../services/portalSessionStorage"
 
 const RESET_EMAIL_COOLDOWN_MS = 60 * 1000
 const RESET_EMAIL_COOLDOWN_KEY = "bulsuscholar_reset_email_next_allowed_at"
@@ -36,6 +34,10 @@ export default function LoginPage() {
 	const [forgotUserId, setForgotUserId] = useState("")
 	const [isSendingReset, setIsSendingReset] = useState(false)
 	const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0)
+	const [emailChallenge, setEmailChallenge] = useState(null)
+	const [emailCode, setEmailCode] = useState("")
+	const [emailCodeBusy, setEmailCodeBusy] = useState(false)
+	const [emailResendSeconds, setEmailResendSeconds] = useState(0)
 	const navigate = useNavigate()
 
 	useEffect(() => {
@@ -48,6 +50,12 @@ export default function LoginPage() {
 		const interval = window.setInterval(updateCooldown, 1000)
 		return () => window.clearInterval(interval)
 	}, [])
+
+	useEffect(() => {
+		if (emailResendSeconds <= 0) return undefined
+		const timer = window.setInterval(() => setEmailResendSeconds((value) => Math.max(0, value - 1)), 1000)
+		return () => window.clearInterval(timer)
+	}, [emailResendSeconds])
 
 	const closeForgotModal = () => {
 		setShowForgotModal(false)
@@ -113,10 +121,27 @@ export default function LoginPage() {
 		}
 	}
 
+	const completePortalLogin = (account, id) => {
+	if (account.type === "provider" && account.mustChangePassword) {
+		sessionStorage.setItem(GRANTOR_PASSWORD_CHANGE_ID_KEY, id)
+		setPortalIdentity(id, account.type)
+			toast.info("Set your own password before accessing the grantor portal.")
+			navigate("/grantor/change-password", { replace: true })
+			return
+		}
+		setPortalIdentity(id, account.type)
+		if (account.type === "admin" && account.mustChangePassword) {
+			toast.info("Replace the temporary password before accessing the admin portal.")
+			navigate("/admin/change-password", { replace: true })
+			return
+		}
+		navigate(getDashboardPath(account.type), { replace: true })
+	}
+
 	const handleSubmit = async (event) => {
 		event.preventDefault()
 		const id = userId.trim()
-		const pwd = password.trim()
+		const pwd = password
 
 		if (!id) {
 			toast.error("Please enter your User ID")
@@ -133,72 +158,26 @@ export default function LoginPage() {
 		let loginError = null
 		setIsLoading(true)
 		try {
-			const account = await loginWithUserId(id, pwd)
-			let found = {
-				type: account.type,
-				table: account.table,
-				isPending: account.isPending,
-				data: await getRecord(account.table, id),
-			}
-			const isPendingStudent = found.type === "student" && found.table === TABLES.pendingStudent
-			if (isPendingStudent) {
-				const promoted = await promoteEmailConfirmedStudentWorkflow({ studentId: id })
-				if (promoted?.student) {
-					found = { ...found, table: TABLES.students, isPending: false, data: { id, ...promoted.student } }
-				}
-			}
-
-			if (found.type === "student") {
-				const accessState = getStudentAccessState(found.data)
-				if (accessState.isPortalAccessBlocked) {
-					await supabase.auth.signOut().catch(() => {})
-					toast.error(getPortalAccessBlockMessage(found.data))
-					return
-				}
-			}
-
-			if (found.type === "provider") {
-				const isArchivedGrantor =
-					found.data?.archived === true ||
-					String(found.data?.status || found.data?.accountStatus || "").toLowerCase() === "archived"
-				if (isArchivedGrantor) {
-					await supabase.auth.signOut()
-					toast.error("This grantor account is archived. Please contact the admin.")
-					return
-				}
-			}
-
-			if (found.type === "provider" && grantorMustChangePassword(found.data)) {
+			const result = await loginWithUserId(id, pwd)
+			if (result.emailVerification?.required) {
 				loginSucceeded = true
-				sessionStorage.setItem(GRANTOR_PASSWORD_CHANGE_ID_KEY, id)
-				sessionStorage.removeItem("bulsuscholar_userId")
-				sessionStorage.removeItem("bulsuscholar_userType")
-				toast.info("Set your own password before accessing the grantor portal.")
-				navigate("/grantor/change-password", { replace: true })
+				setEmailChallenge({ ...result.emailVerification, account: result.account, userId: id })
+				setEmailCode("")
+				setEmailResendSeconds(result.emailVerification.resendAfter || 60)
 				return
 			}
-
-			if (found.type === "admin" && found.data?.mustChangePassword === true) {
-				loginSucceeded = true
-				sessionStorage.setItem("bulsuscholar_userId", id)
-				sessionStorage.setItem("bulsuscholar_userType", "admin")
-				toast.info("Replace the temporary password before accessing the admin portal.")
-				navigate("/admin/change-password", { replace: true })
-				return
-			}
-
 			loginSucceeded = true
-			sessionStorage.setItem("bulsuscholar_userId", id)
-			sessionStorage.setItem("bulsuscholar_userType", found.type)
-			setTimeout(() => {
-				navigate(getDashboardPath(found.type), {
-					replace: true,
-				})
-			}, 500)
+			completePortalLogin(result.account, id)
 		} catch (error) {
 			loginError = error
 			await supabase.auth.signOut().catch(() => {})
-			console.error(error)
+			const expectedLoginReasons = new Set([
+				"account_locked_reset_required",
+				"admin_account_locked",
+				"invalid_credentials",
+				"account_unavailable",
+			])
+			if (!expectedLoginReasons.has(error?.reason)) console.error(error)
 			if (error?.reason === "account_locked_reset_required") {
 				toast.error("This account is locked. Use Forgot password to reset it and restore access.")
 			} else if (error?.reason === "admin_account_locked") {
@@ -208,12 +187,49 @@ export default function LoginPage() {
 				toast.error(Number.isFinite(remaining) ? `Invalid credentials. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.` : "Invalid credentials. Please try again.")
 			} else if (error?.reason === "authentication_backend_update_required") {
 				toast.error("Login is temporarily unavailable. Please contact the scholarship office.")
+			} else if (error?.reason === "account_unavailable") {
+				toast.error("This account is unavailable. Please contact the scholarship office.")
 			} else {
 				toast.error(error?.message || "Login failed. Please try again.")
 			}
 		} finally {
 			finishLoginOperation(loginSucceeded ? null : loginError || new Error("login_not_completed"))
 			setIsLoading(false)
+		}
+	}
+
+	const handleEmailVerification = async (event) => {
+		event.preventDefault()
+		if (!/^\d{6}$/.test(emailCode)) {
+			toast.error("Enter the six-digit code from your email.")
+			return
+		}
+		setEmailCodeBusy(true)
+		try {
+			const result = await completeEmailVerification(emailChallenge.challengeId, emailCode, password)
+			setEmailChallenge(null)
+			completePortalLogin(result.account, emailChallenge.userId)
+		} catch (error) {
+			const remaining = error?.data?.remainingAttempts
+			toast.error(Number.isFinite(remaining) ? `Incorrect code. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.` : error?.message || "Email verification failed.")
+		} finally {
+			setEmailCodeBusy(false)
+		}
+	}
+
+	const handleEmailResend = async () => {
+		if (!emailChallenge || emailResendSeconds > 0) return
+		setEmailCodeBusy(true)
+		try {
+			const result = await resendEmailVerification(emailChallenge.challengeId)
+			setEmailChallenge((current) => ({ ...current, ...result.emailVerification }))
+			setEmailCode("")
+			setEmailResendSeconds(result.emailVerification?.resendAfter || 60)
+			toast.success("A new verification code was sent.")
+		} catch (error) {
+			toast.error(error?.message || "The code could not be resent.")
+		} finally {
+			setEmailCodeBusy(false)
 		}
 	}
 
@@ -327,6 +343,7 @@ export default function LoginPage() {
 			{showForgotModal && (
 				<div
 					className="admin-modal-overlay"
+					role="presentation"
 					style={{ zIndex: 9999 }}
 					onClick={(event) => closeFromModalBackdrop(event, closeForgotModal, {
 						hasUnsavedChanges: Boolean(forgotUserId.trim()),
@@ -334,13 +351,16 @@ export default function LoginPage() {
 				>
 					<div
 						className="admin-modal-card"
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="password-reset-title"
 						style={{ maxWidth: "400px", padding: "2rem" }}
 						onClick={(event) => event.stopPropagation()}
 					>
-						<button className="admin-modal-close" onClick={closeForgotModal}>
+						<button className="admin-modal-close" onClick={closeForgotModal} aria-label="Close password reset" title="Close">
 							<HiX />
 						</button>
-						<h3 className="admin-modal-title">Reset Password</h3>
+						<h3 id="password-reset-title" className="admin-modal-title">Reset Password</h3>
 						<p className="admin-modal-copy">
 							Enter your Student or Grantor ID. If the account is eligible, reset instructions will be sent to its registered email.
 						</p>
@@ -354,6 +374,7 @@ export default function LoginPage() {
 									placeholder="Enter User ID"
 									value={forgotUserId}
 									onChange={(event) => setForgotUserId(event.target.value)}
+									autoFocus
 									required
 								/>
 							</div>
@@ -365,6 +386,22 @@ export default function LoginPage() {
 										? `Try again in ${resetCooldownSeconds}s`
 										: "Send Reset Email"}
 							</button>
+						</form>
+					</div>
+				</div>
+			)}
+
+			{emailChallenge && (
+				<div className="admin-modal-overlay" role="presentation" style={{ zIndex: 10000 }}>
+					<div className="admin-modal-card login-verification-card" role="dialog" aria-modal="true" aria-labelledby="email-verification-title" onClick={(event) => event.stopPropagation()}>
+						<h3 id="email-verification-title" className="admin-modal-title">Email verification</h3>
+						<p className="admin-modal-copy">Enter the six-digit code sent to <strong>{emailChallenge.maskedEmail}</strong>. The code expires in 10 minutes.</p>
+						<form onSubmit={handleEmailVerification}>
+							<label className="login-label" htmlFor="email-verification-code">Verification code</label>
+							<input id="email-verification-code" className="login-input login-code-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} autoFocus />
+							<button type="submit" className="login-submit" data-button-variant="positive" disabled={emailCodeBusy || emailCode.length !== 6}>Verify and Sign In</button>
+							<button type="button" className="login-forgot-btn" data-button-variant="none" onClick={handleEmailResend} disabled={emailCodeBusy || emailResendSeconds > 0}>{emailResendSeconds > 0 ? `Resend in ${emailResendSeconds}s` : "Resend code"}</button>
+							<button type="button" className="login-forgot-btn" data-button-variant="none" onClick={() => { setEmailChallenge(null); setEmailCode(""); setPassword("") }}>Cancel sign in</button>
 						</form>
 					</div>
 				</div>

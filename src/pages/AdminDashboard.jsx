@@ -17,6 +17,7 @@ import {
 import { Bar, Doughnut, Line } from "react-chartjs-2"
 import {
 	HiOutlineAcademicCap,
+	HiOutlineArrowLeft,
 	HiOutlineArchive,
 	HiOutlineBan,
 	HiOutlineBell,
@@ -39,18 +40,21 @@ import {
 	HiOutlineIdentification,
 	HiOutlineSearch,
 	HiOutlineCheckCircle,
+	HiOutlineShieldCheck,
 	HiOutlineSparkles,
 	HiOutlineTrash,
 	HiOutlineUserAdd,
 	HiOutlineUserGroup,
 	HiOutlineInformationCircle,
 	HiOutlineUsers,
+	HiOutlineXCircle,
 	HiOutlineCog,
 	HiX,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import { supabase } from "../services/supabaseClient"
+import { clearPortalIdentity } from "../services/portalSessionStorage"
 import { GRANTOR_DEFAULT_PASSWORD } from "../constants/grantorAuth"
 import logo2 from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
@@ -73,8 +77,8 @@ import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumb
 import useThemeMode from "../hooks/useThemeMode"
 import { uploadToStorage } from "../services/storageService"
 import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
-import { broadcastStudentNotification, createAdminNotification, createGrantorNotification, createStudentNotification, loadAdminNotifications, updateAdminNotification } from "../services/notificationService"
-import { createGrantorScholarsWorkflow, materialRequestWorkflow, updateGrantorArchiveStateWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
+import { createAdminNotification, createGrantorNotification, createStudentNotification, loadAdminNotifications, updateAdminNotification } from "../services/notificationService"
+import { commitRosterImportWorkflow, correctStudentNumberWorkflow, getGrantorScopeWorkflow, listRosterConflictsWorkflow, materialRequestWorkflow, previewAnnouncementAudienceWorkflow, previewRosterImportWorkflow, publishTargetedAnnouncementWorkflow, resolveRosterConflictWorkflow, saveGrantorScopeWorkflow, updateGrantorArchiveStateWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
 import { hasScholarshipCommitment, matchesScholarshipApplication } from "../services/scholarshipChoiceService"
 import {
 	findMatchingPendingInvitation,
@@ -88,7 +92,6 @@ import {
 import { checkAdminStudentDuplicates, matchAdminGrantorStudents } from "../services/adminMatchingService"
 import {
 	GRANTOR_SUBCOLLECTIONS,
-	findScholarDuplicate,
 	isAnnouncementArchived,
 	isAnnouncementExpired,
 	isAnnouncementExplicitlyArchived,
@@ -128,12 +131,20 @@ import { closeFromModalBackdrop } from "../services/modalLayerService"
 import { createGrantorAuthAccount, updateAdminContact } from "../services/adminAccountService"
 import { getLoginSecuritySettings, saveLoginSecuritySettings } from "../services/portalAuthService"
 import {
+	createDocumentException,
+	getDocumentReviewQueue,
+	getStudentVerificationDocumentBlob,
+	reviewStudentDocument,
+	updateDocumentPolicy,
+} from "../services/studentProfileService"
+import {
 	completeScholarshipTrackingStep,
 	getScholarshipTrackingProgress,
 	getScholarshipTrackingStepBadgeLabel,
 	getScholarshipTrackingStatusLabel,
 } from "../services/scholarshipTrackingService"
 import { convertPdfToImage } from "../utils/pdfConverter"
+import { listSignedSoe, openSignedSoe, reopenSignedSoe } from "../services/securityHistoryService"
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip, Legend)
 
@@ -406,69 +417,6 @@ function normalizeStudentIdKey(value = "") {
 	return String(value || "")
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "")
-}
-
-function buildAdminScholarPayloadFromStudentAccount(student = {}, fallback = {}) {
-	const nameParts = splitAdminScholarName(student)
-	const studentId = String(student.id || student.studentId || student.studentnumber || student.studentNumber || fallback.studentId || "").trim()
-	return {
-		...fallback,
-		studentId,
-		fname: nameParts.fname || fallback.fname || "",
-		mname: nameParts.mname || fallback.mname || "",
-		lname: nameParts.lname || fallback.lname || "",
-		fullName:
-			student.fullName ||
-			[nameParts.fname, nameParts.mname, nameParts.lname].filter(Boolean).join(" ").trim() ||
-			fallback.fullName ||
-			"Scholar",
-		email: student.email || fallback.email || "",
-		cpNumber: normalizeContactNumber(student.cpNumber || student.contactNumber || student.phoneNumber || fallback.cpNumber || ""),
-		street: student.street || student.address || fallback.street || "",
-		city: student.city || fallback.city || "",
-		province: student.province || fallback.province || "",
-		barangay: student.barangay || fallback.barangay || "",
-		postalCode: student.postalCode || student.zipCode || fallback.postalCode || "",
-		course: student.course || student.program || fallback.course || "",
-		yearLevel: String(student.yearLevel || student.year || fallback.yearLevel || "1"),
-	}
-}
-
-function buildAdminDuplicateScholarshipWarningRecord({ row = {}, payload = {}, duplicate = null } = {}) {
-	const matched = duplicate?.record || {}
-	const studentId = payload.studentId || row.studentId || matched.studentId || matched.studentnumber || ""
-	const studentName =
-		payload.fullName ||
-		row.fullName ||
-		[payload.fname, payload.mname, payload.lname].filter(Boolean).join(" ").trim() ||
-		matched.fullName ||
-		"Student"
-	const newGrantorName = payload.grantorName || payload.providerType || payload.grantorId || "Selected grantor"
-	const existingGrantorName = matched.grantorName || matched.providerName || matched.providerType || matched.grantorId || "another grantor"
-	return {
-		studentId,
-		title: "Duplicate Scholarship Warning",
-		message: `${studentName} was blocked from being added to ${newGrantorName} because the student already appears under ${existingGrantorName}.`,
-		type: "duplicate_scholarship_detected",
-		warningType: "duplicate_scholarship",
-		source: "admin_roster_add_prevention",
-		notificationFallbackTable: "student_warnings",
-		studentName,
-		newGrantorId: payload.grantorId || "",
-		newGrantorName,
-		matchedGrantorId: matched.grantorId || matched.parentId || "",
-		matchedGrantorName: existingGrantorName,
-		matchedScholarId: matched.id || "",
-		matchedStudentId: matched.studentId || matched.studentnumber || "",
-		matchedStudentName: matched.fullName || [matched.fname, matched.mname, matched.lname].filter(Boolean).join(" ").trim(),
-		similarityScore: duplicate?.score ?? duplicate?.evaluation?.score ?? "",
-		reasons: duplicate?.reasons || duplicate?.evaluation?.reasons || [],
-		rowNumber: row.rowNumber || "",
-		read: false,
-		archived: false,
-		createdAt: serverTimestamp(),
-		updatedAt: serverTimestamp(),
-	}
 }
 
 function buildAdminScholarPayload(form = {}, grantor = {}) {
@@ -1272,11 +1220,21 @@ export default function AdminDashboard() {
 	const [studentCourse, setStudentCourse] = useState("All")
 	const [studentYear, setStudentYear] = useState("All")
 	const [studentViewTab, setStudentViewTab] = useState("students")
+	const [documentReviewRows, setDocumentReviewRows] = useState([])
+	const [documentReviewLoading, setDocumentReviewLoading] = useState(false)
+	const [documentReviewFilter, setDocumentReviewFilter] = useState("pending")
+	const [documentReviewType, setDocumentReviewType] = useState("")
+	const [documentReviewNotes, setDocumentReviewNotes] = useState({})
+	const [documentReviewFieldErrors, setDocumentReviewFieldErrors] = useState({})
+	const [documentPolicyMode, setDocumentPolicyMode] = useState("cor_only")
+	const [documentExceptionForm, setDocumentExceptionForm] = useState({ studentId: "", exceptionType: "advising_slip", reason: "" })
 	const [studentArchiveTrendRange, setStudentArchiveTrendRange] = useState("monthly")
 	const [selectedStudentId, setSelectedStudentId] = useState("")
 	const [selectedScholarshipTrackingKey, setSelectedScholarshipTrackingKey] = useState("")
 	const [selectedStudentRecommendations, setSelectedStudentRecommendations] = useState([])
 	const [selectedStudentRecommendationsLoading, setSelectedStudentRecommendationsLoading] = useState(false)
+	const [studentNumberCorrection, setStudentNumberCorrection] = useState({ newStudentId: "", reason: "" })
+	const [studentNumberCorrectionBusy, setStudentNumberCorrectionBusy] = useState(false)
 	const [recommendingScholarshipId, setRecommendingScholarshipId] = useState("")
 	const [adminRejectModalOpen, setAdminRejectModalOpen] = useState(false)
 	const [adminRejectReason, setAdminRejectReason] = useState(APPLICATION_REJECTION_REASONS[0])
@@ -1289,6 +1247,9 @@ export default function AdminDashboard() {
 	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
 	const [isPreviewLoading, setIsPreviewLoading] = useState(false)
 	const [previewError, setPreviewError] = useState("")
+	const [signedSoeSubmissions, setSignedSoeSubmissions] = useState([])
+	const [signedSoeLoading, setSignedSoeLoading] = useState(false)
+	const [signedSoeReopenReason, setSignedSoeReopenReason] = useState("")
 
 	const [grantorTab, setGrantorTab] = useState("grantors")
 	const [grantorSearch, setGrantorSearch] = useState("")
@@ -1302,8 +1263,26 @@ export default function AdminDashboard() {
 		lname: "",
 		email: "",
 		organization: "",
+		classification: "other",
 	})
+	const [grantorScopeForm, setGrantorScopeForm] = useState({ classification: "other", enabled: false, name: "", municipalities: "" })
+	const [grantorScopeBusy, setGrantorScopeBusy] = useState(false)
 	const [isCreatingGrantor, setIsCreatingGrantor] = useState(false)
+
+	useEffect(() => {
+		if (!selectedGrantorId) return
+		let active = true
+		getGrantorScopeWorkflow({ grantorId: selectedGrantorId }).then((result) => {
+			if (!active) return
+			setGrantorScopeForm({
+				classification: result.classification || "other",
+				enabled: result.policy?.enabled === true,
+				name: result.policy?.name || "",
+				municipalities: (result.policy?.municipalities || []).join("\n"),
+			})
+		}).catch((error) => console.error("Unable to load grantor scope.", error))
+		return () => { active = false }
+	}, [selectedGrantorId])
 
 	const [scholarshipProvider, setScholarshipProvider] = useState("All")
 	const [scholarshipSearch, setScholarshipSearch] = useState("")
@@ -1324,10 +1303,28 @@ export default function AdminDashboard() {
 	const [adminScholarImportGrantorAssignments, setAdminScholarImportGrantorAssignments] = useState({})
 	const [adminScholarImportFile, setAdminScholarImportFile] = useState(null)
 	const [adminScholarImportWarnings, setAdminScholarImportWarnings] = useState([])
+	const [adminRosterPreview, setAdminRosterPreview] = useState(null)
+	const [adminRosterConflicts, setAdminRosterConflicts] = useState([])
+	const [adminRosterConflictBusy, setAdminRosterConflictBusy] = useState("")
 	const [adminScholarFormErrors, setAdminScholarFormErrors] = useState({})
 	const [adminScholarBarangayOptions, setAdminScholarBarangayOptions] = useState([])
 	const [adminScholarBarangayLoading, setAdminScholarBarangayLoading] = useState(false)
 	const [adminScholarBarangayError, setAdminScholarBarangayError] = useState("")
+
+	useEffect(() => {
+		setAdminRosterPreview(null)
+	}, [adminScholarColumnMapping, adminScholarForm, adminScholarImportGrantorAssignments, adminScholarImportRows])
+
+	useEffect(() => {
+		if (!adminScholarModalOpen || adminIdentityRef.current?.role !== "full_admin") return undefined
+		let active = true
+		listRosterConflictsWorkflow()
+			.then((result) => {
+				if (active) setAdminRosterConflicts((result.conflicts || []).filter((conflict) => conflict.status === "open"))
+			})
+			.catch((error) => console.error("Unable to load roster conflicts.", error))
+		return () => { active = false }
+	}, [adminScholarModalOpen])
 
 	const [applicantTrendRange, setApplicantTrendRange] = useState("monthly")
 	const [soeTrendRange, setSoeTrendRange] = useState("monthly")
@@ -1382,6 +1379,8 @@ export default function AdminDashboard() {
 		return new Date(now.getFullYear(), now.getMonth(), 1)
 	})
 	const [isPostingAnnouncement, setIsPostingAnnouncement] = useState(false)
+	const [announcementAudience, setAnnouncementAudience] = useState({ type: "all_active", studentIds: "", grantorId: "", announcementId: "", applicationStatus: "", documentState: "", trackingStage: "", academicCycle: "", course: "", yearLevel: "" })
+	const [announcementAudiencePreview, setAnnouncementAudiencePreview] = useState(null)
 	const [isBusy, setIsBusy] = useState(false)
 	const [adminNotifications, setAdminNotifications] = useState([])
 	const [notificationSearch, setNotificationSearch] = useState("")
@@ -3882,32 +3881,23 @@ export default function AdminDashboard() {
 		})
 	}, [archivedScholarshipRows, matchesSelectedScholarshipGrantor, scholarshipSearch])
 
-	const preservedScholarshipRows = useMemo(() => {
+	const administratorServicedScholarshipRows = useMemo(() => {
 		const keyword = scholarshipSearch.trim().toLowerCase()
 		return allScholarshipTrackingRows.filter((row) => {
-			const choice = row.studentSnapshot?.grantorArchiveChoice || {}
-			const applicationId = row.scholarshipEntry?.applicationId || row.scholarshipEntry?.id || ""
-			if (!choice.applicationId || choice.applicationId !== applicationId) return false
-			const searchText = [row.studentId, row.fullName, row.scholarship, row.grantorName, choice.decision, choice.servicingOwner]
+			const application = row.scholarshipEntry || {}
+			if (application.grantorAccountArchived !== true && application.servicingOwner !== "admin") return false
+			const searchText = [row.studentId, row.fullName, row.scholarship, row.grantorName, application.servicingOwner]
 				.join(" ").toLowerCase()
 			return (!keyword || searchText.includes(keyword)) && matchesSelectedScholarshipGrantor(row)
 		}).map((row) => {
-			const choice = row.studentSnapshot?.grantorArchiveChoice || {}
-			const replacements = applicationsRaw.filter((application) =>
-				application.studentId === row.studentId &&
-				application.replacementForApplicationId === choice.applicationId &&
-				isActiveApplicationRecord(application),
-			)
 			return {
 				...row,
-				decision: choice.decision || "pending",
-				servicingOwner: choice.servicingOwner || "unassigned",
-				paused: choice.workflowPaused === true,
-				replacementProgress: replacements.length > 0 ? `${replacements.length} active application${replacements.length === 1 ? "" : "s"}` : "None",
-				pendingOwner: choice.workflowPaused === true ? "Student" : row.currentStepOwnerLabel || "Office",
+				servicingOwner: "Administrator",
+				serviceStatus: "Locked while the individual roster record remains active",
+				pendingOwner: row.currentStepOwnerLabel || "Scholarship Office",
 			}
 		})
-	}, [allScholarshipTrackingRows, applicationsRaw, matchesSelectedScholarshipGrantor, scholarshipSearch])
+	}, [allScholarshipTrackingRows, matchesSelectedScholarshipGrantor, scholarshipSearch])
 
 	const scholarshipTrackingRows = useMemo(() => {
 		const keyword = scholarshipSearch.trim().toLowerCase()
@@ -3941,7 +3931,7 @@ export default function AdminDashboard() {
 			scholars: scholarshipStudentRows.length,
 			tracking: scholarshipTrackingRows.length,
 			warning: warningRows.length,
-			preserved: preservedScholarshipRows.length,
+			serviced: administratorServicedScholarshipRows.length,
 			archived: archivedScholarshipRows.length,
 		}),
 		[
@@ -3950,7 +3940,7 @@ export default function AdminDashboard() {
 			scholarshipOverviewRows.length,
 			scholarshipStudentRows.length,
 			scholarshipTrackingRows.length,
-			preservedScholarshipRows.length,
+			administratorServicedScholarshipRows.length,
 			warningRows.length,
 		],
 	)
@@ -3960,7 +3950,7 @@ export default function AdminDashboard() {
 		if (scholarshipTab === "warning") return warningRows
 		if (scholarshipTab === "overview") return filteredScholarships
 		if (scholarshipTab === "tracking") return scholarshipTrackingRows
-		if (scholarshipTab === "preserved") return preservedScholarshipRows
+		if (scholarshipTab === "serviced") return administratorServicedScholarshipRows
 		if (scholarshipTab === "archived") return archivedScholarshipTableRows
 		return scholarshipStudentTableRows
 	}, [
@@ -3970,7 +3960,7 @@ export default function AdminDashboard() {
 		scholarshipStudentTableRows,
 		scholarshipTab,
 		scholarshipTrackingRows,
-		preservedScholarshipRows,
+		administratorServicedScholarshipRows,
 		warningRows,
 	])
 	const selectedScholarshipAnnouncement = useMemo(
@@ -5551,6 +5541,7 @@ export default function AdminDashboard() {
 			setHighlightedAdminScholarGrantorRows([])
 			setAdminScholarImportGrantorAssignments({})
 			setAdminScholarImportWarnings([])
+			setAdminRosterPreview(null)
 			const detectedCount = prepared.mapping.filter(Boolean).length
 			toast.success(`${parsedRows.length} row${parsedRows.length === 1 ? "" : "s"} loaded and ${detectedCount} column${detectedCount === 1 ? "" : "s"} mapped automatically. Review the mapping before saving.`)
 		} catch (error) {
@@ -5568,6 +5559,7 @@ export default function AdminDashboard() {
 		setHighlightedAdminScholarGrantorRows([])
 		setAdminScholarImportGrantorAssignments({})
 		setAdminScholarImportWarnings([])
+		setAdminRosterPreview(null)
 	}
 
 	const removeSelectedAdminScholarImportRows = () => {
@@ -5637,172 +5629,30 @@ export default function AdminDashboard() {
 		if (isBusy) return
 		setIsBusy(true)
 		try {
-			const existingStudents = studentProfiles
-			const acceptedByGrantor = new Map()
-			const acceptedScholars = []
-			const blockedRows = []
-			const warningRows = []
-			const groupedPayload = new Map()
-
-			for (const row of inputRows) {
+			const rows = inputRows.map((row) => {
 				const grantor = resolveAdminScholarGrantor(row.grantorId || row.grantorInput)
-				if (!grantor) {
-					blockedRows.push({ row, reason: "Grantor not found or inactive." })
-					continue
-				}
-
-				let payload = buildAdminScholarPayload(row, grantor)
-				if (!payload.studentId && !payload.fullName) {
-					blockedRows.push({ row, reason: "Missing student identity." })
-					continue
-				}
-				if (payload.cpNumber && !isValidContactNumber(payload.cpNumber)) {
-					blockedRows.push({ row, reason: CONTACT_NUMBER_RULE_MESSAGE })
-					continue
-				}
-
-				const accountDuplicate = await findScholarDuplicate(payload, existingStudents)
-				if (accountDuplicate?.record) {
-					payload = buildAdminScholarPayloadFromStudentAccount(accountDuplicate.record, payload)
-				}
-				if (payload.cpNumber && !isValidContactNumber(payload.cpNumber)) {
-					blockedRows.push({ row, reason: CONTACT_NUMBER_RULE_MESSAGE })
-					continue
-				}
-
-				const sameGrantorExisting = grantorScholarsRaw.find((scholar) => {
-					if (scholar.archived === true) return false
-					if (String(scholar.grantorId || "").trim() !== String(grantor.id || "").trim()) return false
-					const sameId =
-						normalizeStudentIdKey(scholar.studentId || scholar.studentnumber || scholar.studentNumber) &&
-						normalizeStudentIdKey(scholar.studentId || scholar.studentnumber || scholar.studentNumber) === normalizeStudentIdKey(payload.studentId)
-					const sameName =
-						normalizeGrantorScholarLookupValue(buildGrantorScholarFullName(scholar)) &&
-						normalizeGrantorScholarLookupValue(buildGrantorScholarFullName(scholar)) === normalizeGrantorScholarLookupValue(payload.fullName)
-					return sameId || sameName
-				})
-				if (sameGrantorExisting) {
-					blockedRows.push({ row, reason: "Student already exists in the same grantor scholar list." })
-					continue
-				}
-
-				const acceptedRowsForGrantor = acceptedByGrantor.get(grantor.id) || []
-				const sameBatchDuplicate = acceptedRowsForGrantor.find((scholar) => {
-					const sameId =
-						normalizeStudentIdKey(scholar.studentId) &&
-						normalizeStudentIdKey(scholar.studentId) === normalizeStudentIdKey(payload.studentId)
-					const sameName =
-						normalizeGrantorScholarLookupValue(scholar.fullName) &&
-						normalizeGrantorScholarLookupValue(scholar.fullName) === normalizeGrantorScholarLookupValue(payload.fullName)
-					return sameId || sameName
-				})
-				if (sameBatchDuplicate) {
-					blockedRows.push({ row, reason: "Duplicate row for the same grantor in this import." })
-					continue
-				}
-
-				const duplicate = await findScholarDuplicate(payload, [...grantorScholarsRaw, ...acceptedScholars])
-				if (duplicate?.record) {
-					const sameGrantor = String(duplicate.record.grantorId || "").trim() === String(grantor.id || "").trim()
-					if (sameGrantor) {
-						blockedRows.push({ row, reason: "Student already exists in the same grantor scholar list." })
-						continue
-					}
-					warningRows.push({ row, payload, duplicate })
-					blockedRows.push({ row, reason: "Student already exists in another grantor scholar list." })
-					continue
-				}
-
-				acceptedScholars.push(payload)
-				acceptedByGrantor.set(grantor.id, [...acceptedRowsForGrantor, payload])
-				groupedPayload.set(grantor.id, [...(groupedPayload.get(grantor.id) || []), {
-					...payload,
-					createdAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
-				}])
+				return grantor ? { ...buildAdminScholarPayload(row, grantor), rowNumber: row.rowNumber, grantorId: grantor.id } : { ...row, grantorId: "" }
+			})
+			const preview = await previewRosterImportWorkflow({
+				rows,
+				sourceFileName: adminScholarImportFile?.name || "Manual admin entry",
+			})
+			const warnings = (preview.rows || []).map((row) => `Row ${row.rowNumber}: ${row.reason}`)
+			setAdminScholarImportWarnings(warnings)
+			if (preview.status !== "ready") {
+				setAdminRosterPreview(preview)
+				toast.warning("Import blocked. Review the row results before trying again.")
+				return
 			}
-
-			if (warningRows.length > 0) {
-				const examples = warningRows.slice(0, 3).map(({ row, duplicate }) => {
-					const matchedName = duplicate.record?.fullName || buildGrantorScholarFullName(duplicate.record || {}) || "an existing student"
-					const owner = duplicate.record?.grantorName || duplicate.record?.grantorId || "another grantor"
-					return `row ${row.rowNumber || "-"} matches ${matchedName} under ${owner}`
-				}).join("; ")
-				setAdminScholarImportWarnings(
-					warningRows.map(({ row, duplicate }) => {
-						const matchedName = duplicate.record?.fullName || buildGrantorScholarFullName(duplicate.record || {}) || "an existing student"
-						const owner = duplicate.record?.grantorName || duplicate.record?.grantorId || "another grantor"
-						return `Before import: Row ${row.rowNumber || "-"} matches ${matchedName} under ${owner}. This row will not be added.`
-					}),
-				)
-				const confirmed = await requestAdminConfirmation({
-					title: "Duplicate scholarship matches found",
-					message: `${warningRows.length} student${warningRows.length === 1 ? "" : "s"} already appear in another grantor scholar list. Highlighted rows will not be added.`,
-					detail: examples,
-					cancelLabel: "Review Rows",
-					confirmLabel: "Continue Import",
-					tone: "warning",
-				})
-				if (!confirmed) return
+			if (adminRosterPreview?.batchId !== preview.batchId) {
+				setAdminRosterPreview(preview)
+				toast.info("Preview complete. Review the row results, then click Commit Import.")
+				return
 			}
-
-			let insertedCount = 0
-			for (const [grantorId, scholars] of groupedPayload.entries()) {
-				if (!scholars.length) continue
-				const workflowResult = await createGrantorScholarsWorkflow({
-					grantorId,
-					actorType: "admin",
-					actorId: "admin",
-					scholars,
-				})
-				insertedCount += Number(workflowResult?.createdCount || 0)
-				if (workflowResult?.blocked?.length) {
-					setAdminScholarImportWarnings((current) => [
-						...current,
-						...workflowResult.blocked.map((item) => `${item.student?.fullName || item.student?.studentId || "Student"}: ${item.reason}`),
-					])
-				}
-			}
-
-			if (warningRows.length > 0) {
-				await createAdminNotification({
-					type: "duplicate_scholarship_prevented",
-					title: "Duplicate Scholarship Prevented",
-					message: `Admin blocked ${warningRows.length} student${warningRows.length === 1 ? "" : "s"} from being added to another grantor scholar list.`,
-					count: warningRows.length,
-					source: "admin_roster_add_prevention",
-					read: false,
-					createdAt: serverTimestamp(),
-				}).catch((error) => console.error("Admin duplicate warning notification failed.", error))
-
-				await Promise.all(
-					warningRows.map(({ row, payload, duplicate }, index) => {
-						const warningPayload = buildAdminDuplicateScholarshipWarningRecord({ row, payload, duplicate })
-						const warningId = [
-							"duplicate_scholarship",
-							warningPayload.studentId || "student",
-							warningPayload.newGrantorId || "grantor",
-							Date.now(),
-							index,
-						].join("_")
-						return setDoc(doc(db, "studentWarning", warningId), warningPayload).catch((error) => {
-							console.error("Admin duplicate scholarship warning save failed.", error)
-							return null
-						})
-					}),
-				)
-			}
-
-			setAdminScholarImportWarnings([
-				...warningRows.map(({ row }) => `Row ${row.rowNumber || "-"} blocked because the student already has another grantor scholarship.`),
-				...blockedRows.map(({ row, reason }) => `Row ${row.rowNumber || "-"} skipped: ${reason}`),
-			])
-			if (insertedCount > 0) {
-				toast.success(`${insertedCount} scholar${insertedCount === 1 ? "" : "s"} added by admin.`)
-				closeAdminScholarModal()
-			} else {
-				toast.warning("No scholars were added. Review the skipped rows.")
-			}
+			const result = await commitRosterImportWorkflow({ batchId: preview.batchId })
+			const counts = result.counts || {}
+			toast.success(`${Number(counts.created || 0)} roster row${Number(counts.created || 0) === 1 ? "" : "s"} committed. ${Number(counts.assigned || 0)} account${Number(counts.assigned || 0) === 1 ? "" : "s"} assigned.`)
+			closeAdminScholarModal()
 		} catch (error) {
 			console.error("Unable to add admin scholars.", error)
 			toast.error("Unable to add scholars right now.")
@@ -5817,6 +5667,29 @@ export default function AdminDashboard() {
 			return
 		}
 		submitAdminScholarRows([{ ...adminScholarForm, grantorInput: adminScholarForm.grantorId, rowNumber: "Manual" }])
+	}
+
+	const resolveAdminRosterConflict = async (conflict, resolution, selectedRosterId = "") => {
+		if (!conflict?.id || adminRosterConflictBusy) return
+		const confirmed = await requestAdminConfirmation({
+			title: "Resolve Roster Conflict",
+			message: resolution === "candidate"
+				? "Confirm that the student's identity was verified in person and select the imported scholarship. Other active roster alternatives will be archived without a cooldown."
+				: "Keep this existing roster scholarship and archive the imported alternative without a cooldown?",
+			confirmLabel: "Resolve Conflict",
+		})
+		if (!confirmed) return
+		setAdminRosterConflictBusy(conflict.id)
+		try {
+			await resolveRosterConflictWorkflow({ conflictId: conflict.id, resolution, selectedRosterId })
+			setAdminRosterConflicts((current) => current.filter((item) => item.id !== conflict.id && item.studentId !== conflict.studentId))
+			toast.success("Roster conflict resolved and recorded in the audit history.")
+		} catch (error) {
+			console.error("Unable to resolve roster conflict.", error)
+			toast.error("Unable to resolve this conflict. No roster assignment was changed.")
+		} finally {
+			setAdminRosterConflictBusy("")
+		}
 	}
 
 	const submitAdminScholarImport = () => {
@@ -5864,6 +5737,37 @@ export default function AdminDashboard() {
 
 	const closeScholarshipTrackingModal = () => {
 		setSelectedScholarshipTrackingKey("")
+		setSignedSoeSubmissions([])
+		setSignedSoeReopenReason("")
+	}
+
+	useEffect(() => {
+		const applicationId = selectedScholarshipTrackingRow?.scholarshipEntry?.applicationId || selectedScholarshipTrackingRow?.scholarshipEntry?.id || ""
+		if (!applicationId || (adminPermissions && !adminPermissions.includes("requirements"))) {
+			setSignedSoeSubmissions([])
+			return undefined
+		}
+		let active = true
+		setSignedSoeLoading(true)
+		listSignedSoe(applicationId)
+			.then((result) => { if (active) setSignedSoeSubmissions(result.submissions || []) })
+			.catch((error) => { if (active) console.error("Unable to load Signed SOE submissions.", error) })
+			.finally(() => { if (active) setSignedSoeLoading(false) })
+		return () => { active = false }
+	}, [adminPermissions, selectedScholarshipTrackingRow])
+
+	const reopenSelectedSignedSoe = async (submissionId) => {
+		if (!signedSoeReopenReason.trim()) {
+			toast.error("Enter a reason before reopening this Signed SOE.")
+			return
+		}
+		await runAction(async () => {
+			await reopenSignedSoe(submissionId, signedSoeReopenReason.trim())
+			const applicationId = selectedScholarshipTrackingRow?.scholarshipEntry?.applicationId || selectedScholarshipTrackingRow?.scholarshipEntry?.id || ""
+			const result = await listSignedSoe(applicationId)
+			setSignedSoeSubmissions(result.submissions || [])
+			setSignedSoeReopenReason("")
+		}, "Signed SOE reopened for correction.")
 	}
 
 	const closeAdminConfirmDialog = () => {
@@ -5908,6 +5812,14 @@ export default function AdminDashboard() {
 		const currentStep = selectedScholarshipTrackingRow.trackingProgress.currentStep
 		if (!currentStep) {
 			toast.info("No active tracking step is available for this scholarship.")
+			return
+		}
+
+		if (currentStep.id === "document_review") {
+			closeScholarshipTrackingModal()
+			setStudentViewTab("documents")
+			navigate("/admin/students")
+			toast.info("Approve each required submission in Document Review. The tracking step completes automatically.")
 			return
 		}
 
@@ -6456,6 +6368,7 @@ export default function AdminDashboard() {
 			toast.warning("Select archived scholar records before unarchiving.")
 			return
 		}
+
 		setAdminConfirmDialog({
 			type: "batch_unarchive_scholarship_scholars",
 			title: "Unarchive Selected Scholars",
@@ -6569,7 +6482,7 @@ export default function AdminDashboard() {
 				return
 			}
 			setSelectedGrantorIds([])
-			toast.success(`Archived ${targetIds.length} grantor${targetIds.length === 1 ? "" : "s"}, ${result.announcementCount || 0} announcement${result.announcementCount === 1 ? "" : "s"}, and preserved ${result.affectedScholarCount || 0} committed scholar${result.affectedScholarCount === 1 ? "" : "s"}.`)
+			toast.success(`Archived ${targetIds.length} grantor${targetIds.length === 1 ? "" : "s"}, ${result.announcementCount || 0} announcement${result.announcementCount === 1 ? "" : "s"}, and transferred ${result.affectedScholarCount || 0} committed scholar${result.affectedScholarCount === 1 ? "" : "s"} to administrator servicing.`)
 		})
 	}
 
@@ -7352,6 +7265,8 @@ export default function AdminDashboard() {
 		setAnnouncementDraftStartDate("")
 		setAnnouncementDraftEndDate("")
 		setShowAnnouncementSchedule(false)
+		setAnnouncementAudience({ type: "all_active", studentIds: "", grantorId: "", announcementId: "", applicationStatus: "", documentState: "", trackingStage: "", academicCycle: "", course: "", yearLevel: "" })
+		setAnnouncementAudiencePreview(null)
 	}
 
 	const closeCreateAdminAnnouncementModal = () => {
@@ -7373,6 +7288,24 @@ export default function AdminDashboard() {
 
 		setIsPostingAnnouncement(true)
 		try {
+			const target = {
+				type: announcementAudience.type,
+				studentIds: announcementAudience.studentIds.split(/[,\s]+/).map((value) => value.trim()).filter(Boolean),
+				grantorId: announcementAudience.grantorId,
+				announcementId: announcementAudience.announcementId,
+				applicationStatus: announcementAudience.applicationStatus,
+				documentState: announcementAudience.documentState,
+				trackingStage: announcementAudience.trackingStage,
+				academicCycle: announcementAudience.academicCycle,
+				course: announcementAudience.course,
+				yearLevel: announcementAudience.yearLevel,
+			}
+			if (!announcementAudiencePreview) {
+				const preview = await previewAnnouncementAudienceWorkflow({ target })
+				setAnnouncementAudiencePreview(preview)
+				toast.info(`Audience preview ready: ${preview.recipientCount} recipient${preview.recipientCount === 1 ? "" : "s"}. Review the count, then publish.`)
+				return
+			}
 			const uploads = await Promise.all(announcementImageFiles.map((file) => uploadToStorage(file)))
 			const imageUrls = uploads.map((item) => item.url).filter(Boolean)
 			const announcementRef = await addDoc(collection(db, "announcements"), {
@@ -7389,23 +7322,14 @@ export default function AdminDashboard() {
 				createdAt: serverTimestamp(),
 				updatedAt: serverTimestamp(),
 			})
-			let deliveredNotifications = 0
-			try {
-				const notificationResult = await broadcastStudentNotification({
-					title: "New announcement from the Office of the Scholarship",
-					message: `${announcementTitle.trim()}: ${announcementDescription.trim().slice(0, 180)}`,
-					type: "admin_announcement",
-					category: "Announcements",
-					authorName: "Office of the Scholarship",
-					sourceLabel: "Office of the Scholarship",
-					announcementId: announcementRef.id,
-					announcementSource: "admin",
-					read: false,
-				})
-				deliveredNotifications = Number(notificationResult?.delivered || 0)
-			} catch (notificationError) {
-				console.error("Admin announcement inbox broadcast failed.", notificationError)
-			}
+			const notificationResult = await publishTargetedAnnouncementWorkflow({
+				previewId: announcementAudiencePreview.previewId,
+				announcementId: announcementRef.id,
+				title: "New announcement from the Office of the Scholarship",
+				message: `${announcementTitle.trim()}: ${announcementDescription.trim().slice(0, 180)}`,
+				route: `/student-dashboard/announcements/${announcementRef.id}?source=admin`,
+			})
+			const deliveredNotifications = Number(notificationResult?.delivered || 0)
 			resetAnnouncementDraft()
 			setShowCreateAdminAnnouncementModal(false)
 			if (deliveredNotifications > 0) {
@@ -7459,6 +7383,7 @@ export default function AdminDashboard() {
 			lname: "",
 			email: "",
 			organization: "",
+			classification: "other",
 		})
 	}
 
@@ -7495,6 +7420,7 @@ export default function AdminDashboard() {
 				lname,
 				providerType: toProviderType(providerName),
 				organization: grantorForm.organization.trim(),
+				grantorClassification: grantorForm.classification,
 				email,
 				temporaryPassword: GRANTOR_DEFAULT_PASSWORD,
 				mustChangePassword: true,
@@ -7529,10 +7455,53 @@ export default function AdminDashboard() {
 		})
 	}
 
+	const saveSelectedGrantorScope = async () => {
+		if (!selectedGrantor?.id || grantorScopeBusy) return
+		setGrantorScopeBusy(true)
+		try {
+			const result = await saveGrantorScopeWorkflow({
+				grantorId: selectedGrantor.id,
+				classification: grantorScopeForm.classification,
+				enabled: grantorScopeForm.enabled,
+				name: grantorScopeForm.name,
+				municipalities: grantorScopeForm.municipalities.split(/[,\n]/).map((value) => value.trim()).filter(Boolean),
+			})
+			setGrantorScopeForm((current) => ({ ...current, municipalities: (result.policy?.municipalities || []).join("\n") }))
+			toast.success("Grantor classification and location scope saved.")
+		} catch (error) {
+			toast.error(error?.message || "Unable to save the grantor scope.")
+		} finally {
+			setGrantorScopeBusy(false)
+		}
+	}
+
+	const submitStudentNumberCorrection = async () => {
+		if (!selectedStudent?.id || studentNumberCorrectionBusy) return
+		if (!studentNumberCorrection.newStudentId.trim() || studentNumberCorrection.reason.trim().length < 10) {
+			toast.error("Enter the corrected student number and a reason of at least 10 characters.")
+			return
+		}
+		setStudentNumberCorrectionBusy(true)
+		try {
+			const result = await correctStudentNumberWorkflow({
+				oldStudentId: selectedStudent.id,
+				newStudentId: studentNumberCorrection.newStudentId.trim(),
+				reason: studentNumberCorrection.reason.trim(),
+				confirmed: true,
+			})
+			toast.success(result.status === "completed" ? "Student number corrected. Existing sessions were revoked." : "Student number corrected; Auth synchronization is queued for retry.")
+			setSelectedStudentId("")
+			setStudentNumberCorrection({ newStudentId: "", reason: "" })
+		} catch (error) {
+			toast.error(error?.message || "Unable to correct the student number.")
+		} finally {
+			setStudentNumberCorrectionBusy(false)
+		}
+	}
+
 	const handleLogout = async () => {
 		await supabase.auth.signOut().catch(() => {})
-		sessionStorage.removeItem("bulsuscholar_userId")
-		sessionStorage.removeItem("bulsuscholar_userType")
+		clearPortalIdentity()
 		navigate("/", { replace: true })
 	}
 
@@ -7969,7 +7938,7 @@ export default function AdminDashboard() {
 		)
 		const groupedPages = (result.groups || []).map((group) => ({
 			title: `${group.scholarship} - ${group.grantor}`,
-			subtitle: "Top 10 eligible students using the scholarship recommendation score.",
+			subtitle: "Top 10 eligible students using the Recommendation Score - Not Official Ranking.",
 			columns: columnDefinitions,
 			rows: (group.rows || []).map((row) => [
 				group.scholarship,
@@ -8172,9 +8141,10 @@ export default function AdminDashboard() {
 						next.scholarship = "All"
 					}
 				}
-				return next
-			})
-		}
+			return next
+		})
+		setAdminRosterPreview(null)
+	}
 		const reportFiltersChanged = Object.keys(DEFAULT_REPORT_FILTERS).some(
 			(key) => reportPreviewDraftFilters[key] !== reportPreviewFilters[key],
 		)
@@ -8346,6 +8316,86 @@ export default function AdminDashboard() {
 				</div>
 			</div>
 		)
+	}
+
+	const loadDocumentReviewQueue = useCallback(async () => {
+		setDocumentReviewLoading(true)
+		try {
+			const result = await getDocumentReviewQueue({
+				status: documentReviewFilter,
+				document_type: documentReviewType,
+			})
+			setDocumentReviewRows(result.submissions || [])
+			setDocumentPolicyMode(result.policy?.corMode || "cor_only")
+		} catch (error) {
+			console.error("Unable to load document review queue.", error)
+			toast.error(error.message || "Unable to load document reviews.")
+		} finally {
+			setDocumentReviewLoading(false)
+		}
+	}, [documentReviewFilter, documentReviewType])
+
+	useEffect(() => {
+		if (activeSection !== "students" || studentViewTab !== "documents") return
+		loadDocumentReviewQueue()
+	}, [activeSection, loadDocumentReviewQueue, studentViewTab])
+
+	const decideStudentDocument = async (submission, decision) => {
+		const reason = String(documentReviewNotes[submission.id] || "").trim()
+		if (decision === "rejected" && !reason) {
+			toast.error("Enter a clear correction reason before rejecting this document.")
+			return
+		}
+		setIsBusy(true)
+		try {
+			const fieldErrors = String(documentReviewFieldErrors[submission.id] || "").split(",").map((value) => value.trim()).filter(Boolean).reduce((result, field) => ({ ...result, [field]: reason || "Please correct this field." }), {})
+			await reviewStudentDocument(submission.id, { decision, reason, notes: reason, fieldErrors })
+			toast.success(decision === "approved" ? "Document approved." : "Document returned for correction.")
+			setDocumentReviewNotes((current) => ({ ...current, [submission.id]: "" }))
+			setDocumentReviewFieldErrors((current) => ({ ...current, [submission.id]: "" }))
+			await loadDocumentReviewQueue()
+		} catch (error) {
+			toast.error(error.message || "Unable to save the review decision.")
+		} finally {
+			setIsBusy(false)
+		}
+	}
+
+	const grantDocumentException = async () => {
+		if (!documentExceptionForm.studentId.trim() || !documentExceptionForm.reason.trim()) {
+			toast.error("Student ID and an exception reason are required.")
+			return
+		}
+		try {
+			await createDocumentException(documentExceptionForm)
+			toast.success("Document exception recorded.")
+			setDocumentExceptionForm((current) => ({ ...current, studentId: "", reason: "" }))
+		} catch (error) {
+			toast.error(error.message || "Unable to record the exception.")
+		}
+	}
+
+	const openVerificationDocument = async (submission) => {
+		try {
+			const blob = await getStudentVerificationDocumentBlob(submission.id)
+			const url = URL.createObjectURL(blob)
+			window.open(url, "_blank", "noopener,noreferrer")
+			setTimeout(() => URL.revokeObjectURL(url), 60000)
+		} catch (error) {
+			toast.error(error.message || "Unable to open this document.")
+		}
+	}
+
+	const saveDocumentPolicyMode = async (mode) => {
+		const previous = documentPolicyMode
+		setDocumentPolicyMode(mode)
+		try {
+			await updateDocumentPolicy(mode)
+			toast.success("COR intake policy updated.")
+		} catch (error) {
+			setDocumentPolicyMode(previous)
+			toast.error(error.message || "Unable to update the document policy.")
+		}
 	}
 
 	const renderSection = () => {
@@ -8639,6 +8689,9 @@ export default function AdminDashboard() {
 							</div>
 						</div>
 						<div className="admin-head-actions">
+							<button type="button" className="admin-table-btn" onClick={() => setStudentViewTab("documents")}>
+								<HiOutlineCheckCircle /> Document Review
+							</button>
 							<button
 								type="button"
 								className="admin-student-report-btn"
@@ -8649,7 +8702,37 @@ export default function AdminDashboard() {
 							</button>
 						</div>
 					</div>
-					{studentViewTab === "overview" ? (
+					{studentViewTab === "documents" ? (
+						<section className="admin-document-review-workspace">
+							<header className="admin-document-review-toolbar">
+								<div><h3>Student Document Review</h3><p>Review the oldest submissions first. Scanner results never approve a file.</p></div>
+								<button type="button" data-button-variant="neutral" onClick={() => setStudentViewTab("students")}><HiOutlineArrowLeft /> Student List</button>
+							</header>
+							<div className="admin-document-review-controls">
+								<label>Status<select value={documentReviewFilter} onChange={(event) => setDocumentReviewFilter(event.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All statuses</option></select></label>
+								<label>Document<select value={documentReviewType} onChange={(event) => setDocumentReviewType(event.target.value)}><option value="">All documents</option><option value="cor">COR</option><option value="rog">ROG</option><option value="identity">Identity document</option><option value="profile">Application profile</option></select></label>
+								{adminIdentityRef.current?.role === "full_admin" ? <label>COR intake policy<select value={documentPolicyMode} onChange={(event) => saveDocumentPolicyMode(event.target.value)}><option value="cor_only">COR only</option><option value="advising_only">Advising Slip only</option><option value="either">COR or Advising Slip</option></select></label> : null}
+								<button type="button" data-button-variant="neutral" disabled={documentReviewLoading} onClick={loadDocumentReviewQueue}><HiOutlineRefresh /> Refresh</button>
+							</div>
+							{adminIdentityRef.current?.role === "full_admin" ? <div className="admin-document-exception-form"><strong>Individual exception</strong><input placeholder="Student ID" value={documentExceptionForm.studentId} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, studentId: event.target.value }))} /><select value={documentExceptionForm.exceptionType} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, exceptionType: event.target.value }))}><option value="advising_slip">Advising Slip</option><option value="lost_student_id">Lost Student ID</option></select><input placeholder="Required reason" value={documentExceptionForm.reason} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, reason: event.target.value }))} /><button type="button" data-button-variant="positive" onClick={grantDocumentException}><HiOutlineCheckCircle /> Record Exception</button></div> : null}
+							{documentReviewLoading ? <LoadingBars note="Loading document review queue..." /> : documentReviewRows.length === 0 ? (
+								<div className="admin-empty-state"><HiOutlineCheckCircle /><strong>No matching document submissions</strong><span>The selected queue is clear.</span></div>
+							) : (
+								<div className="admin-document-review-list">
+									{documentReviewRows.map((submission, index) => (
+										<article key={submission.id} className={`admin-document-review-card admin-document-review-card--${submission.status}`}>
+											<div className="admin-document-review-order">{index + 1}</div>
+											<div className="admin-document-review-summary"><span>{String(submission.documentType || "document").replaceAll("_", " ")}</span><h4>{submission.studentName || submission.studentId}</h4><p>{submission.studentId} | {submission.course || "Course unavailable"} | Year {submission.yearLevel || "-"}</p><small>{submission.name || "Uploaded document"} | Version {submission.version || 1} | {submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : ""}</small></div>
+											<div className="admin-document-review-actions">
+												<button type="button" data-button-variant="neutral" onClick={() => openVerificationDocument(submission)}><HiOutlineEye /> Preview</button>
+												{submission.status === "pending" ? <>{submission.documentType === "profile" ? <input aria-label={`Incorrect profile fields for ${submission.studentName || submission.studentId}`} placeholder="Incorrect fields, comma separated" value={documentReviewFieldErrors[submission.id] || ""} onChange={(event) => setDocumentReviewFieldErrors((current) => ({ ...current, [submission.id]: event.target.value }))} /> : null}<input aria-label={`Correction reason for ${submission.studentName || submission.studentId}`} placeholder="Correction reason (required to reject)" value={documentReviewNotes[submission.id] || ""} onChange={(event) => setDocumentReviewNotes((current) => ({ ...current, [submission.id]: event.target.value }))} /><button type="button" data-button-variant="danger" disabled={isBusy} onClick={() => decideStudentDocument(submission, "rejected")}><HiOutlineXCircle /> Reject</button><button type="button" data-button-variant="positive" disabled={isBusy} onClick={() => decideStudentDocument(submission, "approved")}><HiOutlineCheckCircle /> Approve</button></> : <span className={`admin-document-review-decision admin-document-review-decision--${submission.status}`}>{submission.status}{submission.rejectionReason ? `: ${submission.rejectionReason}` : ""}</span>}
+											</div>
+										</article>
+									))}
+								</div>
+							)}
+						</section>
+					) : studentViewTab === "overview" ? (
 						<section className="admin-tab-panel">
 							<div className="admin-summary-strip">
 								<article className="admin-summary-card">
@@ -9091,7 +9174,7 @@ export default function AdminDashboard() {
 								{ id: "scholarships", label: "Scholarships", count: scholarshipTabCounts.scholarships, icon: HiOutlineDocumentText },
 								{ id: "scholars", label: "Scholars", count: scholarshipTabCounts.scholars, icon: HiOutlineUsers },
 								{ id: "tracking", label: "Tracking", count: scholarshipTabCounts.tracking, icon: HiOutlineClock },
-								{ id: "preserved", label: "Preserved Scholars", count: scholarshipTabCounts.preserved, icon: HiOutlineArchive },
+								{ id: "serviced", label: "Administrator Serviced", count: scholarshipTabCounts.serviced, icon: HiOutlineArchive },
 								{ id: "warning", label: "Warning", count: scholarshipTabCounts.warning, icon: HiOutlineExclamation },
 								{ id: "archived", label: "Archived", count: scholarshipTabCounts.archived, icon: HiOutlineTrash },
 							]}
@@ -9287,8 +9370,8 @@ export default function AdminDashboard() {
 													? "Search by student ID, student name, grantor, or conflict"
 												: scholarshipTab === "tracking"
 													? "Search by student ID, student name, scholarship, current step, or status"
-													: scholarshipTab === "preserved"
-														? "Search preserved scholars by student, grantor, decision, or owner"
+											: scholarshipTab === "serviced"
+												? "Search administrator-serviced scholars by student, scholarship, or grantor"
 													: scholarshipTab === "archived"
 															? "Search by student ID, student name, scholarship, or grantor"
 															: "Search by student ID, student name, scholarship, contact number, or grantor"
@@ -9332,16 +9415,14 @@ export default function AdminDashboard() {
 												<th>Current Step</th>
 												<th>Action</th>
 											</tr>
-										) : scholarshipTab === "preserved" ? (
+										) : scholarshipTab === "serviced" ? (
 											<tr>
 												<th>Student</th>
 												<th>Scholarship</th>
 												<th>Grantor</th>
-												<th>Decision</th>
 												<th>Servicing Owner</th>
-												<th>Workflow</th>
-												<th>Replacement</th>
-												<th>Pending Action</th>
+												<th>Restriction</th>
+												<th>Current Owner</th>
 											</tr>
 										) : scholarshipTab === "archived" ? (
 											<tr>
@@ -9418,8 +9499,8 @@ export default function AdminDashboard() {
 															? 4
 															: scholarshipTab === "tracking"
 																? 5
-														: scholarshipTab === "preserved"
-															? 8
+																: scholarshipTab === "serviced"
+																	? 6
 														: scholarshipTab === "archived"
 																	? 9
 																	: 9
@@ -9437,8 +9518,8 @@ export default function AdminDashboard() {
 														? 4
 													: scholarshipTab === "tracking"
 															? 5
-													: scholarshipTab === "preserved"
-														? 8
+														: scholarshipTab === "serviced"
+															? 6
 													: scholarshipTab === "archived"
 																? 9
 																: 9
@@ -9506,16 +9587,14 @@ export default function AdminDashboard() {
 													</td>
 												</tr>
 											))
-										) : scholarshipTab === "preserved" ? (
+										) : scholarshipTab === "serviced" ? (
 											scholarshipTablePage.rows.map((row) => (
 												<tr key={row.trackingKey}>
 													<td>{toDisplayStudentId(row.studentId)}<br /><small>{row.fullName}</small></td>
 													<td>{row.scholarship || "-"}</td>
 													<td>{row.grantorName || "-"}</td>
-													<td><span className={toStatusClass(row.decision)}>{String(row.decision || "pending").replace(/^./, (letter) => letter.toUpperCase())}</span></td>
 													<td>{row.servicingOwner || "-"}</td>
-													<td>{row.paused ? "Paused" : "Continuing"}</td>
-													<td>{row.replacementProgress}</td>
+													<td>{row.serviceStatus}</td>
 													<td>{row.pendingOwner}</td>
 												</tr>
 											))
@@ -10162,7 +10241,7 @@ export default function AdminDashboard() {
 								</div>
 							</article>
 							<article className="admin-report-card admin-report-card--rankings">
-								<div className="admin-report-card__head"><div className="admin-report-card__icon"><HiOutlineChartBar /></div><div><span className="admin-report-card__eyebrow">Eligibility Ranking</span><h3>Top Students per Grantor</h3></div></div>
+								<div className="admin-report-card__head"><div className="admin-report-card__icon"><HiOutlineChartBar /></div><div><span className="admin-report-card__eyebrow">Informational Recommendation</span><h3>Recommendation Score - Not Official Ranking</h3></div></div>
 								<p>Top ten eligible students ranked independently for every active scholarship offering.</p>
 								<div className="admin-report-card__meta"><div className="admin-report-card__metric"><strong>{allCreatedScholarshipRows.filter((row) => row.status === "Open").length}</strong><span>Offerings</span></div><div className="admin-report-card__metric"><strong>10</strong><span>Per offering</span></div></div>
 								<div className="admin-report-card__chips"><span>Eligibility score</span><span>PDF</span><span>CSV</span></div>
@@ -10500,7 +10579,7 @@ export default function AdminDashboard() {
 										type="text"
 										placeholder="Enter announcement title"
 										value={announcementTitle}
-										onChange={(event) => setAnnouncementTitle(event.target.value)}
+										onChange={(event) => { setAnnouncementTitle(event.target.value); setAnnouncementAudiencePreview(null) }}
 									/>
 								</label>
 								<div className="admin-announcement-category-field">
@@ -10523,6 +10602,11 @@ export default function AdminDashboard() {
 										<span>{announcementStartDate && announcementEndDate ? `${announcementStartDate} to ${announcementEndDate}` : "Add schedule"}</span>
 									</button>
 								</label>
+								<label><span>Recipients</span><select value={announcementAudience.type} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, type: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="all_active">All active students</option><option value="specific_students">Specific student IDs</option><option value="application_group">Application group</option><option value="active_scholars">Active scholars</option></select></label>
+								{announcementAudience.type === "specific_students" ? <label><span>Student IDs</span><input value={announcementAudience.studentIds} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, studentIds: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Separate IDs with commas" /></label> : null}
+								{["application_group", "active_scholars"].includes(announcementAudience.type) ? <><label><span>Grantor ID (optional)</span><input value={announcementAudience.grantorId} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, grantorId: event.target.value })); setAnnouncementAudiencePreview(null) }} /></label><label><span>Scholarship announcement ID (optional)</span><input value={announcementAudience.announcementId} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, announcementId: event.target.value })); setAnnouncementAudiencePreview(null) }} /></label><label><span>Application status (optional)</span><input value={announcementAudience.applicationStatus} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, applicationStatus: event.target.value })); setAnnouncementAudiencePreview(null) }} /></label><label><span>Document review state (optional)</span><input value={announcementAudience.documentState} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, documentState: event.target.value })); setAnnouncementAudiencePreview(null) }} /></label><label><span>Tracking stage (optional)</span><input value={announcementAudience.trackingStage} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, trackingStage: event.target.value })); setAnnouncementAudiencePreview(null) }} /></label><label><span>Academic cycle (optional)</span><input value={announcementAudience.academicCycle} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, academicCycle: event.target.value })); setAnnouncementAudiencePreview(null) }} /></label></> : null}
+								<label><span>Course filter (optional)</span><input value={announcementAudience.course} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, course: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Exact course name" /></label>
+								<label><span>Year level (optional)</span><input value={announcementAudience.yearLevel} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, yearLevel: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: 2" /></label>
 							</div>
 							<label className="admin-announcement-message-field">
 								<span>Message</span>
@@ -10530,7 +10614,7 @@ export default function AdminDashboard() {
 									id="announcement-description"
 									placeholder="Write the complete announcement details."
 									value={announcementDescription}
-									onChange={(event) => setAnnouncementDescription(event.target.value)}
+									onChange={(event) => { setAnnouncementDescription(event.target.value); setAnnouncementAudiencePreview(null) }}
 								/>
 							</label>
 							<div className="admin-announcement-images-field">
@@ -10562,13 +10646,14 @@ export default function AdminDashboard() {
 								) : null}
 							</div>
 							<footer>
+								{announcementAudiencePreview ? <span className="admin-audience-preview-count"><HiOutlineUsers /> {announcementAudiencePreview.recipientCount} recipients in this 15-minute preview</span> : null}
 								<button type="button" className="admin-announcement-cancel-btn" onClick={closeCreateAdminAnnouncementModal} disabled={isPostingAnnouncement}>
 									<HiX />
 									Cancel
 								</button>
 								<button type="submit" className="admin-announcement-publish-btn" disabled={isPostingAnnouncement}>
 									<HiOutlineCloudUpload />
-									{isPostingAnnouncement ? "Publishing..." : "Publish Announcement"}
+									{isPostingAnnouncement ? "Working..." : announcementAudiencePreview ? "Publish Announcement" : "Preview Recipients"}
 								</button>
 							</footer>
 						</form>
@@ -10623,7 +10708,7 @@ export default function AdminDashboard() {
 					})}
 				>
 					<div className="admin-detail-modal admin-detail-modal--calendar" role="dialog" aria-modal="true" aria-label="Schedule announcement" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={cancelAnnouncementSchedule}>
+						<button type="button" className="admin-detail-close" onClick={cancelAnnouncementSchedule} aria-label="Close announcement schedule" title="Close">
 							<HiX />
 						</button>
 						<h3>Schedule Announcement</h3>
@@ -10668,7 +10753,7 @@ export default function AdminDashboard() {
 			{announcementImagePreview ? (
 				<div className="admin-detail-backdrop portal-image-preview-backdrop" role="presentation" onClick={closeAnnouncementImagePreview}>
 					<div className="admin-lightbox admin-zoom-lightbox" role="dialog" aria-modal="true" aria-label="Announcement image preview" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={closeAnnouncementImagePreview}>
+						<button type="button" className="admin-detail-close" onClick={closeAnnouncementImagePreview} aria-label="Close announcement image preview" title="Close">
 							<HiX />
 						</button>
 						<ZoomableImagePreview
@@ -10691,7 +10776,7 @@ export default function AdminDashboard() {
 					})}
 				>
 					<div className="admin-detail-modal admin-detail-modal--grantor" role="dialog" aria-modal="true" aria-label="Create new grantor" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={closeGrantorModal}>
+						<button type="button" className="admin-detail-close" onClick={closeGrantorModal} aria-label="Close create grantor dialog" title="Close">
 							<HiX />
 						</button>
 						<div className="admin-grantor-modal-head">
@@ -10756,6 +10841,10 @@ export default function AdminDashboard() {
 									/>
 								</label>
 								<label className="admin-grantor-field">
+									<span>Classification</span>
+									<select value={grantorForm.classification} onChange={(event) => updateGrantorForm("classification", event.target.value)}><option value="government">Government</option><option value="private">Private</option><option value="other">Others</option></select>
+								</label>
+								<label className="admin-grantor-field">
 									<span>Grantor ID</span>
 									<input
 										type="text"
@@ -10818,6 +10907,7 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta"><span>Office Street / Subdivision</span><strong>{selectedGrantor.street || selectedGrantor.address || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Postal Code</span><strong>{selectedGrantor.postalCode || selectedGrantor.zipCode || "-"}</strong></p>
 							</div>
+							{adminIdentityRef.current?.role === "full_admin" ? <section className="admin-scope-editor"><h4>Grantor Classification and Location Scope</h4><p>Eligibility uses the student's self-declared permanent address. It is not document-verified residence evidence.</p><div className="admin-grantor-form-grid"><label className="admin-grantor-field"><span>Classification</span><select value={grantorScopeForm.classification} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, classification: event.target.value }))}><option value="government">Government</option><option value="private">Private</option><option value="other">Others</option></select></label><label className="admin-grantor-field"><span>Scope name</span><input value={grantorScopeForm.name} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, name: event.target.value }))} placeholder="Example: District 2" /></label><label className="admin-grantor-field"><span>Approved cities/municipalities</span><textarea value={grantorScopeForm.municipalities} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, municipalities: event.target.value }))} placeholder="One municipality per line" /></label><label className="admin-grantor-field"><span>Enforce scope</span><input type="checkbox" checked={grantorScopeForm.enabled} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, enabled: event.target.checked }))} /></label></div><button type="button" data-button-variant="positive" disabled={grantorScopeBusy} onClick={saveSelectedGrantorScope}><HiOutlineSave /> {grantorScopeBusy ? "Saving..." : "Save Scope"}</button></section> : null}
 							<div className="admin-grantor-detail-stats">
 								<article><HiOutlineBell /><span>Current Scholarship</span><strong>{selectedGrantorCurrentScholarshipName}</strong></article>
 								<article><HiOutlineDocumentText /><span>Posted Announcements</span><strong>{selectedGrantorAnnouncements.length}</strong></article>
@@ -10847,7 +10937,7 @@ export default function AdminDashboard() {
 												<ul>
 													<li>GWA: {student.recommendationGwa ?? "-"}</li>
 													<li>Course: {student.course || "-"}</li>
-													<li>Score: {student.recommendationScore}</li>
+													<li>Recommendation score (not official): {student.recommendationScore}</li>
 												</ul>
 											</article>
 										))}
@@ -10877,7 +10967,7 @@ export default function AdminDashboard() {
 			{selectedStudent ? (
 				<div className="admin-detail-backdrop" role="presentation" onClick={closeStudentModal}>
 					<div className="admin-detail-shell admin-detail-shell--student" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={closeStudentModal}>
+						<button type="button" className="admin-detail-close" onClick={closeStudentModal} aria-label="Close student details" title="Close">
 							<HiX />
 						</button>
 						<div className="admin-detail-modal admin-detail-modal--student" role="dialog" aria-modal="true" aria-label="Student details">
@@ -10910,6 +11000,7 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta"><span>Contact Number</span><strong>{selectedStudent.cpNumber || selectedStudent.contactNumber || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Record Status</span><strong>{selectedStudent.recordStatus}</strong></p>
 							</div>
+							{adminIdentityRef.current?.role === "full_admin" ? <section className="admin-student-number-correction"><h4>Correct Student Number</h4><p>This preserves the Auth account and audit history, updates live references, and signs the student out.</p><div><input aria-label="Corrected student number" value={studentNumberCorrection.newStudentId} onChange={(event) => setStudentNumberCorrection((current) => ({ ...current, newStudentId: event.target.value }))} placeholder="New student number" /><input aria-label="Correction reason" value={studentNumberCorrection.reason} onChange={(event) => setStudentNumberCorrection((current) => ({ ...current, reason: event.target.value }))} placeholder="Required audit reason" /><button type="button" data-button-variant="danger" disabled={studentNumberCorrectionBusy} onClick={submitStudentNumberCorrection}>{studentNumberCorrectionBusy ? "Correcting..." : "Confirm Correction"}</button></div></section> : null}
 							{selectedStudent.archived || selectedStudent.archiveReason || selectedStudent.archiveNotes ? (
 								<>
 									<h4 className="admin-student-detail-divider"><span>Archive Details</span></h4>
@@ -11078,7 +11169,7 @@ export default function AdminDashboard() {
 														<div className="admin-student-recommendation-meta">
 															<span><HiOutlineAcademicCap /> Minimum GWA {recommendation.minimumGwa ?? recommendation.minGwa ?? "-"}</span>
 															<span><HiOutlineUsers /> {recommendation.rosterCount || 0} scholars</span>
-															<span><HiOutlineSparkles /> Score {Math.round(Number(recommendation.score || 0))}</span>
+																			<span><HiOutlineSparkles /> Recommendation score (not official) {Math.round(Number(recommendation.score || 0))}</span>
 														</div>
 														<button
 															type="button"
@@ -11145,6 +11236,23 @@ export default function AdminDashboard() {
 								) : null}
 							</header>
 							<div className="admin-scholar-import-body">
+								{adminRosterConflicts.length > 0 ? (
+									<section className="admin-scholar-conflicts" aria-labelledby="admin-roster-conflicts-title">
+										<header>
+											<HiOutlineExclamation aria-hidden="true" />
+											<div><h4 id="admin-roster-conflicts-title">Roster conflicts requiring verification</h4><p>Verify the student's identity before selecting one authoritative scholarship.</p></div>
+										</header>
+										{adminRosterConflicts.map((conflict) => (
+											<article key={conflict.id} className="admin-scholar-conflict-row">
+												<div><strong>{conflict.fullName || conflict.studentId || "Student"}</strong><span>{conflict.reason}</span></div>
+												<div className="admin-scholar-conflict-actions">
+													{conflict.candidate?.scholarshipTitle ? <button type="button" data-button-variant="positive" disabled={Boolean(adminRosterConflictBusy)} onClick={() => resolveAdminRosterConflict(conflict, "candidate")}><HiOutlineCheckCircle /> Select {conflict.candidate.scholarshipTitle}</button> : null}
+													{(conflict.activeRosterOptions || []).map((option) => <button key={option.rosterId} type="button" data-button-variant="neutral" disabled={Boolean(adminRosterConflictBusy)} onClick={() => resolveAdminRosterConflict(conflict, "existing", option.rosterId)}><HiOutlineCheckCircle /> Keep {option.scholarshipTitle}</button>)}
+												</div>
+											</article>
+										))}
+									</section>
+								) : null}
 								{adminScholarImportRows.length > 0 ? (
 									<>
 										<div className="admin-scholar-import-info">
@@ -11527,7 +11635,7 @@ export default function AdminDashboard() {
 										disabled={isBusy}
 										onClick={adminScholarImportRows.length > 0 ? submitAdminScholarImport : submitAdminScholarManual}
 									>
-										<HiOutlineCheckCircle /> {isBusy ? "Saving..." : adminScholarImportRows.length > 0 ? `Import ${adminScholarImportRows.length} Scholars` : "Save Scholar"}
+										<HiOutlineCheckCircle /> {isBusy ? "Saving..." : adminRosterPreview?.status === "ready" ? "Commit Import" : adminScholarImportRows.length > 0 ? `Preview ${adminScholarImportRows.length} Scholars` : "Preview Scholar"}
 									</button>
 								</div>
 							</div>
@@ -11589,7 +11697,7 @@ export default function AdminDashboard() {
 			{selectedScholarshipTrackingRow ? (
 				<div className="admin-detail-backdrop admin-detail-backdrop--review" role="presentation" onClick={closeScholarshipTrackingModal}>
 					<div className="admin-detail-shell admin-detail-shell--review" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={closeScholarshipTrackingModal}>
+						<button type="button" className="admin-detail-close" onClick={closeScholarshipTrackingModal} aria-label="Close scholarship tracking" title="Close">
 							<HiX />
 						</button>
 						<div
@@ -11731,12 +11839,34 @@ export default function AdminDashboard() {
 										)
 									})()}
 								</div>
+								{adminPermissions?.includes("requirements") ? (
+									<section className="admin-tracking-documents admin-signed-soe-review">
+										<strong className="admin-tracking-documents-title">Signed SOE</strong>
+										<p className="admin-detail-meta">Submitted files are student attestations. Reopen only when the file is wrong or unreadable.</p>
+										{signedSoeLoading ? <span className="admin-tracking-documents-empty">Loading Signed SOE submissions...</span> : signedSoeSubmissions.length === 0 ? (
+											<span className="admin-tracking-documents-empty">No Signed SOE has been submitted.</span>
+										) : (
+											<div className="admin-tracking-other-documents-list">
+												{signedSoeSubmissions.map((submission) => (
+													<article className="admin-signed-soe-row" key={submission.id}>
+														<div><strong>Version {submission.version || 1}</strong><small>{submission.file_name || "Signed SOE"} | {submission.status || "submitted"}</small></div>
+														<button type="button" data-button-variant="neutral" onClick={() => openSignedSoe(submission.id)}><HiOutlineEye /> View</button>
+														{submission.status === "submitted" ? <button type="button" data-button-variant="danger" disabled={isBusy || !signedSoeReopenReason.trim()} title={!signedSoeReopenReason.trim() ? "Enter a correction reason first." : "Reopen Signed SOE"} onClick={() => reopenSelectedSignedSoe(submission.id)}><HiOutlineArchive /> Reopen</button> : null}
+													</article>
+												))}
+											</div>
+										)}
+										<label className="admin-signed-soe-reason"><span>Correction reason</span><input value={signedSoeReopenReason} onChange={(event) => setSignedSoeReopenReason(event.target.value)} placeholder="Required before reopening a submitted file" /></label>
+									</section>
+								) : null}
 							</div>
 							<div className="admin-tracking-modal-footer">
 								<div className="admin-student-alert">
 									<div className="admin-student-warning-copy">
 										<strong>
-											{selectedScholarshipTrackingRow.trackingProgress.canAdminCompleteCurrentStep
+										{selectedScholarshipTrackingRow.trackingProgress.currentStep?.id === "document_review"
+											? "Open Document Review to approve each required submission."
+											: selectedScholarshipTrackingRow.trackingProgress.canAdminCompleteCurrentStep
 												? "Current step is ready for admin completion."
 												: "Current step is not ready for admin completion."}
 										</strong>
@@ -11767,7 +11897,7 @@ export default function AdminDashboard() {
 										onClick={completeScholarshipTrackingCurrentStep}
 									>
 										<HiOutlineCheckCircle aria-hidden />
-										Confirm Approval
+										{selectedScholarshipTrackingRow.trackingProgress.currentStep?.id === "document_review" ? "Open Document Review" : "Confirm Approval"}
 									</button>
 									<button
 										type="button"
@@ -11857,7 +11987,7 @@ export default function AdminDashboard() {
 			{selectedScholarshipWarningRow ? (
 				<div className="admin-detail-backdrop" role="presentation" onClick={() => setSelectedScholarshipWarningKey("")}>
 					<div className="admin-detail-shell admin-detail-shell--review admin-scholarship-announcement-shell" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={() => setSelectedScholarshipWarningKey("")}>
+						<button type="button" className="admin-detail-close" onClick={() => setSelectedScholarshipWarningKey("")} aria-label="Close scholarship warning" title="Close">
 							<HiX />
 						</button>
 						<div
@@ -11919,7 +12049,7 @@ export default function AdminDashboard() {
 			{selectedScholarshipAnnouncement ? (
 				<div className="admin-detail-backdrop admin-detail-backdrop--scholarship-announcement" role="presentation" onClick={() => setSelectedScholarshipAnnouncementKey("")}>
 					<div className="admin-detail-shell admin-detail-shell--review admin-scholarship-announcement-shell" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={() => setSelectedScholarshipAnnouncementKey("")}>
+						<button type="button" className="admin-detail-close" onClick={() => setSelectedScholarshipAnnouncementKey("")} aria-label="Close scholarship announcement" title="Close">
 							<HiX />
 						</button>
 						<div
@@ -12025,7 +12155,7 @@ export default function AdminDashboard() {
 			{adminConfirmDialog ? (
 				<div className="admin-detail-backdrop" role="presentation" onClick={closeAdminConfirmDialog}>
 					<div className="admin-detail-shell admin-detail-shell--confirm" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={closeAdminConfirmDialog}>
+						<button type="button" className="admin-detail-close" onClick={closeAdminConfirmDialog} aria-label="Close confirmation dialog" title="Close">
 							<HiX />
 						</button>
 						<div
@@ -12143,7 +12273,7 @@ export default function AdminDashboard() {
 			{selectedSoeReviewRow ? (
 				<div className="admin-detail-backdrop admin-detail-backdrop--soe-review" role="presentation" onClick={() => setSelectedSoeReviewId("")}>
 					<div className="admin-detail-shell admin-detail-shell--review admin-detail-shell--soe-review" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={() => setSelectedSoeReviewId("")}>
+						<button type="button" className="admin-detail-close" onClick={() => setSelectedSoeReviewId("")} aria-label="Close signed SOE review" title="Close">
 							<HiX />
 						</button>
 						<div

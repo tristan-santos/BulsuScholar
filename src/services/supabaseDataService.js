@@ -1,6 +1,8 @@
-import { supabase } from "./supabaseClient"
 import { invalidateReferenceData } from "./referenceDataCache"
 import { adminReviewWorkflow } from "./workflowService"
+import { requireBackendApiUrl } from "../config/backendApi"
+import { postPortalJson } from "./portalApi"
+import { supabase } from "./supabaseClient"
 
 export const TABLES = {
 	admins: "admins",
@@ -180,62 +182,6 @@ function serializeData(data = {}) {
 	return serializeValue(normalized)
 }
 
-function applyFilters(builder, filters = []) {
-	let next = builder
-	filters.forEach((filter) => {
-		const column = filter.field === "id" ? "id" : `data->>${filter.field}`
-		if (filter.op === "==") next = next.eq(column, String(filter.value))
-		else if (filter.op === "!=") next = next.neq(column, String(filter.value))
-		else if (filter.op === "in") next = next.in(column, filter.value)
-		else throw new Error(`Unsupported Supabase query operator: ${filter.op}`)
-	})
-	return next
-}
-
-function buildRelationalColumns(table, data = {}) {
-	if (table === TABLES.students || table === TABLES.pendingStudent) {
-		return {
-			email: data.email || null,
-			user_type: data.userType || "student",
-			auth_user_id: data.authUserId || null,
-			first_name: data.fname || null,
-			middle_name: data.mname || null,
-			last_name: data.lname || null,
-			course: data.course || null,
-			year_level: data.year != null ? String(data.year) : null,
-			section: data.section || null,
-			contact_number: data.cpNumber || null,
-		}
-	}
-	if (table === TABLES.admins) {
-		return {
-			email: data.email || null,
-			user_type: data.userType || "admin",
-			first_name: data.fname || null,
-			last_name: data.lname || null,
-		}
-	}
-	if (table === TABLES.providers) {
-		return {
-			email: data.email || null,
-			user_type: data.userType || "provider",
-			name: data.name || data.providerName || null,
-		}
-	}
-	return {}
-}
-
-function buildRow(table, id, data, parentId = null) {
-	const row = {
-		id,
-		data,
-		updated_at: new Date().toISOString(),
-		...buildRelationalColumns(table, data),
-	}
-	if (parentId) row.parent_id = parentId
-	return row
-}
-
 export function collection(dbOrRef, ...segments) {
 	const basePath = Array.isArray(dbOrRef?.pathSegments) ? dbOrRef.pathSegments : []
 	const pathSegments = [...basePath, ...segments.map(String)]
@@ -334,32 +280,44 @@ export const Timestamp = {
 }
 
 export async function getDoc(ref) {
-	let request = supabase.from(ref.table).select("*").eq("id", ref.id).maybeSingle()
-	if (ref.parentId) {
-		request = supabase.from(ref.table).select("*").eq("id", ref.id).eq("parent_id", ref.parentId).maybeSingle()
-	}
-	const { data, error } = await request
-	if (error) throw error
-	return buildDocSnapshot(ref, data)
+	const result = await queryPortalData({ table: ref.table, id: ref.id, parentId: ref.parentId || "", limit: 1 })
+	return buildDocSnapshot(ref, result.rows?.[0] || null)
 }
 
 export async function getDocs(ref) {
-	let request = supabase.from(ref.table).select("*")
-	if (ref.parentId) request = request.eq("parent_id", ref.parentId)
-	request = applyFilters(request, ref.filters || [])
-	if (ref.order) {
-		const orderColumn = ref.order.field === "id" ? "id" : `data->>${ref.order.field}`
-		request = request.order(orderColumn, { ascending: ref.order.direction !== "desc" })
-	}
-	if (ref.rangeValue) request = request.range(ref.rangeValue.from, ref.rangeValue.to)
-	else if (ref.limitCount) request = request.limit(ref.limitCount)
-	const { data, error } = await request
-	if (error) throw error
-	const rows = (data || []).map((row) => ({
+	const result = await queryPortalData({
+		table: ref.table,
+		parentId: ref.parentId || "",
+		filters: ref.filters || [],
+		order: ref.order || null,
+		from: ref.rangeValue?.from || 0,
+		limit: ref.rangeValue ? ref.rangeValue.to - ref.rangeValue.from + 1 : ref.limitCount || 500,
+	})
+	const rows = (result.rows || []).map((row) => ({
 		...row,
 		data: { ...(row.data || {}), grantorId: row.parent_id || row.data?.grantorId },
 	}))
 	return buildQuerySnapshot(ref, rows)
+}
+
+async function queryPortalData(payload = {}) {
+	return postPortalJson(
+		requireBackendApiUrl("Portal data backend"),
+		"/portal/data/query",
+		payload,
+		"Portal data",
+		{ operation: "generic.background" },
+	)
+}
+
+async function mutatePortalData(path, payload = {}) {
+	return postPortalJson(
+		requireBackendApiUrl("Portal data backend"),
+		path,
+		payload,
+		"Portal update",
+		{ operation: "record.save" },
+	)
 }
 
 export async function setDoc(ref, payload = {}, options = {}) {
@@ -382,11 +340,13 @@ export async function setDoc(ref, payload = {}, options = {}) {
 		})
 		return
 	}
-	const row = buildRow(ref.table, ref.id, data, ref.parentId || null)
-	const { error } = await supabase.from(ref.table).upsert(row, {
-		onConflict: ref.parentId ? "parent_id,id" : "id",
+	await mutatePortalData("/portal/data/mutate", {
+		table: ref.table,
+		id: ref.id,
+		parentId: ref.parentId || "",
+		data,
+		merge: false,
 	})
-	if (error) throw error
 	if (["grantor_portals", "grantor_portal_scholars", "grantor_portal_announcements"].includes(ref.table)) {
 		invalidateReferenceData("recommendations:")
 	}
@@ -407,10 +367,11 @@ export async function addDoc(collectionRef, payload = {}) {
 }
 
 export async function deleteDoc(ref) {
-	let request = supabase.from(ref.table).delete().eq("id", ref.id)
-	if (ref.parentId) request = request.eq("parent_id", ref.parentId)
-	const { error } = await request
-	if (error) throw error
+	await mutatePortalData("/portal/data/delete", {
+		table: ref.table,
+		id: ref.id,
+		parentId: ref.parentId || "",
+	})
 	if (["grantor_portals", "grantor_portal_scholars", "grantor_portal_announcements"].includes(ref.table)) {
 		invalidateReferenceData("recommendations:")
 	}
@@ -430,6 +391,7 @@ export function writeBatch() {
 
 export function onSnapshot(ref, onNext, onError) {
 	let active = true
+	let intervalId = null
 	const load = async () => {
 		try {
 			const snapshot = ref.type === "doc" ? await getDoc(ref) : await getDocs(ref)
@@ -440,24 +402,17 @@ export function onSnapshot(ref, onNext, onError) {
 		}
 	}
 	void load()
-	const channel = supabase
-		.channel(`realtime:${ref.table}:${ref.path}:${randomId()}`)
-		.on("postgres_changes", { event: "*", schema: "public", table: ref.table }, () => {
-			void load()
-		})
-		.subscribe()
+	// Direct Realtime subscriptions would bypass the backend authorization layer.
+	intervalId = window.setInterval(() => void load(), 15_000)
 	return () => {
 		active = false
-		void supabase.removeChannel(channel)
+		if (intervalId) window.clearInterval(intervalId)
 	}
 }
 
 export async function getRecord(table, id, parentId = null) {
-	const { data, error } = parentId
-		? await supabase.from(table).select("*").eq("id", id).eq("parent_id", parentId).maybeSingle()
-		: await supabase.from(table).select("*").eq("id", id).maybeSingle()
-	if (error) throw error
-	return data ? flattenRecord(data) : null
+	const result = await queryPortalData({ table, id, parentId: parentId || "", limit: 1 })
+	return result.rows?.[0] ? flattenRecord(result.rows[0]) : null
 }
 
 export async function recordExists(table, id) {
@@ -468,14 +423,8 @@ export async function recordExists(table, id) {
 export async function findRecordByDataField(table, field, value) {
 	const normalizedValue = String(value || "").trim()
 	if (!normalizedValue) return null
-	const { data, error } = await supabase
-		.from(table)
-		.select("*")
-		.eq(`data->>${field}`, normalizedValue)
-		.limit(1)
-		.maybeSingle()
-	if (error) throw error
-	return data ? flattenRecord(data) : null
+	const result = await queryPortalData({ table, filters: [{ field, op: "==", value: normalizedValue }], limit: 1 })
+	return result.rows?.[0] ? flattenRecord(result.rows[0]) : null
 }
 
 export async function findStudentAccountByUniqueField(field, value) {
@@ -507,9 +456,7 @@ export async function upsertStudent(studentId, fields = {}, options = {}) {
 		data = deepMerge(existing || {}, data)
 		delete data.id
 	}
-	const row = buildRow(table, studentId, data)
-	const { error } = await supabase.from(table).upsert(row, { onConflict: "id" })
-	if (error) throw error
+	await mutatePortalData("/portal/data/mutate", { table, id: studentId, data, merge: false })
 }
 
 export async function promotePendingStudentToActive(studentId, fields = {}) {
@@ -533,10 +480,7 @@ export async function promotePendingStudentToActive(studentId, fields = {}) {
 	delete promotedData.id
 
 	await upsertStudent(id, promotedData, { pending: false, merge: false })
-	const { error } = await supabase.from(TABLES.pendingStudent).delete().eq("id", id)
-	if (error) {
-		console.warn("Pending student was promoted, but the pending row could not be removed.", error)
-	}
+	await mutatePortalData("/portal/data/delete", { table: TABLES.pendingStudent, id })
 	return { promoted: true, alreadyActive: false, record: { id, ...promotedData } }
 }
 
@@ -547,9 +491,7 @@ export async function upsertProvider(providerId, fields = {}, options = {}) {
 		data = deepMerge(existing || {}, data)
 		delete data.id
 	}
-	const row = buildRow(TABLES.providers, providerId, data)
-	const { error } = await supabase.from(TABLES.providers).upsert(row, { onConflict: "id" })
-	if (error) throw error
+	await mutatePortalData("/portal/data/mutate", { table: TABLES.providers, id: providerId, data, merge: false })
 }
 
 export async function upsertAdmin(adminId, fields = {}, options = {}) {
@@ -559,9 +501,7 @@ export async function upsertAdmin(adminId, fields = {}, options = {}) {
 		data = deepMerge(existing || {}, data)
 		delete data.id
 	}
-	const row = buildRow(TABLES.admins, adminId, data)
-	const { error } = await supabase.from(TABLES.admins).upsert(row, { onConflict: "id" })
-	if (error) throw error
+	await mutatePortalData("/portal/data/mutate", { table: TABLES.admins, id: adminId, data, merge: false })
 }
 
 const ACCOUNT_TABLES = [

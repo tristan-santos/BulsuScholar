@@ -68,6 +68,10 @@ def validate_scholarship_documents(student: dict[str, Any] | None = None, provid
     semester_tag = get_current_semester_tag()
     missing: list[str] = []
     expired: list[str] = []
+    normalized_year = re.sub(r"[^a-z0-9]", "", str(student.get("year") or student.get("yearLevel") or "").lower())
+    first_year = normalized_year in {"1", "1st", "first", "firstyear", "year1"}
+    first_semester = bool(re.search(r"(?:-|_)(?:1st|first|semester1)$", semester_tag, re.IGNORECASE))
+    rog_required = not (first_year and first_semester)
     cor = student.get("corFile") or student.get("corDocument") or student.get("cor") or {}
     cog = (
         student.get("rogFile")
@@ -84,9 +88,9 @@ def validate_scholarship_documents(student: dict[str, Any] | None = None, provid
     elif cor.get("semesterTag") and cor.get("semesterTag") != semester_tag:
         expired.append("COR")
 
-    if not isinstance(cog, dict) or not cog.get("url"):
+    if rog_required and (not isinstance(cog, dict) or not cog.get("url")):
         missing.append("ROG")
-    elif cog.get("semesterTag") and cog.get("semesterTag") != semester_tag:
+    elif rog_required and cog.get("semesterTag") and cog.get("semesterTag") != semester_tag:
         expired.append("ROG")
 
     return {
@@ -94,6 +98,8 @@ def validate_scholarship_documents(student: dict[str, Any] | None = None, provid
         "missing": missing,
         "expired": expired,
         "semesterTag": semester_tag,
+        "rogRequired": rog_required,
+        "rogExemptionReason": "" if rog_required else "first_year_first_semester",
         "documentUrls": get_document_urls_for_student(student),
     }
 

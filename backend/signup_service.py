@@ -359,6 +359,17 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "reason": "missing_cor_student_id"}
     if cor_scan.get("isValidCorDocument") is False:
         return {"ok": False, "reason": "invalid_cor_document_title", "acceptedTitles": cor_scan.get("acceptedCorTitles") or []}
+    policy_record = supabase_document_get("system_configuration", "document_policy")
+    cor_mode = str((policy_record.get("data") or {}).get("corMode") or "cor_only")
+    detected_cor_title = str(cor_scan.get("documentTitle") or "")
+    if ((cor_mode == "cor_only" and detected_cor_title != "Certificate of Registration")
+            or (cor_mode == "advising_only" and detected_cor_title != "Advising Slip")):
+        return {
+            "ok": False,
+            "reason": "cor_policy_not_satisfied",
+            "corMode": cor_mode,
+            "detectedDocumentTitle": detected_cor_title,
+        }
     if not cor_cycle:
         return {"ok": False, "reason": "missing_cor_cycle", "expectedCurrentCycle": current_cycle}
     if cor_cycle != current_cycle:

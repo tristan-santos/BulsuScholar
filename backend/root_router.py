@@ -4,8 +4,10 @@ from fastapi import APIRouter, Body, File, HTTPException, Query, Request, Respon
 
 try:
     from .access_control import require_admin_bearer
+    from .security_history_service import list_root_recovery_tickets, root_recovery_attachment_content, root_review_recovery
 except ImportError:  # pragma: no cover
     from access_control import require_admin_bearer
+    from security_history_service import list_root_recovery_tickets, root_recovery_attachment_content, root_review_recovery
 
 try:
     from .report_service import build_report_pdf_bytes, sanitize_report_filename, validate_report_payload
@@ -199,6 +201,24 @@ def root_support_delete(ticket_id: str, request: Request) -> dict[str, Any]:
 def root_support_report(request: Request) -> dict[str, Any]:
     require_root(request)
     return {"ok": True, "rows": support_conversation_report()}
+
+
+@router.get("/root/recovery-tickets")
+def root_recovery_tickets(request: Request) -> dict[str, Any]:
+    require_root(request)
+    return {"ok": True, "tickets": list_root_recovery_tickets()}
+
+
+@router.post("/root/recovery-tickets/{ticket_id}/review")
+def root_recovery_review(ticket_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    identity = require_root(request)
+    return root_review_recovery(ticket_id, payload, str(identity["root"].get("id") or "root"))
+
+
+@router.get("/root/recovery-attachments/{attachment_id}/content")
+def root_recovery_attachment(attachment_id: str, request: Request) -> Response:
+    require_root(request)
+    return root_recovery_attachment_content(attachment_id)
 
 
 @router.get("/root/logs")

@@ -612,7 +612,7 @@ def update_config(request: Request, identity: dict[str, Any], key: str, data: di
         raise HTTPException(status_code=404, detail="system_setting_not_found")
     current = _first("system_configuration", f"id=eq.{key}&select=*") or {"data": {}}
     allowed_fields = {
-        "portal": {"maintenanceMode", "allowStudentSignup", "allowGrantorAnnouncements", "reportExportEnabled"},
+        "portal": {"maintenanceMode", "allowStudentSignup", "allowGrantorAnnouncements", "reportExportEnabled", "waitlistCapacity"},
         "academic_cycle": {"academicYear", "semester"},
         "branding": {"productName", "fontFamily", "primaryColor", "accentColor", "logoUrl", "faviconUrl", "maintenanceMessage"},
     }
@@ -621,6 +621,13 @@ def update_config(request: Request, identity: dict[str, Any], key: str, data: di
     if unknown:
         raise HTTPException(status_code=422, detail="unsupported_system_setting")
     submitted = {field: data[field] for field in allowed_fields[key] if field in data}
+    if key == "portal" and "waitlistCapacity" in submitted:
+        try:
+            submitted["waitlistCapacity"] = int(submitted["waitlistCapacity"])
+        except (TypeError, ValueError) as error:
+            raise HTTPException(status_code=422, detail="invalid_waitlist_capacity") from error
+        if submitted["waitlistCapacity"] < 0 or submitted["waitlistCapacity"] > 10000:
+            raise HTTPException(status_code=422, detail="invalid_waitlist_capacity")
     merged = {**(current.get("data") or {}), **submitted, "updatedBy": identity["root"]["id"], "updatedAt": now_iso()}
     if key == "academic_cycle":
         if not re.fullmatch(r"\d{4}-\d{4}", str(merged.get("academicYear") or "")) or merged.get("semester") not in {"1ST", "2ND"}:

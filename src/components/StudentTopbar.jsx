@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
 	HiOutlineAcademicCap,
 	HiOutlineBell,
+	HiOutlineClock,
 	HiOutlineHome,
 	HiOutlineInbox,
 	HiOutlineLogout,
@@ -27,6 +28,8 @@ import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/
 import logo2 from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import ThemeToggle from "./ThemeToggle"
+import { supabase } from "../services/supabaseClient"
+import { clearPortalIdentity } from "../services/portalSessionStorage"
 
 function getReadAnnouncementStorageKey(studentId = "") {
 	return `bulsuscholar_student_read_announcements_${studentId || "guest"}`
@@ -228,9 +231,9 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 	const fullName = getStudentName(user || {})
 	const studentEmail = user?.email ? String(user.email).trim().toLowerCase() : "Student account"
 
-	const handleLogout = useCallback(() => {
-		sessionStorage.removeItem("bulsuscholar_userId")
-		sessionStorage.removeItem("bulsuscholar_userType")
+	const handleLogout = useCallback(async () => {
+		clearPortalIdentity()
+		await supabase.auth.signOut().catch(() => {})
 		setProfileMenuOpen(false)
 		navigate("/", { replace: true })
 	}, [navigate])
@@ -306,6 +309,10 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/scholarships") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/scholarships") ? "page" : undefined} onClick={() => goTo("/student-dashboard/scholarships")}>
 										<HiOutlineAcademicCap className="student-verified-dropdown-item-icon" />
 										Scholarships
+									</button>
+									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/history") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/history") ? "page" : undefined} onClick={() => goTo("/student-dashboard/history")}>
+										<HiOutlineClock className="student-verified-dropdown-item-icon" />
+										History
 									</button>
 								</nav>
 								<div className="student-verified-dropdown-theme">

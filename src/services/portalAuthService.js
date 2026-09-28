@@ -29,14 +29,31 @@ async function authRequest(path, { method = "POST", payload, operation = "auth.l
 
 export async function loginWithUserId(userId, password) {
 	const result = await authRequest("/auth/login", { payload: { userId, password } })
+	if (result.emailVerification?.required) return result
 	const session = result.session || {}
 	const { error } = await supabase.auth.setSession({
 		access_token: session.access_token,
 		refresh_token: session.refresh_token,
 	})
 	if (error) throw error
-	return result.account
+	return result
 }
+
+export async function completeEmailVerification(challengeId, code, password) {
+	const result = await authRequest("/auth/email-verification/complete", {
+		payload: { challengeId, code, password },
+		operation: "auth.email-verification",
+	})
+	const session = result.session || {}
+	const { error } = await supabase.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token })
+	if (error) throw error
+	return result
+}
+
+export const resendEmailVerification = (challengeId) => authRequest("/auth/email-verification/resend", {
+	payload: { challengeId },
+	operation: "auth.email-verification",
+})
 
 export const validatePortalSession = () => authRequest("/auth/session", {
 	method: "GET",

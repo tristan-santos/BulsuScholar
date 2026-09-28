@@ -1,4 +1,6 @@
-export const SCHOLARSHIP_CHOICE_ENABLED = import.meta.env?.VITE_ENABLE_SCHOLARSHIP_CHOICE !== "false"
+// Commitment happens through Request Materials. The retired Keep/Change flow
+// must not be re-enabled from a deployment environment variable.
+export const SCHOLARSHIP_CHOICE_ENABLED = true
 
 const normalize = (value) => String(value || "").trim().toLowerCase()
 
@@ -21,11 +23,13 @@ export function getArchivedGrantorChoice(student = {}) {
 }
 
 export function isArchivedGrantorReplacementMode(student = {}) {
-	return normalize(getArchivedGrantorChoice(student)?.decision) === "change"
+	void student
+	return false
 }
 
 export function isArchivedGrantorChoicePending(student = {}) {
-	return normalize(getArchivedGrantorChoice(student)?.decision) === "pending"
+	void student
+	return false
 }
 
 export function isOriginalArchivedGrantorScholarship(student = {}, entry = {}) {
@@ -34,8 +38,9 @@ export function isOriginalArchivedGrantorScholarship(student = {}, entry = {}) {
 }
 
 export function isReplacementApplication(student = {}, entry = {}) {
-	const choice = getArchivedGrantorChoice(student)
-	return Boolean(choice?.applicationId && normalize(entry.replacementForApplicationId) === normalize(choice.applicationId))
+	void student
+	void entry
+	return false
 }
 
 export function sameApplicationGrantor(left = {}, right = {}) {
@@ -63,13 +68,7 @@ export function matchesScholarshipApplication(application = {}, entry = {}) {
 }
 
 export function getGrantorApplicationBlock(student = {}, offering = {}, now = Date.now()) {
-	const archiveChoice = getArchivedGrantorChoice(student)
-	const archiveDecision = normalize(archiveChoice?.decision)
-	if (archiveDecision === "pending") return "Choose whether to keep or change your archived-grantor scholarship first."
-	if (archiveDecision === "change" && sameApplicationGrantor(archiveChoice, offering)) {
-		return "The archived grantor cannot accept a replacement application."
-	}
-	if (hasScholarshipCommitment(student) && archiveDecision !== "change") return "You have already selected a scholarship."
+	if (hasScholarshipCommitment(student)) return "You have already selected a scholarship."
 	const active = (student.scholarships || []).find((entry) =>
 		!isClosedApplication(entry) && sameApplicationGrantor(entry, offering))
 	if (active) return "You already have an active application with this grantor."

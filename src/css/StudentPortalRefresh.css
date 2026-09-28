@@ -668,3 +668,500 @@
 		padding-top: calc(var(--student-topbar-height, 72px) + 1rem);
 	}
 }
+
+/* Profile drafts and document verification */
+.student-profile-workspace .student-shell {
+	max-width: 1240px;
+}
+
+.student-profile-loading {
+	min-height: 100vh;
+	display: grid;
+	place-items: center;
+	background: #f7faf8;
+	color: #16372d;
+}
+
+.student-profile-page-head {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	gap: 1.25rem;
+	align-items: start;
+	margin-bottom: 1.25rem;
+}
+
+.student-profile-page-head h1,
+.student-profile-editor h2,
+.student-verification-documents h2,
+.student-profile-version-history h2 {
+	margin: 0;
+	color: #102a22;
+}
+
+.student-profile-page-head p,
+.student-profile-editor header p,
+.student-verification-documents header p {
+	margin: .35rem 0 0;
+	color: #62766f;
+}
+
+.student-profile-page-head > div > span {
+	color: #00794b;
+	font-size: .76rem;
+	font-weight: 800;
+	text-transform: uppercase;
+}
+
+.student-profile-cycle,
+.student-review-status {
+	border: 1px solid #bfd8ce;
+	border-radius: 999px;
+	padding: .42rem .72rem;
+	font-size: .78rem;
+	font-weight: 800;
+	white-space: nowrap;
+}
+
+.student-profile-editor,
+.student-verification-documents,
+.student-profile-version-history {
+	background: #fff;
+	border: 1px solid #d7e5df;
+	border-radius: 8px;
+	padding: 1.25rem;
+	margin-bottom: 1rem;
+}
+
+.student-profile-editor > header,
+.student-verification-documents > header {
+	display: flex;
+	justify-content: space-between;
+	gap: 1rem;
+	align-items: flex-start;
+	padding-bottom: 1rem;
+	border-bottom: 1px solid #e3ece8;
+}
+
+.student-profile-editor-title {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.student-profile-editor-title > img,
+.student-profile-photo-fallback {
+	width: 52px;
+	height: 52px;
+	border-radius: 50%;
+	object-fit: cover;
+	flex: 0 0 52px;
+}
+
+.student-profile-photo-fallback {
+	display: grid;
+	place-items: center;
+	background: #e7f5ef;
+	color: #006b45;
+	font-weight: 800;
+}
+
+.student-profile-completeness {
+	margin: 16px 0;
+}
+
+.student-profile-completeness > div {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	font-size: 0.86rem;
+}
+
+.student-profile-completeness progress {
+	width: 100%;
+	height: 8px;
+	accent-color: #007a4d;
+}
+
+.student-profile-form-grid--new {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 1rem;
+	margin-top: 1.2rem;
+}
+
+.student-profile-form-grid--new label,
+.student-profile-address-group label {
+	display: grid;
+	gap: .42rem;
+	color: #29463d;
+	font-size: .82rem;
+	font-weight: 700;
+}
+
+.student-profile-form-grid--new input,
+.student-profile-form-grid--new select,
+.student-profile-address-group input,
+.student-document-actions select {
+	min-width: 0;
+	min-height: 42px;
+	border: 1px solid #c7d8d1;
+	border-radius: 6px;
+	background: #fff;
+	color: #102a22;
+	padding: .65rem .72rem;
+}
+
+.student-profile-wide { grid-column: span 2; }
+
+.student-profile-address-group {
+	display: grid;
+	grid-template-columns: 2fr repeat(4, 1fr);
+	gap: 1rem;
+	margin: 1.25rem 0 0;
+	padding: 1rem;
+	border: 1px solid #d8e7e1;
+	border-radius: 6px;
+}
+
+.student-profile-address-group legend {
+	padding: 0 .4rem;
+	color: #006f45;
+	font-weight: 800;
+}
+
+.student-profile-address-toggle {
+	display: flex;
+	align-items: center;
+	gap: .55rem;
+	margin-top: 1rem;
+	color: #29463d;
+	font-weight: 700;
+}
+
+.student-profile-attestation {
+	margin-top: 1.25rem;
+	padding-top: 1rem;
+	border-top: 1px solid #e3ece8;
+}
+
+.student-profile-attestation h3 { margin: 0; color: #102a22; }
+.student-profile-attestation p { color: #62766f; }
+
+.student-profile-signature {
+	max-width: 680px;
+}
+
+.student-profile-signature canvas {
+	display: block;
+	width: 100%;
+	height: 150px;
+	border: 1px dashed #7ba897;
+	border-radius: 6px;
+	background: #fff;
+	touch-action: none;
+	cursor: crosshair;
+}
+
+.student-profile-signature > div,
+.student-profile-editor-actions,
+.student-document-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .65rem;
+	align-items: center;
+	margin-top: .75rem;
+}
+
+.student-profile-file-action,
+.student-document-actions label {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: .45rem;
+	min-height: 40px;
+	padding: .55rem .8rem;
+	border-radius: 6px;
+	background: #00794b;
+	color: #fff;
+	font-weight: 800;
+	cursor: pointer;
+}
+
+.student-profile-file-action input,
+.student-document-actions label input { display: none; }
+
+.student-profile-signature small { display: block; margin-top: .6rem; color: #62766f; }
+
+.student-profile-editor-actions {
+	justify-content: flex-end;
+	padding-top: 1rem;
+	border-top: 1px solid #e3ece8;
+}
+
+.student-review-status--approved { color: #087044; background: #eaf8f1; border-color: #9ed4bc; }
+.student-review-status--pending { color: #875b00; background: #fff8e4; border-color: #efd185; }
+.student-review-status--rejected { color: #9e2017; background: #fff0ef; border-color: #e7aaa5; }
+.student-review-status--missing { color: #586a64; background: #f4f7f6; }
+
+.student-profile-rejection {
+	display: flex;
+	align-items: center;
+	gap: .5rem;
+	color: #9e2017;
+	font-weight: 700;
+}
+
+.student-profile-field-errors {
+	margin: .75rem 0 0;
+	padding: .75rem 1rem .75rem 2rem;
+	border-left: 3px solid #b42318ba;
+	background: #fff3f2;
+	color: #862018;
+}
+
+.student-document-review-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1rem;
+	margin-top: 1rem;
+}
+
+.student-document-review-grid article {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: .85rem;
+	align-content: start;
+	min-height: 250px;
+	padding: 1rem;
+	border: 1px solid #d8e7e1;
+	border-radius: 7px;
+	background: #fbfdfc;
+}
+
+.student-document-review-grid article > svg {
+	font-size: 1.5rem;
+	color: #00794b;
+}
+
+.student-document-review-grid h3 { margin: 0; color: #102a22; font-size: 1rem; }
+.student-document-review-grid p { color: #62766f; line-height: 1.55; }
+.student-document-review-grid strong { display: block; color: #164c3b; }
+.student-document-review-grid small { display: block; margin-top: .4rem; color: #9e2017; }
+.student-document-actions { grid-column: 1 / -1; align-self: end; }
+.student-document-exempt-icon { justify-self: end; color: #087044 !important; }
+
+.student-profile-version-history > div {
+	display: grid;
+	gap: .65rem;
+	margin-top: 1rem;
+}
+
+.student-profile-version-history article {
+	display: grid;
+	grid-template-columns: 1fr auto auto;
+	gap: 1rem;
+	align-items: center;
+	padding: .75rem;
+	border-bottom: 1px solid #e3ece8;
+}
+
+.student-profile-version-history article p { grid-column: 1 / -1; margin: 0; color: #9e2017; }
+
+.student-dashboard--dark .student-profile-editor,
+.student-dashboard--dark .student-verification-documents,
+.student-dashboard--dark .student-profile-version-history,
+.student-dashboard--dark .student-document-review-grid article {
+	background: #12221d;
+	border-color: #315148;
+}
+
+.student-dashboard--dark .student-profile-page-head h1,
+.student-dashboard--dark .student-profile-editor h2,
+.student-dashboard--dark .student-profile-editor h3,
+.student-dashboard--dark .student-verification-documents h2,
+.student-dashboard--dark .student-profile-version-history h2,
+.student-dashboard--dark .student-document-review-grid h3,
+.student-dashboard--dark .student-profile-form-grid--new label,
+.student-dashboard--dark .student-profile-address-group label,
+.student-dashboard--dark .student-profile-address-toggle {
+	color: #eef8f4;
+}
+
+.student-dashboard--dark .student-profile-form-grid--new input,
+.student-dashboard--dark .student-profile-form-grid--new select,
+.student-dashboard--dark .student-profile-address-group input,
+.student-dashboard--dark .student-document-actions select {
+	background: #0d1915;
+	border-color: #41675b;
+	color: #eef8f4;
+}
+
+.student-dashboard--dark .student-profile-page-head p,
+.student-dashboard--dark .student-profile-editor header p,
+.student-dashboard--dark .student-verification-documents header p,
+.student-dashboard--dark .student-profile-attestation p,
+.student-dashboard--dark .student-profile-signature small,
+.student-dashboard--dark .student-document-review-grid p,
+.student-dashboard--dark .student-profile-version-history small,
+.student-dashboard--dark .student-profile-completeness {
+	color: #b9cec6;
+}
+
+.student-dashboard--dark .student-document-review-grid strong {
+	color: #a9e4ca;
+}
+
+@media (max-width: 900px) {
+	.student-profile-form-grid--new { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.student-profile-address-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.student-document-review-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+	.student-profile-page-head { grid-template-columns: 1fr; }
+	.student-profile-editor > header {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.student-profile-editor-title {
+		align-items: flex-start;
+		min-width: 0;
+	}
+	.student-profile-editor-title > div {
+		min-width: 0;
+	}
+	.student-profile-editor-title > img,
+	.student-profile-photo-fallback {
+		width: 44px;
+		height: 44px;
+		flex-basis: 44px;
+	}
+	.student-profile-editor .student-review-status {
+		align-self: flex-start;
+		max-width: 100%;
+		white-space: normal;
+	}
+	.student-profile-form-grid--new,
+	.student-profile-address-group { grid-template-columns: 1fr; }
+	.student-profile-wide { grid-column: auto; }
+	.student-profile-editor-actions > *,
+	.student-document-actions > * { width: 100%; }
+	.student-profile-version-history article { grid-template-columns: 1fr; }
+}
+.student-waitlist-panel {
+	display: grid;
+	gap: 1rem;
+	margin: 1rem 0;
+	padding: 1.1rem 1.25rem;
+	border-left: 4px solid #007a4d;
+	background: #f3faf7;
+	color: #17342a;
+}
+.student-waitlist-panel h3 { margin: 0.2rem 0; font-size: 1.15rem; }
+.student-waitlist-panel p { margin: 0; color: #536a61; }
+.student-waitlist-panel > div > span { color: #007a4d; font-size: 0.76rem; font-weight: 800; text-transform: uppercase; }
+.student-waitlist-list { display: grid; gap: 0.7rem; }
+.student-waitlist-list article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.85rem 0; border-top: 1px solid #cfdfd7; }
+.student-waitlist-list article > div:first-child { display: grid; gap: 0.2rem; }
+.student-waitlist-list span, .student-waitlist-list small { color: #536a61; }
+.student-waitlist-actions { display: flex; gap: 0.6rem; }
+.student-dashboard--dark .student-waitlist-panel { background: #102c23; color: #f2fff9; }
+.student-dashboard--dark .student-waitlist-panel p,
+.student-dashboard--dark .student-waitlist-list span,
+.student-dashboard--dark .student-waitlist-list small { color: #b9cec5; }
+.student-dashboard--dark .student-waitlist-list article { border-top-color: #365248; }
+@media (max-width: 640px) {
+	.student-waitlist-list article { align-items: stretch; flex-direction: column; }
+	.student-waitlist-actions { display: grid; grid-template-columns: 1fr 1fr; }
+}
+.student-history-panel {
+	padding: 1.25rem;
+	border: 1px solid var(--student-border, #d8e4df);
+	background: var(--student-surface, #fff);
+	border-radius: 8px;
+}
+
+.student-history-filters {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 240px));
+	gap: 1rem;
+	margin-bottom: 1.25rem;
+}
+
+.student-history-filters label {
+	display: grid;
+	gap: .4rem;
+	font-weight: 700;
+}
+
+.student-history-filters select,
+.student-history-filters input {
+	min-height: 42px;
+	padding: .6rem .75rem;
+	border: 1px solid #c8d8d2;
+	border-radius: 6px;
+	background: var(--student-surface, #fff);
+	color: inherit;
+}
+
+.student-history-list {
+	display: grid;
+}
+
+.student-history-entry {
+	display: grid;
+	grid-template-columns: 42px 1fr 42px;
+	align-items: start;
+	gap: .9rem;
+	padding: 1rem 0;
+	border-top: 1px solid var(--student-border, #e1e9e6);
+}
+
+.student-history-icon {
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	background: #eaf7f1;
+	color: #007a4d;
+}
+
+.student-history-entry time,
+.student-history-entry p {
+	color: var(--student-muted, #61736d);
+	font-size: .85rem;
+}
+
+.student-history-entry h3 {
+	margin: .25rem 0;
+	font-size: 1rem;
+}
+
+.student-history-pagination {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: .75rem;
+	padding-top: 1rem;
+}
+
+.student-history-error { color: #b42318; }
+
+.student-dashboard--dark .student-history-icon { background: #173c31; color: #75ddb6; }
+
+.student-signed-soe-upload {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: .5rem;
+	cursor: pointer;
+}
+
+.student-signed-soe-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.student-signed-soe-upload.disabled { background: #98a2a0; color: #fff; cursor: not-allowed; opacity: .75; }
+
+@media (max-width: 640px) {
+	.student-history-filters { grid-template-columns: 1fr; }
+	.student-history-entry { grid-template-columns: 42px 1fr 36px; }
+}

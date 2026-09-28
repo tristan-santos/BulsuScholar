@@ -69,8 +69,7 @@ def _document_url(student: dict[str, Any], keys: tuple[str, ...]) -> str:
 
 
 def _eligible_low_slot_students(announcement: dict[str, Any], exclude_student_id: str = "") -> list[str]:
-    import os
-    choice_enabled = os.getenv("ENABLE_SCHOLARSHIP_CHOICE", "true").strip().lower() != "false"
+    choice_enabled = True
     students_result = supabase_select("students", limit=0)
     applications_result = supabase_select("scholarship_applications", limit=0)
     if not students_result.get("ok") or not applications_result.get("ok"):
@@ -475,12 +474,24 @@ def _archived_grantor_account(grantor_id: str) -> dict[str, Any] | None:
 
 def apply_scholarship(payload: dict[str, Any]) -> dict[str, Any]:
     try:
-        from .scholarship_choice_service import reserve_scholarship_application, scholarship_choice_enabled
+        from .scholarship_choice_service import reserve_scholarship_application
     except ImportError:
-        from scholarship_choice_service import reserve_scholarship_application, scholarship_choice_enabled
-    if scholarship_choice_enabled() and payload.get("actorType") == "student":
+        from scholarship_choice_service import reserve_scholarship_application
+    if payload.get("actorType") == "student":
         result = reserve_scholarship_application(payload)
         if result.get("ok") and not result.get("idempotent"):
+            application_id = str(result.get("applicationId") or result.get("id") or "")
+            if application_id:
+                try:
+                    from .student_profile_service import attach_approved_profile_to_application
+                except ImportError:  # pragma: no cover
+                    from student_profile_service import attach_approved_profile_to_application
+                try:
+                    result["profileSnapshotAttached"] = attach_approved_profile_to_application(
+                        str(payload.get("studentId") or ""), application_id
+                    )
+                except Exception as error:  # Snapshot attachment is retryable and must not consume the reserved slot.
+                    result["profileSnapshotWarning"] = str(error)
             application = payload.get("application") or {}
             announcement_id = str(application.get("announcementId") or "")
             grantor_id = str(application.get("grantorId") or application.get("providerId") or "")
@@ -726,6 +737,14 @@ def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
     actor_id = str(payload.get("actorId") or "").strip()
     results = []
 
+    stage_completion = payload.get("stageCompletion") or {}
+    if str(stage_completion.get("stepId") or "").strip() == "document_review":
+        return {
+            "ok": False,
+            "reason": "document_review_requires_submission_approval",
+            "message": "Approve each current-cycle submission in the Document Review workspace.",
+        }
+
     # Preflight every application before any side effects in the legacy batch.
     for update in updates:
         if update.get("table") not in {"scholarship_applications", "scholarshipApplications"}:
@@ -734,19 +753,21 @@ def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
         if not current.get("ok"):
             return {"ok": False, "reason": "application_not_found"}
         current_data = current.get("data") or {}
+        incoming_tracking = (update.get("data") or {}).get("tracking") or {}
+        current_steps = set((current_data.get("tracking") or {}).get("completedStepIds") or [])
+        incoming_steps = set(incoming_tracking.get("completedStepIds") or [])
+        if "document_review" in incoming_steps and "document_review" not in current_steps:
+            return {
+                "ok": False,
+                "reason": "document_review_requires_submission_approval",
+                "message": "Approve each current-cycle submission in the Document Review workspace.",
+            }
         compliance_pause = ((current_data.get("tracking") or {}).get("compliancePause") or {})
         if compliance_pause.get("active") is True:
             return {
                 "ok": False,
                 "reason": "document_compliance_required",
                 "message": "The student must restore the required documents before application review can continue.",
-            }
-        archive_decision = str(current_data.get("grantorArchiveDecision") or "").strip().lower()
-        if current_data.get("workflowPaused") is True or archive_decision in {"pending", "change"}:
-            return {
-                "ok": False,
-                "reason": "archive_choice_required",
-                "message": "This scholarship is paused while the student decides whether to keep or replace it.",
             }
         if current_data.get("closureReason") in {"selected_another_scholarship", "student_withdrawal"}:
             return {"ok": False, "reason": "application_closed", "message": "This application is archived and read-only."}

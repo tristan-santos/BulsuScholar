@@ -11,6 +11,7 @@ import {
 	HiOutlineRefresh,
 	HiOutlineShieldCheck,
 	HiOutlineTrash,
+	HiOutlineUpload,
 	HiOutlineUserCircle,
 } from "react-icons/hi"
 import { MdSupportAgent } from "react-icons/md"
@@ -21,6 +22,7 @@ import {
 	getSupportTickets,
 	sendSupportTicketMessage,
 } from "../services/priorityOneService"
+import { confirmLostEmail, createLostEmailTicket, deleteLostEmailTicket, getLostEmailTicket, sendLostEmailMessage, uploadLostEmailAttachment } from "../services/securityHistoryService"
 import "../css/PortalSupport.css"
 
 const SUPPORT_TOPICS = [
@@ -51,12 +53,27 @@ export default function HelpSupportPage() {
 	const [loading, setLoading] = useState(false)
 	const [sending, setSending] = useState(false)
 	const [confirmDelete, setConfirmDelete] = useState(false)
+	const [recoveryDraft, setRecoveryDraft] = useState({ userId: "", reason: "" })
+	const [recoveryTicket, setRecoveryTicket] = useState(null)
+	const [recoverySecret, setRecoverySecret] = useState("")
+	const [recoveryMessage, setRecoveryMessage] = useState("")
+	const [recoveryCode, setRecoveryCode] = useState("")
 	const threadEndRef = useRef(null)
 	const formRef = useRef(null)
 	const userId = sessionStorage.getItem("bulsuscholar_userId") || ""
 	const userType = sessionStorage.getItem("bulsuscholar_userType") || ""
 	const isAuthenticated = Boolean(userId) && ["student", "grantor", "admin", "provider"].includes(userType)
 	const selectedTicket = useMemo(() => tickets.find((ticket) => ticket.id === selectedId || ticket.ticketId === selectedId) || null, [selectedId, tickets])
+
+	useEffect(() => {
+		if (isAuthenticated) return
+		const query = new URLSearchParams(window.location.search)
+		const ticketId = query.get("recovery") || ""
+		const secret = query.get("secret") || ""
+		if (!ticketId || !secret) return
+		setRecoverySecret(secret)
+		getLostEmailTicket(ticketId, secret).then((result) => setRecoveryTicket(result.ticket)).catch(() => toast.error("This recovery link is invalid or expired."))
+	}, [isAuthenticated])
 
 	const refreshTickets = useCallback(async ({ quiet = false } = {}) => {
 		if (!isAuthenticated) return
@@ -140,6 +157,57 @@ export default function HelpSupportPage() {
 		formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
 	}
 
+	const createRecovery = async (event) => {
+		event.preventDefault()
+		if (!recoveryDraft.userId.trim() || !recoveryDraft.reason.trim()) return
+		setSending(true)
+		try {
+			const result = await createLostEmailTicket(recoveryDraft.userId, recoveryDraft.reason)
+			const link = new URL(result.accessUrl)
+			setRecoverySecret(link.searchParams.get("secret") || "")
+			setRecoveryTicket(result.ticket)
+			window.history.replaceState({}, "", `${link.pathname}${link.search}`)
+			toast.success(`Recovery ticket ${result.ticketId} was created. Keep this page link private.`)
+		} catch (error) { toast.error(error.message || "Recovery ticket could not be created.") } finally { setSending(false) }
+	}
+
+	const refreshRecovery = async () => {
+		if (!recoveryTicket || !recoverySecret) return
+		const result = await getLostEmailTicket(recoveryTicket.id, recoverySecret)
+		setRecoveryTicket(result.ticket)
+	}
+
+	const sendRecoveryMessage = async (event) => {
+		event.preventDefault()
+		if (!recoveryMessage.trim()) return
+		setSending(true)
+		try { const result = await sendLostEmailMessage(recoveryTicket.id, recoverySecret, recoveryMessage); setRecoveryTicket(result.ticket); setRecoveryMessage("") } catch (error) { toast.error(error.message) } finally { setSending(false) }
+	}
+
+	const uploadRecoveryFile = async (file) => {
+		if (!file) return
+		setSending(true)
+		try { await uploadLostEmailAttachment(recoveryTicket.id, recoverySecret, file); await refreshRecovery(); toast.success("Evidence attached privately.") } catch (error) { toast.error(error.message) } finally { setSending(false) }
+	}
+
+	const submitRecoveryCode = async (event) => {
+		event.preventDefault()
+		setSending(true)
+		try { await confirmLostEmail(recoveryTicket.id, recoverySecret, recoveryCode); await refreshRecovery(); toast.success("Email access restored. You can now sign in.") } catch (error) { toast.error(error.message) } finally { setSending(false) }
+	}
+
+	const removeRecoveryTicket = async () => {
+		if (!recoveryTicket || !window.confirm("Delete this recovery conversation and its attachments?")) return
+		setSending(true)
+		try {
+			await deleteLostEmailTicket(recoveryTicket.id, recoverySecret)
+			setRecoveryTicket(null)
+			setRecoverySecret("")
+			window.history.replaceState({}, "", "/help")
+			toast.success("Recovery conversation deleted.")
+		} catch (error) { toast.error(error.message) } finally { setSending(false) }
+	}
+
 	return <div className="portal-support-page"><PortalInfoHeader /><main className="portal-support-main support-center-main">
 		<section className="support-center-hero" aria-labelledby="support-page-title">
 			<div className="support-center-hero-icon"><MdSupportAgent aria-hidden /></div>
@@ -154,6 +222,11 @@ export default function HelpSupportPage() {
 				return <article className="support-topic-card" key={topic.title}><span><Icon aria-hidden /></span><h2>{topic.title}</h2><p>{topic.copy}</p><button type="button" onClick={() => chooseTopic(topic)}>Create ticket</button></article>
 			})}
 		</section>
+
+		{!isAuthenticated ? <section className="support-recovery-workspace" aria-labelledby="lost-email-title">
+			<header><span>Signed-out recovery</span><h2 id="lost-email-title">Lost email access</h2><p>Create a private conversation with root support. Do not include your password.</p></header>
+			{!recoveryTicket ? <form onSubmit={createRecovery}><label>User ID<input value={recoveryDraft.userId} onChange={(event) => setRecoveryDraft((current) => ({ ...current, userId: event.target.value }))} required /></label><label>Reason<textarea value={recoveryDraft.reason} onChange={(event) => setRecoveryDraft((current) => ({ ...current, reason: event.target.value }))} maxLength={4000} required placeholder="Explain why you cannot access the registered email." /></label><button type="submit" data-button-variant="positive" disabled={sending}>Create Recovery Ticket</button></form> : <div className="support-recovery-thread"><div className="support-recovery-ticket-head"><div><strong>{recoveryTicket.ticketId}</strong><span>{String(recoveryTicket.status).replaceAll("_", " ")}</span></div><div><button type="button" data-button-variant="neutral" onClick={refreshRecovery} disabled={sending}><HiOutlineRefresh /> Refresh</button><button type="button" data-button-variant="danger" onClick={removeRecoveryTicket} disabled={sending} aria-label="Delete recovery ticket" title="Delete recovery ticket"><HiOutlineTrash /></button></div></div><div className="support-ticket-messages">{(recoveryTicket.messages || []).map((item) => <article key={item.id || `${item.created_at}-${item.body}`} className={item.sender_type === "root" ? "root" : "user"}><div><strong>{item.sender_type === "root" ? "Root Support" : "You"}</strong><time>{formatDate(item.created_at)}</time></div><p>{item.body}</p></article>)}</div><div className="support-recovery-attachments">{(recoveryTicket.attachments || []).map((item) => <span key={item.id}><HiOutlineDocumentText /> {item.file_name}</span>)}</div>{!["resolved", "rejected", "deleted"].includes(recoveryTicket.status) ? <><form className="support-ticket-composer" onSubmit={sendRecoveryMessage}><textarea value={recoveryMessage} onChange={(event) => setRecoveryMessage(event.target.value)} maxLength={4000} placeholder="Add information for root support..." /><button type="submit" data-button-variant="positive" disabled={sending || !recoveryMessage.trim()}><HiOutlinePaperAirplane /> Send</button></form><label className="support-recovery-upload"><HiOutlineUpload /> Attach evidence<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={sending || (recoveryTicket.attachments || []).length >= 5} onChange={(event) => uploadRecoveryFile(event.target.files?.[0])} /></label></> : null}{recoveryTicket.status === "awaiting_email_confirmation" ? <form className="support-recovery-confirm" onSubmit={submitRecoveryCode}><label>Code sent to the proposed email<input inputMode="numeric" maxLength={6} value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))} /></label><button type="submit" data-button-variant="positive" disabled={sending || recoveryCode.length !== 6}>Confirm New Email</button></form> : null}</div>}
+		</section> : null}
 
 		<section className="support-ticket-workspace" aria-label="Support ticket conversations">
 			<aside className="support-ticket-sidebar">

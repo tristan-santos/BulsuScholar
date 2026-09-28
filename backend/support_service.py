@@ -8,7 +8,7 @@ from typing import Any
 
 SUPPORT_KNOWLEDGE = """
 BulsuScholar is the BulSU scholarship management portal for students, grantors, and administrators.
-Students can create an account, upload a current COR or Advising Slip and the required previous-semester ROG, review announcements, apply to eligible scholarships, track applications, upload required documents, request materials/SOE, and read inbox decisions.
+Students can create an account, upload the registration document allowed by the current scholarship-office policy, and submit the required previous-semester ROG, review announcements, apply to eligible scholarships, track applications, upload required documents, request materials/SOE, and read inbox decisions.
 Students may keep multiple eligible applications until requesting materials commits them to one scholarship. A rejected application has a grantor-specific 24-hour reapplication cooldown. Archived or frozen records cannot progress.
 The COR or Advising Slip must match the current academic cycle. A first-year student in the first semester may submit ROG optionally; otherwise the ROG must be from the immediately previous semester.
 Grantors manage only their own roster, scholarships, announcements, applicants, and decisions. Administrators manage system-wide records and review workflows.

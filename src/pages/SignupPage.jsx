@@ -12,17 +12,12 @@ import {
 	HiOutlineEyeOff,
 	HiOutlineUser,
 	HiOutlineIdentification,
+	HiX,
 } from "react-icons/hi"
-import {
-	serverTimestamp,
-	recordExists,
-	findStudentAccountByUniqueField,
-	db,
-} from "../services/supabaseDataService"
+import { serverTimestamp } from "../services/supabaseDataService"
 import { toast } from "react-toastify"
 import { supabase } from "../services/supabaseClient"
 import { uploadToStorage } from "../services/storageService"
-import { findMatchingGrantorScholars } from "../services/grantorService"
 import {
 	getCurrentSemesterTag,
 } from "../services/scholarshipService"
@@ -125,20 +120,6 @@ function getPasswordRequirements(pwd) {
 	}
 }
 
-function toGrantorMatchMetadata(matches = []) {
-	return matches.map((match) => ({
-		id: match.id || "",
-		grantorId: match.grantorId || "",
-		grantorName: match.grantorName || "",
-		providerType: match.providerType || "",
-		scholarshipName:
-			match.scholarshipName || match.grantorName || "Scholarship",
-		documentRequirementLabel: match.requiresFullDocs
-			? "Requires COR and ROG"
-			: "Requires COR and ROG",
-	}))
-}
-
 function normalizeScannedSemester(value = "") {
 	const normalized = String(value || "").trim().toLowerCase()
 	if (["1", "1st", "first"].includes(normalized)) return "1ST"
@@ -190,6 +171,7 @@ function getSignupWorkflowErrorMessage(error = {}) {
 	const rawMessage = String(error?.message || "")
 	const reasonMatchers = [
 		["invalid_cor_document_title", "Please upload a valid COR: Advising Slip or Certificate of Registration."],
+		["cor_policy_not_satisfied", "This document does not match the scholarship office's current COR intake policy."],
 		["missing_cor_cycle", "The COR/Advising Slip semester was not detected. Please upload a clear current-semester document."],
 		["cor_cycle_mismatch", `COR/Advising Slip must be for the current cycle: ${getCurrentSemesterTag()}.`],
 		["missing_rog_scan", `Please upload your ROG for the previous cycle: ${getPreviousSemesterTag()}.`],
@@ -461,72 +443,6 @@ export default function SignupPage() {
 		const maxLength = Math.max(a.length, b.length)
 		if (!maxLength) return 0
 		return Number((1 - getLevenshteinDistance(a, b) / maxLength).toFixed(4))
-	}
-
-	const buildSignupFullName = (record = {}) =>
-		normalizeSpace(
-			record.fullName ||
-				[record.fname, record.mname, record.lname]
-					.filter(Boolean)
-					.join(" "),
-		)
-
-	const getNameLastToken = (value = "") => {
-		const tokens = getNameTokens(value)
-		return tokens[tokens.length - 1] || ""
-	}
-
-	const isSimilarRosterName = (rosterName = "", submittedName = "") => {
-		const expected = normalizeIdentityText(rosterName)
-		const actual = normalizeIdentityText(submittedName)
-		if (!expected || !actual) return true
-		if (expected === actual) return true
-
-		const directSimilarity = getLevenshteinSimilarity(expected, actual)
-		const sortedSimilarity = getLevenshteinSimilarity(
-			getTokenSortedName(expected),
-			getTokenSortedName(actual),
-		)
-		const tokenOverlap = getTokenOverlapSimilarity(expected, actual)
-		const sameLastName = Boolean(
-			getNameLastToken(expected) &&
-				getNameLastToken(expected) === getNameLastToken(actual),
-		)
-
-		return (
-			directSimilarity >= 0.72 ||
-			sortedSimilarity >= 0.72 ||
-			(sameLastName && tokenOverlap >= 0.5)
-		)
-	}
-
-	const getRosterIdentityConflicts = (matches = [], studentDraft = {}) => {
-		const submittedStudentId = normalizeStudentNumber(
-			studentDraft.studentnumber || studentDraft.studentId || userId,
-		)
-		const submittedName = buildSignupFullName(studentDraft)
-		return matches
-			.filter((match) => {
-				const matchStudentId = normalizeStudentNumber(
-					match.studentId || match.studentnumber || match.studentNumber || "",
-				)
-				const rosterName = buildSignupFullName(match)
-				return Boolean(
-					submittedStudentId &&
-						matchStudentId === submittedStudentId &&
-						rosterName &&
-						!isSimilarRosterName(rosterName, submittedName),
-				)
-			})
-			.map((match) => ({
-				studentId:
-					match.studentId || match.studentnumber || match.studentNumber || "",
-				rosterName: buildSignupFullName(match),
-				submittedName,
-				grantorId: match.grantorId || "",
-				grantorName: match.grantorName || "",
-				scholarshipName: match.scholarshipName || match.scholarshipTitle || "",
-			}))
 	}
 
 	const buildScannedFullName = (extracted = {}) =>
@@ -970,40 +886,6 @@ export default function SignupPage() {
 		return true
 	}
 
-	const validateUniqueSignupFields = async () => {
-		const normalizedEmail = normalizeEmail(email)
-		const normalizedCpNumber = normalizeCpNumber(cpNumber)
-
-		const [emailOwner, cpOwner] = await Promise.all([
-			findStudentAccountByUniqueField("email", normalizedEmail),
-			findStudentAccountByUniqueField("cpNumber", normalizedCpNumber),
-		])
-
-		if (emailOwner) {
-			toast.error("This email is already used by another student account.")
-			console.warn("Signup blocked: duplicate student email.", {
-				email: normalizedEmail,
-				existingStudentId: emailOwner.record?.id,
-				table: emailOwner.table,
-			})
-			scrollToSection("section-account")
-			return false
-		}
-
-		if (cpOwner) {
-			toast.error("This CP number is already used by another student account.")
-			console.warn("Signup blocked: duplicate student CP number.", {
-				cpNumber: normalizedCpNumber,
-				existingStudentId: cpOwner.record?.id,
-				table: cpOwner.table,
-			})
-			scrollToSection("section-personal")
-			return false
-		}
-
-		return true
-	}
-
 	const setDocumentUploadError = (documentType, message = "") => {
 		setDocumentUploadErrors((current) => ({ ...current, [documentType]: message }))
 	}
@@ -1259,15 +1141,6 @@ export default function SignupPage() {
 			return
 		}
 
-		try {
-			const uniqueFieldsAreValid = await validateUniqueSignupFields()
-			if (!uniqueFieldsAreValid) return
-		} catch (error) {
-			console.error("Signup uniqueness validation failed:", error)
-			toast.error("Unable to verify email or CP number uniqueness. Please try again.")
-			return
-		}
-
 		if (documentScanResult.cog?.hasAcademicConcern) {
 			toast.error("Your ROG contains a restricted Final Grade value. Please contact the scholarship office for manual assistance.")
 			scrollToSection("section-cor")
@@ -1500,31 +1373,6 @@ export default function SignupPage() {
 		let signupSucceeded = false
 		let signupError = null
 		try {
-			const [studentExists, pendingExists, providerExists, adminExists] =
-				await Promise.all([
-					recordExists("students", studentId),
-					recordExists("pending_students", studentId),
-					recordExists("providers", studentId),
-					recordExists("admins", studentId),
-				])
-
-			if (studentExists || providerExists || adminExists) {
-				toast.error("This User ID is already registered in the system.")
-				scrollToSection("section-account")
-				return
-			}
-
-			if (pendingExists) {
-				toast.error(
-					"This User ID is already pending review. Please wait for approval.",
-				)
-				scrollToSection("section-account")
-				return
-			}
-
-			const uniqueFieldsAreValid = await validateUniqueSignupFields()
-			if (!uniqueFieldsAreValid) return
-
 			const corHash = await getFileSha256(corFile)
 			const validationDocumentScan = {
 				cor: buildStoredDocumentScan(documentScanResult.cor, null, "cor"),
@@ -1644,40 +1492,6 @@ export default function SignupPage() {
 				"SignupPage: Saving student record to database...",
 				registrationDraft,
 			)
-			const matchedGrantors = await findMatchingGrantorScholars(
-				db,
-				registrationDraft,
-			)
-			console.info("SignupPage: Grantor roster matches found:", {
-				count: matchedGrantors.length,
-				matches: matchedGrantors.map((match) => ({
-					id: match.id || "",
-					studentId: match.studentId || match.studentnumber || match.studentNumber || "",
-					grantorId: match.grantorId || "",
-					grantorName: match.grantorName || "",
-					scholarshipName: match.scholarshipName || match.scholarshipTitle || "",
-					matchReason: match.matchReason || "",
-				})),
-			})
-			const rosterIdentityConflicts = getRosterIdentityConflicts(
-				matchedGrantors,
-				registrationDraft,
-			)
-			if (rosterIdentityConflicts.length > 0) {
-				console.warn("Signup blocked: roster student identity mismatch.", {
-					studentId,
-					submittedName: `${fname.trim()} ${mname.trim()} ${lname.trim()}`
-						.replace(/\s+/g, " ")
-						.trim(),
-					conflicts: rosterIdentityConflicts,
-				})
-				toast.error(
-					"This student number is already in a scholarship roster, but the name does not match closely enough. Use the correct roster name, visit the Office of the Scholarship with proof, or submit a Help ticket once available.",
-				)
-				scrollToSection("section-personal")
-				return
-			}
-			const hasMultipleMatchedGrantors = matchedGrantors.length >= 2
 			console.log(
 				"SignupPage: Starting mandatory Supabase Auth email confirmation:",
 				normalizedSignupEmail,
@@ -1701,15 +1515,9 @@ export default function SignupPage() {
 				return
 			}
 			authData = signupAuthData
-			const grantorConflictMessage = hasMultipleMatchedGrantors
-				? "Multiple scholarship roster records may match this account. Review the exact records after confirming your email."
-				: ""
 			const baseData = {
 				...registrationDraft,
 				scholarships: [],
-				grantorMatches: toGrantorMatchMetadata(matchedGrantors),
-				rosterMatchCount: matchedGrantors.length,
-				rosterMatchNotice: grantorConflictMessage,
 			}
 
 			const finalizeResult = await finalizeStudentSignupWorkflow({
@@ -2914,18 +2722,24 @@ export default function SignupPage() {
 			{showImagePreview && previewFile && getPreviewUrlForFile(previewFile) && (
 				<div
 					className="signup-preview-modal-overlay"
+					role="presentation"
 					onClick={() => setShowImagePreview(false)}
 				>
 					<div
 						className="signup-preview-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Document image preview"
 						onClick={(e) => e.stopPropagation()}
 					>
 						<button
 							type="button"
 							className="signup-preview-close"
 							onClick={() => setShowImagePreview(false)}
+							aria-label="Close document preview"
+							title="Close"
 						>
-							✕
+							<HiX aria-hidden />
 						</button>
 						<ZoomableImagePreview
 							src={getPreviewUrlForFile(previewFile)}

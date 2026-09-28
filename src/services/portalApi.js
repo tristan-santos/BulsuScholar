@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient"
 import { trackedFetch } from "./operationTracker"
+import { getPortalIdentity } from "./portalSessionStorage"
 
 export class PortalApiError extends Error {
 	constructor(message, { status = 0, reason = "", data = null } = {}) {
@@ -12,8 +13,9 @@ export class PortalApiError extends Error {
 }
 
 export async function buildPortalRequestHeaders(overrides = {}) {
-	const actorId = overrides.actorId || sessionStorage.getItem("bulsuscholar_userId") || ""
-	const storedActorType = sessionStorage.getItem("bulsuscholar_userType") || ""
+	const identity = getPortalIdentity()
+	const actorId = overrides.actorId || identity.userId || ""
+	const storedActorType = identity.userType || ""
 	const overrideActorType = overrides.actorType === "provider" ? "grantor" : overrides.actorType
 	const actorType = overrideActorType || (storedActorType === "provider" ? "grantor" : storedActorType)
 	const { data } = await supabase.auth.getSession()

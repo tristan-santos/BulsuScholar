@@ -9274,7 +9274,7 @@
 }
 
 .student-dashboard-home .student-modern-action-grid {
-	grid-template-columns: repeat(4, minmax(0, 1fr));
+	grid-template-columns: repeat(5, minmax(0, 1fr));
 	gap: 0.65rem;
 }
 
@@ -9441,6 +9441,21 @@
 .student-dashboard--dark .student-dashboard-home .student-modern-empty {
 	border-color: var(--dashboard-line);
 	background: #0e1814;
+}
+
+.student-dashboard--dark .student-dashboard-home .student-modern-recommended-empty strong,
+.student-dashboard--dark .student-dashboard-home .student-modern-empty strong {
+	color: #f8fafc;
+}
+
+.student-dashboard--dark .student-dashboard-home .student-modern-recommended-empty p,
+.student-dashboard--dark .student-dashboard-home .student-modern-empty p {
+	color: #cbd5e1;
+}
+
+.student-dashboard--dark .student-dashboard-home .student-modern-recommended-empty svg,
+.student-dashboard--dark .student-dashboard-home .student-modern-empty svg {
+	color: #6ee7b7;
 }
 
 .student-dashboard--dark .student-dashboard-home .student-modern-scholarship-track i {

@@ -62,6 +62,27 @@ class ScholarshipChoiceReviewTests(unittest.TestCase):
         self.assertEqual(result["reason"], "cross_grantor_application_update_blocked")
         update.assert_not_called()
 
+    def test_document_review_stage_completion_requires_submission_approval(self):
+        with patch.object(service, "supabase_document_update") as update:
+            result = service.update_admin_review({
+                "actorType": "admin",
+                "stageCompletion": {"stepId": "document_review", "studentId": "student"},
+            })
+        self.assertEqual(result["reason"], "document_review_requires_submission_approval")
+        update.assert_not_called()
+
+    def test_document_review_cannot_be_added_through_tracking_patch(self):
+        with patch.object(service, "supabase_document_get", return_value={
+            "ok": True, "data": {"tracking": {"completedStepIds": ["application_form"]}},
+        }), patch.object(service, "supabase_document_update") as update:
+            result = service.update_admin_review({"actorType": "admin", "updates": [
+                {"table": "scholarship_applications", "id": "app", "data": {
+                    "tracking": {"completedStepIds": ["application_form", "document_review"]},
+                }},
+            ]})
+        self.assertEqual(result["reason"], "document_review_requires_submission_approval")
+        update.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

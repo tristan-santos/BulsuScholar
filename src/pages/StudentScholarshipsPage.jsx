@@ -77,7 +77,7 @@ import {
 	GRANTOR_PORTAL_COLLECTION,
 	normalizeGrantorPortalSettings,
 } from "../services/grantorService"
-import { applyScholarshipWorkflow, materialRequestWorkflow, chooseScholarshipWorkflow, rejectScholarshipInvitationWorkflow, withdrawScholarshipWorkflow, updateScholarshipDocumentsWorkflow } from "../services/workflowService"
+import { applyScholarshipWorkflow, loadWaitlistWorkflow, materialRequestWorkflow, rejectScholarshipInvitationWorkflow, requestScholarshipMaterialsWorkflow, resolveWaitlistOfferWorkflow, withdrawScholarshipWorkflow, updateScholarshipDocumentsWorkflow } from "../services/workflowService"
 import {
 	SCHOLARSHIP_CHOICE_ENABLED,
 	getGrantorApplicationBlock,
@@ -85,7 +85,6 @@ import {
 	isReplacementApplication,
 	isClosedApplication,
 } from "../services/scholarshipChoiceService"
-import { syncStudentGrantorRosterMatches } from "../services/studentGrantorMatchService"
 import {
 	buildRecommendationApplyPayload,
 	getRecommendationAnnouncementPath,
@@ -107,6 +106,8 @@ import {
 	toRequirementKey,
 } from "../services/otherRequirementService"
 import { closeFromModalBackdrop } from "../services/modalLayerService"
+import { uploadSignedSoe } from "../services/securityHistoryService"
+import { clearPortalIdentity } from "../services/portalSessionStorage"
 
 const SOE_EXPORT_LOCK_MONTHS = 6
 const REJECTION_REAPPLY_COOLDOWN_MS = 24 * 60 * 60 * 1000
@@ -505,18 +506,70 @@ export default function StudentScholarshipsPage() {
 	const [soePreviewBytes, setSoePreviewBytes] = useState(null)
 	const [soePreviewRequestNumber, setSoePreviewRequestNumber] = useState("")
 	const [otherRequirementUploadBusy, setOtherRequirementUploadBusy] = useState("")
+	const [waitlistState, setWaitlistState] = useState({ entries: [], offers: [] })
+	const [waitlistBusy, setWaitlistBusy] = useState("")
+	const [signedSoeBusy, setSignedSoeBusy] = useState("")
 	const { theme, setTheme } = useThemeMode()
 	const userMenuRef = useRef(null)
 	const forcedLogoutRef = useRef(false)
 	const availableProgramsRef = useRef(null)
-	const rosterSyncRef = useRef("")
 	const recommendationRequestKeyRef = useRef("")
 	const invitationRouteActionRef = useRef("")
 	const acceptInvitationRef = useRef(null)
+	const refreshWaitlist = useCallback(async () => {
+		if (!userId) return
+		try {
+			const result = await loadWaitlistWorkflow({ studentId: userId })
+			setWaitlistState({ entries: result.entries || [], offers: result.offers || [] })
+		} catch (error) {
+			console.error("Failed to load scholarship waitlist status.", error)
+		}
+	}, [userId])
+	useEffect(() => { if (userLoaded) void refreshWaitlist() }, [refreshWaitlist, userLoaded])
+	const decideWaitlistOffer = async (offerId, action) => {
+		if (!offerId || waitlistBusy) return
+		setWaitlistBusy(offerId)
+		try {
+			const result = await resolveWaitlistOfferWorkflow({ studentId: userId, offerId, action })
+			toast.success(action === "accept" ? "The reserved slot is now an active application." : "The offer was declined. You may join again at the end of the queue.")
+			if (result.application) setUser((current) => ({ ...(current || {}), scholarships: [...(current?.scholarships || []), result.application] }))
+			await refreshWaitlist()
+		} catch (error) {
+			const waitlistErrorMessages = {
+				student_account_blocked: "Your account cannot accept this scholarship slot.",
+				scholarship_already_committed: "You already committed to another scholarship, so this offer was released.",
+				roster_assignment_conflict: "The scholarship office must resolve your roster records before you can accept an offer.",
+				grantor_application_exists: "You already have an active application with this grantor.",
+				reapply_cooldown_active: "Your 24-hour reapplication cooldown is still active.",
+				grantor_archived: "This grantor is no longer accepting applications.",
+				announcement_not_open_for_applications: "This scholarship is no longer accepting applications.",
+				grade_not_eligible: "Your current GWA no longer meets this scholarship's requirement.",
+			}
+			const reason = error?.reason || error?.message
+			toast.error(waitlistErrorMessages[reason] || error?.message || "Unable to update the waitlist offer.")
+			await refreshWaitlist()
+		} finally {
+			setWaitlistBusy("")
+		}
+	}
 
 	const scholarshipCatalog = useMemo(() => getScholarshipCatalog(), [])
 	const [withdrawTarget, setWithdrawTarget] = useState(null)
 	const [cooldownClock, setCooldownClock] = useState(() => Date.now())
+
+	const handleSignedSoeUpload = async (entry, file) => {
+		if (!file) return
+		const applicationId = entry.applicationId || entry.id
+		setSignedSoeBusy(applicationId)
+		try {
+			await uploadSignedSoe(applicationId, file)
+			toast.success("Signed SOE submitted. This scholarship cycle is now finished.")
+		} catch (error) {
+			toast.error(error?.message || "Signed SOE could not be submitted.")
+		} finally {
+			setSignedSoeBusy("")
+		}
+	}
 	const scholarships = useMemo(
 		() => normalizeScholarshipList(user?.scholarships || []),
 		[user?.scholarships],
@@ -871,8 +924,7 @@ export default function StudentScholarshipsPage() {
 				const accessState = getStudentAccessState(nextUser)
 				if (accessState.isPortalAccessBlocked && !forcedLogoutRef.current) {
 					forcedLogoutRef.current = true
-					sessionStorage.removeItem("bulsuscholar_userId")
-					sessionStorage.removeItem("bulsuscholar_userType")
+						clearPortalIdentity()
 					toast.error(getPortalAccessBlockMessage(nextUser))
 					navigate("/", { replace: true })
 				}
@@ -880,24 +932,6 @@ export default function StudentScholarshipsPage() {
 			() => setUserLoaded(true),
 		)
 	}, [navigate])
-
-	useEffect(() => {
-		if (!userLoaded || !user || !userId) return
-		if (scholarships.length > 0) return
-		const syncKey = `${userId}:${user.updatedAt || user.createdAt || "empty"}`
-		if (rosterSyncRef.current === syncKey) return
-		rosterSyncRef.current = syncKey
-		syncStudentGrantorRosterMatches(user, userId)
-			.then((result) => {
-				if (!result.synced) return
-				console.info("StudentScholarshipsPage: synced grantor roster scholarship match.", {
-					count: result.matches.length,
-					matches: result.matches,
-				})
-				setUser((current) => current ? { ...current, scholarships: result.scholarships } : current)
-			})
-			.catch((error) => console.error("StudentScholarshipsPage: grantor roster sync failed:", error))
-	}, [scholarships.length, user, userId, userLoaded])
 
 	useEffect(() => {
 		if (userLoaded && (!user || !userId)) {
@@ -1521,7 +1555,12 @@ export default function StudentScholarshipsPage() {
 			nextActionCopy = "Your downloaded SOE is ready for scholarship office checking and signature."
 			nextActionHelp = "Bring the downloaded SOE to the scholarship office or assigned admin for signature."
 			summaryTone = "current"
-		} else if (trackingProgress.signingComplete) {
+		} else if (trackingProgress.currentStep?.id === "signed_soe_upload") {
+			nextActionTitle = "Upload Signed SOE"
+			nextActionCopy = "Upload the signed SOE as a PDF, PNG, or JPEG to finish this scholarship cycle."
+			nextActionHelp = "The upload records your submission. It does not claim staff verification or physical custody."
+			summaryTone = "current"
+		} else if (trackingProgress.signedSoeSubmitted || trackingProgress.authoritativeRosterComplete) {
 			nextActionTitle = isKwspFlow
 				? "KWSP cycle finished"
 				: `${trackedScholarshipLabel} cycle finished`
@@ -1567,6 +1606,7 @@ export default function StudentScholarshipsPage() {
 			hasDownloadedMaterials: trackingProgress.hasDownloadedMaterials,
 			signingAttention: trackingProgress.signingAttention,
 			signingComplete: trackingProgress.signingComplete,
+			signedSoeSubmitted: trackingProgress.signedSoeSubmitted,
 		}
 	}, [
 		activeOrPendingProviderTypes,
@@ -1832,6 +1872,11 @@ export default function StudentScholarshipsPage() {
 				},
 			}
 			const result = await applyScholarshipWorkflow(nextPayload)
+			if (result.disposition === "queued") {
+				await refreshWaitlist()
+				toast.info(`This scholarship is full. You joined the waitlist at position ${result.queuePosition || "the next available position"}.`)
+				return
+			}
 			setUser((prev) => ({
 				...(prev || {}),
 				...(result.student || {}),
@@ -1916,7 +1961,7 @@ export default function StudentScholarshipsPage() {
 			const nextInvitations = matchingInvitation
 				? markInvitationAccepted(user.scholarshipInvitations || [], matchingInvitation.id)
 				: user.scholarshipInvitations
-			await applyScholarshipWorkflow({
+			const result = await applyScholarshipWorkflow({
 				studentId: userId,
 				invitationId: matchingInvitation?.id || "",
 				studentUpdate: {
@@ -1948,6 +1993,11 @@ export default function StudentScholarshipsPage() {
 				academicYear: getCurrentAcademicYear(),
 				},
 			})
+			if (result.disposition === "queued") {
+				await refreshWaitlist()
+				toast.info(`This scholarship is full. You joined the waitlist at position ${result.queuePosition || "the next available position"}.`)
+				return
+			}
 			setUser((prev) => ({
 				...(prev || {}),
 				scholarships: nextScholarships,
@@ -2016,6 +2066,11 @@ export default function StudentScholarshipsPage() {
 					scholarshipInvitations: nextInvitations,
 				},
 			})
+			if (result.disposition === "queued") {
+				await refreshWaitlist()
+				toast.info(`This scholarship is full. You joined the waitlist at position ${result.queuePosition || "the next available position"}.`)
+				return
+			}
 			setUser((prev) => ({
 				...(prev || {}),
 				...(result.student || {}),
@@ -2190,8 +2245,7 @@ export default function StudentScholarshipsPage() {
 			if (SCHOLARSHIP_CHOICE_ENABLED) {
 				const applicationId = target.applicationId || studentApplications.find((app) =>
 					app.applicationNumber === target.applicationNumber && app.grantorId === target.grantorId)?.id
-				const result = await chooseScholarshipWorkflow({ studentId: userId, applicationId,
-					actorId: userId, actorType: "student", confirmed: true })
+				const result = await requestScholarshipMaterialsWorkflow({ applicationId })
 				setUser((prev) => ({ ...(prev || {}), ...result.student }))
 				if (result.materialRequest) setStudentSoeRequests((prev) => [
 					normalizeMaterialRequest(result.materialRequest), ...prev.filter((item) => item.id !== result.materialRequest.id),
@@ -2388,8 +2442,18 @@ export default function StudentScholarshipsPage() {
 				`${materialConfig.label} request submitted. Wait for admin approval before downloading.`,
 			)
 		} catch (error) {
-			if (error?.reason !== "scholarship_ineligible") console.error(`Failed to request ${materialKey}:`, error)
-			toast.error(error.message || `${materialConfig?.label || "Material"} request failed. Please try again.`)
+			const messages = {
+				grade_not_eligible: "Your current GWA does not meet this scholarship's requirement.",
+				document_review_required: "Your applicable profile documents must be approved before requesting materials.",
+				document_versions_changed: "A document changed after review. Wait for the corrected version to be approved.",
+				application_requirement_pending: "An application-specific requirement is missing or still waiting for review.",
+				slot_reservation_missing: "This application no longer has a reserved slot. Contact the Scholarship Office.",
+				roster_assignment_conflict: "The Scholarship Office must resolve your roster conflict before this application can continue.",
+				application_closed: "This application is already closed.",
+				authoritative_roster_managed: "Official roster scholarships complete automatically after all applicable documents are approved.",
+			}
+			if (!messages[error?.reason]) console.error(`Failed to request ${materialKey}:`, error)
+			toast.error(messages[error?.reason] || error.message || `${materialConfig?.label || "Material"} request failed. Please try again.`)
 		} finally {
 			setIsMutating(false)
 			setConfirmTarget(null)
@@ -2719,8 +2783,7 @@ export default function StudentScholarshipsPage() {
 		}
 		const latestAccessState = getStudentAccessState(latestStudent)
 		if (latestAccessState.isPortalAccessBlocked) {
-			sessionStorage.removeItem("bulsuscholar_userId")
-			sessionStorage.removeItem("bulsuscholar_userType")
+				clearPortalIdentity()
 			setUser(latestStudent)
 			toast.error(getPortalAccessBlockMessage(latestStudent))
 			closeSoePreview()
@@ -3194,6 +3257,19 @@ export default function StudentScholarshipsPage() {
 						</div>
 					)}
 
+					{waitlistState.entries.some((entry) => ["queued", "offered"].includes(entry.status)) ? (
+						<section className="student-waitlist-panel" aria-labelledby="student-waitlist-title">
+							<div><span>Application Waitlist</span><h3 id="student-waitlist-title">Reserved opportunities</h3><p>Queued applications follow first-in, first-out order. An offered slot is held exclusively for 24 hours.</p></div>
+							<div className="student-waitlist-list">
+								{waitlistState.entries.filter((entry) => ["queued", "offered"].includes(entry.status)).map((entry) => {
+									const snapshot = entry.application_snapshot || {}
+									const offer = waitlistState.offers.find((item) => item.entry_id === entry.id && item.status === "active")
+									return <article key={entry.id}><div><strong>{snapshot.scholarshipName || "Scholarship application"}</strong><span>{entry.status === "offered" ? "Slot offered" : `Queue position: ${entry.queuePosition || "Updating"}`}</span>{offer?.expires_at ? <small>Respond before {new Date(offer.expires_at).toLocaleString()}</small> : <small>Joined {new Date(entry.queued_at).toLocaleString()}</small>}</div>{offer ? <div className="student-waitlist-actions"><button type="button" data-button-variant="neutral" disabled={waitlistBusy === offer.id} onClick={() => decideWaitlistOffer(offer.id, "decline")}><HiX /> Decline</button><button type="button" data-button-variant="positive" disabled={waitlistBusy === offer.id} onClick={() => decideWaitlistOffer(offer.id, "accept")}><HiCheck /> Accept Slot</button></div> : null}</article>
+								})}
+							</div>
+						</section>
+					) : null}
+
 					{visibleRejectedApplication ? (
 						<section className="student-rejection-panel" role="status">
 							<div className="student-rejection-panel-icon">
@@ -3301,7 +3377,14 @@ export default function StudentScholarshipsPage() {
 																: `Current step: ${entryTrackingProgress.currentStepLabel}. Finish this stage before requesting materials.`}
 														</p>
 													</div>
-													<div className="student-kwsp-soe-actions">
+											<div className="student-kwsp-soe-actions">
+												{entryTrackingProgress.currentStep?.id === "signed_soe_upload" ? (
+													<label className={`student-mini-btn student-mini-btn--primary student-signed-soe-upload ${signedSoeBusy === (entry.applicationId || entry.id) ? "disabled" : ""}`}>
+														<HiOutlineCloudUpload aria-hidden />
+														{signedSoeBusy === (entry.applicationId || entry.id) ? "Uploading..." : "Upload Signed SOE"}
+														<input type="file" accept="application/pdf,image/png,image/jpeg" disabled={Boolean(signedSoeBusy)} onChange={(event) => handleSignedSoeUpload(entry, event.target.files?.[0])} />
+													</label>
+												) : null}
 														<button
 															type="button"
 															className="student-scholarship-request-soe student-mini-btn student-mini-btn--primary"
@@ -3818,6 +3901,8 @@ export default function StudentScholarshipsPage() {
 							type="button"
 							className="student-soe-modal-close"
 							onClick={() => setDocumentUploadPrompt(null)}
+							aria-label="Close required document dialog"
+							title="Close"
 						>
 							<HiX aria-hidden />
 						</button>
@@ -3861,6 +3946,8 @@ export default function StudentScholarshipsPage() {
 							type="button"
 							className="student-soe-modal-close"
 							onClick={() => setConfirmTarget(null)}
+							aria-label="Close scholarship confirmation"
+							title="Close"
 						>
 							<HiX aria-hidden />
 						</button>
@@ -3944,6 +4031,8 @@ export default function StudentScholarshipsPage() {
 						<button
 							type="button"
 							className="student-soe-modal-close"
+							aria-label="Close invitation dialog"
+							title="Close"
 							onClick={() => {
 								setInvitationDecision(null)
 								setInvitationRejectReason("Not interested")
@@ -4014,6 +4103,8 @@ export default function StudentScholarshipsPage() {
 							type="button"
 							className="student-soe-modal-close"
 							onClick={closeExpenseModal}
+							aria-label="Close expense form"
+							title="Close"
 						>
 							<HiX aria-hidden />
 						</button>
@@ -4104,7 +4195,7 @@ export default function StudentScholarshipsPage() {
 			{isSoePreviewOpen && soePreviewUrl && (
 				<div className="student-soe-preview-backdrop" role="presentation" onClick={closeSoePreview}>
 					<div className="student-soe-preview-modal" role="dialog" aria-modal="true" aria-label="SOE preview" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="student-soe-modal-close" onClick={closeSoePreview}>
+						<button type="button" className="student-soe-modal-close" onClick={closeSoePreview} aria-label="Close SOE preview" title="Close">
 							<HiX aria-hidden />
 						</button>
 						<h3>SOE Preview</h3>

@@ -23,6 +23,7 @@ import {
 	HiOutlineAcademicCap,
 	HiOutlineBell,
 	HiOutlineCheckCircle,
+	HiOutlineClock,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
 	HiOutlineExternalLink,
@@ -46,7 +47,6 @@ import {
 	sortStudentAnnouncements,
 } from "../services/announcementService"
 import { GRANTOR_SUBCOLLECTIONS } from "../services/grantorService"
-import { syncStudentGrantorRosterMatches } from "../services/studentGrantorMatchService"
 import {
 	getPortalAccessBlockMessage,
 	getStudentAccessState,
@@ -66,6 +66,8 @@ import { getScholarshipTrackingProgress, getScholarshipTrackingStatusLabel } fro
 import { findMatchingPendingInvitation, getGrantorRejectionCooldown, markInvitationAccepted } from "../services/grantorReapplicationService"
 import StudentTopbar from "../components/StudentTopbar"
 import { getNameInitials } from "../utils/nameInitials"
+import { clearPortalIdentity } from "../services/portalSessionStorage"
+import { supabase } from "../services/supabaseClient"
 import "../css/StudentDashboard.css"
 
 function checkValidated(userData) {
@@ -215,7 +217,7 @@ export default function StudentDashboard() {
 	const [studentMaterialRequests, setStudentMaterialRequests] = useState([])
 	const [studentSoeDownloads, setStudentSoeDownloads] = useState([])
 	const [recommendedScholarships, setRecommendedScholarships] = useState([])
-	const [recommendationAlgorithm, setRecommendationAlgorithm] = useState("")
+	const [, setRecommendationAlgorithm] = useState("")
 	const [recommendationsLoading, setRecommendationsLoading] = useState(false)
 	const [applyingRecommendationId, setApplyingRecommendationId] = useState("")
 	const [readAnnouncementIds, setReadAnnouncementIds] = useState(() =>
@@ -225,7 +227,6 @@ export default function StudentDashboard() {
 	const { theme, setTheme } = useThemeMode()
 	const forcedLogoutRef = useRef(false)
 	const profileMenuRef = useRef(null)
-	const rosterSyncRef = useRef("")
 	const recommendationRequestKeyRef = useRef("")
 
 	useEffect(() => {
@@ -249,8 +250,7 @@ export default function StudentDashboard() {
 				const accessState = getStudentAccessState(nextUser)
 				if (accessState.isPortalAccessBlocked && !forcedLogoutRef.current) {
 					forcedLogoutRef.current = true
-					sessionStorage.removeItem("bulsuscholar_userId")
-					sessionStorage.removeItem("bulsuscholar_userType")
+						clearPortalIdentity()
 					toast.error(getPortalAccessBlockMessage(nextUser))
 					navigate("/", { replace: true })
 				}
@@ -288,25 +288,6 @@ export default function StudentDashboard() {
 			navigate("/", { replace: true })
 		}
 	}, [userLoaded, user, navigate])
-
-	useEffect(() => {
-		if (!userLoaded || !user || !sessionState.storedUserId) return
-		const currentScholarships = normalizeScholarshipList(user.scholarships || [])
-		if (currentScholarships.length > 0) return
-		const syncKey = `${sessionState.storedUserId}:${user.updatedAt || user.createdAt || "empty"}`
-		if (rosterSyncRef.current === syncKey) return
-		rosterSyncRef.current = syncKey
-		syncStudentGrantorRosterMatches(user, sessionState.storedUserId)
-			.then((result) => {
-				if (result.synced) {
-					console.info("StudentDashboard: synced grantor roster scholarship match.", {
-						count: result.matches.length,
-						matches: result.matches,
-					})
-				}
-			})
-			.catch((error) => console.error("StudentDashboard: grantor roster sync failed:", error))
-	}, [sessionState.storedUserId, user, userLoaded])
 
 	useEffect(() => {
 		let adminRows = []
@@ -661,9 +642,9 @@ export default function StudentDashboard() {
 		navigate("/help")
 	}, [navigate])
 
-	const handleLogout = useCallback(() => {
-		sessionStorage.removeItem("bulsuscholar_userId")
-		sessionStorage.removeItem("bulsuscholar_userType")
+	const handleLogout = useCallback(async () => {
+		clearPortalIdentity()
+		await supabase.auth.signOut().catch(() => {})
 		navigate("/", { replace: true })
 	}, [navigate])
 
@@ -729,6 +710,11 @@ export default function StudentDashboard() {
 					},
 				}
 				const result = await applyScholarshipWorkflow(nextPayload)
+				if (result.disposition === "queued") {
+					toast.info(`This scholarship is full. You joined the waitlist at position ${result.queuePosition || "the next available position"}.`)
+					navigate("/student-dashboard/scholarships")
+					return
+				}
 				setUser((prev) => ({
 					...(prev || {}),
 					...(result.student || {}),
@@ -955,6 +941,10 @@ export default function StudentDashboard() {
 								</svg>
 								<span>My Profile</span>
 							</button>
+							<button type="button" className="student-action-card student-mini-btn student-mini-btn--secondary" onClick={() => navigate("/student-dashboard/history")}>
+								<HiOutlineClock className="student-action-icon" aria-hidden />
+								<span>History</span>
+							</button>
 							<button
 								type="button"
 								className="student-action-card student-mini-btn student-mini-btn--secondary"
@@ -1127,7 +1117,7 @@ export default function StudentDashboard() {
 							<header className="student-modern-section-head">
 								<div className="student-modern-section-title"><span aria-hidden="true"><HiOutlineAcademicCap /></span><div>
 									<h3>Recommended Scholarships</h3>
-									<p>{recommendationAlgorithm || "Ranked by GWA, roster strength, and location fit."}</p>
+									<p>Recommendation Score - Not Official Ranking.</p>
 								</div></div>
 								{availableRecommendedScholarships.length > 3 ? (
 									<button type="button" onClick={() => navigate("/student-dashboard/recommended-scholarships")}>
@@ -1257,6 +1247,7 @@ export default function StudentDashboard() {
 								<button type="button" onClick={() => navigate("/student-dashboard/scholarships")}><HiOutlineAcademicCap /><span>Scholarships</span><small>View records and applications</small></button>
 								<button type="button" onClick={() => navigate("/student-dashboard/profile")}><HiOutlineUser /><span>My Profile</span><small>Update personal details</small></button>
 								<button type="button" onClick={() => navigate("/student-dashboard/announcements")}><HiOutlineBell /><span>Announcements</span><small>Read latest notices</small></button>
+								<button type="button" onClick={() => navigate("/student-dashboard/history")}><HiOutlineClock /><span>History</span><small>Review your scholarship activity</small></button>
 								<button type="button" onClick={handleContactSupport}><HiOutlineMail /><span>Support</span><small>Contact scholarship office</small></button>
 							</div>
 						</section>

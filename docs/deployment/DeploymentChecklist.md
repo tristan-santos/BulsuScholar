@@ -59,13 +59,16 @@ The SQL files have been syntax-parsed, but have **not** been run against a local
 Postgres instance in this workspace. Test them in a safe staging database if
 one is available.
 
-## 3. Apply The Three Database Files
+## 3. Apply The Database Files In Order
 
 Do this only after Steps 1 and 2. The files are in `supabase/migrations/`:
 
 1. `20260918120000_preserve_tracking_during_document_compliance.sql`
 2. `20260918123000_add_tracking_finish_stage.sql`
 3. `20260918130000_automatic_roster_and_login_security.sql`
+4. `20260923120000_student_profile_document_verification.sql`
+5. `20260923124643_scholarship_roster_workflow.sql`
+6. `20260924024322_scope_reporting_announcements_waitlist.sql`
 
 For **each file, in that order**:
 
@@ -98,10 +101,15 @@ select
   to_regprocedure('public.record_portal_login_attempt(uuid,text,text,boolean)')
     is not null as login_rpc_ready,
   to_regprocedure('public.assign_authoritative_roster_scholarship(text,text,text)')
-    is not null as roster_rpc_ready;
+    is not null as roster_rpc_ready,
+  to_regclass('public.student_profile_revisions') is not null as profile_revision_ready,
+  to_regclass('public.roster_import_batches') is not null as roster_import_ready,
+  to_regclass('public.scholarship_waitlist_entries') is not null as waitlist_ready,
+  to_regprocedure('public.reserve_or_waitlist_scholarship(text,text,text,text,text)')
+    is not null as waitlist_rpc_ready;
 ```
 
-All four values must be `true`. If any is `false`, **STOP**. The successful
+All eight values must be `true`. If any is `false`, **STOP**. The successful
 grantor Auth conversion is a separate step; it did not install these SQL objects.
 
 ## 5. Check Email Recovery Settings
@@ -175,6 +183,43 @@ The health results must be healthy and **all four** route checks must print
 `True`. If `/auth/login` still prints `False`, Railway is still serving the
 wrong commit or URL. **Do not test passwords or turn Maintenance Mode off.**
 
+### 7A. Configure The Waitlist Expiry Job
+
+Do this after Railway has deployed the new backend, even when the waitlist
+capacity will remain `0` initially.
+
+1. In PowerShell, generate one secret and keep the printed value private:
+
+   ```powershell
+   $bytes = New-Object byte[] 36
+   [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+   $cronSecret = [Convert]::ToBase64String($bytes)
+   $cronSecret
+   ```
+
+2. In the existing Railway API service, open **Variables**, add
+   `CRON_SECRET`, paste that value, and deploy the variable change.
+3. In the same Railway project, create another service from this same GitHub
+   repository. Name it `waitlist-expiry`. It must use the repository
+   `Dockerfile` and the same deployed commit as the API.
+4. In the new service, add these variables:
+   - `CRON_SECRET`: the exact same value used by the API service.
+   - `BACKEND_API_URL`: `https://api.bulsuscholar.com`.
+5. Set its **Start Command** to:
+
+   ```text
+   python -m backend.waitlist_expiry_job
+   ```
+
+6. Open the service's **Cron Schedule** setting and enter `*/5 * * * *`.
+   Save it. The worker should start every five minutes, call the protected API,
+   print one JSON result, and exit successfully.
+7. Use **Run now** once. Open its logs and confirm the output contains
+   `"ok":true`. A `401`, `403`, timeout, or missing-secret message is a failed
+   setup. Keep Maintenance Mode on until it succeeds.
+8. Run `Invoke-RestMethod https://api.bulsuscholar.com/deployment/health` and
+   confirm `environment.hasCronSecret` is `True`.
+
 ## 8. Verify Vercel
 
 1. In Vercel, open the project serving `bulsuscholar.com`, then **Deployments**.
@@ -232,3 +277,30 @@ the grantor Auth migration or all SQL files as a troubleshooting shortcut.
 
 The root SQL Console and `ROOT_DATABASE_URL` are optional. If enabled later,
 use a dedicated least-privilege database role, not the service-role key.
+# Numbers 8-10: Security, History, and Signed SOE
+
+Complete these steps after the Number 7 migration and while Maintenance Mode is enabled.
+
+1. Create a Supabase database backup and separately copy the Storage bucket. Write down the backup time and restore point.
+2. In PowerShell, generate two different secrets:
+   ```powershell
+   -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 48 | ForEach-Object {[char]$_})
+   ```
+   Run it twice. Add the first value to Railway as `PORTAL_EMAIL_CODE_SECRET` and the second as `PUBLIC_RECOVERY_CODE_SECRET`. Do not add either value to Vercel or commit them.
+3. Confirm Railway still has `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `FRONTEND_URL`.
+4. Apply `supabase/migrations/20260924125213_security_history_signed_soe.sql` on staging after `20260924024322_scope_reporting_announcements_waitlist.sql`.
+5. In Supabase, run Security and Performance Advisors. Confirm the new tables have RLS enabled and `anon`/`authenticated` have no table privileges.
+6. Confirm these new private tables exist: `portal_email_challenges`, `portal_verified_sessions`, `public_recovery_tickets`, `public_recovery_messages`, `public_recovery_attachments`, `student_history_events`, and `signed_soe_submissions`.
+7. Deploy the backend. Open `/openapi.json` and confirm these paths exist: `/auth/email-verification/complete`, `/support/recovery/tickets`, `/student/history`, `/student/applications/{application_id}/signed-soe`, and `/root/recovery-tickets`.
+8. Test one recent student login. It should open normally. Temporarily set a staging account's meaningful activity older than 30 days and confirm login stops at **Email verification** without exposing Auth tokens to the browser before the code succeeds.
+9. Test code expiry, three wrong attempts, resend delay, old-code invalidation, five-send limit, and Brevo delivery. Restore the staging account afterward.
+10. Open two normal tabs and confirm login/logout is shared. Confirm an Incognito window and second device keep independent sessions. Delete a test `auth.sessions` row and confirm protected backend calls are rejected.
+11. While signed out, open `/help`, create a Lost email access ticket, keep its secret link, attach evidence, and verify a different/edited link cannot read it.
+12. As root, review the evidence, reject one test request, and approve another with an unused email. Confirm nothing changes before the requester enters the code sent to the proposed email. After confirmation, verify Auth/profile email match, login failures are reset, and old sessions no longer work.
+13. As a student, open `/student-dashboard/history`. Compare the first page against known application and document records. Confirm cycle/type filters and related-page links work and no internal reviewer notes appear.
+14. Use an ordinary committed application with office signing complete. Upload PDF, PNG, and JPEG test files; reject unsupported/oversized files. Confirm a valid upload marks **Upload Signed SOE** as Submitted, completes Finish, and shows the next-semester message.
+15. As an admin with Requirements permission, preview the file and reopen it with a reason. Confirm the student returns to Upload Signed SOE, receives a notice, and can submit a new version while the original remains in history.
+16. Confirm an authoritative-roster scholar is exempt from Upload Signed SOE. Change the staging academic cycle and verify completed history remains while current-cycle requirements restart at document upload.
+17. Deploy the frontend only after backend checks pass. Test student, grantor, admin, and root pages at desktop/mobile widths in light/dark mode and inspect the browser console.
+18. Re-test roster import, Request Materials, waitlist expiry, reports, announcements, inbox, document review, password lockout/recovery, and private downloads.
+19. Record migration counts, Railway/Vercel deployment IDs, release owner, rollback point, and unresolved issues. Disable Maintenance Mode only when every required check passes.

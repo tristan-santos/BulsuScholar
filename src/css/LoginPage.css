@@ -326,6 +326,24 @@
 	text-decoration: underline;
 }
 
+.login-verification-card {
+	width: min(420px, calc(100vw - 2rem));
+	padding: 2rem;
+}
+
+.login-verification-card form {
+	display: grid;
+	gap: 1rem;
+	margin-top: 1.25rem;
+}
+
+.login-code-input {
+	text-align: center;
+	font-size: 1.5rem;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.35rem;
+}
+
 /* Modal Styles for Login Page (matching AdminDashboard) */
 .admin-modal-overlay {
 	position: fixed;
@@ -593,6 +611,15 @@ html[data-theme="dark"] .password-visibility-toggle:active {
 
 /* Mobile: ensure child stays within panel and remains usable */
 @media (max-width: 899px) {
+	.login-panel-info {
+		display: none;
+	}
+
+	.login-panel-form {
+		min-height: 100vh;
+		min-height: 100dvh;
+	}
+
 	.login-form-inner,
 	.login-info-inner {
 		width: 90%;

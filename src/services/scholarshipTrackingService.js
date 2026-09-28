@@ -90,6 +90,7 @@ function buildKwspSteps(appliedViaAnnouncement = false) {
 		{ id: "request_materials", label: "Request Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
+		{ id: "signed_soe_upload", label: "Upload Signed SOE", owner: "student" },
 		{ id: "finish", label: "Finish", owner: "system" },
 	], appliedViaAnnouncement)
 }
@@ -104,6 +105,7 @@ function buildStandardSteps(scholarshipName = "Scholarship", appliedViaAnnouncem
 		{ id: "request_materials", label: "Request Materials", owner: "student" },
 		{ id: "download_materials", label: "Downloading of Materials", owner: "student" },
 		{ id: "signing_materials", label: "Signing of Materials", owner: "system" },
+		{ id: "signed_soe_upload", label: "Upload Signed SOE", owner: "student" },
 		{ id: "finish", label: "Finish", owner: "system" },
 	], appliedViaAnnouncement)
 }
@@ -132,6 +134,7 @@ function buildTrackingDetail(stepId, context) {
 		hasDownloadedMaterials,
 		signingComplete,
 		signingAttention,
+		signedSoeSubmitted,
 		authoritativeRosterComplete,
 		state,
 		isKwspFlow,
@@ -156,12 +159,14 @@ function buildTrackingDetail(stepId, context) {
 			return `Application recorded for ${scholarshipName} under ${semesterTag || "the current semester"}.`
 		case "document_uploading":
 			if (state === "complete") {
-				return "COR and ROG are complete. The student can now proceed to the Student Application Profile stage."
+				return documentCheck?.rogRequired === false
+					? "COR is complete. ROG is not required for a first-year, first-semester student."
+					: "COR and ROG are complete. The student can now proceed to the Student Application Profile stage."
 			}
-			if (documentCheck?.ok) return "COR and ROG are uploaded and ready for admin confirmation."
+			if (documentCheck?.ok) return documentCheck?.rogRequired === false ? "COR is uploaded; ROG is not required this semester." : "COR and ROG are uploaded and ready for admin confirmation."
 			return missingCopy
 				? `Student still needs to comply with: ${missingCopy}.`
-				: "Student still needs to upload the required COR and ROG."
+				: documentCheck?.rogRequired === false ? "Student still needs to upload the required COR." : "Student still needs to upload the required COR and ROG."
 		case "application_form":
 			return state === "complete"
 				? "Student Application Profile has been uploaded from the Profile section and is ready for review."
@@ -208,10 +213,15 @@ function buildTrackingDetail(stepId, context) {
 			if (signingComplete) return "Downloaded SOE already completed the checking and signing stage."
 			if (hasDownloadedMaterials) return "Downloaded SOE is waiting for scholarship office checking and signing."
 			return "Signing starts after the student downloads the approved SOE."
+		case "signed_soe_upload":
+			if (authoritativeRosterComplete) return "Not required for an authoritative-roster scholarship."
+			return signedSoeSubmitted
+				? "Signed SOE submitted. This records electronic submission, not staff verification or physical custody."
+				: "Upload the signed SOE as a PDF, PNG, or JPEG to finish this scholarship cycle."
 		case "finish":
-			return signingComplete || authoritativeRosterComplete
+			return signedSoeSubmitted || authoritativeRosterComplete
 				? "This scholarship cycle is complete. Wait for the next semester to renew your scholarship; renewal will begin again at Uploading of Document."
-				: "Finish is completed automatically after the scholarship office signs the student's SOE."
+				: "Finish is completed automatically after the student submits the signed SOE."
 		default:
 			return ""
 	}
@@ -517,6 +527,8 @@ export function getScholarshipTrackingProgress({
 		scholarship.completionSource === "authoritative_roster" &&
 		Boolean(scholarship.rosterVerifiedAt) &&
 		completedStepIds.has("finish")
+	const signedSoeSubmitted =
+		scholarship.signedSoeStatus === "submitted" || completedStepIds.has("signed_soe_upload")
 	const scholarshipStatus = String(scholarship.status || "").toLowerCase()
 	const payoutComplete =
 		completedStepIds.has("payout") ||
@@ -549,7 +561,8 @@ export function getScholarshipTrackingProgress({
 			isStepCompletedByAuthority(tracking, "request_materials", ["admin", "grantor", "system"]),
 		download_materials: hasDownloadedMaterials || authoritativeRosterComplete,
 		signing_materials: signingComplete || authoritativeRosterComplete,
-		finish: signingComplete || authoritativeRosterComplete,
+		signed_soe_upload: signedSoeSubmitted || authoritativeRosterComplete,
+		finish: signedSoeSubmitted || authoritativeRosterComplete,
 		payout: payoutComplete,
 	}
 
@@ -580,6 +593,7 @@ export function getScholarshipTrackingProgress({
 				hasDownloadedMaterials,
 				signingComplete,
 				signingAttention,
+				signedSoeSubmitted,
 				authoritativeRosterComplete,
 				payoutComplete,
 				state,
@@ -627,6 +641,7 @@ export function getScholarshipTrackingProgress({
 		hasDownloadedMaterials,
 		signingComplete,
 		signingAttention,
+		signedSoeSubmitted,
 		authoritativeRosterComplete,
 		payoutComplete,
 		requestedMaterials,
@@ -646,6 +661,7 @@ export function getScholarshipTrackingStatusLabel(progress = null) {
 	if (!progress) return "Applied"
 	if (progress.signingAttention) return "Non-Compliant"
 	if (progress.authoritativeRosterComplete) return "Finished"
+	if (progress.signedSoeSubmitted) return "Finished"
 	if (progress.signingComplete) return "Signed"
 	if (progress.hasDownloadedMaterials) return "For Signing"
 	if (progress.hasApprovedMaterials) return "Approved"

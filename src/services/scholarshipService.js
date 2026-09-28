@@ -255,6 +255,10 @@ export function getDocumentUrlsForStudent(student = {}) {
 
 export function validateScholarshipDocuments(student = {}) {
 	const semesterTag = getCurrentSemesterTag()
+	const normalizedYear = String(student.year || student.yearLevel || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+	const firstYear = ["1", "1st", "first", "firstyear", "year1"].includes(normalizedYear)
+	const firstSemester = /(?:-|_)(?:1st|first|semester1)$/i.test(semesterTag)
+	const rogRequired = !(firstYear && firstSemester)
 	const missing = []
 	const expired = []
 
@@ -272,9 +276,9 @@ export function validateScholarshipDocuments(student = {}) {
 		expired.push("COR")
 	}
 
-	if (!cog?.url) {
+	if (rogRequired && !cog?.url) {
 		missing.push("ROG")
-	} else if (cog.semesterTag && cog.semesterTag !== semesterTag) {
+	} else if (rogRequired && cog.semesterTag && cog.semesterTag !== semesterTag) {
 		expired.push("ROG")
 	}
 	if (!schoolId?.url) missing.push("Student ID")
@@ -285,6 +289,8 @@ export function validateScholarshipDocuments(student = {}) {
 		missing,
 		expired,
 		semesterTag,
+		rogRequired,
+		rogExemptionReason: rogRequired ? "" : "first_year_first_semester",
 		documentUrls: getDocumentUrlsForStudent(student),
 	}
 }

@@ -209,3 +209,10 @@ html[data-theme="dark"] .root-support-messages article.root { background: #08734
 	.root-support-composer { grid-template-columns: 1fr; }
 	.root-support-thread > footer { align-items: stretch; flex-direction: column; }
 }
+.root-recovery-workspace { margin-top: 1rem; }
+.root-recovery-evidence { display: flex; flex-wrap: wrap; gap: .5rem; padding: 1rem 0; }
+.root-recovery-review { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: .75rem; padding-top: 1rem; border-top: 1px solid var(--root-border, #d8e1de); }
+.root-recovery-review label { display: grid; gap: .35rem; font-weight: 700; }
+.root-recovery-review input,
+.root-recovery-review textarea { min-height: 42px; padding: .65rem; border: 1px solid #c7d5d0; border-radius: 6px; font: inherit; }
+@media (max-width: 760px) { .root-recovery-review { grid-template-columns: 1fr; } }

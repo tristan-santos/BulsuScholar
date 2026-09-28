@@ -1,4 +1,4 @@
-import { postPortalJson } from "./portalApi"
+import { buildPortalRequestHeaders, postPortalJson } from "./portalApi"
 import { requireBackendApiUrl } from "../config/backendApi"
 
 async function postWorkflow(path, payload = {}, options = {}) {
@@ -52,6 +52,10 @@ export function materialRequestWorkflow(payload = {}) {
 	return postWorkflow("/workflows/materials/update", payload, { operation: "materials.request" })
 }
 
+export function requestScholarshipMaterialsWorkflow(payload = {}) {
+	return postWorkflow("/workflows/scholarship/materials/request", payload, { operation: "materials.request" })
+}
+
 export function validateStudentSignupWorkflow(payload = {}) {
 	return postWorkflow("/workflows/student/signup/validate", payload, { operation: "generic.background" })
 }
@@ -76,6 +80,22 @@ export function createGrantorScholarsWorkflow(payload = {}) {
 	return postWorkflow("/workflows/grantor/scholars/create", payload, { operation: "record.save" })
 }
 
+export function previewRosterImportWorkflow(payload = {}) {
+	return postWorkflow("/workflows/grantor/scholars/import/preview", payload, { operation: "generic.background" })
+}
+
+export function commitRosterImportWorkflow(payload = {}) {
+	return postWorkflow("/workflows/grantor/scholars/import/commit", payload, { operation: "record.save" })
+}
+
+export function listRosterConflictsWorkflow(payload = {}) {
+	return postWorkflow("/workflows/admin/roster-conflicts", payload, { operation: "generic.background" })
+}
+
+export function resolveRosterConflictWorkflow(payload = {}) {
+	return postWorkflow("/workflows/admin/roster-conflicts/resolve", payload, { operation: "record.save" })
+}
+
 export function updateGrantorScholarWorkflow(payload = {}) {
 	return postWorkflow("/workflows/grantor/scholars/update", payload, { operation: "record.save" })
 }
@@ -98,6 +118,54 @@ export function updateGrantorAnnouncementWorkflow(payload = {}) {
 
 export function configureGrantorAnnouncementSlotsWorkflow(payload = {}) {
 	return postWorkflow("/workflows/grantor/announcements/slots", payload, { operation: "record.save" })
+}
+
+export function getGrantorScopeWorkflow(payload = {}) {
+	return postWorkflow("/workflows/grantor-scope/get", payload, { operation: "generic.background" })
+}
+
+export function saveGrantorScopeWorkflow(payload = {}) {
+	return postWorkflow("/workflows/admin/grantor-scope/save", payload, { operation: "record.save" })
+}
+
+export function listFilteredApplicantsWorkflow(payload = {}) {
+	return postWorkflow("/workflows/applicants/list", payload, { operation: "generic.background" })
+}
+
+export async function downloadFilteredApplicantsWorkflow(payload = {}) {
+	const response = await fetch(`${requireBackendApiUrl("Applicant report backend")}/workflows/applicants/export`, {
+		method: "POST",
+		headers: await buildPortalRequestHeaders({ actorId: payload.actorId, actorType: payload.actorType }),
+		body: JSON.stringify(payload),
+	})
+	if (!response.ok) throw new Error("The applicant report could not be generated.")
+	const blob = await response.blob()
+	const url = URL.createObjectURL(blob)
+	const anchor = document.createElement("a")
+	anchor.href = url
+	anchor.download = payload.format === "pdf" ? "grantor-applicants.pdf" : "grantor-applicants.csv"
+	anchor.click()
+	URL.revokeObjectURL(url)
+}
+
+export function correctStudentNumberWorkflow(payload = {}) {
+	return postWorkflow("/workflows/admin/student-number/correct", payload, { operation: "record.save" })
+}
+
+export function previewAnnouncementAudienceWorkflow(payload = {}) {
+	return postWorkflow("/workflows/announcements/audience/preview", payload, { operation: "generic.background" })
+}
+
+export function publishTargetedAnnouncementWorkflow(payload = {}) {
+	return postWorkflow("/workflows/announcements/publish", payload, { timeoutMs: 45000, operation: "announcement.publish" })
+}
+
+export function loadWaitlistWorkflow(payload = {}) {
+	return postWorkflow("/workflows/waitlist/status", payload, { operation: "generic.background" })
+}
+
+export function resolveWaitlistOfferWorkflow(payload = {}) {
+	return postWorkflow("/workflows/waitlist/offer", payload, { operation: "application.submit" })
 }
 
 export function updateGrantorProfileWorkflow(payload = {}) {

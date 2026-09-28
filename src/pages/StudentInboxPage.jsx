@@ -17,6 +17,7 @@ import {
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
+import { clearPortalIdentity } from "../services/portalSessionStorage"
 import useThemeMode from "../hooks/useThemeMode"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
 import {
@@ -228,8 +229,7 @@ export default function StudentInboxPage() {
 				const accessState = getStudentAccessState(nextUser)
 				if (accessState.isPortalAccessBlocked && !forcedLogoutRef.current) {
 					forcedLogoutRef.current = true
-					sessionStorage.removeItem("bulsuscholar_userId")
-					sessionStorage.removeItem("bulsuscholar_userType")
+						clearPortalIdentity()
 					toast.error(getPortalAccessBlockMessage(nextUser))
 					navigate("/", { replace: true })
 				}

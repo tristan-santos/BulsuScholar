@@ -1,4 +1,6 @@
 import unittest
+import base64
+import json
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
@@ -12,6 +14,11 @@ ACCOUNT = {
     "id": "2026-0001",
     "data": {"authUserId": "11111111-1111-1111-1111-111111111111", "email": "student@example.com"},
 }
+
+
+def access_token(session_id="22222222-2222-2222-2222-222222222222"):
+    encode = lambda value: base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
+    return f"{encode({'alg': 'none'})}.{encode({'session_id': session_id})}.signature"
 
 
 class PortalLoginTests(unittest.TestCase):
@@ -67,7 +74,7 @@ class PortalLoginTests(unittest.TestCase):
 
     def test_successful_login_resets_failures_and_returns_safe_identity(self):
         auth_response = {
-            "access_token": "access",
+            "access_token": access_token(),
             "refresh_token": "refresh",
             "user": {"id": ACCOUNT["data"]["authUserId"]},
         }
@@ -75,7 +82,8 @@ class PortalLoginTests(unittest.TestCase):
                 patch.object(service, "_security_state", return_value={"failed_attempts": 2}), \
                 patch.object(service, "_config", return_value=("https://project.supabase.co", "service-key")), \
                 patch.object(service, "_request_json", return_value=(auth_response, 200)), \
-                patch.object(service, "_record_attempt", return_value={"blocked": False}) as record:
+                patch.object(service, "_record_attempt", return_value={"blocked": False}) as record, \
+                patch.object(service, "supabase_rpc", return_value={"ok": True, "data": {"verified": True}}) as rpc:
             result = service.login({"userId": ACCOUNT["id"], "password": "correct"})
         self.assertTrue(result["ok"])
         self.assertEqual(result["account"], {
@@ -83,6 +91,20 @@ class PortalLoginTests(unittest.TestCase):
             "isPending": False, "mustChangePassword": False,
         })
         record.assert_called_once_with(ACCOUNT, True)
+        self.assertEqual(rpc.call_args.args[0], "complete_portal_verified_session")
+
+    def test_inactive_student_gets_email_challenge_without_tokens(self):
+        auth_response = {"access_token": access_token(), "refresh_token": "refresh", "user": {"id": ACCOUNT["data"]["authUserId"]}}
+        old_activity = "2026-07-01T00:00:00+00:00"
+        with patch.object(service, "_find_account", return_value=ACCOUNT), \
+                patch.object(service, "_security_state", return_value={"last_meaningful_activity_at": old_activity}), \
+                patch.object(service, "_authenticate_password", return_value=(auth_response, 200)), \
+                patch.object(service, "_record_attempt", return_value={"blocked": False}), \
+                patch.object(service, "supabase_rpc", return_value={"ok": True}), \
+                patch.object(service, "_send_email_code", return_value={"required": True, "challengeId": "challenge"}):
+            result = service.login({"userId": ACCOUNT["id"], "password": "correct"})
+        self.assertNotIn("session", result)
+        self.assertTrue(result["emailVerification"]["required"])
 
     def test_successful_password_check_cannot_override_concurrent_lock(self):
         auth_response = {

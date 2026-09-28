@@ -7,11 +7,13 @@ import { BACKEND_API_URL } from "./config/backendApi"
 import FloatingHelpButton from "./components/FloatingHelpButton"
 import { PageLoading } from "./components/PortalLoading"
 import ModalDiscardConfirmation from "./components/ModalDiscardConfirmation"
+import ModalAccessibilityManager from "./components/ModalAccessibilityManager"
 import OperationStatusProvider from "./components/OperationStatusProvider"
 import { trackedFetch } from "./services/operationTracker"
 import { PublicConfigurationContext } from "./contexts/PublicConfigurationContext"
 import { supabase } from "./services/supabaseClient"
 import { validatePortalSession } from "./services/portalAuthService"
+import { clearPortalIdentity, getPortalIdentity, subscribePortalIdentity } from "./services/portalSessionStorage"
 
 const LoginPage = lazy(() => import("./pages/LoginPage"))
 const SignupPage = lazy(() => import("./pages/SignupPage"))
@@ -26,6 +28,7 @@ const StudentInboxPage = lazy(() => import("./pages/StudentInboxPage"))
 const StudentScholarshipsPage = lazy(() => import("./pages/StudentScholarshipsPage"))
 const StudentRecommendedScholarshipsPage = lazy(() => import("./pages/StudentRecommendedScholarshipsPage"))
 const StudentProfilePage = lazy(() => import("./pages/StudentProfilePage"))
+const StudentHistoryPage = lazy(() => import("./pages/StudentHistoryPage"))
 const ProviderDashboard = lazy(() => import("./pages/ProviderDashboard"))
 const GrantorChangePasswordPage = lazy(() => import("./pages/GrantorChangePasswordPage"))
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"))
@@ -96,8 +99,7 @@ function PortalSessionGate({ children }) {
 
 	useEffect(() => {
 		if (!protectedPath) return undefined
-		const actorId = sessionStorage.getItem("bulsuscholar_userId") || ""
-		const actorType = sessionStorage.getItem("bulsuscholar_userType") || ""
+		const { userId: actorId, userType: actorType } = getPortalIdentity()
 		let active = true
 		const validation = !actorId || !["student", "provider", "admin"].includes(actorType)
 			? Promise.reject(new Error("portal_identity_required"))
@@ -106,13 +108,16 @@ function PortalSessionGate({ children }) {
 			.then(() => { if (active) setVerification({ path: location.pathname, state: "ready" }) })
 			.catch(async () => {
 				if (!active) return
-				sessionStorage.removeItem("bulsuscholar_userId")
-				sessionStorage.removeItem("bulsuscholar_userType")
+				clearPortalIdentity()
 				await supabase.auth.signOut().catch(() => {})
 				if (active) setVerification({ path: location.pathname, state: "denied" })
 			})
 		return () => { active = false }
 	}, [location.pathname, protectedPath])
+
+	useEffect(() => subscribePortalIdentity(({ userId }) => {
+		if (protectedPath && !userId) setVerification({ path: location.pathname, state: "denied" })
+	}), [location.pathname, protectedPath])
 
 	if (!protectedPath) return children
 	if (verification.path !== location.pathname) return <PageLoading />
@@ -148,6 +153,7 @@ export default function App() {
 					<Route path="/student-dashboard/scholarships" element={<StudentScholarshipsPage />} />
 					<Route path="/student-dashboard/recommended-scholarships" element={<StudentRecommendedScholarshipsPage />} />
 					<Route path="/student-dashboard/profile" element={<StudentProfilePage />} />
+					<Route path="/student-dashboard/history" element={<StudentHistoryPage />} />
 					<Route path="/provider-dashboard/*" element={<ProviderDashboard />} />
 					<Route path="*" element={<NotFoundPage />} />
 				</Routes>
@@ -160,6 +166,7 @@ export default function App() {
 				autoClose={3000}
 				className="bulsuscholar-toast-container"
 			/>
+			<ModalAccessibilityManager />
 			<ModalDiscardConfirmation />
 			</OperationStatusProvider>
 		</BrowserRouter>

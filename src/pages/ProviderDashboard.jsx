@@ -78,6 +78,8 @@ import "../css/ProviderDashboard.css"
 import TablePagination from "../components/TablePagination"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import ThemeToggle from "../components/ThemeToggle"
+import { clearPortalIdentity } from "../services/portalSessionStorage"
+import { supabase } from "../services/supabaseClient"
 import CustomSelect from "../components/CustomSelect"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
@@ -103,12 +105,16 @@ import {
 } from "../services/notificationService"
 import {
 	adminReviewWorkflow,
+	commitRosterImportWorkflow,
 	confirmGrantorAdminDecisionWorkflow,
 	configureGrantorAnnouncementSlotsWorkflow,
 	createGrantorAnnouncementWorkflow,
 	createGrantorScholarsWorkflow,
+	downloadFilteredApplicantsWorkflow,
 	inviteArchivedGrantorScholarsWorkflow,
 	republishGrantorAnnouncementWorkflow,
+	previewRosterImportWorkflow,
+	previewAnnouncementAudienceWorkflow,
 	updateGrantorAnnouncementWorkflow,
 	updateGrantorProfileWorkflow,
 	updateGrantorScholarWorkflow,
@@ -220,7 +226,6 @@ const COURSE_OPTIONS = [
 ]
 const SCHOLAR_TABS = ["active", "warning", "archived"]
 const GRANTOR_COMPLETABLE_STEP_LABELS = {
-	document_review: "Document Review",
 	interview: "Interview",
 	application_review: "Application Review",
 	final_screening: "Final Screening",
@@ -337,15 +342,6 @@ function buildMappedImportScholar(row = [], columnMapping = [], customImportFiel
 		scholar.fullName = [scholar.fname, scholar.mname, scholar.lname].filter(Boolean).join(" ").trim()
 	}
 	return scholar
-}
-
-function hasScholarIdentity(scholar = {}) {
-	return Boolean(
-		String(scholar.studentId || "").trim() ||
-		String(scholar.fullName || "").trim() ||
-		String(scholar.email || "").trim() ||
-		String(scholar.cpNumber || "").trim(),
-	)
 }
 
 function normalizeStudentIdKey(value = "") {
@@ -925,6 +921,8 @@ export default function ProviderDashboard() {
 	const [applicationSearch, setApplicationSearch] = useState("")
 	const [applicationDateSort, setApplicationDateSort] = useState("desc")
 	const [applicationArchiveTab, setApplicationArchiveTab] = useState("active")
+	const [applicationFilters, setApplicationFilters] = useState({ status: "", location: "", scholarship: "", cycle: "", documentState: "", trackingStage: "" })
+	const [applicationExportBusy, setApplicationExportBusy] = useState("")
 	const [selectedScholarId, setSelectedScholarId] = useState("")
 	const [selectedScholarIds, setSelectedScholarIds] = useState([])
 	const [hoveredYear, setHoveredYear] = useState("")
@@ -942,6 +940,8 @@ export default function ProviderDashboard() {
 	const [editScholarLockedProfile, setEditScholarLockedProfile] = useState(null)
 	const [announcementForm, setAnnouncementForm] = useState(ANNOUNCEMENT_FORM)
 	const [announcementSubmitAttempted, setAnnouncementSubmitAttempted] = useState(false)
+	const [announcementAudience, setAnnouncementAudience] = useState({ type: "scholarship_applicants", applicationStatus: "", documentState: "", trackingStage: "", academicCycle: "", course: "", yearLevel: "" })
+	const [announcementAudiencePreview, setAnnouncementAudiencePreview] = useState(null)
 	const [announcementImageFiles, setAnnouncementImageFiles] = useState([])
 	const [announcementImagePreviews, setAnnouncementImagePreviews] = useState([])
 	const [announcementApplicationProfileFile, setAnnouncementApplicationProfileFile] = useState(null)
@@ -979,6 +979,11 @@ export default function ProviderDashboard() {
 	const [customImportEditColumn, setCustomImportEditColumn] = useState(null)
 	const [selectedImportRowIndexes, setSelectedImportRowIndexes] = useState([])
 	const [importDuplicateMatches, setImportDuplicateMatches] = useState({})
+	const [serverRosterPreview, setServerRosterPreview] = useState(null)
+
+	useEffect(() => {
+		setServerRosterPreview(null)
+	}, [createForm, importData, columnMapping, customImportFields])
 	const [checkingImportDuplicates, setCheckingImportDuplicates] = useState(false)
 	const [profileMenuOpen, setProfileMenuOpen] = useState(false)
 	const [profileSaving, setProfileSaving] = useState(false)
@@ -1252,8 +1257,7 @@ export default function ProviderDashboard() {
 			setLoaded(true)
 			if (nextProfile && grantorMustChangePassword(nextProfile)) {
 				sessionStorage.setItem(GRANTOR_PASSWORD_CHANGE_ID_KEY, grantorId)
-				sessionStorage.removeItem("bulsuscholar_userId")
-				sessionStorage.removeItem("bulsuscholar_userType")
+					clearPortalIdentity()
 				toast.info("Set your own password before accessing the grantor portal.")
 				navigate("/grantor/change-password", { replace: true })
 			}
@@ -1604,13 +1608,23 @@ export default function ProviderDashboard() {
 		const keyword = applicationSearch.trim().toLowerCase()
 		return applicationRowsForTab.filter((row) => {
 			const matchesSearch = !keyword || [row.studentId, row.fullName, row.gwa, row.currentStep, row.scholarshipName, row.providerLabel, row.status, row.applicationNumber].some((value) => String(value || "").toLowerCase().includes(keyword))
-			return matchesSearch
+			const includes = (actual, expected) => !expected || String(actual || "").toLowerCase().includes(String(expected).toLowerCase())
+			return matchesSearch && includes(row.status, applicationFilters.status) && includes(row.city || row.location, applicationFilters.location) && includes(row.scholarshipName, applicationFilters.scholarship) && includes(row.academicCycle || row.semesterTag, applicationFilters.cycle) && includes(row.documentReviewStatus || row.documentState, applicationFilters.documentState) && includes(row.currentStep || row.trackingStage, applicationFilters.trackingStage)
 		}).sort((left, right) => {
 			const leftDate = toJsDate(left.appliedAt || left.createdAt || left.updatedAt)?.getTime() || 0
 			const rightDate = toJsDate(right.appliedAt || right.createdAt || right.updatedAt)?.getTime() || 0
 			return applicationDateSort === "asc" ? leftDate - rightDate : rightDate - leftDate
 		})
-	}, [applicationRowsForTab, applicationSearch, applicationDateSort])
+	}, [applicationRowsForTab, applicationSearch, applicationDateSort, applicationFilters])
+	const exportGrantorApplicants = async (format) => {
+		if (applicationExportBusy) return
+		setApplicationExportBusy(format)
+		try {
+			await downloadFilteredApplicantsWorkflow({ grantorId, format, search: applicationSearch, ...applicationFilters })
+			toast.success(`${format.toUpperCase()} applicant report downloaded.`)
+		} catch (error) { toast.error(error?.message || "Unable to export applicants.") }
+		finally { setApplicationExportBusy("") }
+	}
 	const applicationInsights = useMemo(() => {
 		const statusIncludes = (row, values) => values.some((value) => String(row.status || "").toLowerCase().includes(value))
 		return {
@@ -1824,71 +1838,11 @@ export default function ProviderDashboard() {
 	}, [previewDocument])
 
 	useEffect(() => {
-		if (!importData?.length || !columnMapping.some(Boolean)) {
+		if (!serverRosterPreview) {
 			setImportDuplicateMatches({})
-			setCheckingImportDuplicates(false)
-			return undefined
 		}
-
-		let active = true
-		const timer = window.setTimeout(async () => {
-			setCheckingImportDuplicates(true)
-			try {
-				const existingScholars = await getAllGrantorScholars(db)
-				const acceptedFileRows = []
-				const matches = {}
-				for (const [rowIndex, row] of importData.entries()) {
-					const scholar = buildMappedImportScholar(row, columnMapping, customImportFields, {
-						grantorId,
-						grantorName,
-						providerType: grantorProviderType,
-					})
-					if (!hasScholarIdentity(scholar)) continue
-					const exactConflict = findCurrentGrantorStudentIdConflict(
-						scholar,
-						existingScholars,
-						applications,
-						grantorId,
-						grantorProviderType,
-						acceptedFileRows,
-					)
-					if (exactConflict) {
-						matches[rowIndex] = exactConflict
-						continue
-					}
-					const archivedBlock = findArchivedRosterBlock(scholar, existingScholars, grantorId, grantorProviderType)
-					if (archivedBlock) {
-						matches[rowIndex] = {
-							record: archivedBlock,
-							reasons: ["Archived record"],
-							archivedBlock: true,
-							sameGrantor: false,
-						}
-						continue
-					}
-					const duplicate = await findScholarDuplicate(scholar, [...existingScholars, ...acceptedFileRows])
-					if (duplicate) {
-						matches[rowIndex] = {
-							...duplicate,
-							sameGrantor: isDuplicateOwnedByGrantor(duplicate, grantorId, grantorProviderType),
-						}
-					}
-					else acceptedFileRows.push(scholar)
-				}
-				if (active) setImportDuplicateMatches(matches)
-			} catch (error) {
-				console.error("Unable to preflight imported scholar duplicates.", error)
-				if (active) setImportDuplicateMatches({})
-			} finally {
-				if (active) setCheckingImportDuplicates(false)
-			}
-		}, 250)
-
-		return () => {
-			active = false
-			window.clearTimeout(timer)
-		}
-	}, [applications, columnMapping, customImportFields, grantorId, grantorName, grantorProviderType, importData])
+		setCheckingImportDuplicates(false)
+	}, [serverRosterPreview])
 
 	const selectableVisibleScholars = useMemo(
 		() => visibleScholars.filter((row) => tab !== "archived" || !getUnarchiveBlockedReason(row)),
@@ -1953,6 +1907,7 @@ export default function ProviderDashboard() {
 		setCustomImportEditColumn(null)
 		setSelectedImportRowIndexes([])
 		setImportDuplicateMatches({})
+		setServerRosterPreview(null)
 	}
 
 	useEffect(() => {
@@ -2336,6 +2291,7 @@ export default function ProviderDashboard() {
 					setColumnMapping(prepared.mapping)
 					setSelectedImportRowIndexes([])
 					setImportDuplicateMatches({})
+					setServerRosterPreview(null)
 					setTablePage("grantor_import_preview", 1)
 					const detectedCount = prepared.mapping.filter(Boolean).length
 					toast.success(`File parsed. ${detectedCount} column${detectedCount === 1 ? "" : "s"} mapped automatically; review them before importing.`)
@@ -2359,6 +2315,7 @@ export default function ProviderDashboard() {
 		setCustomImportEditColumn(null)
 		setSelectedImportRowIndexes([])
 		setImportDuplicateMatches({})
+		setServerRosterPreview(null)
 		setUploadActive(false)
 		setTablePage("grantor_import_preview", 1)
 		if (fileInputRef.current) fileInputRef.current.value = ""
@@ -2377,11 +2334,13 @@ export default function ProviderDashboard() {
 		}
 		setSelectedImportRowIndexes([])
 		setImportDuplicateMatches({})
+		setServerRosterPreview(null)
 		setTablePage("grantor_import_preview", 1)
 		toast.info(`${selected.size} import row${selected.size === 1 ? "" : "s"} removed.`)
 	}
 
 	const handleColumnMappingChange = (colIndex, value) => {
+		setServerRosterPreview(null)
 		if (value === ADD_CUSTOM_IMPORT_FIELD) {
 			setCustomImportEditColumn(colIndex)
 			setCustomImportDrafts((prev) => ({ ...prev, [colIndex]: "" }))
@@ -2611,7 +2570,7 @@ export default function ProviderDashboard() {
 			return
 		}
 		if (!currentStepLabel) {
-			toast.info("Grantor actions are limited to document review, interview, application review, and final screening.")
+			toast.info("Grantor actions are limited to interview, application review, and final screening. Staff review student documents separately.")
 			return
 		}
 
@@ -2855,6 +2814,51 @@ export default function ProviderDashboard() {
 			}
 			setBusy("create")
 			try {
+				const serverRows = importData.map((row, rowIndex) => {
+					const scholar = {
+						...buildMappedImportScholar(row, columnMapping, customImportFields, {
+							grantorId,
+							grantorName,
+							providerType: grantorProviderType,
+						}),
+						grantorId,
+						grantorName,
+						providerType: grantorProviderType,
+						rowNumber: rowIndex + 1,
+					}
+					scholar.fullName = scholar.fullName || [scholar.fname, scholar.mname, scholar.lname].filter(Boolean).join(" ").trim()
+					scholar.cpNumber = normalizeContactNumber(scholar.cpNumber)
+					return scholar
+				})
+				const serverPreview = await previewRosterImportWorkflow({
+					grantorId,
+					rows: serverRows,
+					sourceFileName: uploadFile?.name || "Grantor roster",
+				})
+				setImportDuplicateMatches(Object.fromEntries((serverPreview.rows || []).map((row, index) => [index, {
+					blocking: row.blocking,
+					sameGrantor: row.disposition === "already_imported",
+					reason: row.reason,
+					record: { fullName: row.fullName, grantorId: row.grantorId },
+				}])))
+				if (serverPreview.status !== "ready") {
+					setServerRosterPreview(serverPreview)
+					toast.warning("Import blocked. Review the highlighted row messages.")
+					return
+				}
+				if (serverRosterPreview?.batchId !== serverPreview.batchId) {
+					setServerRosterPreview(serverPreview)
+					toast.info("Preview complete. Review the row results, then click Commit Import.")
+					return
+				}
+				const serverCommit = await commitRosterImportWorkflow({ batchId: serverPreview.batchId })
+				if (serverCommit.ok) {
+					const counts = serverCommit.counts || {}
+					toast.success(`${Number(counts.created || 0)} roster row${Number(counts.created || 0) === 1 ? "" : "s"} committed. ${Number(counts.assigned || 0)} account${Number(counts.assigned || 0) === 1 ? "" : "s"} assigned.`)
+					closeCreateModal()
+					return
+				}
+				if (!serverCommit.ok) throw new Error(serverCommit.reason || "Roster import commit failed.")
 				const existingScholars = await getAllGrantorScholars(db)
 				const studentsSnapshot = await getDocs(collection(db, "students"))
 				const existingStudents = studentsSnapshot.docs.map((row) => ({ id: row.id, ...(row.data() || {}) }))
@@ -3005,6 +3009,28 @@ export default function ProviderDashboard() {
 		setBusy("create")
 		try {
 			let payload = scholarPayload(createForm, grantorId, grantorName, grantorProviderType, uploadFile)
+			const serverPreview = await previewRosterImportWorkflow({
+				grantorId,
+				rows: [{ ...payload, rowNumber: 1 }],
+				sourceFileName: "Manual grantor entry",
+			})
+			if (serverPreview.status !== "ready") {
+				setServerRosterPreview(serverPreview)
+				toast.warning(serverPreview.rows?.[0]?.reason || "Student was not added.")
+				return
+			}
+			if (serverRosterPreview?.batchId !== serverPreview.batchId) {
+				setServerRosterPreview(serverPreview)
+				toast.info("Preview complete. Review the result, then click Commit Scholar.")
+				return
+			}
+			const serverCommit = await commitRosterImportWorkflow({ batchId: serverPreview.batchId })
+			if (serverCommit.ok) {
+				closeCreateModal()
+				toast.success("Scholar added to the grantor scholar list.")
+				return
+			}
+			if (!serverCommit.ok) throw new Error(serverCommit.reason || "Roster scholar commit failed.")
 			const existingScholars = await getAllGrantorScholars(db)
 			const studentsSnapshot = await getDocs(collection(db, "students"))
 			const existingStudents = studentsSnapshot.docs.map((row) => ({ id: row.id, ...(row.data() || {}) }))
@@ -3608,6 +3634,23 @@ export default function ProviderDashboard() {
 		}
 		setBusy("announcement")
 		try {
+			const audienceTarget = {
+				type: announcementAudience.type,
+				grantorId,
+				announcementId: selectedActiveScholarshipOffering?.id || "",
+				applicationStatus: announcementAudience.applicationStatus,
+				documentState: announcementAudience.documentState,
+				trackingStage: announcementAudience.trackingStage,
+				academicCycle: announcementAudience.academicCycle,
+				course: announcementAudience.course,
+				yearLevel: announcementAudience.yearLevel,
+			}
+			if (!announcementAudiencePreview) {
+				const preview = await previewAnnouncementAudienceWorkflow({ grantorId, target: audienceTarget })
+				setAnnouncementAudiencePreview(preview)
+				toast.info(`Audience preview ready: ${preview.recipientCount} recipient${preview.recipientCount === 1 ? "" : "s"}. Review the count, then publish.`)
+				return
+			}
 			const requestFingerprint = JSON.stringify({
 				form: announcementForm,
 				republishAnnouncementId: selectedActiveScholarshipOffering?.id || "",
@@ -3639,6 +3682,7 @@ export default function ProviderDashboard() {
 				actorType: "grantor",
 				actorId: grantorId,
 				clientRequestId: announcementPublishRequestRef.current.id,
+				audiencePreviewId: announcementAudiencePreview.previewId,
 				announcement: {
 					...announcementForm,
 					title: announcementForm.title.trim(),
@@ -3751,6 +3795,7 @@ export default function ProviderDashboard() {
 			setComposerSlotDraft(null)
 			setComposerSlotModalOpen(false)
 			setAnnouncementSubmitAttempted(false)
+			setAnnouncementAudiencePreview(null)
 			setAnnouncementImageFiles([])
 			setAnnouncementApplicationProfileFile(null)
 			setAnnouncementScholarshipChoice("")
@@ -4164,7 +4209,7 @@ export default function ProviderDashboard() {
 									<span>Theme</span>
 									<ThemeToggle theme={theme} setTheme={setTheme} />
 								</div>
-								<button type="button" className="grantor-account-logout" data-button-variant="danger" onClick={() => { sessionStorage.removeItem("bulsuscholar_userId"); sessionStorage.removeItem("bulsuscholar_userType"); navigate("/", { replace: true }) }}><HiOutlineLogout /> Logout</button>
+								<button type="button" className="grantor-account-logout" data-button-variant="danger" onClick={async () => { clearPortalIdentity(); await supabase.auth.signOut().catch(() => {}); navigate("/", { replace: true }) }}><HiOutlineLogout /> Logout</button>
 							</div>
 						) : null}
 					</div>
@@ -4571,6 +4616,12 @@ export default function ProviderDashboard() {
 						</div>
 						<div className="grantor-applications-filters">
 							<label className="grantor-search-field"><HiOutlineSearch /><input type="text" aria-label="Search applications" placeholder="Search applicant, ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
+							<label><span>Status</span><input value={applicationFilters.status} onChange={(event) => setApplicationFilters((current) => ({ ...current, status: event.target.value }))} placeholder="Any status" /></label>
+							<label><span>Location</span><input value={applicationFilters.location} onChange={(event) => setApplicationFilters((current) => ({ ...current, location: event.target.value }))} placeholder="City or municipality" /></label>
+							<label><span>Scholarship</span><input value={applicationFilters.scholarship} onChange={(event) => setApplicationFilters((current) => ({ ...current, scholarship: event.target.value }))} placeholder="Any scholarship" /></label>
+							<label><span>Academic cycle</span><input value={applicationFilters.cycle} onChange={(event) => setApplicationFilters((current) => ({ ...current, cycle: event.target.value }))} placeholder="Example: 2026-2027-1ST" /></label>
+							<label><span>Document review</span><input value={applicationFilters.documentState} onChange={(event) => setApplicationFilters((current) => ({ ...current, documentState: event.target.value }))} placeholder="Pending, approved..." /></label>
+							<label><span>Tracking stage</span><input value={applicationFilters.trackingStage} onChange={(event) => setApplicationFilters((current) => ({ ...current, trackingStage: event.target.value }))} placeholder="Current stage" /></label>
 							<button
 								type="button"
 								className="grantor-date-sort-btn"
@@ -4581,6 +4632,7 @@ export default function ProviderDashboard() {
 								<span>{applicationDateSort === "asc" ? "Oldest to Newest" : "Newest to Oldest"}</span>
 								{applicationDateSort === "asc" ? <HiArrowUp /> : <HiArrowDown />}
 							</button>
+							<div className="grantor-applicant-export-actions"><button type="button" data-button-variant="neutral" disabled={Boolean(applicationExportBusy)} onClick={() => exportGrantorApplicants("csv")}><HiOutlineDownload /> {applicationExportBusy === "csv" ? "Preparing..." : "CSV"}</button><button type="button" data-button-variant="neutral" disabled={Boolean(applicationExportBusy)} onClick={() => exportGrantorApplicants("pdf")}><HiOutlineDocumentText /> {applicationExportBusy === "pdf" ? "Preparing..." : "PDF"}</button></div>
 						</div>
 						<div className="admin-table-wrap grantor-applications-table-wrap">
 							<table className="admin-management-table grantor-applications-table">
@@ -4871,6 +4923,7 @@ export default function ProviderDashboard() {
 												</label>
 											) : null}
 										</div>
+										<div className="grantor-announcement-audience-grid"><label><span>Recipients</span><select value={announcementAudience.type} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, type: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="scholarship_applicants">Scholarship applicants</option><option value="active_scholars">Active scholars</option></select></label><label><span>Application status (optional)</span><input value={announcementAudience.applicationStatus} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, applicationStatus: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: Under Review" /></label><label><span>Document review state (optional)</span><input value={announcementAudience.documentState} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, documentState: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: Approved" /></label><label><span>Tracking stage (optional)</span><input value={announcementAudience.trackingStage} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, trackingStage: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: document_review" /></label><label><span>Academic cycle (optional)</span><input value={announcementAudience.academicCycle} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, academicCycle: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: 2026-2027-1ST" /></label><label><span>Course (optional)</span><input value={announcementAudience.course} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, course: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Exact course name" /></label><label><span>Year level (optional)</span><input value={announcementAudience.yearLevel} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, yearLevel: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: 2" /></label></div>
 										<label className="grantor-announcement-message"><span>Message</span><textarea className={announcementSubmitAttempted && announcementMissingFields.description ? "is-missing" : ""} placeholder="Describe the scholarship opening, deadlines, requirements, and next steps." value={announcementForm.description} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, description: event.target.value }))} /></label>
 										<div className="grantor-announcement-images">
 											<input id="grantor-announcement-images" type="file" accept="image/*" multiple onChange={handleAnnouncementImageSelect} disabled={announcementImageFiles.length >= 5 || busy === "announcement"} />
@@ -4894,7 +4947,7 @@ export default function ProviderDashboard() {
 												</div>
 											) : null}
 										</div>
-										<div className="grantor-announcement-compose-actions"><small>{announcementForm.applicationEnabled ? "Students can apply from this announcement." : "This announcement will be visible to students only as a notice."}</small><button type="submit" disabled={busy === "announcement"}><HiOutlineCloudUpload /> {busy === "announcement" ? "Publishing..." : "Publish Announcement"}</button></div>
+										<div className="grantor-announcement-compose-actions"><small>{announcementAudiencePreview ? `${announcementAudiencePreview.recipientCount} recipients in this 15-minute preview.` : announcementForm.applicationEnabled ? "Students can apply from this announcement." : "This announcement will be visible to the selected students."}</small><button type="submit" disabled={busy === "announcement"}><HiOutlineCloudUpload /> {busy === "announcement" ? "Working..." : announcementAudiencePreview ? "Publish Announcement" : "Preview Recipients"}</button></div>
 									</form>
 								</section>
 									</div>
@@ -5735,7 +5788,7 @@ export default function ProviderDashboard() {
 					})}
 				>
 					<div className="grantor-scholar-modal-shell" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="grantor-scholar-modal-close" onClick={closeCreateModal}><HiX /></button>
+						<button type="button" className="grantor-scholar-modal-close" onClick={closeCreateModal} aria-label="Close add scholar dialog" title="Close"><HiX /></button>
 						<div className="grantor-scholar-modal grantor-scholar-modal--create" role="dialog" aria-modal="true" aria-label="Add scholar">
 							<div className="admin-detail-info">
 								<header className="grantor-import-modal-head">
@@ -5831,12 +5884,12 @@ export default function ProviderDashboard() {
 													{importPreviewPage.rows.map((row, rowIndex) => {
 														const absoluteRowIndex = (importPreviewPage.currentPage - 1) * TABLE_PAGE_SIZE + rowIndex
 														const duplicate = importDuplicateMatches[absoluteRowIndex]
-														const duplicateTitle = duplicate
-															? duplicate.sameGrantor
-																? `Already in this grantor scholar list as ${duplicate.record.fullName || "an existing student"}`
-																: `Cross-grantor match: ${duplicate.record.fullName || "an existing student"} under ${duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"}`
-															: undefined
-														return <tr key={absoluteRowIndex} className={duplicate ? duplicate.sameGrantor ? "grantor-import-row--duplicate" : "grantor-import-row--warning" : ""} title={duplicateTitle}>
+											const duplicateTitle = duplicate?.reason || (duplicate
+												? duplicate.sameGrantor
+													? `Already in this grantor scholar list as ${duplicate.record.fullName || "an existing student"}`
+													: `Cross-grantor match: ${duplicate.record.fullName || "an existing student"} under ${duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"}`
+												: undefined)
+											return <tr key={absoluteRowIndex} className={duplicate ? duplicate.blocking ? "grantor-import-row--warning" : "grantor-import-row--duplicate" : ""} title={duplicateTitle}>
 															<td className="grantor-import-checkbox-col"><input type="checkbox" aria-label={`Select import row ${absoluteRowIndex + 1}`} checked={selectedImportRowIndexes.includes(absoluteRowIndex)} onChange={() => setSelectedImportRowIndexes((prev) => prev.includes(absoluteRowIndex) ? prev.filter((item) => item !== absoluteRowIndex) : [...prev, absoluteRowIndex])} /></td>
 															{row.map((cell, cellIndex) => (
 																<td key={cellIndex}>{cell}</td>
@@ -5891,7 +5944,7 @@ export default function ProviderDashboard() {
 								<div className="grantor-modal-actions grantor-import-modal-actions">
 									<button type="button" className="grantor-action-btn grantor-action-btn--danger" onClick={closeCreateModal}><HiX /> Cancel</button>
 									<button type="button" className="grantor-action-btn grantor-action-btn--primary" onClick={handleCreateScholar} disabled={busy === "create"}>
-										{busy === "create" ? <><HiOutlineRefresh /> Processing...</> : importData ? <><HiOutlineCloudUpload /> Import {importData.length} Scholars</> : <><HiCheck /> Save Scholar</>}
+										{busy === "create" ? <><HiOutlineRefresh /> Processing...</> : serverRosterPreview?.status === "ready" ? <><HiCheck /> {importData ? "Commit Import" : "Commit Scholar"}</> : importData ? <><HiOutlineCloudUpload /> Preview {importData.length} Scholars</> : <><HiCheck /> Preview Scholar</>}
 									</button>
 								</div>
 							</div>
@@ -5910,7 +5963,7 @@ export default function ProviderDashboard() {
 					})}
 				>
 					<div className="grantor-scholar-modal-shell" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="grantor-scholar-modal-close" onClick={closeEditModal}><HiX /></button>
+						<button type="button" className="grantor-scholar-modal-close" onClick={closeEditModal} aria-label="Close edit scholar dialog" title="Close"><HiX /></button>
 						<div className="grantor-scholar-modal grantor-scholar-modal--edit" role="dialog" aria-modal="true" aria-labelledby="grantor-edit-scholar-title">
 							<header className="grantor-edit-modal-head">
 								<div className="grantor-edit-modal-icon" aria-hidden="true"><HiOutlineUserGroup /></div>

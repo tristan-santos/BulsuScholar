@@ -428,7 +428,7 @@ export default function StudentRecommendedScholarshipsPage() {
 								<p className="student-bento-eyebrow">Recommendation Center</p>
 								<h2 className="student-page-heading">Recommended Scholarships</h2>
 								<p className="student-page-sub">
-									Open grantors ranked by your GWA, roster strength, and location profile.
+									Recommendation Score - Not Official Ranking.
 								</p>
 							</div>
 							<div className="student-recommendation-algorithm">

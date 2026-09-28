@@ -239,6 +239,19 @@ def supabase_rpc(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
                 "grantor_application_exists",
                 "reapply_cooldown_active",
                 "scholarship_ineligible",
+                "grade_not_eligible",
+                "application_requirement_pending",
+                "authoritative_roster_managed",
+                "roster_assignment_conflict",
+                "roster_import_batch_not_found",
+                "roster_import_batch_owner_mismatch",
+                "roster_import_batch_not_ready",
+                "roster_import_has_blocking_errors",
+                "roster_scholarship_not_recognized",
+                "roster_conflict_not_found",
+                "selected_roster_required",
+                "selected_roster_not_found",
+                "invalid_roster_conflict_resolution",
                 "archived_grantor_block",
                 "application_workflow_required",
                 "application_history_required",
@@ -406,7 +419,7 @@ def supabase_table_status(table: str) -> dict[str, Any]:
         return {"ok": False, "reason": "missing_supabase_server_config", "table": table}
 
     request = urllib.request.Request(
-        f"{supabase_url}/rest/v1/{table}?select=id&limit=1",
+        f"{supabase_url}/rest/v1/{table}?select=*&limit=1",
         headers={
             "apikey": service_key,
             "Authorization": f"Bearer {service_key}",

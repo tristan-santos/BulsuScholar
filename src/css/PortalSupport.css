@@ -108,3 +108,27 @@
 .support-ticket-composer textarea { min-height: 56px; resize: vertical; }
 @media (max-width: 850px) { .support-ticket-workspace { grid-template-columns: 1fr; } .support-ticket-sidebar { border-right: 0; border-bottom: 1px solid var(--support-line); } .support-ticket-list { max-height: 240px; } }
 @media (max-width: 560px) { .support-ticket-workspace { min-height: 0; } .support-ticket-sidebar > header, .support-ticket-thread > header { align-items: stretch; flex-direction: column; } .support-ticket-thread-actions { justify-content: flex-start; } .support-ticket-messages { height: 380px; padding: 14px; } .support-ticket-messages article { width: 88%; } .support-ticket-composer { grid-template-columns: 1fr; } }
+.support-recovery-workspace {
+	max-width: 900px;
+	margin: 0 auto 2rem;
+	padding: 1.5rem;
+	border: 1px solid #cadbd4;
+	border-radius: 8px;
+	background: #fff;
+}
+
+.support-recovery-workspace > header { margin-bottom: 1.25rem; }
+.support-recovery-workspace > header span { color: #08734d; font-weight: 800; text-transform: uppercase; font-size: .75rem; }
+.support-recovery-workspace form:not(.support-ticket-composer) { display: grid; gap: 1rem; }
+.support-recovery-workspace label { display: grid; gap: .4rem; font-weight: 700; }
+.support-recovery-workspace input,
+.support-recovery-workspace textarea { padding: .75rem; border: 1px solid #c8d6d1; border-radius: 6px; font: inherit; }
+.support-recovery-workspace textarea { min-height: 110px; resize: vertical; }
+.support-recovery-ticket-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.support-recovery-ticket-head > div { display: grid; gap: .25rem; }
+.support-recovery-ticket-head span { text-transform: capitalize; color: #60736c; }
+.support-recovery-attachments { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0; }
+.support-recovery-attachments span { display: inline-flex; align-items: center; gap: .35rem; padding: .45rem .6rem; border: 1px solid #d3dfda; border-radius: 6px; }
+.support-recovery-upload { display: inline-flex !important; align-items: center; gap: .5rem; margin-top: 1rem; color: #08734d; cursor: pointer; }
+.support-recovery-upload input { position: absolute; width: 1px; height: 1px; clip: rect(0 0 0 0); overflow: hidden; }
+.support-recovery-confirm { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #dbe5e1; }

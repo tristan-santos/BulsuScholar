@@ -1,20 +1,24 @@
 import json
 import base64
 import hashlib
+import hmac
 import os
 import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, Request
 
 try:
     from .access_control import require_admin_bearer, require_supabase_user
+    from .email_service import send_email_notification
     from .supabase_ops import supabase_admin_create_user, supabase_document_get, supabase_document_upsert, supabase_rpc, supabase_select
 except ImportError:  # pragma: no cover
     from access_control import require_admin_bearer, require_supabase_user
+    from email_service import send_email_notification
     from supabase_ops import supabase_admin_create_user, supabase_document_get, supabase_document_upsert, supabase_rpc, supabase_select
 
 
@@ -91,6 +95,115 @@ def _record_attempt(account: dict[str, Any], succeeded: bool) -> dict[str, Any]:
     return result.get("data") or {}
 
 
+def _jwt_claims(token: str) -> dict[str, Any]:
+    try:
+        segment = token.split(".")[1]
+        return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)).decode("utf-8"))
+    except (ValueError, IndexError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=503, detail="authentication_session_invalid") from error
+
+
+def _session_id(auth: dict[str, Any]) -> str:
+    session_id = str(_jwt_claims(str(auth.get("access_token") or "")).get("session_id") or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=503, detail="authentication_session_missing")
+    return session_id
+
+
+def _otp_secret() -> bytes:
+    secret = os.getenv("PORTAL_EMAIL_CODE_SECRET", "").strip()
+    if len(secret) < 32:
+        raise HTTPException(status_code=503, detail="email_verification_not_configured")
+    return secret.encode("utf-8")
+
+
+def _code_hash(challenge_id: str, code: str) -> str:
+    return hmac.new(_otp_secret(), f"{challenge_id}:{code}".encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _email_verification_due(account: dict[str, Any], state: dict[str, Any]) -> bool:
+    if account["type"] not in {"student", "grantor"}:
+        return False
+    now = datetime.now(timezone.utc)
+    grace = _parse_time(state.get("otp_grace_until"))
+    if grace and grace > now:
+        return False
+    activity = _parse_time(state.get("last_meaningful_activity_at") or state.get("last_succeeded_at"))
+    return activity is not None and (now - activity).total_seconds() >= 30 * 24 * 60 * 60
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    if not domain:
+        return "***"
+    visible = local[:1]
+    return f"{visible}{'*' * max(3, len(local) - 1)}@{domain}"
+
+
+def _safe_account(account: dict[str, Any]) -> dict[str, Any]:
+    data = account["data"]
+    return {
+        "id": account["id"],
+        "type": "provider" if account["type"] == "grantor" else account["type"],
+        "table": account["table"],
+        "isPending": account["table"] == "pending_students",
+        "mustChangePassword": data.get("mustChangePassword") is True,
+    }
+
+
+def _send_email_code(account: dict[str, Any]) -> dict[str, Any]:
+    challenge_id = secrets.token_urlsafe(24)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    issued = supabase_rpc("issue_portal_email_challenge", {
+        "p_id": challenge_id,
+        "p_auth_user_id": account["data"]["authUserId"],
+        "p_account_type": account["type"],
+        "p_account_id": account["id"],
+        "p_code_hash": _code_hash(challenge_id, code),
+    })
+    if not issued.get("ok"):
+        reason = issued.get("reason") or "email_verification_unavailable"
+        raise HTTPException(status_code=429 if "hourly_limit" in reason else 503, detail=reason)
+    delivery = send_email_notification({
+        "to": account["data"]["email"],
+        "subject": "BulsuScholar email verification code",
+        "html": (
+            '<div data-bulsuscholar-email="verification">'
+            "<p>Use this code to finish signing in:</p>"
+            f'<p style="font-size:28px;font-weight:700;letter-spacing:6px">{code}</p>'
+            "<p>The code expires in 10 minutes. Do not share it.</p></div>"
+        ),
+    })
+    if not delivery.get("sent"):
+        raise HTTPException(status_code=503, detail="email_verification_delivery_failed")
+    return {
+        "required": True,
+        "challengeId": challenge_id,
+        "maskedEmail": _mask_email(account["data"]["email"]),
+        "expiresIn": 600,
+        "resendAfter": 60,
+    }
+
+
+def _authenticate_password(email: str, password: str) -> tuple[dict[str, Any], int]:
+    url, key = _config()
+    return _request_json(
+        f"{url}/auth/v1/token?grant_type=password",
+        payload={"email": email, "password": password},
+        headers={"apikey": key, "Content-Type": "application/json"},
+    )
+
+
 def _account_disabled(account: dict[str, Any]) -> bool:
     data = account.get("data") or {}
     status = str(data.get("status") or data.get("accountStatus") or "active").lower()
@@ -120,12 +233,7 @@ def login(payload: dict[str, Any]) -> dict[str, Any]:
         detail = "admin_account_locked" if account["type"] == "admin" else "account_locked_reset_required"
         raise HTTPException(status_code=423, detail=detail)
 
-    url, key = _config()
-    auth, status = _request_json(
-        f"{url}/auth/v1/token?grant_type=password",
-        payload={"email": email, "password": password},
-        headers={"apikey": key, "Content-Type": "application/json"},
-    )
+    auth, status = _authenticate_password(email, password)
     if status >= 500:
         raise HTTPException(status_code=503, detail="authentication_service_unavailable")
     if status < 200 or status >= 300 or not auth.get("access_token"):
@@ -145,21 +253,85 @@ def login(payload: dict[str, Any]) -> dict[str, Any]:
     if security.get("blocked"):
         detail = "admin_account_locked" if account["type"] == "admin" else "account_locked_reset_required"
         raise HTTPException(status_code=423, detail=detail)
-    safe_account = {
-        "id": user_id,
-        "type": "provider" if account["type"] == "grantor" else account["type"],
-        "table": account["table"],
-        "isPending": account["table"] == "pending_students",
-        "mustChangePassword": data.get("mustChangePassword") is True,
-    }
+    session_id = _session_id(auth)
+    if _email_verification_due(account, state):
+        supabase_rpc("discard_portal_auth_session", {
+            "p_session_id": session_id,
+            "p_auth_user_id": auth_user_id,
+        })
+        return {"ok": True, "emailVerification": _send_email_code(account), "account": _safe_account(account)}
+
+    verified = supabase_rpc("complete_portal_verified_session", {
+        "p_challenge_id": "",
+        "p_code_hash": "",
+        "p_session_id": session_id,
+        "p_auth_user_id": auth_user_id,
+        "p_account_type": account["type"],
+        "p_account_id": account["id"],
+        "p_method": "password",
+    })
+    if not verified.get("ok"):
+        raise HTTPException(status_code=503, detail="verified_session_registration_failed")
     return {
         "ok": True,
         "session": {
             "access_token": auth.get("access_token"),
             "refresh_token": auth.get("refresh_token"),
         },
-        "account": safe_account,
+        "account": _safe_account(account),
     }
+
+
+def resend_email_verification(payload: dict[str, Any]) -> dict[str, Any]:
+    challenge_id = str(payload.get("challengeId") or "").strip()
+    result = supabase_select("portal_email_challenges", {"id": challenge_id})
+    rows = result.get("rows") or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="email_challenge_not_found")
+    row = rows[0]
+    sent_at = _parse_time(row.get("last_sent_at"))
+    if sent_at and (datetime.now(timezone.utc) - sent_at).total_seconds() < 60:
+        raise HTTPException(status_code=429, detail="email_challenge_resend_too_soon")
+    account = _find_account(str(row.get("account_id") or ""))
+    if not account or str(account["data"].get("authUserId") or "") != str(row.get("auth_user_id") or ""):
+        raise HTTPException(status_code=404, detail="email_challenge_not_found")
+    return {"ok": True, "emailVerification": _send_email_code(account)}
+
+
+def complete_email_verification(payload: dict[str, Any]) -> dict[str, Any]:
+    challenge_id = str(payload.get("challengeId") or "").strip()
+    code = str(payload.get("code") or "").strip()
+    password = str(payload.get("password") or "")
+    if not challenge_id or len(code) != 6 or not code.isdigit() or not password:
+        raise HTTPException(status_code=422, detail="email_verification_fields_required")
+    code_hash = _code_hash(challenge_id, code)
+    checked = supabase_rpc("check_portal_email_challenge", {"p_id": challenge_id, "p_code_hash": code_hash})
+    if not checked.get("ok"):
+        raise HTTPException(status_code=403, detail=checked.get("reason") or "email_challenge_invalid")
+    challenge = checked.get("data") or {}
+    if challenge.get("verified") is not True:
+        raise HTTPException(status_code=401, detail={"code": "invalid_email_code", "remainingAttempts": challenge.get("remainingAttempts")})
+    account = _find_account(str(challenge.get("accountId") or ""))
+    if not account or account["type"] != challenge.get("accountType"):
+        raise HTTPException(status_code=403, detail="email_challenge_identity_mismatch")
+    auth, status = _authenticate_password(str(account["data"].get("email") or ""), password)
+    if status < 200 or status >= 300 or not auth.get("access_token"):
+        raise HTTPException(status_code=401, detail="password_changed_restart_login")
+    auth_user_id = str(account["data"].get("authUserId") or "")
+    if str((auth.get("user") or {}).get("id") or "") != auth_user_id:
+        raise HTTPException(status_code=403, detail="auth_identity_mismatch")
+    completed = supabase_rpc("complete_portal_verified_session", {
+        "p_challenge_id": challenge_id,
+        "p_code_hash": code_hash,
+        "p_session_id": _session_id(auth),
+        "p_auth_user_id": auth_user_id,
+        "p_account_type": account["type"],
+        "p_account_id": account["id"],
+        "p_method": "email_code",
+    })
+    if not completed.get("ok"):
+        raise HTTPException(status_code=403, detail=completed.get("reason") or "email_verification_not_completed")
+    return {"ok": True, "session": {"access_token": auth.get("access_token"), "refresh_token": auth.get("refresh_token")}, "account": _safe_account(account)}
 
 
 def validate_portal_session(request: Request) -> dict[str, Any]:
@@ -174,6 +346,13 @@ def validate_portal_session(request: Request) -> dict[str, Any]:
             or str(account["data"].get("authUserId") or "") != str(user.get("id") or "")
             or _account_disabled(account)):
         raise HTTPException(status_code=403, detail="portal_session_not_authorized")
+    valid_after = _parse_time(account["data"].get("sessionValidAfter"))
+    if valid_after:
+        authorization = request.headers.get("authorization", "")
+        token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+        issued_at = int(_jwt_claims(token).get("iat") or 0)
+        if issued_at < int(valid_after.timestamp()):
+            raise HTTPException(status_code=401, detail="portal_session_revoked")
     return {"ok": True, "account": {"id": actor_id, "type": actor_type}}
 
 
@@ -212,7 +391,7 @@ def request_password_recovery(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def complete_password_recovery(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
-    user = require_supabase_user(request, allow_locked=True)
+    user = require_supabase_user(request, allow_locked=True, require_verified=False)
     auth_user_id = str(user.get("id") or "")
     challenge = str(payload.get("challenge") or "").strip()
     if len(challenge) < 32 or len(challenge) > 128:

@@ -1,1372 +1,304 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import {
-	addDoc,
-	collection,
-	doc,
-	getDoc,
-	getDocs,
-	onSnapshot,
-	query,
-	serverTimestamp,
-	setDoc,
-	where,
-} from "../services/supabaseDataService"
-import {
-	HiOutlineCamera,
 	HiOutlineArrowLeft,
+	HiOutlineCheckCircle,
 	HiOutlineDocumentText,
-	HiOutlineDownload,
 	HiOutlineEye,
+	HiOutlineRefresh,
 	HiOutlineSave,
-	HiOutlineX,
+	HiOutlineUpload,
+	HiOutlineXCircle,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
-import { db } from "../services/supabaseDataService"
-import { uploadToStorage } from "../services/storageService"
-import {
-	getCurrentAcademicYear,
-	getCurrentSemesterTag,
-	getDocumentUrlsForStudent,
-	normalizeScholarshipList,
-} from "../services/scholarshipService"
-import { getPortalAccessBlockMessage, getStudentAccessState } from "../services/studentAccessService"
-import { isPdf, convertPdfToImage, convertPdfToImageFile } from "../utils/pdfConverter"
-import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
-import {
-	OTHER_PROVINCE_VALUE,
-	REGION_III_PROVINCE_OPTIONS,
-	getRegionProvinceSelection,
-	getCitiesByProvince,
-	getBarangaysByLocation,
-} from "../data/philippineLocations"
 import StudentTopbar from "../components/StudentTopbar"
 import StudentFooter from "../components/StudentFooter"
-import CustomSelect from "../components/CustomSelect"
-import ZoomableImagePreview from "../components/ZoomableImagePreview"
-import { downloadStudentProfileTemplate } from "../services/applicationFormService"
+import useThemeMode from "../hooks/useThemeMode"
 import {
-	downloadStorageObject,
-	getDocumentDownloadErrorMessage,
-	getStorageObjectBlob,
-	parseSupabaseStorageLocation,
-	removeStorageObject,
-} from "../services/supabaseStorageService"
-import { updateScholarshipDocumentsWorkflow } from "../services/workflowService"
-import { isClosedApplication } from "../services/scholarshipChoiceService"
+	getStudentProfileWorkspace,
+	getStudentVerificationDocumentBlob,
+	previewStudentProfileDraft,
+	saveStudentProfileDraft,
+	submitStudentProfile,
+	uploadStudentVerificationDocument,
+} from "../services/studentProfileService"
+import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import "../css/StudentDashboard.css"
 import "../css/StudentPortalRefresh.css"
-import useThemeMode from "../hooks/useThemeMode"
 
-const COURSES_WITH_MAJORS = new Set([
-	"Bachelor of Secondary Education",
-	"Bachelor of Science in Business Administration",
-	"Bachelor in Industrial Technology",
-])
+const EMPTY_ADDRESS = { street: "", barangay: "", city: "", province: "", postalCode: "" }
+const EMPTY_PROFILE = {
+	fname: "", mname: "", lname: "", extension: "", email: "", cpNumber: "", birthDate: "",
+	guardianName: "", guardianContact: "", college: "", course: "", major: "", year: "", section: "",
+	profileImageUrl: "", permanentAddress: EMPTY_ADDRESS, currentAddress: EMPTY_ADDRESS,
+}
 
-function _checkValidated(userData) {
-	if (!userData) return false
-	return Boolean(
-		userData.isValidated === true ||
-			userData.isValidated === "true" ||
-			userData.validated === true ||
-			userData.validated === "true" ||
-			(userData.validatedAt != null && userData.validatedAt !== ""),
+const DOCUMENT_LABELS = {
+	cor: "Certificate of Registration",
+	rog: "Report of Grades",
+	identity: "Identity Document",
+	profile: "Student Application Profile",
+}
+
+function statusLabel(entry = {}) {
+	if (entry.status === "approved") return "Approved"
+	if (entry.status === "rejected") return "Needs correction"
+	if (entry.status === "pending") return "Pending review"
+	if (entry.status === "exempt") return "Not required for this semester"
+	return "Not submitted"
+}
+
+function SignaturePad({ value, onChange }) {
+	const canvasRef = useRef(null)
+	const drawingRef = useRef(false)
+
+	const prepareCanvas = useCallback(() => {
+		const canvas = canvasRef.current
+		if (!canvas) return null
+		const rect = canvas.getBoundingClientRect()
+		const ratio = window.devicePixelRatio || 1
+		if (canvas.width !== Math.round(rect.width * ratio) || canvas.height !== Math.round(rect.height * ratio)) {
+			canvas.width = Math.max(1, Math.round(rect.width * ratio))
+			canvas.height = Math.max(1, Math.round(rect.height * ratio))
+			const context = canvas.getContext("2d")
+			context.scale(ratio, ratio)
+			context.lineWidth = 2.2
+			context.lineCap = "round"
+			context.strokeStyle = "#102a22"
+			if (value) {
+				const image = new Image()
+				image.onload = () => context.drawImage(image, 0, 0, rect.width, rect.height)
+				image.src = value
+			}
+		}
+		return canvas
+	}, [value])
+
+	useEffect(() => { prepareCanvas() }, [prepareCanvas])
+
+	const point = (event) => {
+		const rect = canvasRef.current.getBoundingClientRect()
+		return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+	}
+	const start = (event) => {
+		const canvas = prepareCanvas()
+		if (!canvas) return
+		drawingRef.current = true
+		canvas.setPointerCapture?.(event.pointerId)
+		const current = point(event)
+		const context = canvas.getContext("2d")
+		context.beginPath()
+		context.moveTo(current.x, current.y)
+	}
+	const move = (event) => {
+		if (!drawingRef.current) return
+		const current = point(event)
+		const context = canvasRef.current.getContext("2d")
+		context.lineTo(current.x, current.y)
+		context.stroke()
+	}
+	const finish = () => {
+		if (!drawingRef.current) return
+		drawingRef.current = false
+		onChange(canvasRef.current.toDataURL("image/png"))
+	}
+	const clear = () => {
+		const canvas = canvasRef.current
+		canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height)
+		onChange("")
+	}
+	const upload = (event) => {
+		const file = event.target.files?.[0]
+		event.target.value = ""
+		if (!file) return
+		if (!/^image\/(png|jpeg)$/.test(file.type) || file.size > 2 * 1024 * 1024) {
+			toast.error("Signature must be a PNG or JPG image no larger than 2 MB.")
+			return
+		}
+		const reader = new FileReader()
+		reader.onload = () => onChange(String(reader.result || ""))
+		reader.readAsDataURL(file)
+	}
+
+	return (
+		<div className="student-profile-signature">
+		<canvas ref={canvasRef} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish} aria-label="Draw your signature" />
+			<div>
+				<label className="student-profile-file-action"><HiOutlineUpload /> Upload signature<input type="file" accept="image/png,image/jpeg" onChange={upload} /></label>
+				<button type="button" data-button-variant="neutral" onClick={clear}><HiOutlineRefresh /> Clear</button>
+			</div>
+			<small>Draw with a mouse or finger, or upload a cropped PNG/JPG. A new signature is required for each submitted revision.</small>
+		</div>
 	)
 }
 
-function hasDocumentReference(file = null) {
-	return Boolean(file && (file.url || file.publicUrl || file.path || file.publicId || file.storagePath))
-}
-
-function documentStatus(file, semesterTag) {
-	if (!hasDocumentReference(file)) return "Not uploaded"
-	if (file.semesterTag && file.semesterTag !== semesterTag) {
-		return `Outdated (${file.semesterTag})`
-	}
-	return `Current (${file.semesterTag || semesterTag})`
-}
-
-function canUploadDocument(file, semesterTag) {
-	if (!hasDocumentReference(file)) return true
-	if (file.semesterTag && file.semesterTag !== semesterTag) return true
-	return Boolean(file.requiresReupload || file.resetRequired || file.uploadResetRequired)
-}
-
-async function isValidStudentProfileUpload(file) {
-	if (!file || file.size <= 0 || file.size > 10 * 1024 * 1024) return false
-	const header = new Uint8Array(await file.slice(0, 8).arrayBuffer())
-	const isPdf = String.fromCharCode(...header.slice(0, 5)) === "%PDF-"
-	const isPng =
-		header.length >= 8 &&
-		header[0] === 0x89 &&
-		header[1] === 0x50 &&
-		header[2] === 0x4e &&
-		header[3] === 0x47 &&
-		header[4] === 0x0d &&
-		header[5] === 0x0a &&
-		header[6] === 0x1a &&
-		header[7] === 0x0a
-	return isPdf || isPng
-}
-
-function isPreviewPdf(file = {}) {
-	const type = String(file?.type || file?.contentType || "").toLowerCase()
-	const name = String(file?.name || file?.url || "").toLowerCase()
-	return type.includes("pdf") || name.includes(".pdf")
+function AddressFields({ title, value, onChange, required = false }) {
+	const update = (key, next) => onChange({ ...(value || EMPTY_ADDRESS), [key]: next })
+	return (
+		<fieldset className="student-profile-address-group">
+			<legend>{title}{required ? " *" : ""}</legend>
+			<label>House / Street<input value={value?.street || ""} onChange={(event) => update("street", event.target.value)} /></label>
+			<label>Barangay<input value={value?.barangay || ""} onChange={(event) => update("barangay", event.target.value)} /></label>
+			<label>City / Municipality<input value={value?.city || ""} onChange={(event) => update("city", event.target.value)} /></label>
+			<label>Province<input value={value?.province || ""} onChange={(event) => update("province", event.target.value)} /></label>
+			<label>Postal Code<input value={value?.postalCode || ""} onChange={(event) => update("postalCode", event.target.value)} inputMode="numeric" /></label>
+		</fieldset>
+	)
 }
 
 export default function StudentProfilePage() {
 	const navigate = useNavigate()
-	const [user, setUser] = useState(null)
-	const [userLoaded, setUserLoaded] = useState(false)
-	const [userId, setUserId] = useState("")
-	const [userMenuOpen, setUserMenuOpen] = useState(false)
-	const [isSaving, setIsSaving] = useState(false)
-	const [barangayOptions, setBarangayOptions] = useState([])
-	const [barangayLoading, setBarangayLoading] = useState(false)
-	const [barangayError, setBarangayError] = useState("")
-	const [isPhotoUploading, setIsPhotoUploading] = useState(false)
-	const [isDownloadingProfileTemplate, setIsDownloadingProfileTemplate] = useState(false)
-	const [isDownloadingUploadedProfile, setIsDownloadingUploadedProfile] = useState(false)
-	const [isDocumentUploading, setIsDocumentUploading] = useState({
-		cor: false,
-		cog: false,
-		schoolId: false,
-		applicationForm: false,
-	})
-	const [isLightboxOpen, setIsLightboxOpen] = useState(false)
-	const [previewDocument, setPreviewDocument] = useState(null)
-	const [previewBlobUrl, setPreviewBlobUrl] = useState("")
-	const [isPreviewLoading, setIsPreviewLoading] = useState(false)
-	const userMenuRef = useRef(null)
-	const forcedLogoutRef = useRef(false)
-	const fileInputRef = useRef(null)
-	const corFileInputRef = useRef(null)
-	const cogFileInputRef = useRef(null)
-	const schoolIdFileInputRef = useRef(null)
-	const applicationFormFileInputRef = useRef(null)
 	const { theme, setTheme } = useThemeMode()
-	const currentSemesterTag = getCurrentSemesterTag()
-	const profileImageUrl = user?.profileImageUrl || ""
-	const studentApplicationProfile = user?.scholarshipApplicationFile || user?.applicationFormFile || null
-	const canUploadCor = canUploadDocument(user?.corFile, currentSemesterTag)
-	const canUploadCog = canUploadDocument(user?.cogFile, currentSemesterTag)
-	const canUploadSchoolId = canUploadDocument(user?.schoolIdFile, currentSemesterTag)
-	const applicationScholarship = normalizeScholarshipList(user?.scholarships || []).find((item) => {
-		const status = String(item?.status || "").toLowerCase()
-		return !["rejected", "denied", "cancelled", "canceled", "expired"].some((value) => status.includes(value))
-	}) || null
-	const hasDownloadedProfileTemplate = Boolean(
-		user?.studentProfileTemplateDownloadedAt ||
-		applicationScholarship?.applicationFormDownloadedAt ||
-		user?.applicationFormDownloadedAt,
-	)
-	const canDownloadProfileTemplate = true
-	const canUploadApplicationForm = hasDownloadedProfileTemplate
+	const [workspace, setWorkspace] = useState(null)
+	const [profile, setProfile] = useState(EMPTY_PROFILE)
+	const [signature, setSignature] = useState("")
+	const [busy, setBusy] = useState("")
+	const [identityKind, setIdentityKind] = useState("student_id")
+	const [showCurrentAddress, setShowCurrentAddress] = useState(false)
 
-	const [formData, setFormData] = useState({
-		fname: "",
-		mname: "",
-		lname: "",
-		email: "",
-		cpNumber: "",
-		street: "",
-		city: "",
-		province: "",
-		provinceSelection: "",
-		barangay: "",
-		postalCode: "",
-		course: "",
-		major: "",
-		year: "",
-		section: "",
-	})
-	const courseHasMajors = COURSES_WITH_MAJORS.has(formData.course || user?.course || "")
-
-	const getUserInitials = () => {
-		const first = user?.fname?.[0]?.toUpperCase() || formData.fname?.[0]?.toUpperCase() || ""
-		const last = user?.lname?.[0]?.toUpperCase() || formData.lname?.[0]?.toUpperCase() || ""
-		return first + last || "ST"
-	}
-
-	const _openPhotoLightbox = () => {
-		if (!profileImageUrl) return
-		setIsLightboxOpen(true)
-	}
-
-	const openDocumentPreview = (title, file) => {
-		if (!hasDocumentReference(file)) return
-		setPreviewDocument({
-			...file,
-			title,
-			name: file.name || title,
-			isPdf: isPreviewPdf(file),
-		})
-	}
-
-	const closeDocumentPreview = () => {
-		setPreviewDocument(null)
-	}
-
-	const downloadPreviewDocument = async () => {
-		if (!previewDocument) return
+	const load = useCallback(async () => {
 		try {
-			await downloadStorageObject(previewDocument, {
-				fileName: previewDocument.name || `${previewDocument.title}.pdf`,
-				validatePdf: previewDocument.isPdf,
-			})
+			const result = await getStudentProfileWorkspace()
+			setWorkspace(result)
+			setProfile({ ...EMPTY_PROFILE, ...(result.draft || {}), permanentAddress: { ...EMPTY_ADDRESS, ...(result.draft?.permanentAddress || {}) }, currentAddress: { ...EMPTY_ADDRESS, ...(result.draft?.currentAddress || {}) } })
+			setShowCurrentAddress(Boolean(Object.values(result.draft?.currentAddress || {}).some(Boolean)))
 		} catch (error) {
-			console.error("Failed to download document:", error)
-			toast.error(getDocumentDownloadErrorMessage(error, previewDocument.title || "document"))
+			console.error("Unable to load student profile workspace.", error)
+			toast.error(error.message || "Unable to load your profile.")
 		}
-	}
+	}, [])
 
-	const triggerPhotoUpload = () => {
-		fileInputRef.current?.click()
-	}
+	useEffect(() => { load() }, [load])
 
-	const triggerDocumentUpload = (type) => {
-		if (type === "cor") {
-			corFileInputRef.current?.click()
-			return
-		}
-		if (type === "cog") {
-			cogFileInputRef.current?.click()
-			return
-		}
-		if (type === "applicationForm") {
-			applicationFormFileInputRef.current?.click()
-			return
-		}
-		schoolIdFileInputRef.current?.click()
-	}
+	const latestSubmissions = useMemo(() => {
+		const result = {}
+		for (const item of workspace?.submissions || []) if (!result[item.documentType]) result[item.documentType] = item
+		return result
+	}, [workspace?.submissions])
+	const profileCompleteness = useMemo(() => {
+		const required = ["fname", "lname", "email", "cpNumber", "birthDate", "guardianName", "guardianContact", "course", "year", "section"]
+		const addressFields = ["street", "barangay", "city", "province", "postalCode"]
+		const completed = required.filter((key) => String(profile[key] || "").trim()).length + addressFields.filter((key) => String(profile.permanentAddress?.[key] || "").trim()).length
+		return { completed, total: required.length + addressFields.length, percent: Math.round((completed / (required.length + addressFields.length)) * 100) }
+	}, [profile])
 
-	const handleDownloadProfileTemplate = async () => {
-		if (!user || !userId || isDownloadingProfileTemplate) return
-
-		setIsDownloadingProfileTemplate(true)
+	const update = (key, value) => setProfile((current) => ({ ...current, [key]: value }))
+	const saveDraft = async () => {
+		if (profile.cpNumber && !isValidContactNumber(profile.cpNumber)) return toast.error(CONTACT_NUMBER_RULE_MESSAGE)
+		setBusy("save")
 		try {
-			await downloadStudentProfileTemplate()
-			const downloadedAt = new Date().toISOString()
-			const nextScholarships = normalizeScholarshipList(user?.scholarships || []).map((entry) =>
-				applicationScholarship && (
-					entry.id === applicationScholarship.id ||
-					entry.applicationNumber === applicationScholarship.applicationNumber ||
-					entry.requestNumber === applicationScholarship.requestNumber
-				)
-					? {
-							...entry,
-							applicationFormDownloadedAt: downloadedAt,
-							applicationFormDownloadedSemesterTag: currentSemesterTag,
-						}
-					: entry,
-			)
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					scholarships: nextScholarships,
-					studentProfileTemplateDownloadedAt: downloadedAt,
-					applicationFormDownloadedAt: downloadedAt,
-					applicationFormDownloadedSemesterTag: currentSemesterTag,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
-			setUser((prev) => ({
-				...(prev || {}),
-				scholarships: nextScholarships,
-				studentProfileTemplateDownloadedAt: downloadedAt,
-				applicationFormDownloadedAt: downloadedAt,
-				applicationFormDownloadedSemesterTag: currentSemesterTag,
-			}))
-			toast.success("Student Application Profile template downloaded.")
+			const normalized = { ...profile, cpNumber: profile.cpNumber ? normalizeContactNumber(profile.cpNumber) : "", currentAddress: showCurrentAddress ? profile.currentAddress : EMPTY_ADDRESS }
+			await saveStudentProfileDraft(normalized)
+			setProfile(normalized)
+			toast.success("Profile draft saved.")
+			await load()
 		} catch (error) {
-			console.error("Failed to download Student Application Profile template:", error)
-			toast.error(getDocumentDownloadErrorMessage(error, "Student Application Profile template"))
-		} finally {
-			setIsDownloadingProfileTemplate(false)
-		}
+			toast.error(error.message || "Unable to save the draft.")
+		} finally { setBusy("") }
 	}
-
-	const handleDownloadUploadedProfile = async () => {
-		const profileFile = studentApplicationProfile
-		if (!profileFile || isDownloadingUploadedProfile) return
-		setIsDownloadingUploadedProfile(true)
+	const submitProfile = async () => {
+		if (!signature) return toast.error("Draw or upload your signature before submitting.")
+		setBusy("submit")
 		try {
-			const profileIsPdf = isPreviewPdf(profileFile)
-			await downloadStorageObject(profileFile, {
-				fileName:
-					profileFile.name ||
-					`Student_Application_Profile_${userId}.${profileIsPdf ? "pdf" : "png"}`,
-				validatePdf: profileIsPdf,
-			})
-			toast.success("Uploaded Student Application Profile downloaded.")
+			await saveStudentProfileDraft({ ...profile, currentAddress: showCurrentAddress ? profile.currentAddress : EMPTY_ADDRESS })
+			await submitStudentProfile(signature)
+			setSignature("")
+			toast.success("Profile submitted for review.")
+			await load()
 		} catch (error) {
-			console.error("Failed to download uploaded Student Application Profile:", error)
-			toast.error(getDocumentDownloadErrorMessage(error, "uploaded Student Application Profile"))
-		} finally {
-			setIsDownloadingUploadedProfile(false)
-		}
+			const fields = error.data?.detail?.fields
+			toast.error(fields?.length ? `Complete: ${fields.join(", ")}` : error.message || "Unable to submit the profile.")
+		} finally { setBusy("") }
 	}
-
-	const syncScholarshipApplicationDocuments = async ({
-		type,
-		studentSnapshot,
-		nextFileValue,
-	}) => {
-		if (!userId || !studentSnapshot) return
-
-		const scholarships = normalizeScholarshipList(studentSnapshot.scholarships || [])
-		if (scholarships.length === 0) return studentSnapshot
-
-		let syncedStudent = studentSnapshot
-		const activeLifecycleApplications = scholarships.filter((scholarship) =>
-			Number(scholarship.lifecycleVersion) === 2 && scholarship.applicationId && !isClosedApplication(scholarship),
-		)
-		if (type === "applicationForm" && activeLifecycleApplications.length > 0) {
-			for (const scholarship of activeLifecycleApplications) {
-				const result = await updateScholarshipDocumentsWorkflow({
-					studentId: userId,
-					applicationId: scholarship.applicationId,
-					actorId: userId,
-					actorType: "student",
-					field: "applicationFormFile",
-					value: nextFileValue,
-				})
-				if (result.student) syncedStudent = result.student
-			}
-		}
-		const legacyScholarships = scholarships.filter((scholarship) => Number(scholarship.lifecycleVersion) !== 2)
-		if (legacyScholarships.length === 0) return syncedStudent
-
-		const documentUrls = getDocumentUrlsForStudent(studentSnapshot)
-		const applicationCollection = collection(db, "scholarshipApplications")
-		const applicationSnapshot = await getDocs(
-			query(applicationCollection, where("studentId", "==", userId)),
-		)
-		const matchingDocs = new Map()
-
-		applicationSnapshot.docs.forEach((applicationDoc) => {
-			const data = applicationDoc.data() || {}
-			const scholarshipKey = String(
-				data.scholarshipId || data.applicationNumber || data.requestNumber || "",
-			)
-			if (scholarshipKey) {
-				matchingDocs.set(scholarshipKey, applicationDoc.id)
-			}
-		})
-
-		const syncJobs = legacyScholarships.map((scholarship) => {
-			const scholarshipKey = String(
-				scholarship.id || scholarship.applicationNumber || scholarship.requestNumber || "",
-			)
-			const payload = {
-				studentId: userId,
-				fname: studentSnapshot.fname || "",
-				mname: studentSnapshot.mname || "",
-				lname: studentSnapshot.lname || "",
-				fullName:
-					[studentSnapshot.fname, studentSnapshot.mname, studentSnapshot.lname]
-						.filter(Boolean)
-						.join(" ")
-						.trim() || "Applicant",
-				email: studentSnapshot.email || "",
-				cpNumber: studentSnapshot.cpNumber || "",
-				scholarshipId: scholarshipKey,
-				applicationNumber:
-					scholarship.applicationNumber || scholarship.requestNumber || scholarshipKey,
-				requestNumber:
-					scholarship.requestNumber || scholarship.applicationNumber || scholarshipKey,
-				scholarshipName: scholarship.name || scholarship.provider || "Scholarship",
-				providerType: scholarship.providerType || "",
-				providerLabel: scholarship.provider || scholarship.name || "Scholarship",
-				status: scholarship.status || "Applied",
-				tracking: scholarship.tracking || null,
-				appliedAt: scholarship.appliedAt || null,
-				applicationDate: scholarship.appliedAt || null,
-				semesterTag: scholarship.semesterTag || currentSemesterTag,
-				academicYear: scholarship.academicYear || getCurrentAcademicYear(),
-				documentUrls,
-				updatedAt: serverTimestamp(),
-			}
-
-			if (type === "applicationForm") {
-				payload.scholarshipApplicationFile = nextFileValue
-				payload.applicationFormFile = nextFileValue
-			}
-
-			const existingDocId = matchingDocs.get(scholarshipKey)
-			if (existingDocId) {
-				return setDoc(doc(db, "scholarshipApplications", existingDocId), payload, {
-					merge: true,
-				})
-			}
-
-			return addDoc(applicationCollection, {
-				...payload,
-				createdAt: serverTimestamp(),
-			})
-		})
-
-		await Promise.all(syncJobs)
-		return syncedStudent
-	}
-
-	const handlePhotoChange = async (event) => {
-		const file = event.target.files?.[0]
-		event.target.value = ""
-		if (!file || !userId) return
-
-		if (!String(file.type || "").startsWith("image/")) {
-			toast.error("Profile photo must be an image file.")
-			return
-		}
-
-		setIsPhotoUploading(true)
+	const previewDraft = async () => {
+		setBusy("preview")
 		try {
-			const uploadResult = await uploadToStorage(file)
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					profileImageUrl: uploadResult.url,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
-			setUser((prev) => ({ ...(prev || {}), profileImageUrl: uploadResult.url }))
-			toast.success("Profile photo updated.")
+			const blob = await previewStudentProfileDraft({ ...profile, currentAddress: showCurrentAddress ? profile.currentAddress : EMPTY_ADDRESS })
+			const url = URL.createObjectURL(blob)
+			window.open(url, "_blank", "noopener,noreferrer")
+			setTimeout(() => URL.revokeObjectURL(url), 60000)
 		} catch (error) {
-			console.error("Failed to upload profile photo:", error)
-			toast.error("Failed to upload profile photo. Please try again.")
-		} finally {
-			setIsPhotoUploading(false)
-		}
+			toast.error(error.message || "Unable to preview the draft.")
+		} finally { setBusy("") }
 	}
-
-	const handleDocumentUpload = async (type, file) => {
-		if (!file || !userId) return
-		if (type === "applicationForm") {
-			if (!hasDownloadedProfileTemplate) {
-				toast.info("Download the Student Application Profile first before uploading it.")
-				return
-			}
-		}
-
-		const mimeType = String(file.type || "").toLowerCase()
-		const isApplicationFormUpload = type === "applicationForm"
-		const isAllowedFile = isApplicationFormUpload
-			? mimeType === "application/pdf" || mimeType === "image/png" || /\.(pdf|png)$/i.test(file.name || "")
-			: mimeType.startsWith("image/") ||
-				mimeType === "application/pdf" ||
-				/\.(png|jpe?g|pdf)$/i.test(file.name || "")
-		if (!isAllowedFile) {
-			toast.error(
-				isApplicationFormUpload
-					? "Student Application Profile must be uploaded as a PDF or PNG file."
-					: "Only PNG, JPG, JPEG, and PDF files are allowed.",
-			)
-			return
-		}
-		if (isApplicationFormUpload && !(await isValidStudentProfileUpload(file))) {
-			toast.error("Invalid Student Application Profile. Upload a valid PDF or PNG file no larger than 10 MB.")
-			return
-		}
-
-		setIsDocumentUploading((prev) => ({ ...prev, [type]: true }))
-		let pendingProfileUpload = null
-		let profileReferenceSaved = false
+	const uploadDocument = async (type, file, kind = "") => {
+		if (!file) return
+		setBusy(type)
 		try {
-			let fileToUpload = file
-			const previousApplicationProfile = isApplicationFormUpload ? studentApplicationProfile : null
-
-			// Convert PDF to image if needed for document preview compatibility.
-			if (isPdf(file) && (type === "cor" || type === "cog" || type === "schoolId")) {
-				toast.info("Converting PDF to image...")
-				fileToUpload = await convertPdfToImageFile(file)
-				toast.success("PDF converted successfully!")
-			}
-
-			const uploadResult = await uploadToStorage(
-				fileToUpload,
-				isApplicationFormUpload
-					? {
-						folder: `students/${userId}/application-profile`,
-						allowedTypes: ["application/pdf", "image/png"],
-					}
-					: {},
-			)
-			if (isApplicationFormUpload) pendingProfileUpload = uploadResult
-			const fieldName =
-				type === "cor"
-					? "corFile"
-					: type === "cog"
-					? "cogFile"
-					: type === "applicationForm"
-						? "scholarshipApplicationFile"
-						: "schoolIdFile"
-			const nextFileValue = {
-				url: uploadResult.url,
-				name: uploadResult.name || fileToUpload.name,
-				type: uploadResult.type || fileToUpload.type,
-				size: uploadResult.size || fileToUpload.size,
-				path: uploadResult.path || uploadResult.publicId || "",
-				bucket: uploadResult.bucket || "",
-				uploadedAt: new Date().toISOString(),
-				semesterTag: currentSemesterTag,
-			}
-
-			await setDoc(
-				doc(db, "students", userId),
-				{
-					[fieldName]: nextFileValue,
-					updatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
-			if (isApplicationFormUpload) profileReferenceSaved = true
-
-			const nextStudentSnapshot = { ...(user || {}), [fieldName]: nextFileValue }
-			const syncedStudent = await syncScholarshipApplicationDocuments({
-				type,
-				studentSnapshot: nextStudentSnapshot,
-				nextFileValue,
-			})
-
-			setUser((prev) => ({ ...(prev || {}), ...(syncedStudent || {}), [fieldName]: nextFileValue }))
-			if (isApplicationFormUpload && hasDocumentReference(previousApplicationProfile)) {
-				const previousLocation = parseSupabaseStorageLocation(previousApplicationProfile)
-				const nextLocation = parseSupabaseStorageLocation(nextFileValue)
-				const referencesSameObject =
-					previousLocation.bucket === nextLocation.bucket &&
-					previousLocation.path &&
-					previousLocation.path === nextLocation.path
-				if (!referencesSameObject) {
-					try {
-						await removeStorageObject(previousApplicationProfile)
-					} catch (cleanupError) {
-						console.warn("Student Application Profile was replaced, but the previous storage object could not be removed.", cleanupError)
-						toast.warning("Profile replaced, but the previous stored file could not be cleaned up.")
-					}
-				}
-			}
-			toast.success(
-				type === "cor"
-					? "COR uploaded successfully."
-					: type === "cog"
-					? "ROG uploaded successfully."
-					: type === "applicationForm"
-						? "Student Application Profile uploaded successfully. It will be checked during document review."
-						: "Student ID uploaded successfully.",
-			)
+			await uploadStudentVerificationDocument(type, file, kind)
+			toast.success(`${DOCUMENT_LABELS[type]} submitted for review.`)
+			await load()
 		} catch (error) {
-			if (pendingProfileUpload && !profileReferenceSaved) {
-				try {
-					await removeStorageObject(pendingProfileUpload)
-				} catch (cleanupError) {
-					console.warn("Unable to remove an incomplete Student Application Profile upload.", cleanupError)
-				}
-			}
-			console.error(`Failed to upload ${type}:`, error)
-			toast.error("Failed to upload document. Please try again.")
-		} finally {
-			setIsDocumentUploading((prev) => ({ ...prev, [type]: false }))
-		}
+			toast.error(error.message || "Unable to upload the document.")
+		} finally { setBusy("") }
 	}
-
-	useEffect(() => {
-		function handleClickOutside(event) {
-			if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
-				setUserMenuOpen(false)
-			}
-		}
-
-		if (!userMenuOpen) return undefined
-		document.addEventListener("mousedown", handleClickOutside)
-		return () => document.removeEventListener("mousedown", handleClickOutside)
-	}, [userMenuOpen])
-
-	useEffect(() => {
-		if (!previewDocument) {
-			setPreviewBlobUrl("")
-			setIsPreviewLoading(false)
-			return undefined
-		}
-
-		let cancelled = false
-		let objectUrl = ""
-		setIsPreviewLoading(true)
-		setPreviewBlobUrl("")
-
-		getStorageObjectBlob(previewDocument)
-			.then(async (blob) => {
-				if (cancelled) return
-				if (previewDocument.isPdf) {
-					const pdfFile = new File([blob], previewDocument.name || "document.pdf", {
-						type: "application/pdf",
-					})
-					const previewImageBlob = await convertPdfToImage(pdfFile)
-					if (cancelled) return
-					objectUrl = URL.createObjectURL(previewImageBlob)
-				} else {
-					objectUrl = URL.createObjectURL(blob)
-				}
-				setPreviewBlobUrl(objectUrl)
-			})
-			.catch((error) => {
-				if (cancelled) return
-				console.error("Failed to load document preview:", error)
-				toast.error("Unable to preview the document. You can still download it.")
-			})
-			.finally(() => {
-				if (!cancelled) setIsPreviewLoading(false)
-			})
-
-		return () => {
-			cancelled = true
-			if (objectUrl) URL.revokeObjectURL(objectUrl)
-		}
-	}, [previewDocument])
-
-	useEffect(() => {
-		const storedUserId = sessionStorage.getItem("bulsuscholar_userId")
-		const storedType = sessionStorage.getItem("bulsuscholar_userType")
-
-		if (!storedUserId || storedType !== "student") {
-			setUserLoaded(true)
-			return undefined
-		}
-
-		setUserId(storedUserId)
-		return onSnapshot(
-			doc(db, "students", storedUserId),
-			(snap) => {
-				if (!snap.exists()) {
-					setUser(null)
-					setUserLoaded(true)
-					return
-				}
-
-				const nextUser = snap.data() || {}
-				setUser(nextUser)
-				setUserLoaded(true)
-
-				const accessState = getStudentAccessState(nextUser)
-				if (accessState.isPortalAccessBlocked && !forcedLogoutRef.current) {
-					forcedLogoutRef.current = true
-					sessionStorage.removeItem("bulsuscholar_userId")
-					sessionStorage.removeItem("bulsuscholar_userType")
-					toast.error(getPortalAccessBlockMessage(nextUser))
-					navigate("/", { replace: true })
-				}
-			},
-			() => setUserLoaded(true),
-		)
-	}, [navigate])
-
-	useEffect(() => {
-		if (userLoaded && (!user || !userId)) {
-			navigate("/", { replace: true })
-		}
-	}, [navigate, user, userId, userLoaded])
-
-	useEffect(() => {
-		if (!user) return
-		setFormData({
-			fname: user.fname || "",
-			mname: user.mname || "",
-			lname: user.lname || "",
-			email: user.email || "",
-			cpNumber: user.cpNumber || user.contact || user.mobile || "",
-			street: user.street || "",
-			city: user.city || "",
-			province: user.province || "",
-			provinceSelection: getRegionProvinceSelection(user.province),
-			barangay: user.barangay || "",
-			postalCode: user.postalCode || "",
-			course: user.course || "",
-			major: user.major || "",
-			year: user.year || "",
-			section: user.section || "",
-		})
-	}, [user])
-
-	useEffect(() => {
-		let isCancelled = false
-		setBarangayOptions([])
-		setBarangayError("")
-
-		if (formData.provinceSelection === OTHER_PROVINCE_VALUE || !formData.province || !formData.city) {
-			setBarangayLoading(false)
-			return undefined
-		}
-
-		setBarangayLoading(true)
-		getBarangaysByLocation(formData.province, formData.city)
-			.then((options) => {
-				if (isCancelled) return
-				setBarangayOptions(options)
-				if (options.length === 0) {
-					setBarangayError("Barangays could not be found for the selected city or municipality.")
-				}
-			})
-			.catch((error) => {
-				if (isCancelled) return
-				console.error("Barangay lookup failed:", error)
-				setBarangayError("Unable to load barangays. Please check your connection and try again.")
-			})
-			.finally(() => {
-				if (!isCancelled) setBarangayLoading(false)
-			})
-
-		return () => {
-			isCancelled = true
-		}
-	}, [formData.province, formData.provinceSelection, formData.city])
-
-	const handleSaveProfile = async () => {
-		if (!userId) {
-			toast.error("Missing student ID. Please login again.")
-			return
-		}
-
-		if (
-			!formData.fname.trim() ||
-			!formData.lname.trim() ||
-			!formData.email.trim() ||
-			!formData.cpNumber.trim() ||
-			!formData.street.trim() ||
-			!formData.city.trim() ||
-			!formData.province.trim() ||
-			!formData.barangay.trim() ||
-			!formData.postalCode.trim()
-		) {
-			toast.error("All name, contact, and address details are required.")
-			return
-		}
-		if (!isValidContactNumber(formData.cpNumber)) {
-			toast.error(CONTACT_NUMBER_RULE_MESSAGE)
-			return
-		}
-
-		setIsSaving(true)
+	const preview = async (submission) => {
 		try {
-			const payload = {
-				fname: formData.fname.trim(),
-				mname: formData.mname.trim(),
-				lname: formData.lname.trim(),
-				email: formData.email.trim(),
-				cpNumber: normalizeContactNumber(formData.cpNumber),
-				street: formData.street.trim(),
-				city: formData.city.trim(),
-				province: formData.province.trim(),
-				barangay: formData.barangay.trim(),
-				postalCode: formData.postalCode.trim(),
-				course: formData.course,
-				major: courseHasMajors ? formData.major : "",
-				year: formData.year,
-				section: formData.section,
-				profileImageUrl: user?.profileImageUrl || null,
-				updatedAt: serverTimestamp(),
-			}
-
-			await setDoc(doc(db, "students", userId), payload, { merge: true })
-			const refreshedSnap = await getDoc(doc(db, "students", userId))
-			if (refreshedSnap.exists()) {
-				setUser(refreshedSnap.data())
-			}
-			toast.success("Profile updated successfully.")
-		} catch (error) {
-			console.error("Failed to update profile:", error)
-			toast.error("Failed to update profile. Please try again.")
-		} finally {
-			setIsSaving(false)
-		}
+			const blob = await getStudentVerificationDocumentBlob(submission.id)
+			const url = URL.createObjectURL(blob)
+			window.open(url, "_blank", "noopener,noreferrer")
+			setTimeout(() => URL.revokeObjectURL(url), 60000)
+		} catch (error) { toast.error(error.message || "Unable to open the document.") }
 	}
+
+	if (!workspace) return <div className="student-profile-loading">Loading profile workspace...</div>
+	const user = workspace.student || profile
+	const requirements = workspace.requirements || {}
 
 	return (
-		<div className={`student-portal student-dashboard student-portal-view student-portal-view--profile ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
+		<div className={`student-portal student-dashboard student-portal-view student-profile-workspace ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
-
 			<main className="student-shell">
-				<div className="student-shell-content">
-					<div className="student-page-title student-profile-page-title">
-						<div>
-							<span className="student-profile-page-kicker">Student Account</span>
-							<h2 className="student-page-heading">My Profile</h2>
-							<p className="student-page-sub">
-								Keep your information, documents, and semester records current.
-							</p>
-						</div>
-						<div className="student-profile-header-actions">
-							<button
-								type="button"
-								className="student-profile-cancel-btn student-mini-btn student-mini-btn--secondary"
-								data-button-variant="neutral"
-								onClick={() => navigate("/student-dashboard")}
-							>
-								<HiOutlineArrowLeft aria-hidden />
-								Back to Dashboard
-							</button>
-							<button
-								type="button"
-								className="student-profile-save-btn student-mini-btn student-mini-btn--primary"
-								data-button-variant="positive"
-								onClick={handleSaveProfile}
-								disabled={isSaving}
-							>
-								<HiOutlineSave aria-hidden /> {isSaving ? "Saving..." : "Save Profile"}
-							</button>
-						</div>
-					</div>
-
-					<section className="student-profile-modern-wrap">
-						<div className="student-profile-cover">
-							<div className="student-profile-cover-overlay"></div>
-							<div className="student-profile-cover-content student-profile-cover-content--centered">
-								<div className="student-profile-cover-avatar-wrap">
-									<div className="student-profile-photo-shell" role="group" aria-label="Profile photo actions">
-										{profileImageUrl ? (
-											<img
-												src={profileImageUrl}
-												alt="Profile"
-												className="student-profile-avatar-image"
-											/>
-										) : (
-											<div className="student-profile-avatar-fallback">{getUserInitials()}</div>
-										)}
-										<div className="student-profile-photo-overlay">
-											<button
-												type="button"
-												className="student-profile-photo-edit"
-												onClick={triggerPhotoUpload}
-												disabled={isPhotoUploading}
-												aria-label={isPhotoUploading ? "Uploading profile photo" : "Change profile photo"}
-											>
-												<HiOutlineCamera aria-hidden />
-											</button>
-										</div>
-									</div>
-									<input
-										ref={fileInputRef}
-										type="file"
-										accept="image/*"
-										className="student-profile-file-input"
-										onChange={handlePhotoChange}
-									/>
-								</div>
-								<div className="student-profile-cover-text">
-									<h3>{`${formData.fname} ${formData.lname}`.trim() || "Student"}</h3>
-									<p>{userId}</p>
-									<div className="student-profile-summary-chips">
-										<span>{currentSemesterTag}</span>
-										<span>{[formData.year, formData.section].filter(Boolean).join(" - ") || "Year not set"}</span>
-										<span>{formData.course || "Course not set"}</span>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div className="student-profile-section-grid">
-							<section className="student-profile-section-card">
-								<h3>Personal Details</h3>
-								<div className="student-profile-form-grid">
-									<label className="student-profile-label">
-										First Name
-										<input
-											type="text"
-											className="student-profile-input"
-											value={formData.fname}
-											onChange={(e) => setFormData((prev) => ({ ...prev, fname: e.target.value }))}
-										/>
-									</label>
-									<label className="student-profile-label">
-										Middle Name
-										<input
-											type="text"
-											className="student-profile-input"
-											value={formData.mname}
-											onChange={(e) => setFormData((prev) => ({ ...prev, mname: e.target.value }))}
-										/>
-									</label>
-									<label className="student-profile-label">
-										Last Name
-										<input
-											type="text"
-											className="student-profile-input"
-											value={formData.lname}
-											onChange={(e) => setFormData((prev) => ({ ...prev, lname: e.target.value }))}
-										/>
-									</label>
-									<label className="student-profile-label">
-										Email
-										<input
-											type="email"
-											className="student-profile-input"
-											value={formData.email}
-											onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
-										/>
-									</label>
-									<label className="student-profile-label">
-										Contact Number
-										<input
-											type="text"
-											className="student-profile-input"
-											placeholder="09XXXXXXXXX or 9XXXXXXXXX"
-											value={formData.cpNumber}
-											onChange={(e) => setFormData((prev) => ({ ...prev, cpNumber: sanitizeContactNumber(e.target.value) }))}
-											inputMode="numeric"
-											maxLength={11}
-										/>
-									</label>
-								</div>
-							</section>
-
-							<section className="student-profile-section-card">
-								<h3>Home Address</h3>
-								<div className="student-profile-form-grid">
-									<label className="student-profile-label student-profile-label--full">
-										Province
-									<CustomSelect
-										buttonClassName="student-profile-input"
-										value={formData.provinceSelection}
-										onChange={(nextProvince) =>
-											setFormData((prev) => ({
-												...prev,
-												provinceSelection: nextProvince,
-												province: nextProvince === OTHER_PROVINCE_VALUE ? "" : nextProvince,
-												city: "",
-												barangay: "",
-											}))
-										}
-										options={REGION_III_PROVINCE_OPTIONS}
-										placeholder="Select province"
-									/>
-									{formData.provinceSelection === OTHER_PROVINCE_VALUE ? (
-										<input
-											type="text"
-											className="student-profile-input"
-											placeholder="Enter province"
-											value={formData.province}
-											onChange={(event) => setFormData((prev) => ({ ...prev, province: event.target.value }))}
-										/>
-									) : null}
-								</label>
-								<label className="student-profile-label">
-									City / Municipality
-									{formData.provinceSelection === OTHER_PROVINCE_VALUE ? (
-										<input type="text" className="student-profile-input" placeholder="Enter city or municipality" value={formData.city} onChange={(event) => setFormData((prev) => ({ ...prev, city: event.target.value }))} />
-									) : (
-										<CustomSelect
-											buttonClassName="student-profile-input"
-											value={formData.city}
-											onChange={(nextCity) =>
-												setFormData((prev) => ({
-													...prev,
-													city: nextCity,
-													barangay: "",
-												}))
-											}
-											disabled={!formData.province}
-											options={formData.province ? [
-												...(formData.city && !getCitiesByProvince(formData.province).includes(formData.city) ? [formData.city] : []),
-												...getCitiesByProvince(formData.province),
-											] : []}
-											placeholder={formData.province ? "Select city" : "Select province first"}
-										/>
-									)}
-								</label>
-								<label className="student-profile-label">
-									Barangay
-									{formData.provinceSelection === OTHER_PROVINCE_VALUE ? (
-										<input type="text" className="student-profile-input" placeholder="Enter barangay" value={formData.barangay} onChange={(event) => setFormData((prev) => ({ ...prev, barangay: event.target.value }))} />
-									) : (
-									<CustomSelect
-											buttonClassName="student-profile-input"
-											value={formData.barangay}
-											onChange={(nextBarangay) =>
-												setFormData((prev) => ({
-													...prev,
-													barangay: nextBarangay,
-												}))
-											}
-											disabled={!formData.city || barangayLoading || (barangayOptions.length === 0 && !formData.barangay)}
-											options={[
-												...(formData.barangay && !barangayOptions.includes(formData.barangay)
-													? [formData.barangay]
-													: []),
-												...barangayOptions,
-											]}
-											placeholder={
-												!formData.city
-													? "Select city first"
-													: barangayLoading
-														? "Loading barangays..."
-														: "Select barangay"
-											}
-									/>
-									)}
-										{barangayError && !formData.barangay ? <span className="student-profile-help-text">{barangayError}</span> : null}
-									</label>
-									<label className="student-profile-label student-profile-label--street">
-										Street / Subdivision
-										<input
-											type="text"
-											className="student-profile-input"
-											value={formData.street}
-											onChange={(e) => setFormData((prev) => ({ ...prev, street: e.target.value }))}
-										/>
-									</label>
-									<label className="student-profile-label student-profile-label--postal">
-										Postal Code
-										<input
-											type="text"
-											className="student-profile-input"
-											value={formData.postalCode}
-											onChange={(e) => setFormData((prev) => ({ ...prev, postalCode: e.target.value.replace(/\D/g, "") }))}
-											maxLength={4}
-										/>
-									</label>
-								</div>
-							</section>
-
-							<section className="student-profile-section-card">
-								<h3>Academic Information</h3>
-								<div className="student-profile-form-grid">
-									<label className="student-profile-label">
-										Student ID
-										<input type="text" className="student-profile-input" value={userId} readOnly />
-									</label>
-									<label className="student-profile-label">
-										Course
-										<input type="text" className="student-profile-input" value={formData.course} readOnly />
-									</label>
-									<label className="student-profile-label">
-										Major
-										<input
-											type="text"
-											className="student-profile-input"
-											value={courseHasMajors ? formData.major : "N/A"}
-											readOnly
-										/>
-									</label>
-									<label className="student-profile-label">
-										Year & Section
-										<input
-											type="text"
-											className="student-profile-input"
-											value={[formData.year, formData.section].filter(Boolean).join(" - ")}
-											readOnly
-										/>
-									</label>
-								</div>
-							</section>
-
-							<section className="student-profile-section-card student-profile-section-card--full">
-								<h3>Document Vault</h3>
-								<p className="student-profile-vault-sub">
-									Upload and review COR, ROG, Student ID, and Student Application Profile records.
-								</p>
-								<div className="student-vault-grid">
-									<article className="student-vault-card">
-										<div>
-											<h4>COR</h4>
-											<p>{documentStatus(user?.corFile, currentSemesterTag)}</p>
-										</div>
-										<div className="student-vault-actions">
-											{user?.corFile?.url ? (
-												<button
-													type="button"
-													className="student-vault-link"
-													onClick={() => openDocumentPreview("Certificate of Registration (COR)", user.corFile)}
-												>
-													<HiOutlineDocumentText aria-hidden /> View COR
-												</button>
-											) : null}
-											{user?.corFile?.url || canUploadCor ? (
-												<button
-													type="button"
-													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
-													onClick={() => triggerDocumentUpload("cor")}
-													disabled={isDocumentUploading.cor}
-												>
-													{isDocumentUploading.cor
-														? "Uploading..."
-														: user?.corFile?.url
-															? "Update COR"
-															: "Upload COR"}
-												</button>
-											) : null}
-											<input
-												ref={corFileInputRef}
-												type="file"
-												accept=".png,.jpg,.jpeg,.pdf,image/*,application/pdf"
-												className="student-profile-file-input"
-												onChange={(e) => {
-													const file = e.target.files?.[0]
-													handleDocumentUpload("cor", file)
-													e.target.value = ""
-												}}
-											/>
-										</div>
-									</article>
-									<article className="student-vault-card">
-										<div>
-											<h4>ROG</h4>
-											<p>{documentStatus(user?.cogFile, currentSemesterTag)}</p>
-										</div>
-										<div className="student-vault-actions">
-											{user?.cogFile?.url ? (
-												<button
-													type="button"
-													className="student-vault-link"
-													onClick={() => openDocumentPreview("Report of Grades (ROG)", user.cogFile)}
-												>
-													<HiOutlineDocumentText aria-hidden /> View ROG
-												</button>
-											) : null}
-											{user?.cogFile?.url || canUploadCog ? (
-												<button
-													type="button"
-													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
-													onClick={() => triggerDocumentUpload("cog")}
-													disabled={isDocumentUploading.cog}
-												>
-													{isDocumentUploading.cog
-														? "Uploading..."
-														: user?.cogFile?.url
-															? "Update ROG"
-															: "Upload ROG"}
-												</button>
-											) : null}
-											<input
-												ref={cogFileInputRef}
-												type="file"
-												accept=".png,.jpg,.jpeg,.pdf,image/*,application/pdf"
-												className="student-profile-file-input"
-												onChange={(e) => {
-													const file = e.target.files?.[0]
-													handleDocumentUpload("cog", file)
-													e.target.value = ""
-												}}
-											/>
-										</div>
-									</article>
-									<article className="student-vault-card">
-										<div>
-											<h4>Student ID</h4>
-											<p>{documentStatus(user?.schoolIdFile, currentSemesterTag)}</p>
-										</div>
-										<div className="student-vault-actions">
-											{user?.schoolIdFile?.url ? (
-												<button
-													type="button"
-													className="student-vault-link"
-													onClick={() => openDocumentPreview("Student ID", user.schoolIdFile)}
-												>
-													<HiOutlineDocumentText aria-hidden /> View Student ID
-												</button>
-											) : null}
-											{user?.schoolIdFile?.url || canUploadSchoolId ? (
-												<button
-													type="button"
-													className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
-													onClick={() => triggerDocumentUpload("schoolId")}
-													disabled={isDocumentUploading.schoolId}
-												>
-													{isDocumentUploading.schoolId
-														? "Uploading..."
-														: user?.schoolIdFile?.url
-															? "Update Student ID"
-															: "Upload Student ID"}
-												</button>
-											) : null}
-											<input
-												ref={schoolIdFileInputRef}
-												type="file"
-												accept=".png,.jpg,.jpeg,.pdf,image/*,application/pdf"
-												className="student-profile-file-input"
-												onChange={(e) => {
-													const file = e.target.files?.[0]
-													handleDocumentUpload("schoolId", file)
-													e.target.value = ""
-												}}
-											/>
-										</div>
-									</article>
-									<article className="student-vault-card student-vault-card--application">
-										<div>
-											<h4>Student Application Profile</h4>
-											<p>{documentStatus(studentApplicationProfile, currentSemesterTag)}</p>
-											<p>PDF or PNG, maximum 10 MB. Reviewed by admin.</p>
-										</div>
-										<div className="student-vault-actions">
-											{hasDocumentReference(studentApplicationProfile) ? (
-												<button
-													type="button"
-													className="student-vault-link"
-													onClick={() =>
-														openDocumentPreview(
-															"Student Application Profile",
-															studentApplicationProfile,
-														)
-													}
-												>
-													<HiOutlineEye aria-hidden /> View Uploaded Profile
-												</button>
-											) : null}
-											{hasDocumentReference(studentApplicationProfile) ? (
-												<button
-													type="button"
-													className="student-vault-link"
-													onClick={handleDownloadUploadedProfile}
-													disabled={isDownloadingUploadedProfile}
-												>
-													<HiOutlineDownload aria-hidden />
-													{isDownloadingUploadedProfile ? "Downloading..." : "Download Uploaded Profile"}
-												</button>
-											) : null}
-											<button
-												type="button"
-												className="student-vault-link"
-												onClick={handleDownloadProfileTemplate}
-												disabled={!canDownloadProfileTemplate || isDownloadingProfileTemplate}
-												title="Download the official Student Application Profile template"
-											>
-												<HiOutlineDownload aria-hidden />
-												{isDownloadingProfileTemplate
-													? "Preparing..."
-													: canDownloadProfileTemplate
-														? "Download Profile Template"
-														: "Download Locked"}
-											</button>
-											<button
-												type="button"
-												className="student-vault-upload-btn student-mini-btn student-mini-btn--primary"
-												onClick={() => triggerDocumentUpload("applicationForm")}
-												disabled={!canUploadApplicationForm || isDocumentUploading.applicationForm}
-												title={
-													canUploadApplicationForm
-														? "Upload your completed PDF or PNG Student Application Profile (maximum 10 MB)"
-														: "Download the Student Application Profile first before uploading."
-												}
-											>
-												{isDocumentUploading.applicationForm
-													? "Uploading..."
-													: hasDocumentReference(studentApplicationProfile)
-														? "Update Profile Document"
-														: "Upload Profile Document"}
-											</button>
-											<input
-												ref={applicationFormFileInputRef}
-												type="file"
-												accept=".pdf,.png,application/pdf,image/png"
-												className="student-profile-file-input"
-												onChange={(e) => {
-													const file = e.target.files?.[0]
-													handleDocumentUpload("applicationForm", file)
-													e.target.value = ""
-												}}
-											/>
-										</div>
-									</article>
-								</div>
-							</section>
-						</div>
-
-					</section>
-
-					{isLightboxOpen && profileImageUrl && (
-						<div
-							className="student-photo-lightbox"
-							role="dialog"
-							aria-modal="true"
-							aria-label="Profile photo preview"
-							onClick={() => setIsLightboxOpen(false)}
-						>
-							<div
-								className="student-photo-lightbox-inner"
-								onClick={(e) => e.stopPropagation()}
-							>
-								<button
-									type="button"
-									className="student-photo-lightbox-close"
-									onClick={() => setIsLightboxOpen(false)}
-								>
-									Close
-								</button>
-								<img
-									src={profileImageUrl}
-									alt="Profile preview"
-									className="student-photo-lightbox-image"
-								/>
-							</div>
-						</div>
-					)}
-
-					{previewDocument && (
-						<div
-							className="student-document-preview-backdrop"
-							role="dialog"
-							aria-modal="true"
-							aria-label={`${previewDocument.title} preview`}
-							onClick={closeDocumentPreview}
-						>
-							<div
-								className="student-document-preview-modal"
-								onClick={(e) => e.stopPropagation()}
-							>
-								<header className="student-document-preview-head">
-									<div>
-										<span>Document Preview</span>
-										<h3>{previewDocument.title}</h3>
-										<p>{previewDocument.name}</p>
-									</div>
-									<div className="student-document-preview-actions">
-										<button
-											type="button"
-											className="student-document-preview-open"
-											onClick={downloadPreviewDocument}
-										>
-											<HiOutlineDownload aria-hidden /> Download
-										</button>
-										<button
-											type="button"
-											className="student-document-preview-close"
-											onClick={closeDocumentPreview}
-											aria-label="Close document preview"
-										>
-											<HiOutlineX aria-hidden />
-										</button>
-									</div>
-								</header>
-								<div className="student-document-preview-body">
-									{isPreviewLoading ? (
-										<div className="student-document-preview-state">
-											<HiOutlineDocumentText aria-hidden />
-											<span>Loading preview...</span>
-										</div>
-									) : !previewBlobUrl ? (
-										<div className="student-document-preview-state">
-											<HiOutlineDocumentText aria-hidden />
-											<span>Preview is unavailable.</span>
-										</div>
-									) : (
-										<ZoomableImagePreview
-											src={previewBlobUrl}
-											alt={`${previewDocument.title} preview`}
-											className="student-document-zoom-preview"
-											stageClassName="student-document-preview-body-stage"
-											imageClassName="student-document-preview-image"
-										/>
-									)}
-								</div>
-							</div>
-						</div>
-					)}
-
-					<StudentFooter description="Manage your records, profile, and scholarship information in one workspace." />
+				<div className="student-profile-page-head">
+					<button type="button" data-button-variant="neutral" onClick={() => navigate("/student-dashboard")}><HiOutlineArrowLeft /> Back to Dashboard</button>
+					<div><span>Student records</span><h1>Profile and document verification</h1><p>Save your information as a draft, then submit one signed revision for staff review.</p></div>
+					<span className="student-profile-cycle">{workspace.academicCycle}</span>
 				</div>
+
+				<section className="student-profile-editor" id="application-profile">
+					<header><div className="student-profile-editor-title">{profile.profileImageUrl ? <img src={profile.profileImageUrl} alt={`${profile.fname || "Student"} profile`} /> : <span className="student-profile-photo-fallback" aria-hidden>{`${profile.fname?.[0] || ""}${profile.lname?.[0] || ""}` || "ST"}</span>}<div><h2>Student Application Profile</h2><p>Your approved revision can be reused by scholarship applications in this academic cycle.</p></div></div><span className={`student-review-status student-review-status--${workspace.verification?.profile?.status || "missing"}`}>{statusLabel(workspace.verification?.profile)}</span></header>
+					<div className="student-profile-completeness"><div><strong>Required information</strong><span>{profileCompleteness.completed} of {profileCompleteness.total} complete</span></div><progress value={profileCompleteness.completed} max={profileCompleteness.total}>{profileCompleteness.percent}%</progress></div>
+					<div className="student-profile-form-grid student-profile-form-grid--new">
+						<label>First Name *<input value={profile.fname} onChange={(event) => update("fname", event.target.value)} /></label>
+						<label>Middle Name<input value={profile.mname} onChange={(event) => update("mname", event.target.value)} /></label>
+						<label>Last Name *<input value={profile.lname} onChange={(event) => update("lname", event.target.value)} /></label>
+						<label>Extension<input value={profile.extension} onChange={(event) => update("extension", event.target.value)} placeholder="Jr., III" /></label>
+						<label>Email *<input type="email" value={profile.email} onChange={(event) => update("email", event.target.value)} /></label>
+						<label>Contact Number *<input value={profile.cpNumber} onChange={(event) => update("cpNumber", sanitizeContactNumber(event.target.value))} inputMode="numeric" maxLength={11} /></label>
+						<label>Date of Birth *<input type="date" value={profile.birthDate} onChange={(event) => update("birthDate", event.target.value)} /></label>
+						<label>College<input value={profile.college} onChange={(event) => update("college", event.target.value)} /></label>
+						<label className="student-profile-wide">Course *<input value={profile.course} onChange={(event) => update("course", event.target.value)} /></label>
+						<label>Major<input value={profile.major} onChange={(event) => update("major", event.target.value)} /></label>
+						<label>Year Level *<select value={profile.year} onChange={(event) => update("year", event.target.value)}><option value="">Select year</option>{[1,2,3,4,5].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
+						<label>Section *<input value={profile.section} onChange={(event) => update("section", event.target.value)} /></label>
+						<label>Legal Guardian *<input value={profile.guardianName} onChange={(event) => update("guardianName", event.target.value)} /></label>
+						<label>Guardian Contact *<input value={profile.guardianContact} onChange={(event) => update("guardianContact", sanitizeContactNumber(event.target.value))} inputMode="numeric" maxLength={11} /></label>
+					</div>
+					<AddressFields title="Permanent Address" required value={profile.permanentAddress} onChange={(value) => update("permanentAddress", value)} />
+					<label className="student-profile-address-toggle"><input type="checkbox" checked={showCurrentAddress} onChange={(event) => setShowCurrentAddress(event.target.checked)} /> Add a different current address</label>
+					{showCurrentAddress ? <AddressFields title="Current Address (optional)" value={profile.currentAddress} onChange={(value) => update("currentAddress", value)} /> : null}
+					<div className="student-profile-attestation"><h3>Applicant signature</h3><p>I attest that the information supplied in this profile is true and complete.</p><SignaturePad value={signature} onChange={setSignature} /></div>
+					<div className="student-profile-editor-actions">
+						<button type="button" data-button-variant="neutral" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave /> {busy === "save" ? "Saving..." : "Save Draft"}</button>
+						<button type="button" data-button-variant="neutral" disabled={Boolean(busy)} onClick={previewDraft}><HiOutlineEye /> {busy === "preview" ? "Preparing..." : "Preview"}</button>
+						<button type="button" data-button-variant="positive" disabled={Boolean(busy)} onClick={submitProfile}><HiOutlineCheckCircle /> {busy === "submit" ? "Submitting..." : "Submit for Review"}</button>
+						{latestSubmissions.profile ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.profile)}><HiOutlineEye /> Preview latest submission</button> : null}
+					</div>
+					{workspace.verification?.profile?.reason ? <p className="student-profile-rejection"><HiOutlineXCircle /> {workspace.verification.profile.reason}</p> : null}
+					{Object.keys(workspace.verification?.profile?.fieldErrors || {}).length ? <ul className="student-profile-field-errors">{Object.entries(workspace.verification.profile.fieldErrors).map(([field, message]) => <li key={field}><strong>{field}:</strong> {message}</li>)}</ul> : null}
+				</section>
+
+				<section className="student-verification-documents">
+					<header><div><h2>Required Documents</h2><p>Uploads stay pending until an authorized reviewer approves the exact version.</p></div></header>
+					<div className="student-document-review-grid">
+						<article id="cor"><HiOutlineDocumentText /><div><h3>Certificate of Registration</h3><p>Upload your university-issued Certificate of Registration generated by the university portal for the current academic cycle.</p><strong>{statusLabel(workspace.verification?.cor)}</strong>{workspace.verification?.cor?.reason ? <small>{workspace.verification.cor.reason}</small> : null}</div><div className="student-document-actions">{latestSubmissions.cor ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.cor)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {busy === "cor" ? "Uploading..." : "Upload PDF"}<input type="file" accept="application/pdf" disabled={Boolean(busy)} onChange={(event) => uploadDocument("cor", event.target.files?.[0])} /></label></div></article>
+						<article id="rog" className={!requirements.rogRequired ? "student-document-review-card--optional" : ""}><HiOutlineDocumentText /><div><h3>Report of Grades</h3><p>{requirements.rogRequired ? "Upload your Report of Grades from the immediately previous semester." : "ROG is not required because you are a first-year, first-semester student."}</p><strong>{statusLabel(workspace.verification?.rog)}</strong>{workspace.verification?.rog?.reason ? <small>{workspace.verification.rog.reason}</small> : null}</div>{requirements.rogRequired ? <div className="student-document-actions">{latestSubmissions.rog ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.rog)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {busy === "rog" ? "Uploading..." : "Upload PDF"}<input type="file" accept="application/pdf" disabled={Boolean(busy)} onChange={(event) => uploadDocument("rog", event.target.files?.[0])} /></label></div> : <HiOutlineCheckCircle className="student-document-exempt-icon" />}</article>
+						<article id="identity"><HiOutlineDocumentText /><div><h3>Identity Document</h3><p>{requirements.identityRule === "alternative_photo_id_allowed" ? "First-year students may use a Student ID, previous-school photo ID, or government photo ID." : "Second-year and higher students must submit their Student ID."}</p><strong>{statusLabel(workspace.verification?.identity)}</strong>{workspace.verification?.identity?.reason ? <small>{workspace.verification.identity.reason}</small> : null}</div><div className="student-document-actions"><select value={identityKind} onChange={(event) => setIdentityKind(event.target.value)}><option value="student_id">Student ID</option>{requirements.identityRule === "alternative_photo_id_allowed" ? <><option value="previous_school_id">Previous-school ID</option><option value="government_id">Government ID</option></> : null}</select>{latestSubmissions.identity ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.identity)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {busy === "identity" ? "Uploading..." : "Upload file"}<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={(event) => uploadDocument("identity", event.target.files?.[0], identityKind)} /></label></div></article>
+					</div>
+				</section>
+
+				<section className="student-profile-version-history"><h2>Submitted Profile Revisions</h2>{workspace.revisions?.length ? <div>{workspace.revisions.map((revision) => <article key={revision.id}><span>Version {revision.version}</span><strong className={`student-review-status student-review-status--${revision.status}`}>{statusLabel(revision)}</strong><small>{revision.submittedAt ? new Date(revision.submittedAt).toLocaleString() : ""}</small>{revision.rejectionReason ? <p>{revision.rejectionReason}</p> : null}</article>)}</div> : <p>No profile revision has been submitted yet.</p>}</section>
+				<StudentFooter description="Manage your student profile and verification records." />
 			</main>
 		</div>
 	)

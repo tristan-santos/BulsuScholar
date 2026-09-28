@@ -10,9 +10,9 @@ from datetime import datetime
 from fastapi import HTTPException, Request
 
 try:
-    from .supabase_ops import supabase_document_get
+    from .supabase_ops import supabase_document_get, supabase_rpc
 except ImportError:  # pragma: no cover
-    from supabase_ops import supabase_document_get
+    from supabase_ops import supabase_document_get, supabase_rpc
 
 
 def _require_unlocked_auth_user(auth_user_id: str) -> None:
@@ -43,7 +43,29 @@ def normalize_role(value: Any) -> str:
     return "grantor" if role in {"provider", "grantor"} else role
 
 
-def require_supabase_user(request: Request, *, allow_locked: bool = False) -> dict[str, Any]:
+def _jwt_claims(token: str) -> dict[str, Any]:
+    try:
+        segment = token.split(".")[1]
+        return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)).decode("utf-8"))
+    except (ValueError, IndexError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=401, detail="invalid_authentication_session") from error
+
+
+def _require_session_after(token: str, valid_after: Any, detail: str) -> None:
+    if not valid_after:
+        return
+    try:
+        issued_at = int(_jwt_claims(token).get("iat") or 0)
+        threshold = int(datetime.fromisoformat(str(valid_after).replace("Z", "+00:00")).timestamp())
+        if issued_at < threshold:
+            raise HTTPException(status_code=401, detail=detail)
+    except HTTPException:
+        raise
+    except (TypeError, ValueError) as error:
+        raise HTTPException(status_code=401, detail="invalid_authentication_session") from error
+
+
+def require_supabase_user(request: Request, *, allow_locked: bool = False, require_verified: bool = True) -> dict[str, Any]:
     """Resolve the authenticated Supabase user without trusting portal headers."""
     authorization = request.headers.get("authorization", "")
     token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
@@ -64,6 +86,21 @@ def require_supabase_user(request: Request, *, allow_locked: bool = False) -> di
         raise HTTPException(status_code=401, detail="invalid_authentication_session")
     if not allow_locked:
         _require_unlocked_auth_user(str(user["id"]))
+    if require_verified:
+        session_id = str(_jwt_claims(token).get("session_id") or "").strip()
+        if not session_id:
+            raise HTTPException(status_code=401, detail="invalid_authentication_session")
+        verification = supabase_rpc("validate_portal_verified_session", {
+            "p_session_id": session_id,
+            "p_auth_user_id": str(user["id"]),
+        })
+        state = verification.get("data") or {}
+        if not verification.get("ok"):
+            raise HTTPException(status_code=503, detail="verified_session_check_failed")
+        if state.get("valid") is not True:
+            reason = state.get("reason") or "email_verification_required"
+            raise HTTPException(status_code=423 if reason == "account_locked" else 401, detail=reason)
+        user["portal_session"] = state
     return user
 
 
@@ -75,15 +112,15 @@ def require_admin_bearer(request: Request, actor_id: str) -> tuple[dict[str, Any
     if not token or not url or not key:
         raise HTTPException(status_code=401, detail="admin_authentication_required")
     try:
-        user_request = urllib.request.Request(f"{url}/auth/v1/user", headers={"apikey": key, "Authorization": f"Bearer {token}"})
-        with urllib.request.urlopen(user_request, timeout=10) as response:
-            user = json.loads(response.read().decode("utf-8") or "{}")
+        user = require_supabase_user(request)
         record_request = urllib.request.Request(
             f"{url}/rest/v1/admins?id=eq.{urllib.parse.quote(actor_id)}&select=id,data&limit=1",
             headers={"apikey": key, "Authorization": f"Bearer {key}"},
         )
         with urllib.request.urlopen(record_request, timeout=10) as response:
             rows = json.loads(response.read().decode("utf-8") or "[]")
+    except HTTPException:
+        raise
     except (urllib.error.HTTPError, urllib.error.URLError, ValueError) as error:
         raise HTTPException(status_code=401, detail="invalid_admin_session") from error
     record = rows[0].get("data", {}) if rows else {}
@@ -91,28 +128,31 @@ def require_admin_bearer(request: Request, actor_id: str) -> tuple[dict[str, Any
         raise HTTPException(status_code=403, detail="admin_account_not_authorized")
     _require_unlocked_auth_user(str(user.get("id") or ""))
     valid_after = str(record.get("sessionValidAfter") or "")
-    if valid_after:
-        try:
-            segment = token.split(".")[1]
-            claims = json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)).decode("utf-8"))
-            issued_at = int(claims.get("iat") or 0)
-            threshold = int(datetime.fromisoformat(valid_after.replace("Z", "+00:00")).timestamp())
-            if issued_at < threshold:
-                raise HTTPException(status_code=401, detail="admin_session_revoked")
-        except HTTPException:
-            raise
-        except (ValueError, IndexError, KeyError, json.JSONDecodeError) as error:
-            raise HTTPException(status_code=401, detail="invalid_admin_session") from error
+    _require_session_after(token, valid_after, "admin_session_revoked")
     return user, record
 
 
 def _required_admin_permissions(path: str) -> set[str]:
     if path.startswith("/reports/"):
         return {"reports"}
+    if path.startswith("/workflows/applicants/"):
+        return {"students", "reports"}
+    if path.startswith("/workflows/announcements/"):
+        return {"announcements"}
+    if path.startswith("/workflows/admin/grantor-scope"):
+        return {"grantors", "scholarships"}
+    if path.startswith("/workflows/admin/student-number"):
+        return {"students"}
     if path.startswith("/workflows/admin/grantors/"):
         return {"grantors"}
     if path in {"/admin/match-grantor-students", "/admin/check-student-duplicates"}:
         return {"students"}
+    if path.startswith("/workflows/grantor/scholars/import/"):
+        return {"students", "scholarships"}
+    if path.startswith("/workflows/admin/roster-conflicts"):
+        return {"students", "scholarships"}
+    if path.startswith("/admin/signed-soe"):
+        return {"requirements"}
     if path == "/workflows/materials/update":
         return {"requirements"}
     if path == "/workflows/admin/review":
@@ -151,6 +191,9 @@ def enforce_portal_scope(
                 or data.get("disabled") is True or data.get("archived") is True
                 or str(data.get("status") or "active").lower() in {"disabled", "inactive", "archived"}):
             raise HTTPException(status_code=403, detail="portal_account_not_authorized")
+        authorization = request.headers.get("authorization", "")
+        token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+        _require_session_after(token, data.get("sessionValidAfter"), "portal_session_revoked")
 
     payload_role = normalize_role(payload.get("actorType"))
     payload_actor_id = str(payload.get("actorId") or "").strip()

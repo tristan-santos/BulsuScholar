@@ -14,6 +14,7 @@ import {
 } from "../constants/grantorAuth"
 import { getRecord, serverTimestamp, upsertProvider } from "../services/supabaseDataService"
 import { supabase } from "../services/supabaseClient"
+import { clearPortalIdentity } from "../services/portalSessionStorage"
 import { isPasswordStrong } from "../utils/passwordValidation"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -102,8 +103,7 @@ export default function GrantorChangePasswordPage() {
 			)
 
 			sessionStorage.removeItem(GRANTOR_PASSWORD_CHANGE_ID_KEY)
-			sessionStorage.removeItem("bulsuscholar_userId")
-			sessionStorage.removeItem("bulsuscholar_userType")
+			clearPortalIdentity()
 
 			toast.success("Password updated. Please log in with your new password.")
 			navigate("/", { replace: true })

@@ -1,4 +1,4 @@
-import { HiOutlineCheckCircle } from "react-icons/hi"
+import { HiOutlineCheckCircle, HiX } from "react-icons/hi"
 
 export const SIGNUP_TERMS_VERSION = "2026-09-15"
 
@@ -19,7 +19,7 @@ export default function SignupTermsModal({ checked, onCheckedChange, onClose, on
 					aria-label="Close terms and conditions"
 					onClick={onClose}
 				>
-					X
+					<HiX aria-hidden />
 				</button>
 
 				<header className="signup-terms-header">

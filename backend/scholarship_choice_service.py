@@ -58,11 +58,15 @@ CHOICE_MESSAGES = {
     "replacement_already_committed": "A replacement scholarship has already been selected.",
     "authoritative_roster_locked": "This scholarship was assigned from an official roster and cannot be changed or withdrawn while the roster record is active.",
     "roster_assignment_conflict": "The scholarship office must correct your conflicting roster records before you can apply.",
+    "location_out_of_scope": "Your self-declared permanent address is outside this grantor's approved location scope.",
+    "waitlist_full": "The system waitlist is currently full. Please check again after another entry is resolved.",
 }
 
 
 def scholarship_choice_enabled() -> bool:
-    return os.getenv("ENABLE_SCHOLARSHIP_CHOICE", "true").strip().lower() != "false"
+    # This compatibility endpoint remains fail-closed unless explicitly enabled
+    # during rollout. The browser no longer exposes a Keep/Change decision.
+    return os.getenv("ENABLE_SCHOLARSHIP_CHOICE", "false").strip().lower() in {"1", "true", "yes"}
 
 
 def reserve_scholarship_application(payload: dict[str, Any]) -> dict[str, Any]:
@@ -98,23 +102,11 @@ def reserve_scholarship_application(payload: dict[str, Any]) -> dict[str, Any]:
     # student/grantor/offering tuple instead of trusting a caller's record ID.
     application_id = str(uuid4())
     application_number = f"{student_id[-3:]}-{uuid4().hex[:8]}"
-    archive_choice = student_data.get("grantorArchiveChoice") if isinstance(student_data.get("grantorArchiveChoice"), dict) else {}
     commitment = student_data.get("scholarshipCommitment") if isinstance(student_data.get("scholarshipCommitment"), dict) else {}
-    choice_decision = _normalize(archive_choice.get("decision"))
-    is_replacement = (
-        choice_decision == "change"
-        and _normalize(archive_choice.get("applicationId")) == _normalize(commitment.get("applicationId"))
-        and _normalize(grantor_id) != _normalize(archive_choice.get("grantorId"))
-    )
-    if commitment and not is_replacement:
+    if commitment:
         return {"ok": False, "reason": "scholarship_already_committed",
                 "message": CHOICE_MESSAGES["scholarship_already_committed"]}
-    if choice_decision == "pending":
-        return {"ok": False, "reason": "archive_choice_required", "message": CHOICE_MESSAGES["archive_choice_required"]}
-    if choice_decision == "change" and not is_replacement:
-        return {"ok": False, "reason": "replacement_not_allowed", "message": CHOICE_MESSAGES["replacement_not_allowed"]}
-    rpc_name = "reserve_archived_grantor_replacement_application" if is_replacement else "reserve_scholarship_application"
-    result = supabase_rpc(rpc_name, {
+    result = supabase_rpc("reserve_or_waitlist_scholarship", {
         "p_student_id": student_id, "p_announcement_id": announcement_id,
         "p_grantor_id": grantor_id, "p_application_id": application_id,
         "p_application_number": application_number,
@@ -140,36 +132,17 @@ def mutate_scholarship_choice(payload: dict[str, Any], *, withdraw: bool = False
         return {"ok": False, "reason": "confirmation_required"}
     student_result = supabase_document_get("students", student_id)
     student_data = student_result.get("data") or {}
-    archive_choice = student_data.get("grantorArchiveChoice") if isinstance(student_data.get("grantorArchiveChoice"), dict) else {}
-    choice_decision = _normalize(archive_choice.get("decision"))
-    original_application_id = str(archive_choice.get("applicationId") or "").strip()
-    if original_application_id and application_id == original_application_id and choice_decision in {"pending", "change"}:
-        return {"ok": False, "reason": "archive_choice_required", "message": CHOICE_MESSAGES["archive_choice_required"]}
     replacement_application = supabase_document_get("scholarship_applications", application_id)
     replacement_data = replacement_application.get("data") or {}
     if (replacement_data.get("source") == "authoritative_roster"
             and replacement_data.get("withdrawalLocked") is True):
         return {"ok": False, "reason": "authoritative_roster_locked",
                 "message": CHOICE_MESSAGES["authoritative_roster_locked"]}
-    is_replacement = (
-        choice_decision == "change"
-        and original_application_id
-        and application_id != original_application_id
-        and str(replacement_data.get("replacementForApplicationId") or "") == original_application_id
-    )
-    if choice_decision == "change" and application_id != original_application_id and not is_replacement:
-        return {"ok": False, "reason": "replacement_not_allowed", "message": CHOICE_MESSAGES["replacement_not_allowed"]}
-    if is_replacement:
-        rpc_name = "withdraw_archived_grantor_replacement" if withdraw else "commit_archived_grantor_replacement"
-        rpc_payload = {"p_student_id": student_id, "p_application_id": application_id}
-    else:
-        rpc_name = "mutate_scholarship_choice"
-        rpc_payload = {
-            "p_student_id": student_id,
-            "p_application_id": application_id,
-            "p_action": "withdraw" if withdraw else "choose",
-        }
-    result = supabase_rpc(rpc_name, rpc_payload)
+    result = supabase_rpc("mutate_scholarship_choice", {
+        "p_student_id": student_id,
+        "p_application_id": application_id,
+        "p_action": "withdraw" if withdraw else "choose",
+    })
     if not result.get("ok"):
         reason = result.get("reason") or "scholarship_choice_failed"
         return {"ok": False, "reason": reason,
