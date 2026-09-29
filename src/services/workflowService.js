@@ -61,6 +61,12 @@ export function validateStudentSignupWorkflow(payload = {}) {
 	return postWorkflow("/workflows/student/signup/validate", payload, { operation: "generic.background" })
 }
 
+export function checkStudentSignupAvailability(field, value) {
+	return postWorkflow("/workflows/student/signup/availability", { field, value }, {
+		operation: "generic.background",
+	})
+}
+
 export async function createStudentSignupDocumentBatch({ studentId, email, identityKind, corFile, rogFile, identityFile }) {
 	const form = new FormData()
 	form.append("student_id", studentId)

@@ -19,7 +19,7 @@ import { toast } from "react-toastify"
 import { supabase } from "../services/supabaseClient"
 import { getCurrentSemesterTag } from "../services/scholarshipService"
 import { scanStudentDocument } from "../services/documentScanService"
-import { createStudentSignupDocumentBatch, finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
+import { checkStudentSignupAvailability, createStudentSignupDocumentBatch, finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
 import {
 	OTHER_PROVINCE_VALUE,
 	REGION_III_PROVINCE_OPTIONS,
@@ -178,6 +178,9 @@ function getSignupWorkflowErrorMessage(error = {}) {
 		["rog_year_level_mismatch", "ROG year level must match the previous cycle year level."],
 		["cor_year_level_not_detected", "The year level could not be read from the COR. Upload a clearer university document."],
 		["cor_year_level_mismatch", "The year level must match the value detected from the COR."],
+		["student_id_exists", "This Student ID is already in use."],
+		["email_exists", "This email address is already in use."],
+		["cp_exists", "This phone number is already in use."],
 		["missing_identity_document", "Upload the required Student ID or accepted valid photo ID."],
 		["identity_document_not_allowed", "Second-year and higher students must upload a current Student ID."],
 		["signup_document_batch_expired", "Your secure document upload expired. Return to the form and upload the documents again."],
@@ -230,7 +233,10 @@ export default function SignupPage() {
 	const [documentScanState, setDocumentScanState] = useState({ cor: "idle", cog: "idle" })
 	const [documentScanResult, setDocumentScanResult] = useState({ cor: null, cog: null })
 	const [documentUploadErrors, setDocumentUploadErrors] = useState({ cor: "", cog: "", identity: "" })
-	const [documentPreviewUrls, setDocumentPreviewUrls] = useState({ cor: "", cog: "" })
+	const [documentPreviewUrls, setDocumentPreviewUrls] = useState({ cor: "", cog: "", identity: "" })
+	const [availability, setAvailability] = useState({ studentId: { status: "idle" }, email: { status: "idle" }, phone: { status: "idle" } })
+	const availabilityRequestRef = useRef({ studentId: 0, email: 0, phone: 0 })
+	const availabilityEndpointUnavailableRef = useRef(false)
 	const [academicConcernTerms, setAcademicConcernTerms] = useState([])
 	const [showTermsModal, setShowTermsModal] = useState(false)
 	const [termsChecked, setTermsChecked] = useState(false)
@@ -249,8 +255,13 @@ export default function SignupPage() {
 		return year === "1" && isFirstCycle
 	}, [isFirstCycle, year])
 	const isCogRequired = !isCogOptional
-	const canUploadCog = documentScanState.cor === "done"
-	const canUploadIdentity = documentScanState.cor === "done" && (isCogOptional || documentScanState.cog === "done")
+	const scannedCorStudentId = String(documentScanResult.cor?.studentId || "").replace(/\D/g, "")
+	const scannedCorYear = String(documentScanResult.cor?.year || "").replace(/\D/g, "").slice(0, 1)
+	const hasCorStudentMismatch = Boolean(scannedCorStudentId && userId.trim() && scannedCorStudentId !== userId.trim())
+	const hasCorYearMismatch = Boolean(scannedCorYear && year && scannedCorYear !== year)
+	const hasCorIdentityMismatch = hasCorStudentMismatch || hasCorYearMismatch
+	const canUploadCog = documentScanState.cor === "done" && !hasCorIdentityMismatch
+	const canUploadIdentity = canUploadCog && (isCogOptional || documentScanState.cog === "done")
 
 	useEffect(() => {
 		let isCancelled = false
@@ -310,16 +321,16 @@ export default function SignupPage() {
 			return previewUrl
 		}
 
-		Promise.all([buildPreviewUrl(corFile), buildPreviewUrl(cogFile)])
-			.then(([corPreviewUrl, cogPreviewUrl]) => {
+		Promise.all([buildPreviewUrl(corFile), buildPreviewUrl(cogFile), buildPreviewUrl(identityFile)])
+			.then(([corPreviewUrl, cogPreviewUrl, identityPreviewUrl]) => {
 				if (isMounted) {
-					setDocumentPreviewUrls({ cor: corPreviewUrl, cog: cogPreviewUrl })
+					setDocumentPreviewUrls({ cor: corPreviewUrl, cog: cogPreviewUrl, identity: identityPreviewUrl })
 				}
 			})
 			.catch((error) => {
 				console.error("Document preview generation failed:", error)
 				if (isMounted) {
-					setDocumentPreviewUrls({ cor: "", cog: "" })
+					setDocumentPreviewUrls({ cor: "", cog: "", identity: "" })
 				}
 			})
 
@@ -327,7 +338,7 @@ export default function SignupPage() {
 			isMounted = false
 			createdUrls.forEach((url) => URL.revokeObjectURL(url))
 		}
-	}, [corFile, cogFile])
+	}, [corFile, cogFile, identityFile])
 
 	const hasAcademicConcern = useMemo(() => {
 		return academicConcernTerms.length > 0
@@ -366,6 +377,61 @@ export default function SignupPage() {
 	const normalizeEmail = (value = "") => String(value || "").trim().toLowerCase()
 	const normalizeCpNumber = normalizeContactNumber
 	const isValidCpNumber = useCallback((value = "") => isValidContactNumber(value), [])
+	const runAvailabilityCheck = useCallback(async (field, value, valid) => {
+		const requestId = availabilityRequestRef.current[field] + 1
+		availabilityRequestRef.current[field] = requestId
+		if (!value || !valid) {
+			setAvailability((current) => ({ ...current, [field]: { status: value ? "invalid" : "idle" } }))
+			return
+		}
+		if (availabilityEndpointUnavailableRef.current) {
+			setAvailability((current) => ({ ...current, [field]: { status: "unavailable" } }))
+			return
+		}
+		setAvailability((current) => ({ ...current, [field]: { status: "checking" } }))
+		try {
+			const result = await checkStudentSignupAvailability(field, value)
+			if (availabilityRequestRef.current[field] !== requestId) return
+			setAvailability((current) => ({ ...current, [field]: { status: result.available ? "available" : result.reason === "invalid_format" ? "invalid" : "used" } }))
+		} catch (error) {
+			if (availabilityRequestRef.current[field] !== requestId) return
+			if ([404, 405].includes(Number(error?.status))) availabilityEndpointUnavailableRef.current = true
+			else console.debug(`Signup ${field} availability check unavailable:`, error)
+			setAvailability((current) => ({ ...current, [field]: { status: "unavailable" } }))
+		}
+	}, [])
+
+	useEffect(() => {
+		const value = normalizeStudentNumber(userId)
+		const timer = window.setTimeout(() => runAvailabilityCheck("studentId", value, /^\d{6,20}$/.test(value)), 500)
+		return () => window.clearTimeout(timer)
+	}, [runAvailabilityCheck, userId])
+
+	useEffect(() => {
+		const value = normalizeEmail(email)
+		const timer = window.setTimeout(() => runAvailabilityCheck("email", value, EMAIL_REGEX.test(value)), 500)
+		return () => window.clearTimeout(timer)
+	}, [email, runAvailabilityCheck])
+
+	useEffect(() => {
+		const value = normalizeCpNumber(cpNumber)
+		const timer = window.setTimeout(() => runAvailabilityCheck("phone", value, isValidCpNumber(value)), 500)
+		return () => window.clearTimeout(timer)
+	}, [cpNumber, isValidCpNumber, normalizeCpNumber, runAvailabilityCheck])
+
+	const availabilityMessage = (field) => {
+		const status = availability[field]?.status
+		if (status === "idle") return null
+		const messages = {
+			checking: "Checking availability...",
+			available: "Available",
+			used: "Already in use",
+			invalid: "Enter a valid value to check availability.",
+			unavailable: "Availability check is temporarily unavailable. It will be checked again when you submit.",
+		}
+		return <p className={`signup-availability signup-availability--${status}`} role={status === "used" ? "alert" : "status"}>{messages[status]}</p>
+	}
+	const availabilityBlocksSignup = ["studentId", "email", "phone"].some((field) => ["checking", "used"].includes(availability[field]?.status))
 	const getFileSha256 = async (file) => {
 		if (!file) return ""
 		const buffer = await file.arrayBuffer()
@@ -715,7 +781,7 @@ export default function SignupPage() {
 				explanation: identityCheck.explanation,
 			})
 			if (identityCheck.failedRules?.length) {
-				console.warn("ROG identity mismatch reason:")
+				console.debug("ROG identity comparison details:")
 				console.table(identityCheck.failedRules.map((reason, index) => ({
 					check: index + 1,
 					reason,
@@ -741,6 +807,7 @@ export default function SignupPage() {
 		if (!file) return ""
 		if (file === corFile) return documentPreviewUrls.cor
 		if (file === cogFile) return documentPreviewUrls.cog
+		if (file === identityFile) return documentPreviewUrls.identity
 		return ""
 	}
 
@@ -762,6 +829,20 @@ export default function SignupPage() {
 				corScan: documentScanResult.cor,
 			})
 			scrollToSection("section-account")
+			return false
+		}
+		return true
+	}
+
+	const validateCorYearLock = () => {
+		if (!scannedCorYear) {
+			toast.error("The COR year level could not be detected. Upload a clearer COR.")
+			scrollToSection("section-cor")
+			return false
+		}
+		if (scannedCorYear !== year) {
+			toast.error(`Year Level must match Year ${scannedCorYear}, as detected from the COR.`)
+			scrollToSection("section-school")
 			return false
 		}
 		return true
@@ -850,7 +931,7 @@ export default function SignupPage() {
 		}
 
 		if (expectedRogYear && scannedRogYear && expectedRogYear !== scannedRogYear && hasImpossibleYearProgression) {
-			console.warn("ROG year level mismatch skipped because the COR/form year appears unreliable.", {
+			console.debug("ROG year level comparison skipped because the scanned progression is unreliable.", {
 				currentSemesterTag,
 				expectedPreviousSemesterTag,
 				corYear,
@@ -881,7 +962,7 @@ export default function SignupPage() {
 		}
 
 		if (expectedRogYear && !scannedRogYear) {
-			console.warn("ROG year level was not detected. Cycle was validated by academic year and semester only.", {
+			console.debug("ROG year level was not detected. Cycle was validated by academic year and semester only.", {
 				currentSemesterTag,
 				expectedPreviousSemesterTag,
 				expectedRogYear,
@@ -939,7 +1020,7 @@ export default function SignupPage() {
 				return
 			}
 
-			if (documentType === "cor" && !/^[1-5]$/.test(String(extracted?.year || "").replace(/\D/g, "").slice(0, 1))) {
+			if (documentType === "cor" && !/^[1-4]$/.test(String(extracted?.year || "").replace(/\D/g, "").slice(0, 1))) {
 				const message = "The year level could not be detected from this COR. Upload a clearer university document."
 				setCorFile(null)
 				setCogFile(null)
@@ -974,7 +1055,7 @@ export default function SignupPage() {
 			}
 
 			if (identityCheck && !identityCheck.passed) {
-				console.warn("ROG identity mismatch allowed for now. This will be tightened later with similarity-based name matching.", {
+				console.debug("ROG identity comparison was inconclusive; server-side document validation remains authoritative.", {
 					expected: identityCheck.expected,
 					scanned: identityCheck.scanned,
 					score: identityCheck.score,
@@ -1152,11 +1233,9 @@ export default function SignupPage() {
 
 		// Validate Address components
 		if (
-			!street.trim() ||
 			!city.trim() ||
 			!province.trim() ||
-			!barangay.trim() ||
-			!postalCode.trim()
+			!barangay.trim()
 		) {
 			toast.error("Please complete your home address details")
 			scrollToSection("section-personal")
@@ -1206,7 +1285,11 @@ export default function SignupPage() {
 			return
 		}
 
-		if (!validateCorStudentNumberLock()) return
+		if (!validateCorStudentNumberLock() || !validateCorYearLock()) return
+		if (availabilityBlocksSignup) {
+			toast.error("Resolve the unavailable or pending account information checks before continuing.")
+			return
+		}
 		if (!validateCorCycle(documentScanResult.cor)) {
 			scrollToSection("section-cor")
 			return
@@ -1251,9 +1334,11 @@ export default function SignupPage() {
 			!!userId.trim() &&
 			EMAIL_REGEX.test(email) &&
 			isPasswordStrong(password) &&
-			password === confirmPassword
+			password === confirmPassword &&
+			!availabilityBlocksSignup &&
+			!hasCorStudentMismatch
 		)
-	}, [userId, email, password, confirmPassword])
+	}, [availabilityBlocksSignup, confirmPassword, email, hasCorStudentMismatch, password, userId])
 
 	const isPersonalSectionComplete = useMemo(() => {
 		return (
@@ -1261,21 +1346,22 @@ export default function SignupPage() {
 			!!lname.trim() &&
 			!!cpNumber.trim() &&
 			isValidCpNumber(cpNumber) &&
-			!!street.trim() &&
 			!!city.trim() &&
 			!!province.trim() &&
-			!!barangay.trim() &&
-			!!postalCode.trim()
+			!!barangay.trim()
 		)
-	}, [fname, lname, cpNumber, street, city, province, barangay, postalCode, isValidCpNumber])
+	}, [fname, lname, cpNumber, city, province, barangay, isValidCpNumber])
 
 	const isDocumentStageComplete = useMemo(() => {
 		return Boolean(
-			year && identityFile && documentScanState.cor === "done" &&
+			year && identityFile && documentScanState.cor === "done" && !hasCorIdentityMismatch &&
 			(isCogOptional || (cogFile && gwa.trim() && documentScanState.cog === "done")),
 		)
-	}, [cogFile, documentScanState.cog, documentScanState.cor, gwa, identityFile, isCogOptional, year])
-	const showStudentFormStage = isDocumentStageComplete
+	}, [cogFile, documentScanState.cog, documentScanState.cor, gwa, hasCorIdentityMismatch, identityFile, isCogOptional, year])
+	const showStudentFormStage = Boolean(
+		year && identityFile && documentScanState.cor === "done" &&
+		(isCogOptional || (cogFile && gwa.trim() && documentScanState.cog === "done")),
+	)
 
 	// Automatically move to next sections if complete
 	useEffect(() => {
@@ -1373,11 +1459,9 @@ export default function SignupPage() {
 
 		// Validate Address components
 		if (
-			!street.trim() ||
 			!city.trim() ||
 			!province.trim() ||
-			!barangay.trim() ||
-			!postalCode.trim()
+			!barangay.trim()
 		) {
 			toast.error("Please complete your home address details")
 			scrollToSection("section-personal")
@@ -1449,7 +1533,11 @@ export default function SignupPage() {
 			return
 		}
 
-		if (!validateCorStudentNumberLock()) return
+		if (!validateCorStudentNumberLock() || !validateCorYearLock()) return
+		if (availabilityBlocksSignup) {
+			toast.error("Resolve the unavailable or pending account information checks before creating your account.")
+			return
+		}
 
 		// Check if user ID exists in Supabase
 		const studentId = userId.trim()
@@ -1600,6 +1688,10 @@ export default function SignupPage() {
 		} catch (err) {
 			signupError = err
 			console.error("Error saving student:", err)
+			const errorText = String(err?.reason || err?.message || "")
+			if (errorText.includes("student_id_exists")) setAvailability((current) => ({ ...current, studentId: { status: "used" } }))
+			if (errorText.includes("email_exists") || errorText.toLowerCase().includes("already registered")) setAvailability((current) => ({ ...current, email: { status: "used" } }))
+			if (errorText.includes("cp_exists")) setAvailability((current) => ({ ...current, phone: { status: "used" } }))
 			const message = getSignupWorkflowErrorMessage(err)
 			toast.error(message.length > 220 ? `${message.slice(0, 217)}...` : message)
 		} finally {
@@ -2011,11 +2103,13 @@ export default function SignupPage() {
 										onChange={(e) =>
 											setUserId(e.target.value.replace(/\D/g, ""))
 										}
-										readOnly={Boolean(getScannedCorStudentNumber())}
+										onBlur={() => runAvailabilityCheck("studentId", normalizeStudentNumber(userId), /^\d{6,20}$/.test(normalizeStudentNumber(userId)))}
 										autoComplete="username"
 										autoCapitalize="off"
 									/>
 								</div>
+								{availabilityMessage("studentId")}
+								{hasCorStudentMismatch ? <p className="signup-field-error" role="alert">Student ID must match {scannedCorStudentId}, as detected from the COR.</p> : null}
 
 								<label className="login-label" htmlFor="signup-email">
 									Email Address <span className="required">*</span>
@@ -2029,9 +2123,11 @@ export default function SignupPage() {
 										placeholder="Enter your email address"
 										value={email}
 										onChange={(e) => setEmail(e.target.value)}
+										onBlur={() => runAvailabilityCheck("email", normalizeEmail(email), EMAIL_REGEX.test(normalizeEmail(email)))}
 										autoComplete="email"
 									/>
 								</div>
+								{availabilityMessage("email")}
 
 								<label className="login-label" htmlFor="signup-password">
 									Password <span className="required">*</span>
@@ -2244,12 +2340,14 @@ export default function SignupPage() {
 												onChange={(e) =>
 													setCpNumber(normalizeCpNumber(e.target.value).slice(0, 11))
 												}
+												onBlur={() => runAvailabilityCheck("phone", normalizeCpNumber(cpNumber), isValidCpNumber(cpNumber))}
 											/>
 										</div>
+										{availabilityMessage("phone")}
 									</div>
 								</div>
 
-								<h4 className="signup-form-subtitle-small">Home Address</h4>
+								<h4 className="signup-form-subtitle-small">Permanent Home Address</h4>
 
 								<label className="login-label" htmlFor="signup-province">
 									Province <span className="required">*</span>
@@ -2338,7 +2436,7 @@ export default function SignupPage() {
 								<div className="signup-row signup-row--address-detail">
 									<div className="signup-field signup-field--street">
 										<label className="login-label" htmlFor="signup-street">
-											Street / Subdivision <span className="required">*</span>
+											Street / Subdivision <span className="signup-optional-label">(Optional)</span>
 										</label>
 										<div className="login-input-wrap">
 											<input
@@ -2353,7 +2451,7 @@ export default function SignupPage() {
 									</div>
 									<div className="signup-field signup-field--postal">
 										<label className="login-label" htmlFor="signup-postal">
-											Postal Code <span className="required">*</span>
+											Postal Code <span className="signup-optional-label">(Optional)</span>
 										</label>
 										<div className="login-input-wrap">
 											<input
@@ -2414,7 +2512,8 @@ export default function SignupPage() {
 										<label className="login-label" htmlFor="signup-year">
 											Year <span className="required">*</span>
 										</label>
-										<input id="signup-year" className="login-input" value={`Year ${year}`} readOnly aria-readonly="true" />
+										<CustomSelect id="signup-year" buttonClassName="login-select" value={year} onChange={setYear} options={[1, 2, 3, 4].map((value) => ({ value, label: `Year ${value}` }))} placeholder="Select year level" />
+										{hasCorYearMismatch ? <p className="signup-field-error" role="alert">Year Level must match Year {scannedCorYear}, as detected from the COR.</p> : null}
 									</div>
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-section">
@@ -2572,7 +2671,7 @@ export default function SignupPage() {
 											<span>Permanent Home Address:</span>
 										</span>
 										<span className="signup-review-value">
-											{street}, {barangay}, {city}, {province} {postalCode}
+											{[street, barangay, city, province, postalCode].map((value) => String(value || "").trim()).filter(Boolean).join(", ")}
 										</span>
 									</div>
 								</div>
@@ -2757,6 +2856,9 @@ export default function SignupPage() {
 												<div className="signup-review-document-info">
 													<span className="signup-review-document-label signup-review-label-group"><span className="signup-review-row-icon" aria-hidden><HiOutlineIdentification /></span><span>{identityKind === "student_id" ? "Student ID" : identityKind === "previous_school_id" ? "Previous-school photo ID" : "Government photo ID"}:</span></span>
 													<span className="signup-review-document-name signup-review-label-group"><span className="signup-review-row-icon" aria-hidden><HiOutlineIdentification /></span><span>{identityFile.name}</span></span>
+												</div>
+												<div className="signup-review-document-preview">
+													{documentPreviewUrls.identity ? <img src={documentPreviewUrls.identity} alt={`${identityKind === "student_id" ? "Student ID" : identityKind === "previous_school_id" ? "Previous-school ID" : "Government ID"} preview`} className="signup-review-document-image" onClick={() => { setPreviewFile(identityFile); setShowImagePreview(true) }} /> : <button type="button" className="signup-review-document-image signup-review-document-placeholder" disabled>Preview unavailable</button>}
 												</div>
 											</div>
 										)}

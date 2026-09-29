@@ -66,6 +66,23 @@ class StudentProfileValidationTests(unittest.TestCase):
             service._validate_profile(self.profile)
         self.assertIn("permanentAddress.city", raised.exception.detail["fields"])
 
+    def test_street_and_postal_code_are_optional(self):
+        self.profile["permanentAddress"]["street"] = ""
+        self.profile["permanentAddress"]["postalCode"] = ""
+        with patch.object(service, "_profile_photo_bytes", return_value=b"photo"):
+            service._validate_profile(self.profile)
+
+    def test_locked_profile_fields_always_come_from_student_record(self):
+        student = {"email": "official@example.com", "cpNumber": "09111111111", "course": "BSIT", "year": "2", "section": "B"}
+        supplied = {"email": "attacker@example.com", "cpNumber": "09999999999", "course": "Other", "year": "5", "section": "Z", "fname": "Updated"}
+        result = service._merge_profile_input(student, supplied)
+        self.assertEqual("official@example.com", result["email"])
+        self.assertEqual("09111111111", result["cpNumber"])
+        self.assertEqual("BSIT", result["course"])
+        self.assertEqual("2", result["year"])
+        self.assertEqual("B", result["section"])
+        self.assertEqual("Updated", result["fname"])
+
     def test_generated_profile_is_a_pdf(self):
         one_pixel_png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -75,6 +92,25 @@ class StudentProfileValidationTests(unittest.TestCase):
 
 
 class StudentDocumentReviewTests(unittest.TestCase):
+    @patch.object(service, "create_log")
+    @patch.object(service, "supabase_rest_insert", return_value={"ok": True})
+    @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": None})
+    @patch.object(service, "supabase_document_update", return_value={"ok": True})
+    @patch.object(service, "_require_review_student", return_value=({"course": "Old", "year": "1", "section": "A", "email": "fixed@example.com", "cpNumber": "09111111111"}, "students"))
+    @patch.object(service, "_cycle", return_value=("2026-2027-1ST", "1ST"))
+    def test_approved_current_cycle_cor_updates_only_academic_fields(self, _cycle, _student, update, _draft, history, _log):
+        submission = {
+            "id": "cor-1", "documentType": "cor", "academicCycle": "2026-2027-1ST",
+            "scan": {"studentId": "20260001", "academicYear": "2026-2027", "semester": "1ST", "course": "BSIT", "year": "2", "section": "B"},
+        }
+        changed = service._apply_approved_cor_academics("20260001", "students", submission, "admin-1")
+        self.assertEqual({"course", "year", "section"}, set(changed))
+        student_update = update.call_args_list[0].args[2]
+        self.assertEqual("BSIT", student_update["course"])
+        self.assertNotIn("email", student_update)
+        self.assertNotIn("cpNumber", student_update)
+        history.assert_called_once()
+
     def test_rejection_requires_a_reason_before_any_write(self):
         with patch.object(service, "_reviewer", return_value=("admin-1", {"role": "student_reviewer"})), \
                 patch.object(service, "supabase_document_get") as get_record:

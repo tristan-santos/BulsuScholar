@@ -836,6 +836,14 @@
 	padding: .65rem .72rem;
 }
 
+.student-profile-input--locked,
+.student-profile-form-grid--new .student-profile-input--locked {
+	background: #f1f5f3;
+	border-color: #d7e0dc;
+	color: #5f6f68;
+	cursor: not-allowed;
+}
+
 .student-profile-wide { grid-column: span 2; }
 
 .student-profile-address-group {
@@ -1019,6 +1027,13 @@
 	background: #0d1915;
 	border-color: #41675b;
 	color: #eef8f4;
+}
+
+.student-dashboard--dark .student-profile-input--locked,
+.student-dashboard--dark .student-profile-form-grid--new .student-profile-input--locked {
+	background: #17231f;
+	border-color: #385047;
+	color: #9eb1a9;
 }
 
 .student-dashboard--dark .student-profile-page-head p,

@@ -1914,3 +1914,27 @@
 	height: auto !important;
 	min-height: 100px;
 }
+
+.signup-availability,
+.signup-field-error {
+	margin: 0.4rem 0 0;
+	font-size: 0.82rem;
+	line-height: 1.35;
+}
+
+.signup-availability--checking,
+.signup-availability--unavailable {
+	color: #64748b;
+}
+
+.signup-availability--available {
+	color: #067647;
+	font-weight: 600;
+}
+
+.signup-availability--used,
+.signup-availability--invalid,
+.signup-field-error {
+	color: #b42318;
+	font-weight: 600;
+}

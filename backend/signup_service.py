@@ -2,6 +2,9 @@ import hashlib
 import os
 import re
 import secrets
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -45,6 +48,10 @@ except ImportError:  # pragma: no cover
 SIGNUP_DOCUMENT_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
 MAX_SIGNUP_DOCUMENT_BYTES = 10 * 1024 * 1024
 SIGNUP_BATCH_LIFETIME = timedelta(hours=24)
+SIGNUP_AVAILABILITY_WINDOW_SECONDS = 60
+SIGNUP_AVAILABILITY_MAX_REQUESTS = 30
+_availability_requests: dict[str, deque[float]] = defaultdict(deque)
+_availability_lock = threading.Lock()
 
 
 def normalize_email(value: Any = "") -> str:
@@ -103,7 +110,7 @@ def previous_semester_tag(current_tag: str) -> str:
 
 def _signup_year(value: Any) -> str:
     normalized = re.sub(r"\D+", "", str(value or ""))
-    return normalized[:1] if normalized[:1] in {"1", "2", "3", "4", "5"} else ""
+    return normalized[:1] if normalized[:1] in {"1", "2", "3", "4"} else ""
 
 
 def _signup_document_policy() -> dict[str, Any]:
@@ -370,6 +377,64 @@ def first_existing_record(checks: list[tuple[str, dict[str, Any]]]) -> dict[str,
         if rows:
             return {"table": table, "row": rows[0]}
     return None
+
+
+def check_signup_availability(payload: dict[str, Any], requester_key: str = "unknown") -> dict[str, Any]:
+    now = time.monotonic()
+    with _availability_lock:
+        recent = _availability_requests[requester_key]
+        while recent and recent[0] <= now - SIGNUP_AVAILABILITY_WINDOW_SECONDS:
+            recent.popleft()
+        if len(recent) >= SIGNUP_AVAILABILITY_MAX_REQUESTS:
+            raise HTTPException(status_code=429, detail="signup_availability_rate_limited")
+        recent.append(now)
+
+    field = str(payload.get("field") or "").strip()
+    raw_value = payload.get("value")
+    if field == "studentId":
+        value = normalize_student_id(raw_value)
+        if not re.fullmatch(r"\d{6,20}", value):
+            return {"ok": True, "field": field, "available": False, "reason": "invalid_format"}
+        owner = None
+        for table in ("students", "pending_students", "providers", "admins"):
+            lookup = supabase_document_get(table, value)
+            if not lookup.get("ok"):
+                raise HTTPException(status_code=503, detail="signup_availability_unavailable")
+            if lookup.get("row"):
+                owner = {"table": table}
+                break
+    elif field == "email":
+        value = normalize_email(raw_value)
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+            return {"ok": True, "field": field, "available": False, "reason": "invalid_format"}
+        result = supabase_rpc("portal_email_in_use", {"p_email": value, "p_exclude_auth_user_id": None})
+        if not result.get("ok"):
+            raise HTTPException(status_code=503, detail="signup_availability_unavailable")
+        owner = {"table": "portal_identity"} if result.get("data") is True else None
+    elif field == "phone":
+        value = normalize_cp(raw_value)
+        if not re.fullmatch(r"09\d{9}", value):
+            return {"ok": True, "field": field, "available": False, "reason": "invalid_format"}
+        values = list(dict.fromkeys([value, value[1:]]))
+        owner = None
+        for candidate in values:
+            owner = first_existing_record([
+                ("students", {"contact_number": candidate}),
+                ("pending_students", {"contact_number": candidate}),
+            ])
+            if owner:
+                break
+    else:
+        raise HTTPException(status_code=422, detail="invalid_signup_availability_field")
+
+    if owner and owner.get("error"):
+        raise HTTPException(status_code=503, detail="signup_availability_unavailable")
+    return {
+        "ok": True,
+        "field": field,
+        "available": owner is None,
+        "reason": "available" if owner is None else "already_in_use",
+    }
 
 
 def normalize_identity_name(value: Any = "") -> str:
@@ -643,14 +708,14 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         if existing.get("row"):
             return {"ok": False, "reason": "student_id_exists", "table": table}
 
-    email_owner = first_existing_record([
-        ("students", {"email": email}),
-        ("pending_students", {"email": email}),
-    ])
-    if email_owner:
-        if email_owner.get("error"):
-            return {"ok": False, "reason": "email_check_failed", "result": email_owner}
-        return {"ok": False, "reason": "email_exists", "table": email_owner["table"]}
+    email_owner = supabase_rpc("portal_email_in_use", {
+        "p_email": email,
+        "p_exclude_auth_user_id": str(auth.get("userId") or "") or None,
+    })
+    if not email_owner.get("ok"):
+        return {"ok": False, "reason": "email_check_failed", "result": email_owner}
+    if email_owner.get("data") is True:
+        return {"ok": False, "reason": "email_exists"}
 
     cp_lookup_values = [cp_number]
     if cp_number.startswith("0"):

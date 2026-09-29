@@ -237,10 +237,10 @@ def extract_course(text: str) -> str:
 def extract_year(text: str) -> str:
     value = find_first(
         [
-            r"(?:Year\s*(?:Level)?\s*/\s*Section|Yr\s*/\s*Sec)\s*[:\-]?\s*([1-6])\s*[- ]?[A-Z]",
-            r"(?:Year\s*Level|Year)\s*[:\-]?\s*([1-6])",
-            r"\b([1-6])(?:st|nd|rd|th)\s*Year\b",
-            r"\b([1-6])\s*[-]\s*[A-Z]\b",
+            r"(?:Year\s*(?:Level)?\s*/\s*Section|Yr\s*/\s*Sec)\s*[:\-]?\s*([1-4])\s*[- ]?[A-Z]",
+            r"(?:Year\s*Level|Year)\s*[:\-]?\s*([1-4])",
+            r"\b([1-4])(?:st|nd|rd|th)\s*Year\b",
+            r"\b([1-4])\s*[-]\s*[A-Z]\b",
         ],
         text,
     )
@@ -250,9 +250,9 @@ def extract_year(text: str) -> str:
 def extract_section(text: str) -> str:
     value = find_first(
         [
-            r"(?:Year\s*(?:Level)?\s*/\s*Section|Yr\s*/\s*Sec)\s*[:\-]?\s*[1-6]\s*[- ]?([A-Z])\b",
+            r"(?:Year\s*(?:Level)?\s*/\s*Section|Yr\s*/\s*Sec)\s*[:\-]?\s*[1-4]\s*[- ]?([A-Z])\b",
             r"(?:Section|Block)\s*[:\-]?\s*([A-Z](?:\s*[-]\s*[A-Z0-9])?|[A-Z0-9]{1,8})\b",
-            r"\b([1-6]\s*-\s*[A-Z])\b",
+            r"\b([1-4]\s*-\s*[A-Z])\b",
         ],
         text,
     )
@@ -835,7 +835,7 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
         "fullName": name["fullName"],
         "course": extract_course(text),
         "year": extract_year(text),
-        "section": "",
+        "section": extract_section(text),
         "gwa": extract_gwa(text),
         **semester,
         **flags,

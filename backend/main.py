@@ -41,7 +41,7 @@ try:
         recommend_scholarships,
         validate_scholarship_documents,
     )
-    from .signup_service import create_signup_document_batch, finalize_student_signup, validate_student_signup
+    from .signup_service import check_signup_availability, create_signup_document_batch, finalize_student_signup, validate_student_signup
     from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
     from .student_account_review_service import approve_pending_student_account, list_pending_student_accounts
     from .roster_workflow_service import (
@@ -154,7 +154,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         recommend_scholarships,
         validate_scholarship_documents,
     )
-    from signup_service import create_signup_document_batch, finalize_student_signup, validate_student_signup
+    from signup_service import check_signup_availability, create_signup_document_batch, finalize_student_signup, validate_student_signup
     from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
     from student_account_review_service import approve_pending_student_account, list_pending_student_accounts
     from roster_workflow_service import (
@@ -810,6 +810,15 @@ def validate_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dic
     if public_config().get("portal", {}).get("allowStudentSignup") is False:
         raise HTTPException(status_code=403, detail="student_signup_disabled")
     return validate_student_signup(payload)
+
+
+@app.post("/workflows/student/signup/availability")
+def student_signup_availability_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if public_config().get("portal", {}).get("allowStudentSignup") is False:
+        raise HTTPException(status_code=403, detail="student_signup_disabled")
+    forwarded_for = str(request.headers.get("x-forwarded-for") or "").split(",", 1)[0].strip()
+    requester_key = forwarded_for or (request.client.host if request.client else "unknown")
+    return check_signup_availability(payload, requester_key)
 
 
 @app.post("/workflows/student/signup/document-batches")

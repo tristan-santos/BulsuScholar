@@ -28,6 +28,7 @@ try:
         supabase_document_insert,
         supabase_document_update,
         supabase_document_upsert,
+        supabase_rest_insert,
         supabase_select,
     )
 except ImportError:  # pragma: no cover
@@ -40,6 +41,7 @@ except ImportError:  # pragma: no cover
         supabase_document_insert,
         supabase_document_update,
         supabase_document_upsert,
+        supabase_rest_insert,
         supabase_select,
     )
 
@@ -49,6 +51,7 @@ PROFILE_FIELDS = {
     "guardianName", "guardianContact", "college", "course", "major", "year", "section",
     "profileImage", "profileImageUrl", "permanentAddress", "currentAddress",
 }
+LOCKED_PROFILE_FIELDS = {"email", "cpNumber", "course", "year", "section"}
 DOCUMENT_TYPES = {"cor", "rog", "identity"}
 ALLOWED_DOCUMENT_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
 ALLOWED_PHOTO_TYPES = {"image/png", "image/jpeg", "image/webp"}
@@ -280,7 +283,7 @@ def _validate_profile(profile: dict[str, Any]) -> None:
     required = ("fname", "lname", "email", "cpNumber", "birthDate", "guardianName", "guardianContact", "course", "year", "section")
     missing = [key for key in required if not str(profile.get(key) or "").strip()]
     address = profile.get("permanentAddress") if isinstance(profile.get("permanentAddress"), dict) else {}
-    missing.extend(f"permanentAddress.{key}" for key in ("street", "barangay", "city", "province", "postalCode") if not str(address.get(key) or "").strip())
+    missing.extend(f"permanentAddress.{key}" for key in ("barangay", "city", "province") if not str(address.get(key) or "").strip())
     if missing:
         raise HTTPException(status_code=422, detail={"code": "profile_incomplete", "fields": missing})
     if not _profile_photo_bytes(profile):
@@ -438,6 +441,85 @@ def _seed_profile(student: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _merge_profile_input(student: dict[str, Any], supplied: dict[str, Any]) -> dict[str, Any]:
+    profile = {
+        **_seed_profile(student),
+        **{
+            key: supplied.get(key)
+            for key in PROFILE_FIELDS - LOCKED_PROFILE_FIELDS
+            if key in supplied
+        },
+    }
+    for key in LOCKED_PROFILE_FIELDS:
+        profile[key] = student.get(key, "")
+    return profile
+
+
+def _apply_approved_cor_academics(
+    student_id: str,
+    student_table: str,
+    submission: dict[str, Any],
+    actor_id: str,
+) -> dict[str, Any]:
+    if submission.get("documentType") != "cor":
+        return {}
+    cycle, _ = _cycle()
+    if str(submission.get("academicCycle") or "") != cycle:
+        return {}
+    scan = submission.get("scan") if isinstance(submission.get("scan"), dict) else {}
+    semester = str(scan.get("semester") or "").strip().upper()
+    semester = "1ST" if semester in {"1", "1ST", "FIRST"} else "2ND" if semester in {"2", "2ND", "SECOND"} else ""
+    scan_cycle = f"{str(scan.get('academicYear') or '').strip()}-{semester}" if semester else ""
+    if scan_cycle != cycle:
+        return {}
+    scanned_student_id = re.sub(r"\D+", "", str(scan.get("studentId") or ""))
+    if scanned_student_id and scanned_student_id != re.sub(r"\D+", "", student_id):
+        raise HTTPException(status_code=409, detail="cor_student_id_mismatch")
+    updates = {
+        key: str(scan.get(key) or "").strip()
+        for key in ("course", "year", "section")
+        if str(scan.get(key) or "").strip()
+    }
+    if not updates:
+        return {}
+    current = _require_review_student(student_id)[0]
+    changed = {
+        key: {"from": str(current.get(key) or ""), "to": value}
+        for key, value in updates.items()
+        if str(current.get(key) or "") != value
+    }
+    if not changed:
+        return {}
+    updates["updatedAt"] = _now()
+    if not supabase_document_update(student_table, student_id, updates).get("ok"):
+        raise HTTPException(status_code=503, detail="student_academic_update_failed")
+    draft = supabase_document_get("student_profile_drafts", student_id)
+    if draft.get("row"):
+        supabase_document_update("student_profile_drafts", student_id, updates)
+    history_id = f"history_cor_academics_{submission.get('id') or hashlib.sha256((student_id + cycle).encode()).hexdigest()[:20]}"
+    supabase_rest_insert("student_history_events", {
+        "id": history_id,
+        "student_id": student_id,
+        "event_type": "academic_profile_updated",
+        "academic_cycle": cycle,
+        "occurred_at": _now(),
+        "related_type": "document",
+        "related_id": submission.get("id") or "",
+        "route": "/student-dashboard/history",
+        "description": "Course, year level, or section was updated from an approved COR.",
+        "safe_data": {"changes": changed},
+    })
+    create_log({
+        "action": "student_academics_updated_from_cor",
+        "actorId": actor_id,
+        "actorType": "system" if actor_id == "system" else "admin",
+        "target": student_id,
+        "details": {"submissionId": submission.get("id"), "changes": changed},
+        "createdAt": _now(),
+    })
+    return changed
+
+
 def _derive_college(course: str) -> str:
     value = str(course or "").lower()
     if "information technology" in value:
@@ -458,7 +540,7 @@ def get_student_profile_workspace(request: Request) -> dict[str, Any]:
     student = _require_student(student_id)
     cycle, semester = _cycle()
     draft_record = supabase_document_get("student_profile_drafts", student_id)
-    draft = draft_record.get("data") if draft_record.get("row") else _seed_profile(student)
+    draft = _merge_profile_input(student, draft_record.get("data") or {}) if draft_record.get("row") else _seed_profile(student)
     submissions = _data_rows("student_document_submissions", {"data->>studentId": student_id, "data->>academicCycle": cycle})
     revisions = _data_rows("student_profile_revisions", {"data->>studentId": student_id}, limit=100)
     summary = _sync_verification(student_id, student, cycle, semester)
@@ -525,7 +607,7 @@ def save_student_profile_draft(request: Request, payload: dict[str, Any]) -> dic
     student_id = _student_id(request)
     student = _require_student(student_id)
     supplied = payload.get("profile") if isinstance(payload.get("profile"), dict) else {}
-    profile = {**_seed_profile(student), **{key: supplied.get(key) for key in PROFILE_FIELDS if key in supplied}}
+    profile = _merge_profile_input(student, supplied)
     profile["college"] = str(profile.get("college") or _derive_college(str(profile.get("course") or "")))
     profile["studentId"] = student_id
     profile["status"] = "draft"
@@ -533,7 +615,7 @@ def save_student_profile_draft(request: Request, payload: dict[str, Any]) -> dic
     result = supabase_document_upsert("student_profile_drafts", student_id, profile, merge=False)
     if not result.get("ok"):
         raise HTTPException(status_code=503, detail="profile_draft_save_failed")
-    compatibility = {key: profile.get(key) for key in PROFILE_FIELDS if key not in {"currentAddress", "permanentAddress"}}
+    compatibility = {key: profile.get(key) for key in PROFILE_FIELDS if key not in {"currentAddress", "permanentAddress"} | LOCKED_PROFILE_FIELDS}
     permanent = profile.get("permanentAddress") or {}
     compatibility.update({
         "permanentAddress": permanent, "currentAddress": profile.get("currentAddress") or {},
@@ -549,7 +631,7 @@ def preview_student_profile(request: Request, payload: dict[str, Any]) -> Respon
     student_id = _student_id(request)
     student = _require_student(student_id)
     supplied = payload.get("profile") if isinstance(payload.get("profile"), dict) else {}
-    profile = {**_seed_profile(student), **{key: supplied.get(key) for key in PROFILE_FIELDS if key in supplied}}
+    profile = _merge_profile_input(student, supplied)
     profile["college"] = str(profile.get("college") or _derive_college(str(profile.get("course") or "")))
     transparent_signature = io.BytesIO()
     Image.new("RGBA", (2, 2), (255, 255, 255, 0)).save(transparent_signature, format="PNG")
@@ -586,6 +668,8 @@ def _system_approve_submission(submission_id: str, submission: dict[str, Any], s
         old_file = student.get(compatibility_key) if isinstance(student.get(compatibility_key), dict) else {}
         if old_file.get("submissionId") == submission_id:
             supabase_document_update("students", student_id, {compatibility_key: {**old_file, "reviewStatus": "approved", "rejectionReason": ""}})
+    _apply_approved_cor_academics(student_id, "students", {"id": submission_id, **submission}, "system")
+    student = _require_student(student_id)
     if submission.get("documentType") == "profile":
         _create_application_snapshots(student_id, submission, str(submission.get("profileRevisionId") or ""))
     summary = _sync_verification(student_id, student, cycle, semester)
@@ -607,7 +691,7 @@ def submit_student_profile(request: Request, payload: dict[str, Any]) -> dict[st
     student_id = _student_id(request)
     student = _require_student(student_id)
     cycle, semester = _cycle()
-    draft = supabase_document_get("student_profile_drafts", student_id).get("data") or _seed_profile(student)
+    draft = _merge_profile_input(student, supabase_document_get("student_profile_drafts", student_id).get("data") or {})
     _validate_profile(draft)
     signature = _decode_signature(str(payload.get("signatureDataUrl") or ""))
     existing = _data_rows("student_profile_revisions", {"data->>studentId": student_id, "data->>academicCycle": cycle})
@@ -783,6 +867,9 @@ def review_document_submission(request: Request, submission_id: str, payload: di
         old_file = student.get(compatibility_key) if isinstance(student.get(compatibility_key), dict) else {}
         if old_file.get("submissionId") == submission_id:
             supabase_document_update(student_table, student_id, {compatibility_key: {**old_file, "reviewStatus": decision, "rejectionReason": reason}})
+    if decision == "approved":
+        _apply_approved_cor_academics(student_id, student_table, submission, reviewer_id)
+        student, _ = _require_review_student(student_id)
     if submission.get("documentType") == "profile" and decision == "approved":
         _create_application_snapshots(student_id, submission, str(submission.get("profileRevisionId") or ""))
     title = "Document approved" if decision == "approved" else "Document needs correction"

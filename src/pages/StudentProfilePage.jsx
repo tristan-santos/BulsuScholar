@@ -141,11 +141,11 @@ function AddressFields({ title, value, onChange, required = false }) {
 	return (
 		<fieldset className="student-profile-address-group">
 			<legend>{title}{required ? " *" : ""}</legend>
-			<label>House / Street<input value={value?.street || ""} onChange={(event) => update("street", event.target.value)} /></label>
-			<label>Barangay<input value={value?.barangay || ""} onChange={(event) => update("barangay", event.target.value)} /></label>
-			<label>City / Municipality<input value={value?.city || ""} onChange={(event) => update("city", event.target.value)} /></label>
-			<label>Province<input value={value?.province || ""} onChange={(event) => update("province", event.target.value)} /></label>
-			<label>Postal Code<input value={value?.postalCode || ""} onChange={(event) => update("postalCode", event.target.value)} inputMode="numeric" /></label>
+			<label>House / Street (optional)<input value={value?.street || ""} onChange={(event) => update("street", event.target.value)} /></label>
+			<label>Barangay{required ? " *" : ""}<input value={value?.barangay || ""} onChange={(event) => update("barangay", event.target.value)} /></label>
+			<label>City / Municipality{required ? " *" : ""}<input value={value?.city || ""} onChange={(event) => update("city", event.target.value)} /></label>
+			<label>Province{required ? " *" : ""}<input value={value?.province || ""} onChange={(event) => update("province", event.target.value)} /></label>
+			<label>Postal Code (optional)<input value={value?.postalCode || ""} onChange={(event) => update("postalCode", event.target.value)} inputMode="numeric" /></label>
 		</fieldset>
 	)
 }
@@ -204,7 +204,7 @@ export default function StudentProfilePage({ formMode = false }) {
 	}, [latestSubmissions.identity?.documentKind])
 	const profileCompleteness = useMemo(() => {
 		const required = ["fname", "lname", "email", "cpNumber", "birthDate", "guardianName", "guardianContact", "course", "year", "section"]
-		const addressFields = ["street", "barangay", "city", "province", "postalCode"]
+		const addressFields = ["barangay", "city", "province"]
 		const completed = required.filter((key) => String(profile[key] || "").trim()).length + addressFields.filter((key) => String(profile.permanentAddress?.[key] || "").trim()).length
 		return { completed, total: required.length + addressFields.length, percent: Math.round((completed / (required.length + addressFields.length)) * 100) }
 	}, [profile])
@@ -345,16 +345,16 @@ export default function StudentProfilePage({ formMode = false }) {
 
 					<div className="student-profile-section-grid">
 						<section className="student-profile-section-card">
-							<header><div><h2>Personal Information</h2><p>These details prefill your Student Application Profile.</p></div></header>
+							<header><div><h2>Personal Information</h2><p>Locked account and academic fields can only change through an authorized workflow.</p></div></header>
 							<div className="student-profile-form-grid">
 								<label className="student-profile-label">First Name *<input className="student-profile-input" value={profile.fname} onChange={(event) => update("fname", event.target.value)} /></label>
 								<label className="student-profile-label">Middle Name<input className="student-profile-input" value={profile.mname} onChange={(event) => update("mname", event.target.value)} /></label>
 								<label className="student-profile-label">Last Name *<input className="student-profile-input" value={profile.lname} onChange={(event) => update("lname", event.target.value)} /></label>
-								<label className="student-profile-label">Email *<input className="student-profile-input" type="email" value={profile.email} onChange={(event) => update("email", event.target.value)} /></label>
-								<label className="student-profile-label">Contact Number *<input className="student-profile-input" value={profile.cpNumber} onChange={(event) => update("cpNumber", sanitizeContactNumber(event.target.value))} inputMode="numeric" maxLength={11} /></label>
-								<label className="student-profile-label">Course *<input className="student-profile-input" value={profile.course} onChange={(event) => update("course", event.target.value)} /></label>
-								<label className="student-profile-label">Year Level *<select className="student-profile-input" value={profile.year} onChange={(event) => update("year", event.target.value)}><option value="">Select year</option>{[1,2,3,4,5].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
-								<label className="student-profile-label">Section *<input className="student-profile-input" value={profile.section} onChange={(event) => update("section", event.target.value)} /></label>
+								<label className="student-profile-label">Email *<input className="student-profile-input student-profile-input--locked" type="email" value={profile.email} readOnly aria-readonly="true" title="Email changes require the account recovery workflow." /></label>
+								<label className="student-profile-label">Contact Number *<input className="student-profile-input student-profile-input--locked" value={profile.cpNumber} readOnly aria-readonly="true" /></label>
+								<label className="student-profile-label">Course *<input className="student-profile-input student-profile-input--locked" value={profile.course} readOnly aria-readonly="true" /></label>
+								<label className="student-profile-label">Year Level *<select className="student-profile-input student-profile-input--locked" value={profile.year} disabled aria-disabled="true"><option value="">Select year</option>{[1,2,3,4].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
+								<label className="student-profile-label">Section *<input className="student-profile-input student-profile-input--locked" value={profile.section} readOnly aria-readonly="true" /></label>
 							</div>
 							<div className="student-profile-editor-actions"><button type="button" data-button-variant="positive" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave /> {busy === "save" ? "Saving..." : "Save"}</button></div>
 						</section>
@@ -406,14 +406,14 @@ export default function StudentProfilePage({ formMode = false }) {
 						<label>Middle Name<input value={profile.mname} onChange={(event) => update("mname", event.target.value)} /></label>
 						<label>Last Name *<input value={profile.lname} onChange={(event) => update("lname", event.target.value)} /></label>
 						<label>Extension<input value={profile.extension} onChange={(event) => update("extension", event.target.value)} placeholder="Jr., III" /></label>
-						<label>Email *<input type="email" value={profile.email} onChange={(event) => update("email", event.target.value)} /></label>
-						<label>Contact Number *<input value={profile.cpNumber} onChange={(event) => update("cpNumber", sanitizeContactNumber(event.target.value))} inputMode="numeric" maxLength={11} /></label>
+						<label>Email *<input className="student-profile-input--locked" type="email" value={profile.email} readOnly aria-readonly="true" title="Email changes require the account recovery workflow." /></label>
+						<label>Contact Number *<input className="student-profile-input--locked" value={profile.cpNumber} readOnly aria-readonly="true" /></label>
 						<label>Date of Birth *<input type="date" value={profile.birthDate} onChange={(event) => update("birthDate", event.target.value)} /></label>
 						<label>College<input value={profile.college} onChange={(event) => update("college", event.target.value)} /></label>
-						<label className="student-profile-wide">Course *<input value={profile.course} onChange={(event) => update("course", event.target.value)} /></label>
+						<label className="student-profile-wide">Course *<input className="student-profile-input--locked" value={profile.course} readOnly aria-readonly="true" /></label>
 						<label>Major<input value={profile.major} onChange={(event) => update("major", event.target.value)} /></label>
-						<label>Year Level *<select value={profile.year} onChange={(event) => update("year", event.target.value)}><option value="">Select year</option>{[1,2,3,4,5].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
-						<label>Section *<input value={profile.section} onChange={(event) => update("section", event.target.value)} /></label>
+						<label>Year Level *<select className="student-profile-input--locked" value={profile.year} disabled aria-disabled="true"><option value="">Select year</option>{[1,2,3,4].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
+						<label>Section *<input className="student-profile-input--locked" value={profile.section} readOnly aria-readonly="true" /></label>
 						<label>Legal Guardian *<input value={profile.guardianName} onChange={(event) => update("guardianName", event.target.value)} /></label>
 						<label>Guardian Contact *<input value={profile.guardianContact} onChange={(event) => update("guardianContact", sanitizeContactNumber(event.target.value))} inputMode="numeric" maxLength={11} /></label>
 					</div>
