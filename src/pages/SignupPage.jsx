@@ -1782,7 +1782,7 @@ export default function SignupPage() {
 							<div className="signup-process-step signup-process-step--documents">
 								<span>Step 1</span>
 								<strong>Submit Required Documents</strong>
-								<p>Upload your COR first. Its detected year level determines the remaining required documents.</p>
+								<p>Upload <b>Generated Requirements only</b>, using the BULSU Portal. Upload your COR first. Its detected year level determines the remaining required documents.</p>
 							</div>
 
 							{/* Document Upload Section */}
@@ -1791,7 +1791,7 @@ export default function SignupPage() {
 									<div className="signup-section-icon">
 										<HiOutlineCloudUpload />
 									</div>
-									<h3 className="signup-section-title">Required Documents</h3>
+									<h3 className="signup-section-title">Upload Documents</h3>
 								</div>
 
 								{/* Certificate of Registration / Advising Slip Upload */}
@@ -1941,7 +1941,7 @@ export default function SignupPage() {
 								</div>
 
 								<label className="login-label" htmlFor="signup-identity-kind" style={{ marginTop: "1rem", display: "block" }}>
-									3. {!year ? "Identity Document" : year === "1" ? "Student ID or Valid Photo ID" : "Current Student ID"} <span className="required">*</span>
+									3. {!year ? "Valid ID" : year === "1" ? "Student ID or Valid Photo ID" : "Current Student ID"} <span className="required">*</span>
 								</label>
 								{year === "1" ? (
 									<select id="signup-identity-kind" className="login-input" value={identityKind} onChange={(event) => { setIdentityKind(event.target.value); setIdentityFile(null) }} disabled={!canUploadIdentity}>
@@ -2569,7 +2569,7 @@ export default function SignupPage() {
 											<span className="signup-review-row-icon" aria-hidden>
 												<HiOutlineIdentification />
 											</span>
-											<span>Home Address:</span>
+											<span>Permanent Home Address:</span>
 										</span>
 										<span className="signup-review-value">
 											{street}, {barangay}, {city}, {province} {postalCode}
