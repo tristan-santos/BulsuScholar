@@ -23,7 +23,7 @@ try:
         utc_now_iso,
     )
     from .document_scanner import parse_pdf_document
-    from .student_profile_service import _store_bytes
+    from .student_profile_service import _delete_stored_bytes, _store_bytes
 except ImportError:  # pragma: no cover
     from supabase_ops import (
         build_student_notification_payload,
@@ -39,7 +39,7 @@ except ImportError:  # pragma: no cover
         utc_now_iso,
     )
     from document_scanner import parse_pdf_document
-    from student_profile_service import _store_bytes
+    from student_profile_service import _delete_stored_bytes, _store_bytes
 
 
 SIGNUP_DOCUMENT_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
@@ -211,35 +211,44 @@ async def create_signup_document_batch(
     secret = secrets.token_urlsafe(32)
     secret_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
     base_path = f"pending-signups/{batch_id}"
-    cor_ref = _store_bytes(f"{base_path}/cor{_signup_file_extension(cor, cor_type)}", cor_body, cor_type)
-    identity_ref = _store_bytes(f"{base_path}/identity{_signup_file_extension(identity, identity_type)}", identity_body, identity_type)
-    documents = {
-        "cor": _signup_document_metadata(cor, cor_ref, cor_type, cor_scan),
-        "identity": _signup_document_metadata(identity, identity_ref, identity_type),
-    }
-    if rog_body and rog is not None:
-        rog_ref = _store_bytes(f"{base_path}/rog{_signup_file_extension(rog, rog_type)}", rog_body, rog_type)
-        documents["rog"] = _signup_document_metadata(rog, rog_ref, rog_type, rog_scan)
+    stored_references: list[dict[str, Any]] = []
+    try:
+        cor_ref = _store_bytes(f"{base_path}/cor{_signup_file_extension(cor, cor_type)}", cor_body, cor_type)
+        stored_references.append(cor_ref)
+        identity_ref = _store_bytes(f"{base_path}/identity{_signup_file_extension(identity, identity_type)}", identity_body, identity_type)
+        stored_references.append(identity_ref)
+        documents = {
+            "cor": _signup_document_metadata(cor, cor_ref, cor_type, cor_scan),
+            "identity": _signup_document_metadata(identity, identity_ref, identity_type),
+        }
+        if rog_body and rog is not None:
+            rog_ref = _store_bytes(f"{base_path}/rog{_signup_file_extension(rog, rog_type)}", rog_body, rog_type)
+            stored_references.append(rog_ref)
+            documents["rog"] = _signup_document_metadata(rog, rog_ref, rog_type, rog_scan)
 
-    now = datetime.now(timezone.utc)
-    data = {
-        "studentId": normalized_student_id,
-        "email": normalized_email,
-        "secretHash": secret_hash,
-        "status": "prepared",
-        "academicCycle": current_cycle,
-        "year": year,
-        "rogRequired": rog_required,
-        "rogExemptionReason": "" if rog_required else "first_year_first_semester",
-        "identityKind": identity_kind,
-        "documents": documents,
-        "manualReviewEnabled": policy["manualReviewEnabled"],
-        "createdAt": now.isoformat(),
-        "expiresAt": (now + SIGNUP_BATCH_LIFETIME).isoformat(),
-        "updatedAt": now.isoformat(),
-    }
-    if not supabase_document_upsert("signup_document_batches", batch_id, data, merge=False).get("ok"):
-        raise HTTPException(status_code=503, detail="signup_document_batch_save_failed")
+        now = datetime.now(timezone.utc)
+        data = {
+            "studentId": normalized_student_id,
+            "email": normalized_email,
+            "secretHash": secret_hash,
+            "status": "prepared",
+            "academicCycle": current_cycle,
+            "year": year,
+            "rogRequired": rog_required,
+            "rogExemptionReason": "" if rog_required else "first_year_first_semester",
+            "identityKind": identity_kind,
+            "documents": documents,
+            "manualReviewEnabled": policy["manualReviewEnabled"],
+            "createdAt": now.isoformat(),
+            "expiresAt": (now + SIGNUP_BATCH_LIFETIME).isoformat(),
+            "updatedAt": now.isoformat(),
+        }
+        if not supabase_document_upsert("signup_document_batches", batch_id, data, merge=False).get("ok"):
+            raise HTTPException(status_code=503, detail="signup_document_batch_save_failed")
+    except Exception:
+        for reference in reversed(stored_references):
+            _delete_stored_bytes(reference)
+        raise
     return {
         "ok": True,
         "batchId": batch_id,

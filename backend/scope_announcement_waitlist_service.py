@@ -146,6 +146,15 @@ def _application_matches(row: dict[str, Any], filters: dict[str, str]) -> bool:
     return True
 
 
+def _application_record_group(row: dict[str, Any]) -> str:
+    if _text(row.get("closureReason")) in {"selected_another_scholarship", "student_withdrawal"}:
+        return "archive"
+    status = _normalized(row.get("status"))
+    if row.get("archived") is True or row.get("rejected") is True or "reject" in status or "archiv" in status:
+        return "rejected"
+    return "active"
+
+
 def list_filtered_applicants(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     actor_type, actor_id = _actor(request, payload, {"admin", "grantor"})
     requested_grantor = _text(payload.get("grantorId"))
@@ -154,11 +163,15 @@ def list_filtered_applicants(request: Request, payload: dict[str, Any]) -> dict[
     page_size = min(100, max(1, int(payload.get("pageSize") or 25)))
     search = _normalized(payload.get("search"))
     filters = {key: _text(payload.get(key)) for key in ("status", "location", "scholarship", "cycle", "documentState", "trackingStage")}
+    record_group = _normalized(payload.get("recordGroup"))
+    sort_order = "asc" if _normalized(payload.get("sortOrder")) == "asc" else "desc"
     students = {row["id"]: row for row in _all("students")}
     rows = []
     for application in _all("scholarship_applications"):
         row_grantor = _text(application.get("grantorId") or application.get("providerId"))
         if grantor_id and row_grantor != grantor_id:
+            continue
+        if record_group in {"active", "rejected", "archive"} and _application_record_group(application) != record_group:
             continue
         if not _application_matches(application, filters):
             continue
@@ -182,10 +195,21 @@ def list_filtered_applicants(request: Request, payload: dict[str, Any]) -> dict[
             "academicCycle": application.get("academicCycle") or application.get("semesterTag"),
             "documentState": (application.get("documentReview") or {}).get("status") or application.get("documentReviewStatus"),
             "trackingStage": (application.get("tracking") or {}).get("currentStage") or application.get("stageId"),
+            "sortDate": application.get("appliedAt") or application.get("createdAt") or application.get("updatedAt") or "",
         })
-    rows.sort(key=lambda row: (_text(row.get("studentName")).lower(), _text(row.get("applicationId"))))
+    rows.sort(
+        key=lambda row: (_text(row.get("sortDate")), _text(row.get("applicationId"))),
+        reverse=sort_order == "desc",
+    )
     start = (page - 1) * page_size
-    return {"ok": True, "rows": rows[start:start + page_size], "total": len(rows), "page": page, "pageSize": page_size, "filters": filters}
+    return {
+        "ok": True,
+        "rows": rows[start:start + page_size],
+        "total": len(rows),
+        "page": page,
+        "pageSize": page_size,
+        "filters": {**filters, "recordGroup": record_group, "sortOrder": sort_order},
+    }
 
 
 def build_applicant_export(request: Request, payload: dict[str, Any]) -> tuple[bytes, str, str]:

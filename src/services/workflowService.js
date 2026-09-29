@@ -157,7 +157,7 @@ export function listFilteredApplicantsWorkflow(payload = {}) {
 	return postWorkflow("/workflows/applicants/list", payload, { operation: "generic.background" })
 }
 
-export async function downloadFilteredApplicantsWorkflow(payload = {}) {
+export async function fetchFilteredApplicantsReportWorkflow(payload = {}) {
 	const response = await fetch(`${requireBackendApiUrl("Applicant report backend")}/workflows/applicants/export`, {
 		method: "POST",
 		headers: await buildPortalRequestHeaders({ actorId: payload.actorId, actorType: payload.actorType }),
@@ -165,10 +165,21 @@ export async function downloadFilteredApplicantsWorkflow(payload = {}) {
 	})
 	if (!response.ok) throw new Error("The applicant report could not be generated.")
 	const blob = await response.blob()
+	const disposition = response.headers.get("content-disposition") || ""
+	const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)
+	return {
+		blob,
+		contentType: response.headers.get("content-type") || blob.type,
+		filename: filenameMatch ? decodeURIComponent(filenameMatch[1].replace(/"$/g, "")) : payload.format === "pdf" ? "grantor-applicants.pdf" : "grantor-applicants.csv",
+	}
+}
+
+export async function downloadFilteredApplicantsWorkflow(payload = {}) {
+	const { blob, filename } = await fetchFilteredApplicantsReportWorkflow(payload)
 	const url = URL.createObjectURL(blob)
 	const anchor = document.createElement("a")
 	anchor.href = url
-	anchor.download = payload.format === "pdf" ? "grantor-applicants.pdf" : "grantor-applicants.csv"
+	anchor.download = filename
 	anchor.click()
 	URL.revokeObjectURL(url)
 }

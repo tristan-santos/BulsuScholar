@@ -27,6 +27,23 @@ class ScopeAndApplicantTests(unittest.TestCase):
         self.assertEqual(1, result["total"])
         self.assertEqual("grantor-a", result["rows"][0]["grantorId"])
 
+    def test_applicant_report_group_and_date_order_match_the_selected_table(self):
+        fixtures = {
+            "students": [{"id": "student-1", "fname": "Ana", "lname": "Santos"}],
+            "scholarship_applications": [
+                {"id": "active-old", "studentId": "student-1", "grantorId": "grantor-a", "status": "Under Review", "createdAt": "2026-01-01T00:00:00Z"},
+                {"id": "active-new", "studentId": "student-1", "grantorId": "grantor-a", "status": "Approved", "createdAt": "2026-02-01T00:00:00Z"},
+                {"id": "rejected", "studentId": "student-1", "grantorId": "grantor-a", "status": "Rejected", "createdAt": "2026-03-01T00:00:00Z"},
+                {"id": "withdrawn", "studentId": "student-1", "grantorId": "grantor-a", "status": "Withdrawn", "closureReason": "student_withdrawal", "createdAt": "2026-04-01T00:00:00Z"},
+            ],
+        }
+        with patch.object(service, "_actor", return_value=("grantor", "grantor-a")), \
+                patch.object(service, "_all", side_effect=lambda table: fixtures[table]):
+            active = service.list_filtered_applicants(object(), {"grantorId": "grantor-a", "recordGroup": "active", "sortOrder": "asc"})
+            archive = service.list_filtered_applicants(object(), {"grantorId": "grantor-a", "recordGroup": "archive"})
+        self.assertEqual(["active-old", "active-new"], [row["applicationId"] for row in active["rows"]])
+        self.assertEqual(["withdrawn"], [row["applicationId"] for row in archive["rows"]])
+
 
 class AnnouncementAudienceTests(unittest.TestCase):
     def test_grantor_all_active_reaches_every_active_student_without_exposing_records(self):

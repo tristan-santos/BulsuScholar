@@ -178,6 +178,23 @@ def _store_bytes(path: str, body: bytes, content_type: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="document_storage_failed") from error
 
 
+def _delete_stored_bytes(reference: dict[str, Any]) -> None:
+    try:
+        url, key, default_bucket = _storage_config()
+        bucket = str(reference.get("bucket") or default_bucket)
+        path = str(reference.get("path") or "")
+        if not path:
+            return
+        request = urllib.request.Request(
+            f"{url}/storage/v1/object/{urllib.parse.quote(bucket)}/{urllib.parse.quote(path, safe='/')}",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            method="DELETE",
+        )
+        urllib.request.urlopen(request, timeout=20).close()
+    except (HTTPException, urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+        pass
+
+
 def _read_storage(reference: dict[str, Any]) -> bytes:
     url, key, default_bucket = _storage_config()
     bucket = str(reference.get("bucket") or default_bucket)

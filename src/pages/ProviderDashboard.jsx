@@ -112,7 +112,7 @@ import {
 	configureGrantorAnnouncementSlotsWorkflow,
 	createGrantorAnnouncementWorkflow,
 	createGrantorScholarsWorkflow,
-	downloadFilteredApplicantsWorkflow,
+	fetchFilteredApplicantsReportWorkflow,
 	inviteArchivedGrantorScholarsWorkflow,
 	republishGrantorAnnouncementWorkflow,
 	previewRosterImportWorkflow,
@@ -919,6 +919,10 @@ export default function ProviderDashboard() {
 	const [applicationArchiveTab, setApplicationArchiveTab] = useState("active")
 	const [applicationFilters, setApplicationFilters] = useState({ status: "", location: "", scholarship: "", cycle: "", documentState: "", trackingStage: "" })
 	const [applicationExportBusy, setApplicationExportBusy] = useState("")
+	const [applicantReportOpen, setApplicantReportOpen] = useState(false)
+	const [applicantReportFormat, setApplicantReportFormat] = useState("pdf")
+	const [applicantReportPreview, setApplicantReportPreview] = useState(null)
+	const [applicantReportError, setApplicantReportError] = useState("")
 	const [selectedScholarId, setSelectedScholarId] = useState("")
 	const [selectedScholarIds, setSelectedScholarIds] = useState([])
 	const [hoveredYear, setHoveredYear] = useState("")
@@ -1628,15 +1632,85 @@ export default function ProviderDashboard() {
 			return applicationDateSort === "asc" ? leftDate - rightDate : rightDate - leftDate
 		})
 	}, [applicationRowsForTab, applicationSearch, applicationDateSort, applicationFilters])
-	const exportGrantorApplicants = async (format) => {
+	const applicantReportPayload = useMemo(() => ({
+		grantorId,
+		search: applicationSearch,
+		recordGroup: applicationArchiveTab,
+		sortOrder: applicationDateSort,
+		...applicationFilters,
+	}), [applicationArchiveTab, applicationDateSort, applicationFilters, applicationSearch, grantorId])
+	const activeApplicationFilterCount = useMemo(
+		() => Object.values(applicationFilters).filter(Boolean).length + (applicationSearch.trim() ? 1 : 0),
+		[applicationFilters, applicationSearch],
+	)
+	const applicantReportActiveFilters = useMemo(() => {
+		const labels = { status: "Status", location: "Location", scholarship: "Scholarship", cycle: "Academic cycle", documentState: "Document review", trackingStage: "Tracking stage" }
+		const entries = Object.entries(applicationFilters)
+			.filter(([, value]) => Boolean(value))
+			.map(([key, value]) => `${labels[key]}: ${value}`)
+		if (applicationSearch.trim()) entries.unshift(`Search: ${applicationSearch.trim()}`)
+		return entries
+	}, [applicationFilters, applicationSearch])
+	const clearApplicationFilters = () => {
+		setApplicationSearch("")
+		setApplicationFilters({ status: "", location: "", scholarship: "", cycle: "", documentState: "", trackingStage: "" })
+	}
+	const closeApplicantReport = () => {
+		setApplicantReportOpen(false)
+		setApplicantReportError("")
+	}
+	const selectApplicantReportFormat = (format) => {
+		if (applicantReportPreview?.url) URL.revokeObjectURL(applicantReportPreview.url)
+		setApplicantReportFormat(format)
+		setApplicantReportPreview(null)
+		setApplicantReportError("")
+	}
+	const generateApplicantReportPreview = async () => {
 		if (applicationExportBusy) return
-		setApplicationExportBusy(format)
+		setApplicationExportBusy("preview")
+		setApplicantReportError("")
 		try {
-			await downloadFilteredApplicantsWorkflow({ grantorId, format, search: applicationSearch, ...applicationFilters })
-			toast.success(`${format.toUpperCase()} applicant report downloaded.`)
+			if (applicantReportPreview?.url) URL.revokeObjectURL(applicantReportPreview.url)
+			const report = await fetchFilteredApplicantsReportWorkflow({ ...applicantReportPayload, format: applicantReportFormat })
+			if (applicantReportFormat === "pdf") {
+				setApplicantReportPreview({ ...report, format: "pdf", url: URL.createObjectURL(report.blob), rows: [], columns: [] })
+			} else {
+				const workbook = read(await report.blob.arrayBuffer(), { type: "array" })
+				const sheet = workbook.Sheets[workbook.SheetNames[0]]
+				const [columns = [], ...rows] = utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false })
+				setApplicantReportPreview({ ...report, format: "csv", columns, rows })
+			}
+		} catch (error) {
+			setApplicantReportError(error?.message || "Unable to generate the applicant report preview.")
+			toast.error(error?.message || "Unable to generate the applicant report preview.")
+		}
+		finally { setApplicationExportBusy("") }
+	}
+	const exportGrantorApplicants = async () => {
+		if (applicationExportBusy || !applicantReportPreview?.blob) return
+		setApplicationExportBusy("download")
+		try {
+			const url = URL.createObjectURL(applicantReportPreview.blob)
+			const anchor = document.createElement("a")
+			anchor.href = url
+			anchor.download = applicantReportPreview.filename
+			anchor.click()
+			URL.revokeObjectURL(url)
+			toast.success(`${applicantReportPreview.format.toUpperCase()} applicant report downloaded.`)
 		} catch (error) { toast.error(error?.message || "Unable to export applicants.") }
 		finally { setApplicationExportBusy("") }
 	}
+	useEffect(() => () => {
+		if (applicantReportPreview?.url) URL.revokeObjectURL(applicantReportPreview.url)
+	}, [applicantReportPreview?.url])
+	useEffect(() => {
+		if (!applicantReportOpen) return undefined
+		const handleKeyDown = (event) => {
+			if (event.key === "Escape") closeApplicantReport()
+		}
+		window.addEventListener("keydown", handleKeyDown)
+		return () => window.removeEventListener("keydown", handleKeyDown)
+	}, [applicantReportOpen])
 	const applicationInsights = useMemo(() => {
 		const statusIncludes = (row, values) => values.some((value) => String(row.status || "").toLowerCase().includes(value))
 		return {
@@ -4618,21 +4692,31 @@ export default function ProviderDashboard() {
 								<button type="button" className={applicationArchiveTab === "rejected" ? "active" : ""} onClick={() => setApplicationArchiveTab("rejected")}>Rejected <span>{rejectedApplications.length}</span></button>
 								<button type="button" className={applicationArchiveTab === "archive" ? "active" : ""} onClick={() => setApplicationArchiveTab("archive")}>Archive <span>{archivedApplications.length}</span></button>
 							</div>
-						</div>
-						<div className="grantor-applications-filters">
-							<label className="grantor-search-field"><HiOutlineSearch /><input type="text" aria-label="Search applications" placeholder="Search applicant, ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
-							{[["status", "Status", "Any status"], ["location", "Location", "Any location"], ["scholarship", "Scholarship", "Any scholarship"], ["cycle", "Academic cycle", "Any cycle"], ["documentState", "Document review", "Any review state"], ["trackingStage", "Tracking stage", "Any stage"]].map(([key, label, allLabel]) => <label key={key}><span>{label}</span><select value={applicationFilters[key]} onChange={(event) => setApplicationFilters((current) => ({ ...current, [key]: event.target.value }))}><option value="">{allLabel}</option>{applicationFilterOptions[key].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>)}
-							<button
-								type="button"
-								className="grantor-date-sort-btn"
-								onClick={() => setApplicationDateSort((current) => current === "asc" ? "desc" : "asc")}
-								title={`Applied On: ${applicationDateSort === "asc" ? "Oldest to Newest" : "Newest to Oldest"}`}
-								aria-label={`Sort by date, ${applicationDateSort === "asc" ? "Oldest to Newest" : "Newest to Oldest"}`}
-							>
-								<span>{applicationDateSort === "asc" ? "Oldest to Newest" : "Newest to Oldest"}</span>
-								{applicationDateSort === "asc" ? <HiArrowUp /> : <HiArrowDown />}
+							<button type="button" className="grantor-generate-report-btn" onClick={() => { setApplicantReportOpen(true); setApplicantReportError("") }}>
+								<HiOutlineDocumentText /> Generate Report
 							</button>
-							<div className="grantor-applicant-export-actions"><button type="button" data-button-variant="neutral" disabled={Boolean(applicationExportBusy)} onClick={() => exportGrantorApplicants("csv")}><HiOutlineDownload /> {applicationExportBusy === "csv" ? "Preparing..." : "CSV"}</button><button type="button" data-button-variant="neutral" disabled={Boolean(applicationExportBusy)} onClick={() => exportGrantorApplicants("pdf")}><HiOutlineDocumentText /> {applicationExportBusy === "pdf" ? "Preparing..." : "PDF"}</button></div>
+						</div>
+						<div className="grantor-applications-filter-shell">
+							<div className="grantor-applications-filter-head">
+								<div><strong>Filter applicants</strong><span>{visibleApplications.length} matching {visibleApplications.length === 1 ? "record" : "records"}</span></div>
+								<button type="button" className="grantor-clear-filters-btn" onClick={clearApplicationFilters} disabled={activeApplicationFilterCount === 0}>Clear filters{activeApplicationFilterCount ? ` (${activeApplicationFilterCount})` : ""}</button>
+							</div>
+							<div className="grantor-applications-search-row">
+								<label className="grantor-search-field"><span className="sr-only">Search applications</span><HiOutlineSearch /><input type="search" aria-label="Search applications" placeholder="Search applicant, student ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
+								<button
+									type="button"
+									className="grantor-date-sort-btn"
+									onClick={() => setApplicationDateSort((current) => current === "asc" ? "desc" : "asc")}
+									title={`Applied On: ${applicationDateSort === "asc" ? "Oldest to Newest" : "Newest to Oldest"}`}
+									aria-label={`Sort by date, ${applicationDateSort === "asc" ? "Oldest to Newest" : "Newest to Oldest"}`}
+								>
+									<span>{applicationDateSort === "asc" ? "Oldest to Newest" : "Newest to Oldest"}</span>
+									{applicationDateSort === "asc" ? <HiArrowUp /> : <HiArrowDown />}
+								</button>
+							</div>
+							<div className="grantor-applications-filters">
+								{[["status", "Status", "Any status"], ["location", "Location", "Any location"], ["scholarship", "Scholarship", "Any scholarship"], ["cycle", "Academic cycle", "Any cycle"], ["documentState", "Document review", "Any review state"], ["trackingStage", "Tracking stage", "Any stage"]].map(([key, label, allLabel]) => <label key={key}><span>{label}</span><select value={applicationFilters[key]} onChange={(event) => setApplicationFilters((current) => ({ ...current, [key]: event.target.value }))}><option value="">{allLabel}</option>{applicationFilterOptions[key].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>)}
+							</div>
 						</div>
 						<div className="admin-table-wrap grantor-applications-table-wrap">
 							<table className="admin-management-table grantor-applications-table">
@@ -5497,6 +5581,45 @@ export default function ProviderDashboard() {
 							</div>
 						</div>
 					</div>
+				</div>
+			) : null}
+			{applicantReportOpen ? (
+				<div className="grantor-report-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeApplicantReport() }}>
+					<section className="grantor-report-modal" role="dialog" aria-modal="true" aria-labelledby="grantor-report-title">
+						<header className="grantor-report-modal-head">
+							<div className="grantor-report-heading">
+								<span aria-hidden="true"><HiOutlineDocumentText /></span>
+								<div><small>Applicant records</small><h3 id="grantor-report-title">Generate Report</h3><p>Preview the server-generated report before downloading it.</p></div>
+							</div>
+							<button type="button" className="grantor-report-close" onClick={closeApplicantReport} aria-label="Close report generator"><HiX /></button>
+						</header>
+
+						<div className="grantor-report-modal-body">
+							<section className="grantor-report-settings" aria-label="Report settings">
+								<div className="grantor-report-context">
+									<div><span>Current results</span><strong>{visibleApplications.length}</strong><small>{applicationArchiveTab === "active" ? "Active" : applicationArchiveTab === "rejected" ? "Rejected" : "Archived"} table view</small></div>
+									<div className="grantor-report-filter-summary">
+										<span>Applied report filters</span>
+										<div>{applicantReportActiveFilters.length ? applicantReportActiveFilters.map((filter) => <em key={filter}>{filter}</em>) : <em>All applicant records</em>}</div>
+									</div>
+								</div>
+								<div className="grantor-report-controls">
+									<div><span>File format</span><div className="grantor-report-format" role="group" aria-label="Report file format"><button type="button" className={applicantReportFormat === "pdf" ? "active" : ""} aria-pressed={applicantReportFormat === "pdf"} onClick={() => selectApplicantReportFormat("pdf")}><HiOutlineDocumentText /> PDF</button><button type="button" className={applicantReportFormat === "csv" ? "active" : ""} aria-pressed={applicantReportFormat === "csv"} onClick={() => selectApplicantReportFormat("csv")}><HiOutlineDownload /> CSV</button></div></div>
+									<button type="button" className="grantor-report-preview-btn" disabled={Boolean(applicationExportBusy)} onClick={generateApplicantReportPreview}><HiOutlineEye /> {applicationExportBusy === "preview" ? "Generating..." : "Generate Preview"}</button>
+								</div>
+							</section>
+
+							<section className="grantor-report-preview" aria-live="polite">
+								<div className="grantor-report-preview-head"><div><strong>{applicantReportFormat.toUpperCase()} preview</strong><span>{applicantReportPreview ? applicantReportPreview.filename : "Generate a preview to inspect the report"}</span></div>{applicantReportPreview?.format === "csv" ? <small>{applicantReportPreview.rows.length} data {applicantReportPreview.rows.length === 1 ? "row" : "rows"}</small> : null}</div>
+								{applicantReportError ? <div className="grantor-report-preview-state grantor-report-preview-state--error"><HiOutlineExclamationCircle /><strong>Preview unavailable</strong><span>{applicantReportError}</span></div> : applicationExportBusy === "preview" ? <div className="grantor-report-preview-state"><HiOutlineRefresh className="grantor-report-spinner" /><strong>Generating your report</strong><span>The backend is preparing the filtered applicant records.</span></div> : applicantReportPreview?.format === "pdf" && applicantReportPreview.url ? <object className="grantor-report-pdf" data={`${applicantReportPreview.url}#view=FitH`} type="application/pdf" aria-label="Grantor applicant report PDF preview"><div className="grantor-report-preview-state"><HiOutlineDocumentText /><strong>Embedded preview is unavailable</strong><a href={applicantReportPreview.url} target="_blank" rel="noreferrer">Open PDF preview</a></div></object> : applicantReportPreview?.format === "csv" ? <div className="grantor-report-table-wrap"><table className="grantor-report-table"><thead><tr>{applicantReportPreview.columns.map((column, index) => <th key={`${column}_${index}`}>{column}</th>)}</tr></thead><tbody>{applicantReportPreview.rows.length ? applicantReportPreview.rows.slice(0, 25).map((row, rowIndex) => <tr key={`report_row_${rowIndex}`}>{applicantReportPreview.columns.map((_, columnIndex) => <td key={`report_cell_${rowIndex}_${columnIndex}`}>{row[columnIndex] ?? ""}</td>)}</tr>) : <tr><td colSpan={Math.max(1, applicantReportPreview.columns.length)}>No records matched the selected filters.</td></tr>}</tbody></table>{applicantReportPreview.rows.length > 25 ? <footer>Showing the first 25 of {applicantReportPreview.rows.length} rows. The download contains all matching rows.</footer> : null}</div> : <div className="grantor-report-preview-state"><HiOutlineDocumentText /><strong>No preview generated</strong><span>Select a format, then generate the report preview.</span></div>}
+							</section>
+						</div>
+
+						<footer className="grantor-report-modal-actions">
+							<button type="button" className="grantor-report-cancel-btn" onClick={closeApplicantReport}>Cancel</button>
+							<button type="button" className="grantor-report-download-btn" disabled={!applicantReportPreview || Boolean(applicationExportBusy)} onClick={exportGrantorApplicants}><HiOutlineDownload /> {applicationExportBusy === "download" ? "Downloading..." : `Download ${applicantReportFormat.toUpperCase()}`}</button>
+						</footer>
+					</section>
 				</div>
 			) : null}
 			{previewDocument ? (

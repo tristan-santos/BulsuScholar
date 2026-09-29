@@ -92,6 +92,23 @@ class SignupIdentityDocumentTests(unittest.IsolatedAsyncioTestCase):
             await create_signup_document_batch("20260001", "student@example.com", "student_id", cor, identity)
         self.assertEqual("missing_rog_document", error.exception.detail)
 
+    @patch("backend.signup_service._delete_stored_bytes")
+    @patch("backend.signup_service.supabase_document_upsert", return_value={"ok": False})
+    @patch("backend.signup_service._store_bytes", side_effect=lambda path, body, content_type: {"bucket": "private", "path": path, "size": len(body)})
+    @patch("backend.signup_service._signup_document_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True})
+    @patch("backend.signup_service.get_current_semester_tag", return_value="2026-2027-1ST")
+    @patch("backend.signup_service.parse_pdf_document")
+    async def test_failed_batch_save_removes_uploaded_private_files(self, parse, _cycle, _policy, _store, _upsert, delete):
+        parse.return_value = cor_scan(1)
+        cor, _rog, identity = self.files()
+        with self.assertRaises(HTTPException) as error:
+            await create_signup_document_batch("20260001", "student@example.com", "government_id", cor, identity)
+        self.assertEqual("signup_document_batch_save_failed", error.exception.detail)
+        self.assertEqual(2, delete.call_count)
+        deleted_paths = {call.args[0]["path"] for call in delete.call_args_list}
+        self.assertTrue(any(path.endswith("/cor.pdf") for path in deleted_paths))
+        self.assertTrue(any(path.endswith("/identity.jpg") for path in deleted_paths))
+
 
 if __name__ == "__main__":
     unittest.main()
