@@ -94,6 +94,8 @@ import {
 } from "../data/philippineLocations"
 import { uploadToStorage } from "../services/storageService"
 import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
+import { addAnnouncementImageFiles, ANNOUNCEMENT_IMAGE_TYPES, getAnnouncementImageUrls, MAX_ANNOUNCEMENT_IMAGE_BYTES } from "../utils/announcementImages"
+import { getStudentVerificationDocumentBlob } from "../services/studentProfileService"
 import { convertPdfToImage } from "../utils/pdfConverter"
 import {
 	createAdminNotification,
@@ -1049,20 +1051,22 @@ export default function ProviderDashboard() {
 				? titleOrDocument
 				: { title: titleOrDocument, label: titleOrDocument, url }
 		const documentUrl = document.url || document.publicUrl || url || ""
-		if (!documentUrl) return
+		if (!documentUrl && !document.submissionId) return
 		setPreviewDocument({
 			...document,
 			title: document.title || document.label || "Document",
-			url: normalizeStoragePublicUrl(documentUrl),
+			url: documentUrl ? normalizeStoragePublicUrl(documentUrl) : "",
 			name: document.name || document.title || document.label || "document",
 			isPdf: isPreviewPdf(document),
 		})
 	}
 	const closeDocumentPreview = () => setPreviewDocument(null)
 	const downloadPreviewDocument = async () => {
-		if (!previewDocument?.url) return
+		if (!previewDocument?.url && !previewDocument?.submissionId) return
 		try {
-			const blob = await getStorageObjectBlob(previewDocument)
+			const blob = previewDocument.submissionId
+				? await getStudentVerificationDocumentBlob(previewDocument.submissionId)
+				: await getStorageObjectBlob(previewDocument)
 			const url = URL.createObjectURL(blob)
 			const link = document.createElement("a")
 			link.href = url
@@ -1202,6 +1206,7 @@ export default function ProviderDashboard() {
 	const announcementMissingFields = useMemo(() => ({
 		title: !announcementForm.title.trim(),
 		description: !announcementForm.description.trim(),
+		image: announcementImageFiles.length === 0,
 		applicationWindow: announcementForm.applicationEnabled && !announcementForm.applicationWindow.trim(),
 		minimumGrade:
 			announcementForm.applicationEnabled &&
@@ -1216,7 +1221,7 @@ export default function ProviderDashboard() {
 			(Array.isArray(announcementForm.otherRequirements) ? announcementForm.otherRequirements : []).some(
 				(item) => !String(item?.name || "").trim() || item?.confirmed !== true,
 			),
-	}), [announcementForm, selectedActiveScholarshipOffering])
+	}), [announcementForm, announcementImageFiles.length, selectedActiveScholarshipOffering])
 
 	useEffect(() => {
 		if (!selectedAnnouncement?.id) return
@@ -1803,7 +1808,7 @@ export default function ProviderDashboard() {
 	const editCityOptions = useMemo(() => getCitiesByProvince(editForm.province), [editForm.province])
 
 	useEffect(() => {
-		if (!previewDocument?.url) {
+		if (!previewDocument?.url && !previewDocument?.submissionId) {
 			setPreviewBlobUrl("")
 			setIsPreviewLoading(false)
 			return undefined
@@ -1814,7 +1819,11 @@ export default function ProviderDashboard() {
 		setIsPreviewLoading(true)
 		setPreviewBlobUrl("")
 
-		getStorageObjectBlob(previewDocument)
+		const documentRequest = previewDocument.submissionId
+			? getStudentVerificationDocumentBlob(previewDocument.submissionId)
+			: getStorageObjectBlob(previewDocument)
+
+		documentRequest
 			.then(async (blob) => {
 				if (cancelled) return
 				if (previewDocument.isPdf) {
@@ -3485,6 +3494,20 @@ export default function ProviderDashboard() {
 		}))
 	}
 
+	const selectAnnouncementImages = (fileList) => {
+		try {
+			setAnnouncementImageFiles((current) => addAnnouncementImageFiles(current, fileList))
+			setAnnouncementAudiencePreview(null)
+		} catch (error) {
+			toast.error(error.message)
+		}
+	}
+
+	const removeAnnouncementImage = (index) => {
+		setAnnouncementImageFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))
+		setAnnouncementAudiencePreview(null)
+	}
+
 	const closeCreateAnnouncementModal = () => {
 		if (busy === "announcement") return
 		setShowCreateAnnouncementModal(false)
@@ -3492,6 +3515,8 @@ export default function ProviderDashboard() {
 		setAnnouncementScholarshipChoice("")
 		setAnnouncementGwaChoice("")
 		setAnnouncementApplicationProfileFile(null)
+		setAnnouncementImageFiles([])
+		setAnnouncementAudiencePreview(null)
 		setComposerSlotModalOpen(false)
 		setComposerSlotChoice("")
 		setComposerSlotValue("")
@@ -3596,6 +3621,7 @@ export default function ProviderDashboard() {
 		if (
 			announcementMissingFields.title ||
 			announcementMissingFields.description ||
+			announcementMissingFields.image ||
 			announcementMissingFields.applicationWindow ||
 			announcementMissingFields.minimumGrade ||
 			announcementMissingFields.totalSlots ||
@@ -3604,19 +3630,22 @@ export default function ProviderDashboard() {
 			toast.error(
 				announcementMissingFields.otherRequirement
 					? "Confirm the other requirement with the check button before posting."
+					: announcementMissingFields.image
+						? "Add at least one announcement image before posting."
 					: "Complete the announcement fields before posting.",
 			)
 			return
 		}
 		setBusy("announcement")
+		let uploadedAnnouncementImages = []
 		try {
 			const audienceTarget = {
-				type: announcementAudience.type,
+				type: announcementForm.applicationEnabled ? "all_active" : announcementAudience.type,
 				grantorId,
 				announcementId: selectedActiveScholarshipOffering?.id || "",
-				applicationStatus: announcementAudience.applicationStatus,
-				course: announcementAudience.course,
-				yearLevel: announcementAudience.yearLevel,
+				applicationStatus: announcementForm.applicationEnabled ? "" : announcementAudience.applicationStatus,
+				course: announcementForm.applicationEnabled ? "" : announcementAudience.course,
+				yearLevel: announcementForm.applicationEnabled ? "" : announcementAudience.yearLevel,
 			}
 			if (!announcementAudiencePreview) {
 				const preview = await previewAnnouncementAudienceWorkflow({ grantorId, target: audienceTarget })
@@ -3630,7 +3659,7 @@ export default function ProviderDashboard() {
 				composerSlotDraft,
 				windowStart: announcementWindowStart,
 				windowEnd: announcementWindowEnd,
-				images: [],
+				images: announcementImageFiles.map((file) => [file.name, file.size, file.lastModified]),
 				applicationForm: announcementApplicationProfileFile
 					? [announcementApplicationProfileFile.name, announcementApplicationProfileFile.size, announcementApplicationProfileFile.lastModified]
 					: null,
@@ -3641,8 +3670,14 @@ export default function ProviderDashboard() {
 					id: globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`,
 				}
 			}
-			const uploads = []
-			const imageUrls = []
+			uploadedAnnouncementImages = await Promise.all(
+				announcementImageFiles.map((file) => withPublishTimeout(uploadToStorage(file, {
+					folder: `announcement-images/${grantorId}`,
+					allowedTypes: ANNOUNCEMENT_IMAGE_TYPES,
+					maxSize: MAX_ANNOUNCEMENT_IMAGE_BYTES,
+				}))),
+			)
+			const imageUrls = uploadedAnnouncementImages.map((item) => item.url).filter(Boolean)
 			const applicationProfileUpload = announcementApplicationProfileFile
 				? await withPublishTimeout(uploadToStorage(announcementApplicationProfileFile, {
 					folder: `grantor-application-profiles/${grantorId}`,
@@ -3719,7 +3754,7 @@ export default function ProviderDashboard() {
 					endDate: announcementForm.applicationEnabled && announcementWindowEnd ? new Date(`${announcementWindowEnd}T23:59:59`).toISOString() : null,
 					imageUrl: imageUrls[0] || "",
 					imageUrls,
-					images: uploads.map((item) => ({
+					images: uploadedAnnouncementImages.map((item) => ({
 						url: item.url || "",
 						name: item.name || "",
 						type: item.type || "",
@@ -3896,8 +3931,11 @@ export default function ProviderDashboard() {
 	const renderAnnouncementCard = (item) => {
 		const archived = isAnnouncementArchived(item)
 		const slotState = getScholarshipSlotState(item)
+		const imageUrls = getAnnouncementImageUrls(item)
+		const imageUrl = imageUrls[0] || logo2
 		return (
 			<article key={item.id} className={`grantor-announcement-card ${archived ? "is-archived" : ""}`}>
+				<div className="grantor-announcement-card-media"><img className={imageUrls.length ? "" : "is-fallback"} src={imageUrl} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.classList.add("is-fallback"); event.currentTarget.src = logo2 }} alt="" /></div>
 				<div className="grantor-announcement-card-body">
 					<div className="grantor-announcement-card-top"><span className={`grantor-announcement-status ${archived ? "is-archived" : ""}`}>{archived ? "Archived" : item.status || "Open"}</span><time>{formatRelativeDate(item.createdAt)}</time></div>
 					{renderAnnouncementAuthor(item)}
@@ -4705,8 +4743,17 @@ export default function ProviderDashboard() {
 												className={`grantor-profile-switch ${announcementForm.applicationEnabled ? "active" : ""}`}
 												role="switch"
 												aria-checked={announcementForm.applicationEnabled}
-												onClick={() => {
-													setAnnouncementForm((prev) => ({
+											onClick={() => {
+												const nextApplicationEnabled = !announcementForm.applicationEnabled
+												setAnnouncementAudience((current) => ({
+													...current,
+													type: nextApplicationEnabled ? "all_active" : current.type,
+													applicationStatus: nextApplicationEnabled ? "" : current.applicationStatus,
+													course: nextApplicationEnabled ? "" : current.course,
+													yearLevel: nextApplicationEnabled ? "" : current.yearLevel,
+												}))
+												setAnnouncementAudiencePreview(null)
+												setAnnouncementForm((prev) => ({
 														...prev,
 														applicationEnabled: !prev.applicationEnabled,
 												applicationWindow: prev.applicationEnabled ? "" : prev.applicationWindow,
@@ -4885,7 +4932,13 @@ export default function ProviderDashboard() {
 												</label>
 											) : null}
 										</div>
-										<div className="grantor-announcement-audience-grid"><label><span>Recipients</span><select value={announcementAudience.type} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, type: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="all_active">All Students</option><option value="scholarship_applicants">Scholarship Applicants</option><option value="active_scholars">Active Scholars</option></select></label><label><span>Application status (optional)</span><select value={announcementAudience.applicationStatus} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, applicationStatus: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any status</option>{applicationFilterOptions.status.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span>Course (optional)</span><select value={announcementAudience.course} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, course: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any course</option>{applicationFilterOptions.course.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span>Year level (optional)</span><select value={announcementAudience.yearLevel} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, yearLevel: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any year</option>{applicationFilterOptions.yearLevel.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div>
+										<div className={`grantor-announcement-images ${announcementSubmitAttempted && announcementMissingFields.image ? "is-missing" : ""}`}>
+											<input id="grantor-announcement-images" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { selectAnnouncementImages(event.target.files); event.target.value = "" }} />
+											<label htmlFor="grantor-announcement-images"><HiOutlineCamera /><span>Announcement Images *</span><small>{announcementImageFiles.length}/5 selected | PNG, JPEG, or WebP | 10 MB each</small></label>
+											{announcementImagePreviews.length > 0 ? <div className="grantor-announcement-preview-grid">{announcementImagePreviews.map((item, index) => <article className="grantor-announcement-preview-card" key={`${item.name}_${index}`}><button type="button" className="grantor-announcement-preview-open" onClick={() => setAnnouncementImagePreview(item.url)} aria-label={`Preview ${item.name}`}><img src={item.url} alt={item.name} /></button><button type="button" className="grantor-announcement-preview-remove" onClick={() => removeAnnouncementImage(index)} aria-label={`Remove ${item.name}`}><HiX /></button></article>)}</div> : null}
+											{announcementSubmitAttempted && announcementMissingFields.image ? <small className="grantor-announcement-image-error">Add at least one image.</small> : null}
+										</div>
+										{!announcementForm.applicationEnabled ? <div className="grantor-announcement-audience-grid"><label><span>Recipients</span><select value={announcementAudience.type} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, type: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="all_active">All Students</option><option value="scholarship_applicants">Scholarship Applicants</option><option value="active_scholars">Active Scholars</option></select></label><label><span>Application status (optional)</span><select value={announcementAudience.applicationStatus} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, applicationStatus: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any status</option>{applicationFilterOptions.status.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span>Course (optional)</span><select value={announcementAudience.course} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, course: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any course</option>{applicationFilterOptions.course.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span>Year level (optional)</span><select value={announcementAudience.yearLevel} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, yearLevel: event.target.value })); setAnnouncementAudiencePreview(null) }}><option value="">Any year</option>{applicationFilterOptions.yearLevel.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div> : null}
 										<label className="grantor-announcement-message"><span>Message</span><textarea className={announcementSubmitAttempted && announcementMissingFields.description ? "is-missing" : ""} placeholder="Describe the scholarship opening, deadlines, requirements, and next steps." value={announcementForm.description} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, description: event.target.value }))} /></label>
 										<div className="grantor-announcement-compose-actions"><small>{announcementAudiencePreview ? `${announcementAudiencePreview.recipientCount} recipients in this 15-minute preview.` : announcementForm.applicationEnabled ? "Students can apply from this announcement." : "This announcement will be visible to the selected students."}</small><button type="submit" disabled={busy === "announcement"}><HiOutlineCloudUpload /> {busy === "announcement" ? "Working..." : announcementAudiencePreview ? "Publish Announcement" : "Preview Recipients"}</button></div>
 									</form>
@@ -5018,6 +5071,7 @@ export default function ProviderDashboard() {
 							</div>
 							<button type="button" onClick={() => setSelectedAnnouncement(null)} aria-label="Close announcement preview"><HiX /></button>
 						</header>
+						<div className="grantor-announcement-view-image"><img className={getAnnouncementImageUrls(selectedAnnouncement).length ? "" : "is-fallback"} src={getAnnouncementImageUrls(selectedAnnouncement)[0] || logo2} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.classList.add("is-fallback"); event.currentTarget.src = logo2 }} alt="" /></div>
 						<p className="grantor-announcement-view-message">{selectedAnnouncement.description || selectedAnnouncement.content || "-"}</p>
 						{selectedAnnouncement.applicationEnabled === true ? (() => {
 							const slotState = getScholarshipSlotState(selectedAnnouncement)
@@ -5309,24 +5363,31 @@ export default function ProviderDashboard() {
 													{[
 														{ ...(applicationModalState.student?.corFile || applicationModalState.student?.corDocument || {}), id: "cor", label: "COR", title: "Certificate of Registration" },
 														{ ...(applicationModalState.student?.rogFile || applicationModalState.student?.cogFile || applicationModalState.student?.rogDocument || applicationModalState.student?.cogDocument || {}), id: "cog", label: "ROG", title: "Report of Grades" },
-														{ ...(applicationModalState.student?.schoolIdFile || applicationModalState.student?.studentIdFile || applicationModalState.student?.validIdFile || {}), id: "schoolId", label: "School ID", title: "School ID" },
+														{ ...(applicationModalState.student?.schoolIdFile || applicationModalState.student?.studentIdFile || applicationModalState.student?.validIdFile || {}), id: "schoolId", label: "Identity document", title: "Identity document" },
 														{ ...(applicationModalState.application?.lifecycleVersion === 2
 															? applicationModalState.application.applicationFormFile || applicationModalState.scholarship?.applicationFormFile || {}
 															: applicationModalState.student?.scholarshipApplicationFile || applicationModalState.student?.applicationFormFile || {}), id: "applicationForm", label: "Student Application Profile", title: "Student Application Profile" },
 													].map((document) => {
+														const identityLabel = document.id === "schoolId"
+															? ({ student_id: "Student ID", previous_school_id: "Previous-school ID", government_id: "Government ID" }[document.documentKind] || document.label)
+															: document.label
+														const mayViewSubmission = document.id === "schoolId"
+															? Boolean(document.submissionId) && String(document.reviewStatus || document.status || "").toLowerCase() === "approved"
+															: !document.submissionId || String(document.reviewStatus || document.status || "").toLowerCase() === "approved"
 														const url = document.url || document.publicUrl || applicationModalState.documentUrls?.[document.id] || ""
-														const previewDocument = { ...document, url }
+														const available = mayViewSubmission && Boolean(document.submissionId || url)
+														const previewDocument = { ...document, label: identityLabel, title: identityLabel, url }
 														return (
 															<button
 																key={document.id}
 																type="button"
-																className={`grantor-document-link ${url ? "" : "is-disabled"}`.trim()}
+																className={`grantor-document-link ${available ? "" : "is-disabled"}`.trim()}
 																onClick={() => openDocumentPreview(previewDocument)}
-																disabled={!url}
+																disabled={!available}
 															>
 																<HiOutlineEye />
 																<span>
-																	{url ? `View ${document.label}` : `View ${document.label} Unavailable`}
+																	{available ? `View ${identityLabel}` : document.submissionId && !mayViewSubmission ? `${identityLabel} awaiting approval` : `View ${identityLabel} unavailable`}
 																</span>
 															</button>
 														)

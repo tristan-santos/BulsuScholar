@@ -5,6 +5,8 @@ import {
 import { getAnnouncementApplyAvailability } from "../services/announcementApplyEligibilityService"
 import { getScholarshipSlotState } from "../services/scholarshipSlotService"
 import { getNameInitials } from "../utils/nameInitials"
+import { getAnnouncementImageUrls } from "../utils/announcementImages"
+import logo from "../assets/logo.png"
 
 export default function StudentAnnouncementCard({
 	announcement,
@@ -26,9 +28,12 @@ export default function StudentAnnouncementCard({
 	const isApplyBlocked = !isPrevious && announcement.applicationEnabled === true && !applyAvailability.canApply
 	const slotState = getScholarshipSlotState(announcement)
 	const showApply = announcement.applicationEnabled === true && !isPrevious
+	const announcementImages = getAnnouncementImageUrls(announcement)
+	const announcementImage = announcementImages[0] || logo
 
 	return (
 		<article className={`student-modern-announcement-card student-shared-announcement-card ${isPrevious ? "student-shared-announcement-card--previous" : ""}`}>
+			<div className="student-modern-announcement-media"><img className={announcementImages.length ? "" : "is-fallback"} src={announcementImage} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.classList.add("is-fallback"); event.currentTarget.src = logo }} alt="" /></div>
 			<div className="student-modern-announcement-body">
 				<div className="student-modern-announcement-author">
 					<span>{authorImage ? <img src={authorImage} alt="" /> : authorInitials}</span>

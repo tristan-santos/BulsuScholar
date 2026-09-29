@@ -1341,6 +1341,19 @@ def deliver_grantor_announcement_notifications(
     }
 
 
+def _has_announcement_image(data: dict[str, Any]) -> bool:
+    if str(data.get("imageUrl") or "").strip():
+        return True
+    image_urls = data.get("imageUrls") if isinstance(data.get("imageUrls"), list) else []
+    if any(str(item or "").strip() for item in image_urls):
+        return True
+    images = data.get("images") if isinstance(data.get("images"), list) else []
+    return any(
+        isinstance(item, dict) and str(item.get("url") or item.get("path") or "").strip()
+        for item in images
+    )
+
+
 def create_grantor_announcement(payload: dict[str, Any], defer_notifications: bool = False) -> dict[str, Any]:
     grantor_id = payload.get("grantorId") or ""
     actor_type = str(payload.get("actorType") or "grantor").strip().lower()
@@ -1359,6 +1372,12 @@ def create_grantor_announcement(payload: dict[str, Any], defer_notifications: bo
             "grantorId": grantor_id,
         }
     data = dict(announcement)
+    if not _has_announcement_image(data):
+        return {
+            "ok": False,
+            "reason": "announcement_image_required",
+            "message": "Add at least one announcement image before publishing.",
+        }
     if data.get("applicationEnabled") is True:
         total_slots = _to_positive_int(data.get("totalSlots"))
         if total_slots is None:
@@ -1537,6 +1556,12 @@ def republish_grantor_announcement(payload: dict[str, Any], defer_notifications:
         return {"ok": False, "reason": "missing_republish_identity", "message": "The scholarship republish request is incomplete."}
     if actor_type == "grantor" and actor_id != grantor_id:
         return {"ok": False, "reason": "cross_grantor_announcement_update_blocked"}
+    if not _has_announcement_image(announcement_patch):
+        return {
+            "ok": False,
+            "reason": "announcement_image_required",
+            "message": "Add at least one announcement image before publishing.",
+        }
     if expected_total < 1 or expected_remaining < 0 or additional_slots < 0 or expected_total + additional_slots > 1000:
         return {"ok": False, "reason": "invalid_slot_capacity", "message": "Total slots must remain between 1 and 1000."}
     if _archived_grantor_account(grantor_id):

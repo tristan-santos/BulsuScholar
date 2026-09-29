@@ -328,7 +328,7 @@ export default function LoginPage() {
 						</button>
 
 						<button type="submit" className="login-submit" data-button-variant="positive" disabled={isLoading}>
-							<HiOutlineLockClosed aria-hidden /> {isLoading ? "Logging in..." : "Enter"}
+							<HiOutlineLockClosed aria-hidden /> {isLoading ? "Logging in..." : "Login"}
 						</button>
 
 						<div className="login-create-account">

@@ -1,5 +1,6 @@
-import { buildPortalRequestHeaders, postPortalJson } from "./portalApi"
+import { buildPortalRequestHeaders, PortalApiError, postPortalJson } from "./portalApi"
 import { requireBackendApiUrl } from "../config/backendApi"
+import { trackedFetch } from "./operationTracker"
 
 async function postWorkflow(path, payload = {}, options = {}) {
 	return postPortalJson(requireBackendApiUrl("Workflow backend"), path, payload, "Workflow", {
@@ -58,6 +59,30 @@ export function requestScholarshipMaterialsWorkflow(payload = {}) {
 
 export function validateStudentSignupWorkflow(payload = {}) {
 	return postWorkflow("/workflows/student/signup/validate", payload, { operation: "generic.background" })
+}
+
+export async function createStudentSignupDocumentBatch({ studentId, email, identityKind, corFile, rogFile, identityFile }) {
+	const form = new FormData()
+	form.append("student_id", studentId)
+	form.append("email", email)
+	form.append("identity_kind", identityKind)
+	form.append("cor", corFile)
+	if (rogFile) form.append("rog", rogFile)
+	form.append("identity", identityFile)
+	const response = await trackedFetch(`${requireBackendApiUrl("Signup document backend")}/workflows/student/signup/document-batches`, {
+		method: "POST",
+		body: form,
+	}, "document.upload")
+	const data = await response.json().catch(() => ({}))
+	if (!response.ok || data?.ok === false) {
+		const detail = data?.detail || data?.reason || "signup_document_batch_failed"
+		throw new PortalApiError(String(typeof detail === "object" ? detail.message || detail.error : detail).replaceAll("_", " "), {
+			status: response.status,
+			reason: typeof detail === "string" ? detail : detail?.error || "",
+			data,
+		})
+	}
+	return data
 }
 
 export function recommendScholarshipsWorkflow(payload = {}) {

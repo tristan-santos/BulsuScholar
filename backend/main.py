@@ -7,7 +7,7 @@ try:
 except ImportError:  # pragma: no cover - dependency is installed from requirements.txt
     load_dotenv = None
 
-from fastapi import BackgroundTasks, Body, FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -41,7 +41,7 @@ try:
         recommend_scholarships,
         validate_scholarship_documents,
     )
-    from .signup_service import finalize_student_signup, validate_student_signup
+    from .signup_service import create_signup_document_batch, finalize_student_signup, validate_student_signup
     from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
     from .student_account_review_service import approve_pending_student_account, list_pending_student_accounts
     from .roster_workflow_service import (
@@ -154,7 +154,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         recommend_scholarships,
         validate_scholarship_documents,
     )
-    from signup_service import finalize_student_signup, validate_student_signup
+    from signup_service import create_signup_document_batch, finalize_student_signup, validate_student_signup
     from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
     from student_account_review_service import approve_pending_student_account, list_pending_student_accounts
     from roster_workflow_service import (
@@ -810,6 +810,20 @@ def validate_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dic
     if public_config().get("portal", {}).get("allowStudentSignup") is False:
         raise HTTPException(status_code=403, detail="student_signup_disabled")
     return validate_student_signup(payload)
+
+
+@app.post("/workflows/student/signup/document-batches")
+async def create_student_signup_document_batch_endpoint(
+    student_id: str = Form(...),
+    email: str = Form(...),
+    identity_kind: str = Form(...),
+    cor: UploadFile = File(...),
+    identity: UploadFile = File(...),
+    rog: UploadFile | None = File(None),
+) -> dict[str, Any]:
+    if public_config().get("portal", {}).get("allowStudentSignup") is False:
+        raise HTTPException(status_code=403, detail="student_signup_disabled")
+    return await create_signup_document_batch(student_id, email, identity_kind, cor, identity, rog)
 
 
 @app.post("/workflows/student/signup/finalize")

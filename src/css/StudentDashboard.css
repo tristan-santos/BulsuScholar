@@ -4643,6 +4643,8 @@
 .student-modern-announcement-card { display: grid; grid-template-rows: 150px 1fr; min-width: 0; overflow: hidden; border: 1px solid rgba(0, 99, 60, 0.16); border-radius: 7px; background: #fff; text-align: left; box-shadow: 0 10px 22px rgba(0, 99, 60, 0.055); }
 .student-modern-announcement-media { display: grid; place-items: center; height: 150px; overflow: hidden; background: #eef8f3; color: #00633c; }
 .student-modern-announcement-media img { width: 100%; height: 100%; object-fit: cover; }
+.student-modern-announcement-media img.is-fallback,
+.student-announcement-detail-image-open img.is-fallback { padding: 1.25rem; object-fit: contain; background: #f4fbf7; }
 .student-modern-announcement-body { display: grid; gap: 0.5rem; padding: 0.75rem; }
 .student-modern-announcement-author { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .student-modern-announcement-author > span { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; overflow: hidden; border-radius: 50%; background: #eef8f3; color: #00633c; font-size: 0.66rem; font-weight: 700; }
@@ -7119,12 +7121,36 @@
 	opacity: 0.65;
 }
 
+.student-profile-photo-edit.is-busy {
+	cursor: wait;
+	opacity: 0.65;
+}
+
+.student-profile-photo-edit input,
+.student-vault-upload-btn input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
 .student-profile-cover-text h3 {
 	margin: 0;
 	color: #17342a;
 	font-size: clamp(1.25rem, 2.2vw, 1.65rem);
 	font-weight: 600;
 	line-height: 1.15;
+}
+
+.student-profile-cover-text h2 {
+	margin: 0;
+	color: #17342a;
+	font-size: 1rem;
+	font-weight: 600;
+	line-height: 1.25;
 }
 
 .student-profile-cover-text p {
@@ -7216,6 +7242,20 @@
 	font-weight: 600;
 }
 
+.student-profile-section-card > h2,
+.student-profile-section-card > header h2 {
+	margin: 0;
+	color: #17342a;
+	font-size: 1rem;
+	font-weight: 600;
+}
+
+.student-profile-section-card > header p {
+	margin: 0.25rem 0 0;
+	color: #64748b;
+	font-size: 0.74rem;
+}
+
 .student-profile-form-grid {
 	gap: 0.8rem 1rem;
 }
@@ -7279,6 +7319,13 @@
 	white-space: nowrap;
 }
 
+.student-vault-card h3 {
+	margin: 0 0 0.35rem;
+	color: #17342a;
+	font-size: 0.84rem;
+	font-weight: 600;
+}
+
 .student-vault-card p,
 .student-vault-muted {
 	color: #64748b;
@@ -7288,8 +7335,45 @@
 .student-vault-actions {
 	display: flex;
 	flex-wrap: wrap;
-	justify-content: flex-end;
+	justify-content: flex-start;
 	gap: 0.45rem;
+}
+
+.student-vault-actions > :where(button, label) {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+
+.student-vault-kind-select {
+	min-height: 32px;
+	padding: 0 1.85rem 0 0.55rem;
+	border: 1px solid #b9d8ca;
+	border-radius: 4px;
+	background: #fff;
+	color: #17342a;
+	font: inherit;
+	font-size: 0.7rem;
+}
+
+.student-vault-reason,
+.student-document-disabled-reason {
+	display: block;
+	margin-top: 0.4rem;
+	color: #a33a2b;
+	font-size: 0.68rem;
+	line-height: 1.4;
+}
+
+.student-vault-exempt {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	margin-top: auto;
+	padding-top: 1rem;
+	color: #00633c;
+	font-size: 0.72rem;
+	font-weight: 600;
 }
 
 .student-vault-card--application {
@@ -7301,7 +7385,7 @@
 	width: 100%;
 	margin-top: auto;
 	flex-wrap: nowrap;
-	justify-content: flex-end;
+	justify-content: flex-start;
 }
 
 .student-vault-card--application .student-vault-actions > * {
@@ -7311,6 +7395,7 @@
 
 .student-vault-link,
 .student-vault-upload-btn {
+	position: relative;
 	min-height: 30px;
 	padding: 0.35rem 0.55rem;
 	border: 1px solid #00633c;
@@ -7322,6 +7407,11 @@
 	font-weight: 500;
 	text-decoration: none;
 	cursor: pointer;
+}
+
+.student-vault-upload-btn[aria-disabled="true"] {
+	cursor: wait;
+	opacity: 0.65;
 }
 
 .student-vault-link:disabled {

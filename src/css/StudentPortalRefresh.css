@@ -300,6 +300,31 @@
 	z-index: 12000;
 }
 
+.student-dashboard--dark.student-portal-view--profile :where(
+	.student-profile-cover-text h2,
+	.student-profile-section-card > h2,
+	.student-profile-section-card > header h2,
+	.student-vault-card h3
+) {
+	color: #f8fafc;
+}
+
+.student-dashboard--dark.student-portal-view--profile .student-profile-summary-chips span {
+	color: #d1fae5;
+}
+
+.student-dashboard--dark.student-portal-view--profile :where(.student-vault-link, .student-vault-upload-btn) {
+	border-color: #34d399;
+	background: transparent;
+	color: #a7f3d0;
+}
+
+.student-dashboard--dark.student-portal-view--profile .student-vault-kind-select {
+	border-color: #475569;
+	background: #0f172a;
+	color: #f8fafc;
+}
+
 .student-portal-view--profile .student-document-preview-modal {
 	width: min(1040px, calc(100vw - 32px));
 	max-height: calc(100dvh - 32px);

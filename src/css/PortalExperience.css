@@ -120,13 +120,13 @@ html body button[data-button-variant="danger"]:not(:disabled):hover {
 }
 
 html body button[data-button-variant="neutral"] {
-	border-color: #cbd5e1 !important;
+	border: none;
 	background-color: #ffffff !important;
 	color: #475569 !important;
 }
 
 html body button[data-button-variant="neutral"]:not(:disabled):hover {
-	border-color: #94a3b8 !important;
+	border: none !important;
 	background-color: #f8fafc !important;
 	color: #334155 !important;
 }

@@ -76,6 +76,8 @@ import {
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import useThemeMode from "../hooks/useThemeMode"
 import { getStorageObjectBlob, normalizeStoragePublicUrl } from "../services/supabaseStorageService"
+import { uploadToStorage } from "../services/storageService"
+import { addAnnouncementImageFiles, ANNOUNCEMENT_IMAGE_TYPES, getAnnouncementImageUrls, MAX_ANNOUNCEMENT_IMAGE_BYTES } from "../utils/announcementImages"
 import { createAdminNotification, createGrantorNotification, createStudentNotification, loadAdminNotifications, updateAdminNotification } from "../services/notificationService"
 import { commitRosterImportWorkflow, correctStudentNumberWorkflow, getGrantorScopeWorkflow, listRosterConflictsWorkflow, materialRequestWorkflow, previewAnnouncementAudienceWorkflow, previewRosterImportWorkflow, publishTargetedAnnouncementWorkflow, resolveRosterConflictWorkflow, saveGrantorScopeWorkflow, updateGrantorArchiveStateWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
 import { hasScholarshipCommitment, matchesScholarshipApplication } from "../services/scholarshipChoiceService"
@@ -131,7 +133,9 @@ import { createGrantorAuthAccount, updateAdminContact } from "../services/adminA
 import { getLoginSecuritySettings, saveLoginSecuritySettings } from "../services/portalAuthService"
 import {
 	createDocumentException,
+	approvePendingStudentAccount,
 	getDocumentReviewQueue,
+	getPendingStudentAccounts,
 	getStudentVerificationDocumentBlob,
 	reviewStudentDocument,
 	updateDocumentPolicy,
@@ -1217,6 +1221,8 @@ export default function AdminDashboard() {
 	const [studentYear, setStudentYear] = useState("All")
 	const [studentViewTab, setStudentViewTab] = useState("students")
 	const [documentReviewRows, setDocumentReviewRows] = useState([])
+	const [pendingStudentAccounts, setPendingStudentAccounts] = useState([])
+	const [pendingStudentAccountsLoading, setPendingStudentAccountsLoading] = useState(false)
 	const [documentReviewLoading, setDocumentReviewLoading] = useState(false)
 	const [documentReviewFilter, setDocumentReviewFilter] = useState("pending")
 	const [documentReviewType, setDocumentReviewType] = useState("")
@@ -7247,6 +7253,20 @@ export default function AdminDashboard() {
 		setAnnouncementImagePreview("")
 	}
 
+	const selectAdminAnnouncementImages = (fileList) => {
+		try {
+			setAnnouncementImageFiles((current) => addAnnouncementImageFiles(current, fileList))
+			setAnnouncementAudiencePreview(null)
+		} catch (error) {
+			toast.error(error.message)
+		}
+	}
+
+	const removeAdminAnnouncementImage = (index) => {
+		setAnnouncementImageFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))
+		setAnnouncementAudiencePreview(null)
+	}
+
 	const resetAnnouncementDraft = () => {
 		setAnnouncementTitle("")
 		setAnnouncementDescription("")
@@ -7268,8 +7288,8 @@ export default function AdminDashboard() {
 
 	const postAnnouncement = async (event) => {
 		event.preventDefault()
-		if (!announcementTitle.trim() || !announcementDescription.trim()) {
-			toast.error("Title and description are required.")
+		if (!announcementTitle.trim() || !announcementDescription.trim() || announcementImageFiles.length === 0) {
+			toast.error(announcementImageFiles.length === 0 ? "Add at least one announcement image." : "Title and description are required.")
 			return
 		}
 		if (announcementStartDate && announcementEndDate && announcementStartDate > announcementEndDate) {
@@ -7298,7 +7318,12 @@ export default function AdminDashboard() {
 				toast.info(`Audience preview ready: ${preview.recipientCount} recipient${preview.recipientCount === 1 ? "" : "s"}. Review the count, then publish.`)
 				return
 			}
-			const imageUrls = []
+			const uploadedImages = await Promise.all(announcementImageFiles.map((file) => uploadToStorage(file, {
+				folder: "announcement-images/admin",
+				allowedTypes: ANNOUNCEMENT_IMAGE_TYPES,
+				maxSize: MAX_ANNOUNCEMENT_IMAGE_BYTES,
+			})))
+			const imageUrls = uploadedImages.map((item) => item.url).filter(Boolean)
 			const announcementRef = await addDoc(collection(db, "announcements"), {
 				title: announcementTitle.trim(),
 				description: announcementDescription.trim(),
@@ -7307,6 +7332,7 @@ export default function AdminDashboard() {
 				type: announcementType,
 				imageUrl: imageUrls[0] || "",
 				imageUrls,
+				images: uploadedImages.map((item) => ({ url: item.url || "", path: item.path || "", bucket: item.bucket || "", name: item.name || "", type: item.type || "", size: item.size || 0 })),
 				startDate: announcementStartDate ? new Date(`${announcementStartDate}T00:00:00`).toISOString() : null,
 				endDate: announcementEndDate ? new Date(`${announcementEndDate}T23:59:59`).toISOString() : null,
 				archived: false,
@@ -8340,10 +8366,42 @@ export default function AdminDashboard() {
 		}
 	}, [documentReviewFilter, documentReviewType])
 
+	const loadPendingStudentAccounts = useCallback(async () => {
+		if (adminIdentityRef.current?.role !== "full_admin") return
+		setPendingStudentAccountsLoading(true)
+		try {
+			const result = await getPendingStudentAccounts()
+			setPendingStudentAccounts(result.accounts || [])
+		} catch (error) {
+			console.error("Unable to load pending student accounts.", error)
+			toast.error(error.message || "Unable to load pending student accounts.")
+		} finally {
+			setPendingStudentAccountsLoading(false)
+		}
+	}, [])
+
 	useEffect(() => {
 		if (activeSection !== "students" || studentViewTab !== "documents") return
 		loadDocumentReviewQueue()
 	}, [activeSection, loadDocumentReviewQueue, studentViewTab])
+
+	useEffect(() => {
+		if (activeSection !== "students" || studentViewTab !== "pending-accounts") return
+		loadPendingStudentAccounts()
+	}, [activeSection, loadPendingStudentAccounts, studentViewTab])
+
+	const approvePendingStudent = async (account) => {
+		setIsBusy(true)
+		try {
+			const result = await approvePendingStudentAccount(account.id)
+			toast.success(result.emailSent ? "Student account approved and welcome email sent." : "Student account approved. Welcome email delivery is pending.")
+			await loadPendingStudentAccounts()
+		} catch (error) {
+			toast.error(error.message || "Unable to approve this student account.")
+		} finally {
+			setIsBusy(false)
+		}
+	}
 
 	const decideStudentDocument = async (submission, decision) => {
 		const reason = String(documentReviewNotes[submission.id] || "").trim()
@@ -8706,6 +8764,11 @@ export default function AdminDashboard() {
 							</div>
 						</div>
 						<div className="admin-head-actions">
+							{adminIdentityRef.current?.role === "full_admin" ? (
+								<button type="button" className="admin-table-btn" onClick={() => setStudentViewTab("pending-accounts")}>
+									<HiOutlineClock /> Pending Accounts
+								</button>
+							) : null}
 							<button type="button" className="admin-table-btn" onClick={() => setStudentViewTab("documents")}>
 								<HiOutlineCheckCircle /> Document Review
 							</button>
@@ -8719,7 +8782,44 @@ export default function AdminDashboard() {
 							</button>
 						</div>
 					</div>
-					{studentViewTab === "documents" ? (
+					{studentViewTab === "pending-accounts" ? (
+						<section className="admin-document-review-workspace">
+							<header className="admin-document-review-toolbar">
+								<div><h3>Pending Student Accounts</h3><p>Review email confirmation and signup documents before activating an account.</p></div>
+								<div className="admin-head-actions">
+									<button type="button" className="admin-icon-button" data-button-variant="neutral" disabled={pendingStudentAccountsLoading} onClick={loadPendingStudentAccounts} aria-label="Refresh pending accounts" title="Refresh pending accounts"><HiOutlineRefresh /></button>
+									<button type="button" data-button-variant="neutral" onClick={() => setStudentViewTab("students")}><HiOutlineArrowLeft /> Student List</button>
+								</div>
+							</header>
+							{pendingStudentAccountsLoading ? <LoadingBars note="Loading pending student accounts..." /> : pendingStudentAccounts.length === 0 ? (
+								<div className="admin-empty-state"><HiOutlineCheckCircle /><strong>No pending student accounts</strong><span>All submitted accounts have been processed.</span></div>
+							) : (
+								<div className="admin-document-review-list">
+									{pendingStudentAccounts.map((account, index) => (
+										<article key={account.id} className="admin-document-review-card admin-document-review-card--pending">
+											<div className="admin-document-review-order">{index + 1}</div>
+											<div className="admin-document-review-summary">
+												<span>{account.emailConfirmedAt ? "Email confirmed" : "Waiting for email confirmation"}</span>
+												<h4>{account.name || account.id}</h4>
+												<p>{account.id} | {account.course || "Course unavailable"} | Year {account.year || "-"}</p>
+												<small>{account.email || "Email unavailable"}{account.createdAt ? ` | Submitted ${new Date(account.createdAt).toLocaleString()}` : ""}</small>
+												<div className="admin-pending-account-documents">
+													{(account.documents || []).map((document) => {
+														const label = document.documentType === "identity" ? ({ student_id: "Student ID", previous_school_id: "Previous-school ID", government_id: "Government ID" }[document.documentKind] || "Identity document") : document.documentType === "cor" ? "COR" : document.documentType === "rog" ? "ROG" : String(document.documentType || "Document").replaceAll("_", " ")
+														return <button key={document.id} type="button" className="grantor-document-link" onClick={() => openVerificationDocument(document)}><HiOutlineEye /><span>View {label} ({document.status || "pending"})</span></button>
+													})}
+												</div>
+											</div>
+											<div className="admin-document-review-actions">
+												<button type="button" data-button-variant="positive" disabled={isBusy || !account.emailConfirmedAt} title={account.emailConfirmedAt ? "Approve this account" : "The student must confirm their email first"} onClick={() => approvePendingStudent(account)}><HiOutlineCheckCircle /> Approve Account</button>
+												{!account.emailConfirmedAt ? <small>Email confirmation is required before approval.</small> : null}
+											</div>
+										</article>
+									))}
+								</div>
+							)}
+						</section>
+					) : studentViewTab === "documents" ? (
 						<section className="admin-document-review-workspace">
 							<header className="admin-document-review-toolbar">
 								<div><h3>Student Document Review</h3><p>Review the oldest submissions first. Scanner results never approve a file.</p></div>
@@ -8740,7 +8840,7 @@ export default function AdminDashboard() {
 									{documentReviewRows.map((submission, index) => (
 										<article key={submission.id} className={`admin-document-review-card admin-document-review-card--${submission.status}`}>
 											<div className="admin-document-review-order">{index + 1}</div>
-											<div className="admin-document-review-summary"><span>{String(submission.documentType || "document").replaceAll("_", " ")}</span><h4>{submission.studentName || submission.studentId}</h4><p>{submission.studentId} | {submission.course || "Course unavailable"} | Year {submission.yearLevel || "-"}</p><small>{submission.name || "Uploaded document"} | Version {submission.version || 1} | {submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : ""}</small></div>
+											<div className="admin-document-review-summary"><span>{submission.documentType === "identity" ? ({ student_id: "Student ID", previous_school_id: "Previous-school ID", government_id: "Government ID" }[submission.documentKind] || "Identity document") : String(submission.documentType || "document").replaceAll("_", " ")}</span><h4>{submission.studentName || submission.studentId}</h4><p>{submission.studentId} | {submission.course || "Course unavailable"} | Year {submission.yearLevel || "-"}</p><small>{submission.name || "Uploaded document"} | Version {submission.version || 1} | {submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : ""}</small></div>
 											<div className="admin-document-review-actions">
 												<button type="button" data-button-variant="neutral" onClick={() => openVerificationDocument(submission)}><HiOutlineEye /> Preview</button>
 												{submission.status === "pending" ? <>{submission.documentType === "profile" ? <input aria-label={`Incorrect profile fields for ${submission.studentName || submission.studentId}`} placeholder="Incorrect fields, comma separated" value={documentReviewFieldErrors[submission.id] || ""} onChange={(event) => setDocumentReviewFieldErrors((current) => ({ ...current, [submission.id]: event.target.value }))} /> : null}<input aria-label={`Correction reason for ${submission.studentName || submission.studentId}`} placeholder="Correction reason (required to reject)" value={documentReviewNotes[submission.id] || ""} onChange={(event) => setDocumentReviewNotes((current) => ({ ...current, [submission.id]: event.target.value }))} /><button type="button" data-button-variant="danger" disabled={isBusy} onClick={() => decideStudentDocument(submission, "rejected")}><HiOutlineXCircle /> Reject</button><button type="button" data-button-variant="positive" disabled={isBusy} onClick={() => decideStudentDocument(submission, "approved")}><HiOutlineCheckCircle /> Approve</button></> : <span className={`admin-document-review-decision admin-document-review-decision--${submission.status}`}>{submission.status}{submission.rejectionReason ? `: ${submission.rejectionReason}` : ""}</span>}
@@ -10384,6 +10484,7 @@ export default function AdminDashboard() {
 							) : (
 								adminAnnouncementRows.map((item) => (
 									<article key={item.id} className={`admin-announcement-card-modern ${isAnnouncementArchived(item) ? "is-archived" : ""}`}>
+										<div className="admin-announcement-card-media"><img className={getAnnouncementImageUrls(item).length ? "" : "is-fallback"} src={getAnnouncementImageUrls(item)[0] || logo2} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.classList.add("is-fallback"); event.currentTarget.src = logo2 }} alt="" /></div>
 										<div className="admin-announcement-card-body">
 											<div className="admin-announcement-card-top">
 												<span className={`type-badge-modern ${isAnnouncementArchived(item) ? "type-Archived" : `type-${item.type || "Update"}`}`}>{isAnnouncementArchived(item) ? "Archived" : item.type || "Update"}</span>
@@ -10451,6 +10552,7 @@ export default function AdminDashboard() {
 							) : (
 								compactAdminAnnouncements.map((item) => (
 									<article key={item.id} className="admin-announcement-card-modern">
+										<div className="admin-announcement-card-media"><img className={getAnnouncementImageUrls(item).length ? "" : "is-fallback"} src={getAnnouncementImageUrls(item)[0] || logo2} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.classList.add("is-fallback"); event.currentTarget.src = logo2 }} alt="" /></div>
 										<div className="admin-announcement-card-body">
 											<div className="admin-announcement-card-top">
 												<span className={`type-badge-modern type-${item.type || "Update"}`}>{item.type || "Update"}</span>
@@ -10621,6 +10723,11 @@ export default function AdminDashboard() {
 								<label><span>Course filter (optional)</span><input value={announcementAudience.course} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, course: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Exact course name" /></label>
 								<label><span>Year level (optional)</span><input value={announcementAudience.yearLevel} onChange={(event) => { setAnnouncementAudience((current) => ({ ...current, yearLevel: event.target.value })); setAnnouncementAudiencePreview(null) }} placeholder="Example: 2" /></label>
 							</div>
+							<div className="admin-announcement-images-field">
+								<input id="admin-announcement-images" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { selectAdminAnnouncementImages(event.target.files); event.target.value = "" }} />
+								<label htmlFor="admin-announcement-images"><HiOutlineCloudUpload /><span>Announcement Images *</span><small>{announcementImageFiles.length}/5 selected | PNG, JPEG, or WebP | 10 MB each</small></label>
+								{announcementDraftPreviews.length > 0 ? <div className="admin-announcement-preview-grid-modern">{announcementDraftPreviews.map((item, index) => <article key={`${item.name}_${index}`}><button type="button" className="admin-announcement-preview-open" onClick={() => openAnnouncementImagePreview(item.url)} aria-label={`Preview ${item.name}`}><img src={item.url} alt={item.name} /></button><button type="button" className="admin-announcement-preview-remove" onClick={() => removeAdminAnnouncementImage(index)} aria-label={`Remove ${item.name}`}><HiX /></button></article>)}</div> : null}
+							</div>
 							<label className="admin-announcement-message-field">
 								<span>Message</span>
 								<textarea
@@ -10659,6 +10766,7 @@ export default function AdminDashboard() {
 							</div>
 							<button type="button" onClick={() => setSelectedAdminAnnouncement(null)} aria-label="Close announcement details"><HiX /></button>
 						</header>
+						<div className="admin-announcement-view-image"><img className={getAnnouncementImageUrls(selectedAdminAnnouncement).length ? "" : "is-fallback"} src={getAnnouncementImageUrls(selectedAdminAnnouncement)[0] || logo2} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.classList.add("is-fallback"); event.currentTarget.src = logo2 }} alt="" /></div>
 						<p className="admin-announcement-view-message">{selectedAdminAnnouncement.description || selectedAdminAnnouncement.content || "-"}</p>
 						<footer>
 							<span><HiOutlineClock /> {selectedAdminAnnouncement.startDate || selectedAdminAnnouncement.endDate ? `${toDateString(selectedAdminAnnouncement.startDate)} - ${toDateString(selectedAdminAnnouncement.endDate)}` : "No schedule set"}</span>

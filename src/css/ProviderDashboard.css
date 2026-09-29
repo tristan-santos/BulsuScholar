@@ -1237,6 +1237,8 @@
 .grantor-announcement-compose-form textarea.is-missing:focus,
 .grantor-announcement-calendar-btn.is-missing:focus { border-color: #dc2626; outline: 2px solid rgba(220, 38, 38, 0.12); }
 .grantor-announcement-images { display: grid; gap: 0.65rem; }
+.grantor-announcement-images.is-missing > label { border-color: #dc2626; background: #fffafa; }
+.grantor-announcement-image-error { color: #b91c1c; font-size: 0.7rem; font-weight: 650; }
 .grantor-announcement-images input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
 .grantor-announcement-images label { display: grid; grid-template-columns: 24px auto max-content; align-items: center; gap: 0.55rem; min-height: 42px; padding: 0.55rem 0.7rem; border: 1px dashed #9fc9b6; border-radius: 5px; background: #fff; color: #00633c; cursor: pointer; }
 .grantor-announcement-images label svg { width: 1rem; height: 1rem; }
@@ -1273,7 +1275,11 @@
 .grantor-announcement-card.is-archived { opacity: 0.78; }
 .grantor-announcement-card-media { display: grid; place-items: center; width: 100%; height: 190px; overflow: hidden; background: linear-gradient(135deg, #eef8f3, #ffffff); color: #00633c; }
 .grantor-announcement-card-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.grantor-announcement-card-media img.is-fallback { padding: 1.75rem; object-fit: contain; background: #f4fbf7; }
 .grantor-announcement-card-media span { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid #b9d8ca; border-radius: 50%; background: #fff; }
+.grantor-announcement-view-image { display: grid; place-items: center; width: 100%; max-height: 280px; overflow: hidden; border-bottom: 1px solid #dce7e1; background: #edf7f2; }
+.grantor-announcement-view-image img { width: 100%; max-height: 280px; object-fit: cover; }
+.grantor-announcement-view-image img.is-fallback { width: min(220px, 70%); padding: 1.5rem; object-fit: contain; }
 .grantor-announcement-card-body { display: grid; align-content: start; gap: 0.45rem; padding: 0.75rem; }
 .grantor-announcement-card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; min-width: 0; }
 .grantor-announcement-card-top time { color: #789087; font-size: 0.64rem; white-space: nowrap; }

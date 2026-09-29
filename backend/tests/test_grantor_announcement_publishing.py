@@ -17,8 +17,19 @@ class GrantorAnnouncementPublishingTests(unittest.TestCase):
                 "applicationEnabled": True,
                 "totalSlots": 25,
                 "grantorName": "Grantor A",
+                "imageUrl": "https://example.test/announcement.webp",
             },
         }
+
+    @patch("backend.workflow_service._archived_grantor_account", return_value=False)
+    def test_creation_requires_an_announcement_image(self, _archived):
+        payload = self.announcement_payload()
+        payload["announcement"].pop("imageUrl")
+
+        result = create_grantor_announcement(payload)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "announcement_image_required")
 
     @patch("backend.workflow_service.supabase_document_update", return_value={"ok": True})
     @patch("backend.workflow_service._send_low_slot_notifications", return_value={"ok": True, "skipped": True})
@@ -120,7 +131,7 @@ class GrantorAnnouncementPublishingTests(unittest.TestCase):
             "expectedTotalSlots": 25,
             "expectedRemainingSlots": 18,
             "additionalSlots": 25,
-            "announcement": {"title": "Scholarship A", "description": "Applications reopened."},
+            "announcement": {"title": "Scholarship A", "description": "Applications reopened.", "imageUrl": "https://example.test/announcement.webp"},
         }, defer_notifications=True)
 
         self.assertTrue(result["ok"])
@@ -131,7 +142,7 @@ class GrantorAnnouncementPublishingTests(unittest.TestCase):
             "p_expected_total_slots": 25,
             "p_expected_remaining_slots": 18,
             "p_additional_slots": 25,
-            "p_announcement_patch": {"title": "Scholarship A", "description": "Applications reopened."},
+            "p_announcement_patch": {"title": "Scholarship A", "description": "Applications reopened.", "imageUrl": "https://example.test/announcement.webp"},
             "p_client_request_id": "republish-a",
         })
 
@@ -147,7 +158,7 @@ class GrantorAnnouncementPublishingTests(unittest.TestCase):
             "expectedTotalSlots": 25,
             "expectedRemainingSlots": 18,
             "additionalSlots": 25,
-            "announcement": {},
+            "announcement": {"imageUrl": "https://example.test/announcement.webp"},
         })
 
         self.assertFalse(result["ok"])

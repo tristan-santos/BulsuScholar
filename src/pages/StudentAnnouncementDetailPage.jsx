@@ -58,6 +58,8 @@ import {
 import { getScholarshipSlotState } from "../services/scholarshipSlotService"
 import { findMatchingPendingInvitation, getGrantorRejectionCooldown, markInvitationAccepted } from "../services/grantorReapplicationService"
 import { getNameInitials } from "../utils/nameInitials"
+import { getAnnouncementImageUrls } from "../utils/announcementImages"
+import logo from "../assets/logo.png"
 
 function formatRelativeDate(value) {
 	const date = toJsDate(value)
@@ -279,8 +281,10 @@ export default function StudentAnnouncementDetailPage() {
 	const hasBlockedScholarshipBanner =
 		studentAccessState.scholarshipEligibilityBlocked || studentAccessState.soeComplianceBlocked
 	const blockedScholarshipBannerCopy = getStudentBlockedBannerMessage(user || {})
-	// Legacy announcement image metadata remains stored, but artwork is intentionally not rendered.
-	const imageUrls = []
+	const imageUrls = useMemo(() => {
+		const storedImageUrls = getAnnouncementImageUrls(announcement || {})
+		return storedImageUrls.length > 0 ? storedImageUrls : [logo]
+	}, [announcement])
 	const isPreviousAnnouncement = announcement ? isPreviousStudentAnnouncement(announcement) : false
 	const isAnnouncementApplication = announcement?.applicationEnabled === true
 	const slotState = getScholarshipSlotState(announcement || {})
@@ -754,7 +758,7 @@ export default function StudentAnnouncementDetailPage() {
 											onClick={() => openAnnouncementImagePreview(activeImageUrl)}
 											aria-label={`Preview ${announcement.title || "announcement"} image`}
 										>
-											<img src={activeImageUrl} alt={announcement.title || "Announcement"} />
+											<img className={activeImageUrl === logo ? "is-fallback" : ""} src={activeImageUrl} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.classList.add("is-fallback"); event.currentTarget.src = logo }} alt={announcement.title || "Announcement"} />
 										</button>
 									) : (
 										<HiOutlineInbox />
@@ -790,7 +794,7 @@ export default function StudentAnnouncementDetailPage() {
 														onClick={() => setActiveImageIndex(index)}
 														aria-label={`Show announcement image ${index + 1}`}
 													>
-														<img src={imageUrl} alt="" />
+													<img src={imageUrl} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = logo }} alt="" />
 													</button>
 												))}
 											</div>

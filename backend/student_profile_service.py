@@ -105,6 +105,14 @@ def _require_student(student_id: str) -> dict[str, Any]:
     return result.get("data") or {}
 
 
+def _require_review_student(student_id: str) -> tuple[dict[str, Any], str]:
+    for table in ("students", "pending_students"):
+        result = supabase_document_get(table, student_id)
+        if result.get("ok") and result.get("row"):
+            return result.get("data") or {}, table
+    raise HTTPException(status_code=404, detail="student_not_found")
+
+
 def _select(table: str, filters: dict[str, Any], limit: int = 500) -> list[dict[str, Any]]:
     result = supabase_select(table, filters, limit=limit)
     if not result.get("ok"):
@@ -372,7 +380,9 @@ def _verification_summary(student_id: str, cycle: str, requirements: dict[str, A
 def _sync_verification(student_id: str, student: dict[str, Any], cycle: str, semester: str) -> dict[str, Any]:
     requirements = _requirements(student, cycle, semester)
     summary = _verification_summary(student_id, cycle, requirements)
-    result = supabase_document_update("students", student_id, {"documentVerification": summary, "updatedAt": _now()})
+    active = supabase_document_get("students", student_id)
+    table = "students" if active.get("row") else "pending_students"
+    result = supabase_document_update(table, student_id, {"documentVerification": summary, "updatedAt": _now()})
     if not result.get("ok"):
         raise HTTPException(status_code=503, detail="document_verification_sync_failed")
     return summary
@@ -683,6 +693,7 @@ async def upload_student_document(request: Request, document_type: str, file: Up
         "url": f"/student/profile/documents/{submission_id}/content", "path": reference["path"], "bucket": reference["bucket"],
         "name": submission["name"], "type": content_type, "size": len(body), "uploadedAt": submission["submittedAt"],
         "semesterTag": cycle, "submissionId": submission_id, "reviewStatus": "pending",
+        "documentKind": submission["documentKind"],
     }
     supabase_document_update("students", student_id, {compatibility_key: compatibility, "updatedAt": _now()})
     if not _policy()["manualReviewEnabled"]:
@@ -704,7 +715,10 @@ def list_document_review_queue(request: Request, status: str = "", document_type
     for item in submissions:
         student_id = str(item.get("studentId") or "")
         if student_id not in students:
-            students[student_id] = supabase_document_get("students", student_id).get("data") or {}
+            active = supabase_document_get("students", student_id)
+            students[student_id] = active.get("data") or {}
+            if not active.get("row"):
+                students[student_id] = supabase_document_get("pending_students", student_id).get("data") or {}
         student = students[student_id]
         item["studentName"] = " ".join(str(student.get(key) or "").strip() for key in ("fname", "mname", "lname") if str(student.get(key) or "").strip())
         item["yearLevel"] = student.get("year")
@@ -744,14 +758,14 @@ def review_document_submission(request: Request, submission_id: str, payload: di
     if submission.get("profileRevisionId"):
         supabase_document_update("student_profile_revisions", str(submission["profileRevisionId"]), update)
     student_id = str(submission.get("studentId") or "")
-    student = _require_student(student_id)
+    student, student_table = _require_review_student(student_id)
     cycle, semester = _cycle()
     summary = _sync_verification(student_id, student, cycle, semester)
     compatibility_key = {"cor": "corFile", "rog": "cogFile", "identity": "schoolIdFile"}.get(str(submission.get("documentType")))
     if compatibility_key:
         old_file = student.get(compatibility_key) if isinstance(student.get(compatibility_key), dict) else {}
         if old_file.get("submissionId") == submission_id:
-            supabase_document_update("students", student_id, {compatibility_key: {**old_file, "reviewStatus": decision, "rejectionReason": reason}})
+            supabase_document_update(student_table, student_id, {compatibility_key: {**old_file, "reviewStatus": decision, "rejectionReason": reason}})
     if submission.get("documentType") == "profile" and decision == "approved":
         _create_application_snapshots(student_id, submission, str(submission.get("profileRevisionId") or ""))
     title = "Document approved" if decision == "approved" else "Document needs correction"

@@ -17,12 +17,9 @@ import {
 import { serverTimestamp } from "../services/supabaseDataService"
 import { toast } from "react-toastify"
 import { supabase } from "../services/supabaseClient"
-import { uploadToStorage } from "../services/storageService"
-import {
-	getCurrentSemesterTag,
-} from "../services/scholarshipService"
+import { getCurrentSemesterTag } from "../services/scholarshipService"
 import { scanStudentDocument } from "../services/documentScanService"
-import { finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
+import { createStudentSignupDocumentBatch, finalizeStudentSignupWorkflow, validateStudentSignupWorkflow } from "../services/workflowService"
 import {
 	OTHER_PROVINCE_VALUE,
 	REGION_III_PROVINCE_OPTIONS,
@@ -179,6 +176,12 @@ function getSignupWorkflowErrorMessage(error = {}) {
 		["missing_rog_cycle", "The ROG semester was not detected. Please upload a clear Report of Grades for the previous cycle."],
 		["rog_cycle_mismatch", `ROG must be from the previous cycle only: ${getPreviousSemesterTag()}.`],
 		["rog_year_level_mismatch", "ROG year level must match the previous cycle year level."],
+		["cor_year_level_not_detected", "The year level could not be read from the COR. Upload a clearer university document."],
+		["cor_year_level_mismatch", "The year level must match the value detected from the COR."],
+		["missing_identity_document", "Upload the required Student ID or accepted valid photo ID."],
+		["identity_document_not_allowed", "Second-year and higher students must upload a current Student ID."],
+		["signup_document_batch_expired", "Your secure document upload expired. Return to the form and upload the documents again."],
+		["signup_document_batch", "The secure signup document upload could not be completed. Please upload the documents again."],
 		["cor_file_already_used", "This COR/Advising Slip was already used to create an account. Upload the correct unused COR, or sign in if this is already your account."],
 		["cor_identity_cycle_already_used", "This student already has a COR/Advising Slip recorded for the current cycle."],
 		["cor_hash_check_failed", "The system could not verify whether this COR was already used. Please try again later."],
@@ -222,9 +225,11 @@ export default function SignupPage() {
 	const [gwa, setGwa] = useState("")
 	const [corFile, setCorFile] = useState(null)
 	const [cogFile, setCogFile] = useState(null)
+	const [identityFile, setIdentityFile] = useState(null)
+	const [identityKind, setIdentityKind] = useState("student_id")
 	const [documentScanState, setDocumentScanState] = useState({ cor: "idle", cog: "idle" })
 	const [documentScanResult, setDocumentScanResult] = useState({ cor: null, cog: null })
-	const [documentUploadErrors, setDocumentUploadErrors] = useState({ cor: "", cog: "" })
+	const [documentUploadErrors, setDocumentUploadErrors] = useState({ cor: "", cog: "", identity: "" })
 	const [documentPreviewUrls, setDocumentPreviewUrls] = useState({ cor: "", cog: "" })
 	const [academicConcernTerms, setAcademicConcernTerms] = useState([])
 	const [showTermsModal, setShowTermsModal] = useState(false)
@@ -244,7 +249,8 @@ export default function SignupPage() {
 		return year === "1" && isFirstCycle
 	}, [isFirstCycle, year])
 	const isCogRequired = !isCogOptional
-	const canUploadCog = Boolean(corFile)
+	const canUploadCog = documentScanState.cor === "done"
+	const canUploadIdentity = documentScanState.cor === "done" && (isCogOptional || documentScanState.cog === "done")
 
 	useEffect(() => {
 		let isCancelled = false
@@ -910,6 +916,9 @@ export default function SignupPage() {
 				const message = "Invalid COR. Upload an Advising Slip or Certificate of Registration."
 				setCorFile(null)
 				setCogFile(null)
+				setIdentityFile(null)
+				setIdentityKind("student_id")
+				setYear("")
 				setGwa("")
 				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
 				setDocumentUploadError("cor", message)
@@ -921,9 +930,27 @@ export default function SignupPage() {
 			if (documentType === "cor" && !validateCorCycle(extracted)) {
 				setCorFile(null)
 				setCogFile(null)
+				setIdentityFile(null)
+				setIdentityKind("student_id")
+				setYear("")
 				setGwa("")
 				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
 				setDocumentScanState((current) => ({ ...current, cor: "error", cog: "idle" }))
+				return
+			}
+
+			if (documentType === "cor" && !/^[1-5]$/.test(String(extracted?.year || "").replace(/\D/g, "").slice(0, 1))) {
+				const message = "The year level could not be detected from this COR. Upload a clearer university document."
+				setCorFile(null)
+				setCogFile(null)
+				setIdentityFile(null)
+				setIdentityKind("student_id")
+				setYear("")
+				setGwa("")
+				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
+				setDocumentUploadError("cor", message)
+				setDocumentScanState((current) => ({ ...current, cor: "error", cog: "idle" }))
+				toast.error(message)
 				return
 			}
 
@@ -980,6 +1007,9 @@ export default function SignupPage() {
 			if (documentType === "cor") {
 				setCorFile(null)
 				setCogFile(null)
+				setIdentityFile(null)
+				setIdentityKind("student_id")
+				setYear("")
 				setGwa("")
 				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
 				setDocumentUploadError("cor", message)
@@ -1033,9 +1063,46 @@ export default function SignupPage() {
 		}
 
 		clearDocumentUploadError(documentType)
+		if (documentType === "cor") {
+			setCogFile(null)
+			setIdentityFile(null)
+			setIdentityKind("student_id")
+			setYear("")
+			setGwa("")
+			setDocumentScanResult({ cor: null, cog: null })
+			setDocumentScanState({ cor: "scanning", cog: "idle" })
+		}
+		if (documentType === "cog") setIdentityFile(null)
 		const setDocumentFile = documentType === "cor" ? setCorFile : setCogFile
 		setDocumentFile(file)
 		scanUploadedDocument(file, documentType)
+	}
+
+	const processIdentityFile = (file, resetInput) => {
+		if (!file) {
+			setIdentityFile(null)
+			clearDocumentUploadError("identity")
+			return
+		}
+		if (!canUploadIdentity) {
+			const message = isCogOptional ? "Upload and scan your COR first." : "Upload and scan your required COR and ROG first."
+			setDocumentUploadError("identity", message)
+			toast.error(message)
+			if (resetInput) resetInput.value = ""
+			return
+		}
+		const validTypes = ["application/pdf", "image/png", "image/jpeg", "image/webp"]
+		if (!validTypes.includes(file.type) || file.size > 10 * 1024 * 1024) {
+			const message = "Identity document must be a PDF, PNG, JPEG, or WebP file up to 10 MB."
+			setDocumentUploadError("identity", message)
+			toast.error(message)
+			if (resetInput) resetInput.value = ""
+			setIdentityFile(null)
+			return
+		}
+		clearDocumentUploadError("identity")
+		setIdentityFile(file)
+		toast.success(`${year === "1" ? "Identity document" : "Student ID"} ready for submission.`)
 	}
 
 	const handleReviewSubmit = async (e) => {
@@ -1131,6 +1198,14 @@ export default function SignupPage() {
 			return
 		}
 
+		if (!identityFile) {
+			const message = `Please upload your ${year === "1" ? "Student ID or valid photo ID" : "current Student ID"}.`
+			setDocumentUploadError("identity", message)
+			toast.error(message)
+			scrollToSection("section-cor")
+			return
+		}
+
 		if (!validateCorStudentNumberLock()) return
 		if (!validateCorCycle(documentScanResult.cor)) {
 			scrollToSection("section-cor")
@@ -1195,8 +1270,11 @@ export default function SignupPage() {
 	}, [fname, lname, cpNumber, street, city, province, barangay, postalCode, isValidCpNumber])
 
 	const isDocumentStageComplete = useMemo(() => {
-		return Boolean(year && corFile && (isCogOptional || (cogFile && gwa.trim())))
-	}, [cogFile, corFile, gwa, isCogOptional, year])
+		return Boolean(
+			year && identityFile && documentScanState.cor === "done" &&
+			(isCogOptional || (cogFile && gwa.trim() && documentScanState.cog === "done")),
+		)
+	}, [cogFile, documentScanState.cog, documentScanState.cor, gwa, identityFile, isCogOptional, year])
 	const showStudentFormStage = isDocumentStageComplete
 
 	// Automatically move to next sections if complete
@@ -1341,6 +1419,14 @@ export default function SignupPage() {
 			return
 		}
 
+		if (!identityFile) {
+			const message = `Please upload your ${year === "1" ? "Student ID or valid photo ID" : "current Student ID"}.`
+			setDocumentUploadError("identity", message)
+			toast.error(message)
+			scrollToSection("section-cor")
+			return
+		}
+
 		if (!validateCorCycle(documentScanResult.cor)) {
 			scrollToSection("section-cor")
 			return
@@ -1374,12 +1460,24 @@ export default function SignupPage() {
 		let signupError = null
 		try {
 			const corHash = await getFileSha256(corFile)
+			const documentBatch = await createStudentSignupDocumentBatch({
+				studentId,
+				email: normalizedSignupEmail,
+				identityKind,
+				corFile,
+				rogFile: cogFile,
+				identityFile,
+			})
+			if (String(documentBatch.year || "") !== String(year || "")) {
+				throw new Error("The COR year level changed during server validation. Upload the COR again.")
+			}
 			const validationDocumentScan = {
 				cor: buildStoredDocumentScan(documentScanResult.cor, null, "cor"),
 				rog: buildStoredDocumentScan(documentScanResult.cog, null, "rog"),
 			}
 			await validateStudentSignupWorkflow({
 				studentId,
+				documentBatch,
 				auth: {
 					email: normalizedSignupEmail,
 				},
@@ -1398,59 +1496,9 @@ export default function SignupPage() {
 			})
 
 			let authData = null
-
-			const semesterTag = getCurrentSemesterTag()
-			let corFilePayload = null
-			if (corFile) {
-				try {
-					console.log("SignupPage: Uploading COR file...")
-					const imageData = await uploadToStorage(corFile, { folder: "COR" })
-					const corFileId = `${corFile.name.replace(/\.[^/.]+$/, "")}_${studentId}`
-					corFilePayload = {
-						id: corFileId,
-						name: imageData.name,
-						type: imageData.type,
-						size: imageData.size,
-						url: imageData.url,
-						path: imageData.path || imageData.publicId || "",
-						bucket: imageData.bucket || "",
-						semesterTag,
-					}
-					console.log("SignupPage: COR upload SUCCESS:", corFilePayload.url, "ID:", corFileId)
-				} catch (uploadErr) {
-					console.error("SignupPage: COR upload ERROR:", uploadErr)
-					toast.error("Failed to upload COR file: " + uploadErr.message)
-					return
-				}
-			}
-
-			let rogFilePayload = null
-			if (cogFile) {
-				try {
-					console.log("SignupPage: Uploading ROG file...")
-					const imageData = await uploadToStorage(cogFile, { folder: "ROG" })
-					const rogFileId = `${cogFile.name.replace(/\.[^/.]+$/, "")}_${studentId}`
-					rogFilePayload = {
-						id: rogFileId,
-						name: imageData.name,
-						type: imageData.type,
-						size: imageData.size,
-						url: imageData.url,
-						path: imageData.path || imageData.publicId || "",
-						bucket: imageData.bucket || "",
-						semesterTag,
-					}
-					console.log("SignupPage: ROG upload SUCCESS:", rogFilePayload.url, "ID:", rogFileId)
-				} catch (uploadErr) {
-					console.error("SignupPage: ROG upload ERROR:", uploadErr)
-					toast.error("Failed to upload ROG file: " + uploadErr.message)
-					return
-				}
-			}
-
 			const storedDocumentScan = {
-				cor: buildStoredDocumentScan(documentScanResult.cor, corFilePayload, "cor"),
-				rog: buildStoredDocumentScan(documentScanResult.cog, rogFilePayload, "rog"),
+				cor: buildStoredDocumentScan(documentScanResult.cor, null, "cor"),
+				rog: buildStoredDocumentScan(documentScanResult.cog, null, "rog"),
 			}
 
 			const registrationDraft = {
@@ -1472,8 +1520,6 @@ export default function SignupPage() {
 				year,
 				section: section.trim(),
 				gwa: gwa.trim(),
-				corFile: corFilePayload,
-				rogFile: rogFilePayload,
 				documentScan: storedDocumentScan,
 				termsAcceptance: {
 					accepted: true,
@@ -1514,6 +1560,7 @@ export default function SignupPage() {
 				toast.error(authError.message || "Failed to create Supabase Auth account.")
 				return
 			}
+
 			authData = signupAuthData
 			const baseData = {
 				...registrationDraft,
@@ -1522,6 +1569,7 @@ export default function SignupPage() {
 
 			const finalizeResult = await finalizeStudentSignupWorkflow({
 				studentId,
+				documentBatch,
 				auth: {
 					userId: authData?.user?.id || "",
 					email: authData?.user?.email || normalizedSignupEmail,
@@ -1734,7 +1782,7 @@ export default function SignupPage() {
 							<div className="signup-process-step signup-process-step--documents">
 								<span>Step 1</span>
 								<strong>Submit Required Documents</strong>
-								<p>Select your year level, then upload the documents required for your current semester.</p>
+								<p>Upload your COR first. Its detected year level determines the remaining required documents.</p>
 							</div>
 
 							{/* Document Upload Section */}
@@ -1745,26 +1793,6 @@ export default function SignupPage() {
 									</div>
 									<h3 className="signup-section-title">Required Documents</h3>
 								</div>
-
-								<label className="login-label" htmlFor="signup-requirement-year">
-									Year Level <span className="required">*</span>
-								</label>
-								<select
-									id="signup-requirement-year"
-									className="login-input"
-									value={year}
-									onChange={(event) => setYear(event.target.value)}
-								>
-									<option value="">Select year level</option>
-									<option value="1">Year 1</option>
-									<option value="2">Year 2</option>
-									<option value="3">Year 3</option>
-									<option value="4">Year 4</option>
-									<option value="5">Year 5</option>
-								</select>
-								<p className="signup-document-rule-help">
-									First-year students in the first semester do not need to upload an ROG.
-								</p>
 
 								{/* Certificate of Registration / Advising Slip Upload */}
 								<label className="login-label" htmlFor="signup-cor-upload">
@@ -1912,13 +1940,33 @@ export default function SignupPage() {
 									/>
 								</div>
 
+								<label className="login-label" htmlFor="signup-identity-kind" style={{ marginTop: "1rem", display: "block" }}>
+									3. {!year ? "Identity Document" : year === "1" ? "Student ID or Valid Photo ID" : "Current Student ID"} <span className="required">*</span>
+								</label>
+								{year === "1" ? (
+									<select id="signup-identity-kind" className="login-input" value={identityKind} onChange={(event) => { setIdentityKind(event.target.value); setIdentityFile(null) }} disabled={!canUploadIdentity}>
+										<option value="student_id">Student ID</option>
+										<option value="previous_school_id">Previous-school photo ID</option>
+										<option value="government_id">Government photo ID</option>
+									</select>
+								) : null}
+								<label
+									className={`signup-upload-wrap ${!canUploadIdentity ? "signup-upload-wrap--disabled" : ""} ${documentUploadErrors.identity ? "signup-upload-wrap--error" : ""}`}
+									htmlFor={canUploadIdentity ? "signup-identity-upload" : undefined}
+									aria-disabled={!canUploadIdentity}
+								>
+									<input id="signup-identity-upload" type="file" className="signup-file-input" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={!canUploadIdentity} onChange={(event) => processIdentityFile(event.target.files?.[0] ?? null, event.target)} />
+									{identityFile ? <><HiOutlineIdentification className="signup-upload-icon signup-upload-icon--success" aria-hidden /><span className="signup-upload-filename">{identityFile.name}</span><span className="signup-upload-scan signup-upload-scan--done">Ready for secure submission</span></> : <><HiOutlineIdentification className="signup-upload-icon" aria-hidden /><span className="signup-upload-hint">{!canUploadIdentity ? (!year ? "Scan COR to determine the identity requirement" : isCogOptional ? "Scan COR to enable identity upload" : "Scan COR and ROG to enable Student ID upload") : `Drop ${year === "1" ? "your selected photo ID" : "your current Student ID"} here or click to browse`}</span></>}
+								</label>
+								{documentUploadErrors.identity ? <p className="signup-upload-error-message">{documentUploadErrors.identity}</p> : null}
+
 								<div
 									className="signup-cor-note"
 									style={{ marginTop: "1.5rem" }}
 								>
 									{isCogOptional
-										? "Step 1 requires COR. ROG is optional because first-year students in the first cycle may not have grades yet."
-										: "Step 1 requires both COR and ROG to verify your enrollment and academic status."}
+										? "Step 1 requires COR and one identity document. ROG is optional for first-year students in the first semester."
+										: "Step 1 requires successfully scanned COR and ROG, followed by your identity document."}
 								</div>
 							</div>
 
@@ -1928,8 +1976,7 @@ export default function SignupPage() {
 									<div>
 										<strong>Complete Step 1 to continue</strong>
 										<p>
-											Upload your COR
-											{isCogOptional ? "" : " and ROG with GWA"} before the student form appears.
+											Upload your COR{isCogOptional ? "" : " and ROG with GWA"}, then upload the required identity document.
 										</p>
 									</div>
 								</div>
@@ -2367,14 +2414,7 @@ export default function SignupPage() {
 										<label className="login-label" htmlFor="signup-year">
 											Year <span className="required">*</span>
 										</label>
-										<CustomSelect
-											id="signup-year"
-											buttonClassName="login-select"
-											value={year}
-											onChange={setYear}
-											options={["1", "2", "3", "4"]}
-											placeholder="Select year"
-										/>
+										<input id="signup-year" className="login-input" value={`Year ${year}`} readOnly aria-readonly="true" />
 									</div>
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-section">
@@ -2603,7 +2643,7 @@ export default function SignupPage() {
 							</div>
 
 							{/* Document Upload Review */}
-							{(corFile || cogFile) && (
+							{(corFile || cogFile || identityFile) && (
 								<div className="signup-review-card signup-review-card--documents">
 									<div className="signup-review-card-header">
 										<h3 className="signup-review-card-title">
@@ -2709,6 +2749,14 @@ export default function SignupPage() {
 															Preview
 														</button>
 													)}
+												</div>
+											</div>
+										)}
+										{identityFile && (
+											<div className="signup-review-document" style={{ marginTop: "1rem" }}>
+												<div className="signup-review-document-info">
+													<span className="signup-review-document-label signup-review-label-group"><span className="signup-review-row-icon" aria-hidden><HiOutlineIdentification /></span><span>{identityKind === "student_id" ? "Student ID" : identityKind === "previous_school_id" ? "Previous-school photo ID" : "Government photo ID"}:</span></span>
+													<span className="signup-review-document-name signup-review-label-group"><span className="signup-review-row-icon" aria-hidden><HiOutlineIdentification /></span><span>{identityFile.name}</span></span>
 												</div>
 											</div>
 										)}

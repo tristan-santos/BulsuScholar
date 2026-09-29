@@ -98,6 +98,16 @@ export function getDocumentReviewQueue(filters = {}) {
 	return jsonRequest(`/admin/document-reviews${params.size ? `?${params}` : ""}`, { operation: null })
 }
 
+export function getPendingStudentAccounts() {
+	return jsonRequest("/admin/students/pending", { operation: null })
+}
+
+export function approvePendingStudentAccount(studentId) {
+	return jsonRequest(`/admin/students/pending/${encodeURIComponent(studentId)}/approve`, {
+		method: "POST",
+	})
+}
+
 export function reviewStudentDocument(submissionId, decision) {
 	return jsonRequest(`/admin/document-reviews/${encodeURIComponent(submissionId)}`, {
 		method: "POST",

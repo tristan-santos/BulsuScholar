@@ -30,6 +30,20 @@ def list_pending_student_accounts(request: Request) -> dict[str, Any]:
     accounts = []
     for row in result.get("rows") or []:
         data = row.get("data") or {}
+        document_result = supabase_select("student_document_submissions", {"data->>studentId": row.get("id")}, limit=20)
+        documents = []
+        if document_result.get("ok"):
+            documents = [
+                {
+                    "id": document.get("id"),
+                    "documentType": (document.get("data") or {}).get("documentType"),
+                    "documentKind": (document.get("data") or {}).get("documentKind"),
+                    "name": (document.get("data") or {}).get("name"),
+                    "status": (document.get("data") or {}).get("status"),
+                    "submittedAt": (document.get("data") or {}).get("submittedAt"),
+                }
+                for document in document_result.get("rows") or []
+            ]
         accounts.append({
             "id": row.get("id"),
             "name": " ".join(str(data.get(key) or "").strip() for key in ("fname", "mname", "lname")).strip(),
@@ -39,6 +53,7 @@ def list_pending_student_accounts(request: Request) -> dict[str, Any]:
             "createdAt": data.get("createdAt"),
             "emailConfirmedAt": data.get("emailConfirmedAt"),
             "accountReviewStatus": data.get("accountReviewStatus") or "pending_email",
+            "documents": documents,
         })
     return {"ok": True, "accounts": accounts}
 
