@@ -234,17 +234,97 @@ def extract_course(text: str) -> str:
     return normalize_space(match.group(1)) if match else ""
 
 
+YEAR_LEVEL_WORDS = {
+    "first": "1",
+    "second": "2",
+    "third": "3",
+    "fourth": "4",
+}
+
+
+def parse_year_level_value(value: str, *, whole_value: bool = False) -> str:
+    normalized = normalize_space(value)
+    boundary_start = r"^" if whole_value else r"\b"
+    boundary_end = r"$" if whole_value else r"\b"
+    numeric = re.search(
+        rf"{boundary_start}(?:Year\s*)?([1-4])(?!\d)\s*(?:st|nd|rd|th)?(?:\s*Year)?{boundary_end}",
+        normalized,
+        re.IGNORECASE,
+    )
+    if numeric:
+        return numeric.group(1)
+    written = re.search(
+        rf"{boundary_start}(First|Second|Third|Fourth)(?:\s+Year)?{boundary_end}",
+        normalized,
+        re.IGNORECASE,
+    )
+    return YEAR_LEVEL_WORDS.get(written.group(1).lower(), "") if written else ""
+
+
 def extract_year(text: str) -> str:
-    value = find_first(
+    lines = [normalize_space(line) for line in str(text or "").splitlines() if normalize_space(line)]
+
+    # The COR places the authoritative value beside the explicit "Year Level" label.
+    # Keep this line-scoped so "Academic Year 2025-2026" cannot be read as Year 2.
+    for index, line in enumerate(lines):
+        label = re.search(r"\b(?:Year\s*Level|Yr\s*Level)\b\s*[:\-]?\s*(.*)$", line, re.IGNORECASE)
+        if not label:
+            continue
+        detected = parse_year_level_value(label.group(1))
+        if detected:
+            return detected
+        for next_line in lines[index + 1 : index + 3]:
+            detected = parse_year_level_value(next_line, whole_value=True)
+            if detected:
+                return detected
+
+    combined = find_first(
         [
-            r"(?:Year\s*(?:Level)?\s*/\s*Section|Yr\s*/\s*Sec)\s*[:\-]?\s*([1-4])\s*[- ]?[A-Z]",
-            r"(?:Year\s*Level|Year)\s*[:\-]?\s*([1-4])",
-            r"\b([1-4])(?:st|nd|rd|th)\s*Year\b",
-            r"\b([1-4])\s*[-]\s*[A-Z]\b",
+            r"(?:Year\s*Level\s*/\s*Section|Yr\s*/\s*Sec)\s*[:\-]?\s*([1-4])(?!\d)\s*[- ]?[A-Z]",
+            r"\b([1-4])(?!\d)\s*(?:st|nd|rd|th)\s+Year\b",
+            r"\b(First|Second|Third|Fourth)\s+Year\b",
+            r"\b([1-4])(?!\d)\s*-\s*[A-Z]\b",
         ],
         text,
     )
-    return value[:1] if value else ""
+    if not combined:
+        return ""
+    return YEAR_LEVEL_WORDS.get(combined.lower(), combined[:1])
+
+
+def extract_year_from_positioned_words(words: list[dict[str, Any]], row_tolerance: float = 4.0) -> str:
+    rows: list[dict[str, Any]] = []
+    for word in sorted(words or [], key=lambda item: (float(item.get("top") or 0), float(item.get("x0") or 0))):
+        top = float(word.get("top") or 0)
+        row = next((item for item in rows if abs(item["top"] - top) <= row_tolerance), None)
+        if row is None:
+            row = {"top": top, "words": []}
+            rows.append(row)
+        row["words"].append(word)
+
+    for row in rows:
+        row_words = sorted(row["words"], key=lambda item: float(item.get("x0") or 0))
+        tokens = [re.sub(r"[^a-z0-9]+", "", str(item.get("text") or "").lower()) for item in row_words]
+        for index in range(len(tokens) - 1):
+            if tokens[index] not in {"year", "yr"} or tokens[index + 1] != "level":
+                continue
+            value_text = " ".join(str(item.get("text") or "") for item in row_words[index + 2 :])
+            detected = parse_year_level_value(value_text)
+            if detected:
+                return detected
+    return ""
+
+
+def extract_year_from_pdf_layout(file_bytes: bytes) -> str:
+    try:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            for page in pdf.pages:
+                detected = extract_year_from_positioned_words(page.extract_words() or [])
+                if detected:
+                    return detected
+    except Exception:
+        return ""
+    return ""
 
 
 def extract_section(text: str) -> str:
@@ -845,6 +925,7 @@ def parse_document(text: str, document_type: str, final_grade_debug: dict[str, A
 
 def parse_pdf_document(file_bytes: bytes, document_type: str) -> dict[str, Any]:
     text = extract_pdf_text(file_bytes)
+    layout_year = extract_year_from_pdf_layout(file_bytes)
     final_grade_debug = None
     if document_type.lower() in {"cog", "rog"}:
         table_grade_debug = extract_final_grades_from_pdf_tables(file_bytes)
@@ -880,4 +961,10 @@ def parse_pdf_document(file_bytes: bytes, document_type: str) -> dict[str, Any]:
                         "Because no Final column values were found, it used the text fallback with footer/page URL lines ignored."
                     ),
                 }
-    return parse_document(text, document_type, final_grade_debug)
+    parsed = parse_document(text, document_type, final_grade_debug)
+    if layout_year:
+        parsed["year"] = layout_year
+        parsed["yearDetectionSource"] = "year_level_pdf_row"
+    else:
+        parsed["yearDetectionSource"] = "year_level_text"
+    return parsed
