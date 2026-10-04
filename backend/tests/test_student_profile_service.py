@@ -1,8 +1,10 @@
-import base64
+import io
 import unittest
 from unittest.mock import patch
 
+import pdfplumber
 from fastapi import HTTPException
+from PIL import Image, ImageDraw
 
 from backend import student_profile_service as service
 
@@ -42,7 +44,7 @@ class StudentProfileValidationTests(unittest.TestCase):
             "fname": "Ana", "lname": "Santos", "email": "ana@example.com",
             "cpNumber": "09123456789", "birthDate": "2007-01-01",
             "guardianName": "Maria Santos", "guardianContact": "09112223333",
-            "course": "BSIT", "year": "1", "section": "A",
+            "college": "CICS", "course": "BSIT", "year": "1", "section": "A",
             "permanentAddress": {
                 "street": "1 Main", "barangay": "Poblacion", "city": "Bustos",
                 "province": "Bulacan", "postalCode": "3007",
@@ -72,6 +74,20 @@ class StudentProfileValidationTests(unittest.TestCase):
         with patch.object(service, "_profile_photo_bytes", return_value=b"photo"):
             service._validate_profile(self.profile)
 
+    def test_college_must_match_the_official_template_options(self):
+        self.profile["college"] = "Unknown"
+        with patch.object(service, "_profile_photo_bytes", return_value=b"photo"), \
+                self.assertRaises(HTTPException) as raised:
+            service._validate_profile(self.profile)
+        self.assertEqual("invalid_college", raised.exception.detail["code"])
+
+    def test_future_birth_date_is_rejected(self):
+        self.profile["birthDate"] = "2999-01-01"
+        with patch.object(service, "_profile_photo_bytes", return_value=b"photo"), \
+                self.assertRaises(HTTPException) as raised:
+            service._validate_profile(self.profile)
+        self.assertEqual("invalid_birth_date", raised.exception.detail["code"])
+
     def test_locked_profile_fields_always_come_from_student_record(self):
         student = {"email": "official@example.com", "cpNumber": "09111111111", "course": "BSIT", "year": "2", "section": "B"}
         supplied = {"email": "attacker@example.com", "cpNumber": "09999999999", "course": "Other", "year": "5", "section": "Z", "fname": "Updated"}
@@ -83,12 +99,63 @@ class StudentProfileValidationTests(unittest.TestCase):
         self.assertEqual("B", result["section"])
         self.assertEqual("Updated", result["fname"])
 
-    def test_generated_profile_is_a_pdf(self):
-        one_pixel_png = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-        )
-        result = service._profile_pdf(self.profile, one_pixel_png)
+    @staticmethod
+    def _image_bytes(width: int, height: int, *, signature: bool = False) -> bytes:
+        image = Image.new("RGBA", (width, height), (255, 255, 255, 0) if signature else (220, 238, 229, 255))
+        if signature:
+            ImageDraw.Draw(image).line((8, height - 12, width // 3, 8, width - 8, height // 2), fill=(16, 42, 34, 255), width=4)
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        return output.getvalue()
+
+    def test_generated_profile_uses_official_template_and_a4_geometry(self):
+        photo = self._image_bytes(600, 800)
+        signature = self._image_bytes(420, 120, signature=True)
+        with patch.object(service, "_profile_photo_bytes", return_value=photo):
+            result = service._profile_pdf(self.profile, signature)
         self.assertTrue(result.startswith(b"%PDF-"))
+
+        generated = service.PdfReader(io.BytesIO(result))
+        template = service.PdfReader(str(service.PROFILE_TEMPLATE_PATH))
+        self.assertEqual(1, len(generated.pages))
+        self.assertAlmostEqual(float(template.pages[0].mediabox.width), float(generated.pages[0].mediabox.width), places=2)
+        self.assertAlmostEqual(float(template.pages[0].mediabox.height), float(generated.pages[0].mediabox.height), places=2)
+
+        text = generated.pages[0].extract_text() or ""
+        self.assertIn("SCHOLARSHIP AND", text)
+        self.assertIn("FINANCIAL ASSISTANCE", text)
+        self.assertIn("APPLICANT’S PROFILE", text)
+        self.assertIn("SANTOS, ANA", text)
+        self.assertIn("ana@example.com", text)
+        self.assertIn("TYPE OF SCHOLARSHIP", text)
+        self.assertNotIn("BulsuScholar official application profile export", text)
+
+        with pdfplumber.open(io.BytesIO(result)) as rendered:
+            page = rendered.pages[0]
+            photo_image = next(image for image in page.images if abs(float(image["width"]) - 144.0) < 0.1)
+            self.assertAlmostEqual(392.25, float(photo_image["x0"]), places=2)
+            self.assertAlmostEqual(90.85, float(photo_image["top"]), places=2)
+            self.assertAlmostEqual(234.85, float(photo_image["bottom"]), places=2)
+
+            signature_image = next(image for image in page.images if abs(float(image["x0"]) - 65.0) < 0.1)
+            self.assertGreaterEqual(float(signature_image["top"]), 681.0)
+            self.assertLessEqual(float(signature_image["bottom"]), 728.0)
+
+            words = page.extract_words(x_tolerance=1, y_tolerance=1)
+            surname = next(word for word in words if word["text"] == "SANTOS,")
+            email = next(word for word in words if word["text"] == "ana@example.com")
+            self.assertTrue(284.0 <= float(surname["top"]) <= 301.0)
+            self.assertTrue(315.0 <= float(email["top"]) <= 332.0)
+            self.assertTrue(any(word["text"] == "☐X" for word in words))
+
+    def test_profile_preview_keeps_template_and_adds_draft_watermark(self):
+        photo = self._image_bytes(600, 800)
+        signature = self._image_bytes(420, 120, signature=True)
+        with patch.object(service, "_profile_photo_bytes", return_value=photo):
+            result = service._profile_pdf(self.profile, signature, preview=True)
+        text = service.PdfReader(io.BytesIO(result)).pages[0].extract_text() or ""
+        self.assertIn("APPLICANT’S PROFILE", text)
+        self.assertIn("DRAFT PREVIEW", text)
 
 
 class StudentDocumentReviewTests(unittest.TestCase):

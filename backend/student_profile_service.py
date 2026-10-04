@@ -8,15 +8,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import Response
-from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
-from PIL import Image
+from PIL import Image, ImageOps
+from pypdf import PdfReader, PdfWriter
 
 try:
     from .access_control import enforce_portal_scope, require_admin_bearer
@@ -48,15 +49,17 @@ except ImportError:  # pragma: no cover
 
 PROFILE_FIELDS = {
     "fname", "mname", "lname", "extension", "email", "cpNumber", "birthDate",
-    "guardianName", "guardianContact", "college", "course", "major", "year", "section",
-    "profileImage", "profileImageUrl", "permanentAddress", "currentAddress",
+    "guardianName", "guardianContact", "college", "course", "year", "section",
+    "profileImage", "profileImageUrl", "permanentAddress",
 }
 LOCKED_PROFILE_FIELDS = {"email", "cpNumber", "course", "year", "section"}
+COLLEGE_CODES = {"CBA", "COE", "CICS", "COED", "CIT"}
 DOCUMENT_TYPES = {"cor", "rog", "identity"}
 ALLOWED_DOCUMENT_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
 ALLOWED_PHOTO_TYPES = {"image/png", "image/jpeg", "image/webp"}
 MAX_DOCUMENT_BYTES = 10 * 1024 * 1024
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
+PROFILE_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "public" / "Templates" / "STUDENT PROFILE_APPLICATION-FORMAT.pdf"
 
 
 def _now() -> str:
@@ -280,90 +283,141 @@ def _profile_photo_bytes(profile: dict[str, Any]) -> bytes | None:
 
 
 def _validate_profile(profile: dict[str, Any]) -> None:
-    required = ("fname", "lname", "email", "cpNumber", "birthDate", "guardianName", "guardianContact", "course", "year", "section")
+    required = ("fname", "lname", "email", "cpNumber", "birthDate", "guardianName", "guardianContact", "college", "course", "year", "section")
     missing = [key for key in required if not str(profile.get(key) or "").strip()]
     address = profile.get("permanentAddress") if isinstance(profile.get("permanentAddress"), dict) else {}
     missing.extend(f"permanentAddress.{key}" for key in ("barangay", "city", "province") if not str(address.get(key) or "").strip())
     if missing:
         raise HTTPException(status_code=422, detail={"code": "profile_incomplete", "fields": missing})
+    if str(profile.get("college") or "").strip().upper() not in COLLEGE_CODES:
+        raise HTTPException(status_code=422, detail={"code": "invalid_college", "fields": ["college"]})
+    try:
+        birth_date = datetime.strptime(str(profile.get("birthDate") or ""), "%Y-%m-%d").date()
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail={"code": "invalid_birth_date", "fields": ["birthDate"]}) from error
+    if birth_date > datetime.now(timezone.utc).date():
+        raise HTTPException(status_code=422, detail={"code": "invalid_birth_date", "fields": ["birthDate"]})
     if not _profile_photo_bytes(profile):
         raise HTTPException(status_code=422, detail={"code": "profile_photo_required", "fields": ["profileImage"]})
+
+
+def _fit_pdf_text(pdf: canvas.Canvas, value: Any, x: float, y: float, width: float, *, size: float = 8.5, minimum: float = 5.5) -> None:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    font_size = size
+    while text and font_size > minimum and pdf.stringWidth(text, "Helvetica", font_size) > width:
+        font_size -= 0.25
+    if text and pdf.stringWidth(text, "Helvetica", font_size) > width:
+        while text and pdf.stringWidth(f"{text}...", "Helvetica", font_size) > width:
+            text = text[:-1]
+        text = f"{text.rstrip()}..."
+    pdf.setFont("Helvetica", font_size)
+    pdf.drawString(x, y, text)
+
+
+def _profile_name(profile: dict[str, Any]) -> str:
+    surname = str(profile.get("lname") or "").strip().upper()
+    given = str(profile.get("fname") or "").strip().upper()
+    extension = str(profile.get("extension") or "").strip().upper()
+    middle = str(profile.get("mname") or "").strip()
+    middle_initial = f"{middle[0].upper()}." if middle else ""
+    given_group = " ".join(part for part in (given, extension) if part)
+    return ", ".join(part for part in (surname, given_group) if part) + (f", {middle_initial}" if middle_initial else "")
+
+
+def _pdf_birth_date(value: Any) -> str:
+    try:
+        return datetime.strptime(str(value or ""), "%Y-%m-%d").strftime("%d %B %Y").upper()
+    except ValueError:
+        return str(value or "")
+
+
+def _square_photo(photo: bytes) -> bytes:
+    source = ImageOps.exif_transpose(Image.open(io.BytesIO(photo)))
+    source.load()
+    if source.mode not in {"RGB", "RGBA"}:
+        source = source.convert("RGB")
+    side = min(source.width, source.height)
+    left = (source.width - side) // 2
+    top = (source.height - side) // 2
+    cropped = source.crop((left, top, left + side, top + side))
+    output = io.BytesIO()
+    cropped.save(output, format="PNG", optimize=True)
+    return output.getvalue()
 
 
 def _profile_pdf(
     profile: dict[str, Any],
     signature: bytes,
-    scholarship: dict[str, Any] | None = None,
     *,
     preview: bool = False,
 ) -> bytes:
-    output = io.BytesIO()
-    pdf = canvas.Canvas(output, pagesize=letter)
-    width, height = letter
-    pdf.setFillColorRGB(0, 0.31, 0.19)
-    pdf.rect(0, height - 18, width, 18, fill=1, stroke=0)
-    pdf.setFillColorRGB(0, 0, 0)
+    if not PROFILE_TEMPLATE_PATH.is_file():
+        raise HTTPException(status_code=500, detail="profile_template_not_found")
+    template_reader = PdfReader(str(PROFILE_TEMPLATE_PATH))
+    if not template_reader.pages:
+        raise HTTPException(status_code=500, detail="profile_template_invalid")
+    template_page = template_reader.pages[0]
+    width = float(template_page.mediabox.width)
+    height = float(template_page.mediabox.height)
+    overlay = io.BytesIO()
+    pdf = canvas.Canvas(overlay, pagesize=(width, height))
+    pdf.setFillColorRGB(0.04, 0.08, 0.07)
     if preview:
         pdf.saveState()
-        pdf.setFillColorRGB(0.82, 0.86, 0.84)
-        pdf.setFont("Helvetica-Bold", 42)
+        pdf.setFillAlpha(0.16)
+        pdf.setFillColorRGB(0.15, 0.38, 0.3)
+        pdf.setFont("Helvetica-Bold", 44)
         pdf.translate(width / 2, height / 2)
         pdf.rotate(35)
         pdf.drawCentredString(0, 0, "DRAFT PREVIEW")
         pdf.restoreState()
-    pdf.setFont("Helvetica-Bold", 14)
-    pdf.drawCentredString(width / 2, height - 44, "SCHOLARSHIP AND FINANCIAL ASSISTANCE")
-    pdf.drawCentredString(width / 2, height - 62, "APPLICANT'S PROFILE")
+
     photo = _profile_photo_bytes(profile)
     if photo:
         try:
-            pdf.drawImage(ImageReader(io.BytesIO(photo)), width - 112, height - 145, width=64, height=64, preserveAspectRatio=True, mask="auto")
+            pdf.drawImage(
+                ImageReader(io.BytesIO(_square_photo(photo))),
+                392.25, height - 234.85,
+                width=144, height=144,
+                preserveAspectRatio=False, mask="auto",
+            )
         except Exception:
             photo = None
-    if not photo:
-        pdf.rect(width - 112, height - 145, 64, 64, fill=0, stroke=1)
-        pdf.setFont("Helvetica", 7)
-        pdf.drawCentredString(width - 80, height - 116, "STUDENT PHOTO")
-    y = height - 165
-    fields = [
-        ("NAME", " ".join(str(profile.get(k) or "").strip() for k in ("lname", "fname", "mname", "extension") if str(profile.get(k) or "").strip())),
-        ("CONTACT NO.", profile.get("cpNumber")), ("EMAIL ADDRESS", profile.get("email")),
-        ("PERMANENT ADDRESS", _address_text(profile.get("permanentAddress") or {})),
-        ("CURRENT ADDRESS", _address_text(profile.get("currentAddress") or {}) or "Not provided"),
-        ("DATE OF BIRTH", profile.get("birthDate")), ("LEGAL GUARDIAN", profile.get("guardianName")),
-        ("GUARDIAN CONTACT", profile.get("guardianContact")),
-        ("COLLEGE / PROGRAM", " / ".join(filter(None, [str(profile.get("college") or ""), str(profile.get("course") or ""), str(profile.get("major") or "")]))),
-        ("SECTION AND YEAR", " / ".join(filter(None, [str(profile.get("section") or ""), str(profile.get("year") or "")]))),
-    ]
-    if scholarship:
-        fields.extend([
-            ("SCHOLARSHIP-GRANTING ENTITY", scholarship.get("grantorName") or ""),
-            ("SCHOLARSHIP / ASSISTANCE", scholarship.get("scholarshipName") or ""),
-            ("GRANTOR OFFICE", scholarship.get("officeAddress") or ""),
-            ("GRANTOR CONTACT", scholarship.get("contactNumber") or ""),
-            ("ASSISTANCE TYPE", scholarship.get("assistanceType") or ""),
-        ])
-    for label, value in fields:
+
+    _fit_pdf_text(pdf, _profile_name(profile), 64, height - 297, 257, size=8.5)
+    _fit_pdf_text(pdf, profile.get("cpNumber"), 333, height - 297, 196, size=8.5)
+    _fit_pdf_text(pdf, profile.get("email"), 333, height - 328, 196, size=8.2)
+    _fit_pdf_text(pdf, _address_text(profile.get("permanentAddress") or {}), 64, height - 365, 464, size=8.2)
+    _fit_pdf_text(pdf, _pdf_birth_date(profile.get("birthDate")), 64, height - 414, 130, size=7.5)
+    _fit_pdf_text(pdf, profile.get("guardianName"), 204, height - 414, 181, size=7.8)
+    _fit_pdf_text(pdf, profile.get("guardianContact"), 396, height - 414, 133, size=7.8)
+
+    college = str(profile.get("college") or "").strip().upper()
+    college_marks = {
+        "CBA": (68.5, height - 439.5), "COE": (138.5, height - 439.5),
+        "CICS": (68.5, height - 452.5), "COED": (138.5, height - 452.5),
+        "CIT": (68.5, height - 465.5),
+    }
+    if college in college_marks:
         pdf.setFont("Helvetica-Bold", 8)
-        pdf.drawString(48, y, label)
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(170, y, str(value or "")[:75])
-        pdf.line(168, y - 3, width - 48, y - 3)
-        y -= 28
-    pdf.setFont("Helvetica", 8)
-    attestation = "I attest that the information supplied in this profile is true and complete."
-    pdf.drawString(48, y - 8, attestation)
+        pdf.drawCentredString(*college_marks[college], "X")
+    _fit_pdf_text(pdf, profile.get("course"), 204, height - 461, 181, size=7.5)
+    section_year = " - ".join(part for part in (str(profile.get("section") or "").strip(), f"Year {str(profile.get('year') or '').strip()}") if part)
+    _fit_pdf_text(pdf, section_year, 396, height - 461, 133, size=7.5)
+
     try:
-        pdf.drawImage(ImageReader(io.BytesIO(signature)), 48, y - 65, width=150, height=48, preserveAspectRatio=True, mask="auto")
+        pdf.drawImage(ImageReader(io.BytesIO(signature)), 65, height - 728, width=145, height=47, preserveAspectRatio=True, anchor="c", mask="auto")
     except Exception as error:
         raise HTTPException(status_code=422, detail="invalid_signature_image") from error
-    pdf.line(48, y - 68, 220, y - 68)
-    pdf.setFont("Helvetica", 7)
-    pdf.drawString(48, y - 78, "APPLICANT'S SIGNATURE")
-    pdf.drawRightString(width - 48, y - 78, f"Submitted: {_now()}")
-    pdf.setFillColorRGB(0.3, 0.35, 0.4)
-    pdf.drawString(48, 24, "BulsuScholar official application profile export")
+    _fit_pdf_text(pdf, datetime.now(timezone.utc).strftime("%d %B %Y").upper(), 239, height - 721, 116, size=8)
     pdf.save()
+    overlay.seek(0)
+    overlay_page = PdfReader(overlay).pages[0]
+    template_page.merge_page(overlay_page)
+    writer = PdfWriter()
+    writer.add_page(template_page)
+    output = io.BytesIO()
+    writer.write(output)
     return output.getvalue()
 
 
@@ -436,8 +490,8 @@ def _seed_profile(student: dict[str, Any]) -> dict[str, Any]:
         "city": student.get("city") or "", "province": student.get("province") or "",
         "postalCode": student.get("postalCode") or "",
     }
-    return {key: student.get(key, "") for key in PROFILE_FIELDS if key not in {"permanentAddress", "currentAddress"}} | {
-        "permanentAddress": permanent, "currentAddress": student.get("currentAddress") or {},
+    return {key: student.get(key, "") for key in PROFILE_FIELDS if key != "permanentAddress"} | {
+        "permanentAddress": permanent,
     }
 
 
@@ -615,10 +669,10 @@ def save_student_profile_draft(request: Request, payload: dict[str, Any]) -> dic
     result = supabase_document_upsert("student_profile_drafts", student_id, profile, merge=False)
     if not result.get("ok"):
         raise HTTPException(status_code=503, detail="profile_draft_save_failed")
-    compatibility = {key: profile.get(key) for key in PROFILE_FIELDS if key not in {"currentAddress", "permanentAddress"} | LOCKED_PROFILE_FIELDS}
+    compatibility = {key: profile.get(key) for key in PROFILE_FIELDS if key not in {"permanentAddress"} | LOCKED_PROFILE_FIELDS}
     permanent = profile.get("permanentAddress") or {}
     compatibility.update({
-        "permanentAddress": permanent, "currentAddress": profile.get("currentAddress") or {},
+        "permanentAddress": permanent,
         "street": permanent.get("street") or "", "barangay": permanent.get("barangay") or "",
         "city": permanent.get("city") or "", "province": permanent.get("province") or "",
         "postalCode": permanent.get("postalCode") or "", "updatedAt": _now(),
@@ -910,7 +964,7 @@ def _snapshot_revision_for_application(
         "contactNumber": application.get("grantorContactNumber") or application.get("contactNumber") or "",
         "assistanceType": application.get("grantorClassification") or application.get("providerType") or "",
     }
-    snapshot_pdf = _profile_pdf(revision.get("profile") or {}, signature, scholarship)
+    snapshot_pdf = _profile_pdf(revision.get("profile") or {}, signature)
     snapshot_pdf_ref = _store_bytes(
         f"students/{student_id}/application-profile-snapshots/{snapshot_id}.pdf",
         snapshot_pdf,
