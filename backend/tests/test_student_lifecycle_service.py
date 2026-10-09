@@ -39,6 +39,23 @@ class StudentLifecycleServiceTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual("real-id", rpc.call_args.args[1]["p_student_id"])
 
+    @patch("backend.student_lifecycle_service.supabase_rpc")
+    def test_repeated_email_confirmation_returns_existing_pending_state(self, rpc):
+        rpc.return_value = {"ok": True, "data": {"pendingApproval": True, "studentId": "20230001"}}
+        auth_user = {
+            "id": "auth-a",
+            "email": "student@example.com",
+            "email_confirmed_at": "2026-09-22T00:00:00Z",
+            "user_metadata": {"user_id": "20230001"},
+        }
+
+        first = promote_email_confirmed_student({}, auth_user)
+        second = promote_email_confirmed_student({}, auth_user)
+
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(2, rpc.call_count)
+
     @patch("backend.student_lifecycle_service.supabase_document_get")
     @patch("backend.student_lifecycle_service.supabase_rpc")
     def test_grantor_confirmation_uses_stored_pending_decision(self, rpc, document_get):

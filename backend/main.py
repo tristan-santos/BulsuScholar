@@ -851,7 +851,9 @@ def finalize_student_signup_endpoint(payload: dict[str, Any] = Body(...)) -> dic
 
 @app.post("/workflows/student/email-confirmed")
 def student_email_confirmed_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return promote_email_confirmed_student(payload, require_supabase_user(request))
+    # The confirmation callback has a valid Supabase session, but it cannot
+    # have a portal-verified session until the pending account is activated.
+    return promote_email_confirmed_student(payload, require_supabase_user(request, require_verified=False))
 
 
 @app.get("/admin/students/pending")

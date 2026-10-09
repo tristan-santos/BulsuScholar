@@ -37,7 +37,7 @@ export default function ConfirmEmailPage() {
 					await promoteEmailConfirmedStudentWorkflow()
 				} catch (promotionError) {
 					console.error("Email confirmed but student activation failed.", promotionError)
-					setStatus("error")
+					setStatus("activation-error")
 					return
 				}
 				setStatus("confirmed")
@@ -87,6 +87,11 @@ export default function ConfirmEmailPage() {
 			icon: <HiOutlineXCircle className="signup-verified-icon" />,
 			title: "Unable to confirm email",
 			copy: "Request a new confirmation email or contact support if the problem continues.",
+		},
+		"activation-error": {
+			icon: <HiOutlineXCircle className="signup-verified-icon" />,
+			title: "Email confirmed, activation pending",
+			copy: "Your email was confirmed, but we could not place your account in the approval queue. Refresh this page to try again or contact support if the problem continues.",
 		},
 	}[status]
 
