@@ -57,11 +57,12 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 
 	const data = await response.json().catch(() => ({}))
 	if (!response.ok || data?.ok === false) {
-		const detail = data?.message || data?.detail || data?.reason || data?.error || data?.result || data?.results || data
+		const detailObject = data?.detail && typeof data.detail === "object" ? data.detail : null
+		const detail = data?.message || detailObject?.message || data?.detail || data?.reason || data?.error || data?.result || data?.results || data
 		throw new PortalApiError(typeof detail === "string" ? detail : JSON.stringify(detail), {
 			status: response.status,
-			reason: String(data?.reason || data?.detail || data?.error || ""),
-			data,
+			reason: String(data?.reason || detailObject?.code || (typeof data?.detail === "string" ? data.detail : "") || data?.error || ""),
+			data: detailObject ? { ...data, ...detailObject } : data,
 		})
 	}
 	return data

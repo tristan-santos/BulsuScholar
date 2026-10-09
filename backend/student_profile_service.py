@@ -160,6 +160,46 @@ def _latest_by_type(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return output
 
 
+def _profile_submission_sort_key(item: dict[str, Any]) -> tuple[str, int, str]:
+    try:
+        version = int(item.get("version") or 0)
+    except (TypeError, ValueError):
+        version = 0
+    return str(item.get("submittedAt") or ""), version, str(item.get("id") or "")
+
+
+def _latest_profile_submissions(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for item in sorted(rows, key=_profile_submission_sort_key, reverse=True):
+        student_id = str(item.get("studentId") or "")
+        if student_id:
+            latest.setdefault(student_id, item)
+    return latest
+
+
+def _supersede_pending_profile_submissions(rows: list[dict[str, Any]], replacement_id: str) -> None:
+    replaced_at = _now()
+    for item in rows:
+        submission_id = str(item.get("id") or "")
+        if not submission_id or submission_id == replacement_id or item.get("status") != "pending":
+            continue
+        update = {"status": "superseded", "updatedAt": replaced_at}
+        updated = supabase_document_update("student_document_submissions", submission_id, update)
+        if not updated.get("ok"):
+            create_log({
+                "action": "student_profile_supersede_failed", "actorId": "system", "actorType": "system",
+                "target": submission_id, "details": {"replacementId": replacement_id}, "createdAt": replaced_at,
+            })
+            continue
+        revision_id = str(item.get("profileRevisionId") or "")
+        if revision_id:
+            supabase_document_update("student_profile_revisions", revision_id, update)
+        create_log({
+            "action": "student_profile_submission_superseded", "actorId": "system", "actorType": "system",
+            "target": submission_id, "details": {"replacementId": replacement_id}, "createdAt": replaced_at,
+        })
+
+
 def _storage_config() -> tuple[str, str, str]:
     url = os.getenv("SUPABASE_URL", "").rstrip("/")
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -748,6 +788,9 @@ def submit_student_profile(request: Request, payload: dict[str, Any]) -> dict[st
     draft = _merge_profile_input(student, supabase_document_get("student_profile_drafts", student_id).get("data") or {})
     _validate_profile(draft)
     signature = _decode_signature(str(payload.get("signatureDataUrl") or ""))
+    prior_profile_submissions = _data_rows("student_document_submissions", {
+        "data->>studentId": student_id, "data->>documentType": "profile",
+    }, limit=1000)
     existing = _data_rows("student_profile_revisions", {"data->>studentId": student_id, "data->>academicCycle": cycle})
     version = max([int(item.get("version") or 0) for item in existing] or [0]) + 1
     revision_id = f"profile_{student_id}_{cycle}_{version}_{uuid4().hex[:8]}"
@@ -768,7 +811,9 @@ def submit_student_profile(request: Request, payload: dict[str, Any]) -> dict[st
         "profileRevisionId": revision_id, "requirementsSnapshot": revision["requirementsSnapshot"],
         "submittedAt": _now(), "updatedAt": _now(),
     }
-    supabase_document_upsert("student_document_submissions", submission_id, submission, merge=False)
+    if not supabase_document_upsert("student_document_submissions", submission_id, submission, merge=False).get("ok"):
+        raise HTTPException(status_code=503, detail="profile_submission_failed")
+    _supersede_pending_profile_submissions(prior_profile_submissions, submission_id)
     profile_file = {
         "url": f"/student/profile/documents/{submission_id}/content", **pdf_ref,
         "name": submission["name"], "uploadedAt": submission["submittedAt"],
@@ -863,9 +908,26 @@ def list_document_review_queue(request: Request, status: str = "", document_type
     _reviewer(request)
     filters: dict[str, Any] = {}
     if status: filters["data->>status"] = status
-    if document_type: filters["data->>documentType"] = document_type
     if academic_cycle: filters["data->>academicCycle"] = academic_cycle
-    submissions = _data_rows("student_document_submissions", filters, limit=1000)
+
+    if document_type == "profile":
+        submissions: list[dict[str, Any]] = []
+    else:
+        if document_type:
+            filters["data->>documentType"] = document_type
+        submissions = [
+            item for item in _data_rows("student_document_submissions", filters, limit=1000)
+            if item.get("documentType") != "profile"
+        ]
+
+    if document_type in {"", "profile"}:
+        profile_rows = _data_rows("student_document_submissions", {"data->>documentType": "profile"}, limit=5000)
+        for item in _latest_profile_submissions(profile_rows).values():
+            if status and item.get("status") != status:
+                continue
+            if academic_cycle and item.get("academicCycle") != academic_cycle:
+                continue
+            submissions.append(item)
     students: dict[str, dict[str, Any]] = {}
     for item in submissions:
         student_id = str(item.get("studentId") or "")
@@ -893,6 +955,14 @@ def review_document_submission(request: Request, submission_id: str, payload: di
         raise HTTPException(status_code=404, detail="document_submission_not_found")
     submission = current.get("data") or {}
     submission["id"] = submission_id
+    if submission.get("documentType") == "profile":
+        profile_rows = _data_rows("student_document_submissions", {
+            "data->>studentId": str(submission.get("studentId") or ""),
+            "data->>documentType": "profile",
+        }, limit=1000)
+        latest = _latest_profile_submissions(profile_rows).get(str(submission.get("studentId") or "")) or {}
+        if str(latest.get("id") or "") != submission_id:
+            raise HTTPException(status_code=409, detail="profile_submission_superseded")
     if submission.get("status") != "pending":
         raise HTTPException(status_code=409, detail="document_already_reviewed")
     reviewed_at = _now()

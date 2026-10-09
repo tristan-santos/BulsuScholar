@@ -738,6 +738,144 @@ def list_student_notifications(student_id: str) -> dict[str, Any]:
     return {"ok": True, "notifications": _sorted_notification_rows(rows)}
 
 
+def get_student_required_action(student_id: str) -> dict[str, Any] | None:
+    """Return one replaceable next step without creating another notification."""
+    student_id = str(student_id or "").strip()
+    student_record = supabase_document_get("students", student_id)
+    if not student_record.get("row"):
+        return None
+    student = student_record.get("data") or {}
+
+    offers = supabase_select(
+        "scholarship_waitlist_offers",
+        {"student_id": student_id, "status": "active"},
+        limit=20,
+    )
+    active_offers = (offers.get("rows") or []) if offers.get("ok") else []
+    if active_offers:
+        offer = sorted(active_offers, key=lambda row: str(row.get("expires_at") or ""))[0]
+        return {
+            "key": f"waitlist-offer:{offer.get('id')}",
+            "status": "Action required",
+            "title": "Respond to your scholarship slot offer",
+            "message": "A reserved slot is waiting for your decision before the offer expires.",
+            "actionLabel": "Review Offer",
+            "route": f"/student-dashboard/scholarships?waitlistOffer={offer.get('id')}",
+            "updatedAt": offer.get("updated_at") or offer.get("offered_at"),
+        }
+
+    verification = student.get("documentVerification") if isinstance(student.get("documentVerification"), dict) else {}
+    labels = {
+        "cor": "Certificate of Registration",
+        "rog": "Report of Grades",
+        "identity": "identity document",
+        "profile": "Student Application Profile",
+    }
+    for key in (("cor", "rog", "identity", "profile") if verification else ()):
+        state = verification.get(key) if isinstance(verification.get(key), dict) else {}
+        status = str(state.get("status") or "missing").lower()
+        if status in {"approved", "exempt", "superseded"}:
+            continue
+        if status == "rejected":
+            message = f"Your {labels[key]} was rejected. Correct it and submit a replacement."
+            action_label = "Replace Document" if key != "profile" else "Complete Profile"
+        elif status == "pending":
+            message = f"Your {labels[key]} is waiting for document review."
+            action_label = "Wait for Review"
+        else:
+            message = f"Submit your {labels[key]} to continue your scholarship workflow."
+            action_label = "Complete Profile" if key == "profile" else "Upload Document"
+        return {
+            "key": f"document:{key}:{state.get('submissionId') or status}",
+            "status": status.title(),
+            "title": f"Next: {labels[key]}",
+            "message": message,
+            "actionLabel": action_label,
+            "route": "/student-dashboard/profile/form" if key == "profile" else f"/student-dashboard/profile#{key}",
+            "updatedAt": student.get("updatedAt"),
+        }
+
+    applications_result = supabase_select(
+        "scholarship_applications",
+        {"data->>studentId": student_id},
+        limit=1000,
+    )
+    applications = []
+    for row in ((applications_result.get("rows") or []) if applications_result.get("ok") else []):
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        status = str(data.get("status") or "").lower()
+        if data.get("archived") is not True and status not in {"archived", "rejected", "withdrawn", "finished", "completed"}:
+            applications.append({"id": row.get("id"), **data})
+    applications.sort(key=lambda row: str(row.get("updatedAt") or row.get("createdAt") or ""), reverse=True)
+    if applications:
+        application = applications[0]
+        scholarship = application.get("scholarshipTitle") or application.get("scholarshipName") or "your scholarship"
+        if application.get("source") == "authoritative_roster":
+            return {
+                "key": f"roster:{application.get('id')}",
+                "status": "Assigned",
+                "title": "Official scholarship assigned",
+                "message": f"You are assigned to {scholarship}. The scholarship will finish automatically after all required documents are approved.",
+                "actionLabel": "View Scholarship",
+                "route": "/student-dashboard/scholarships",
+                "updatedAt": application.get("updatedAt"),
+            }
+
+        application_id = str(application.get("id") or "")
+        request_result = supabase_select("soe_requests", {"data->>applicationId": application_id}, limit=20)
+        requests = (request_result.get("rows") or []) if request_result.get("ok") else []
+        requests.sort(key=lambda row: str((row.get("data") or {}).get("updatedAt") or row.get("updated_at") or ""), reverse=True)
+        if not requests:
+            return {
+                "key": f"materials:{application_id}:request",
+                "status": "Ready",
+                "title": "Request scholarship materials",
+                "message": f"Review {scholarship} and request its SOE and application form when all readiness checks pass.",
+                "actionLabel": "Request Materials",
+                "route": "/student-dashboard/scholarships",
+                "updatedAt": application.get("updatedAt"),
+            }
+        request_data = requests[0].get("data") or {}
+        request_status = str(request_data.get("reviewState") or request_data.get("status") or "pending").lower()
+        if request_status in {"approved", "signed"}:
+            return {
+                "key": f"materials:{application_id}:download",
+                "status": "Approved",
+                "title": "Download and complete your scholarship materials",
+                "message": "Your SOE and application form are available. Complete the required signed submission.",
+                "actionLabel": "View Materials",
+                "route": "/student-dashboard/scholarships",
+                "updatedAt": request_data.get("updatedAt"),
+            }
+        return {
+            "key": f"materials:{application_id}:{request_status}",
+            "status": request_status.title(),
+            "title": "Materials request is under review",
+            "message": "The Scholarship Office is reviewing your SOE and application-form request.",
+            "actionLabel": "View Application",
+            "route": "/student-dashboard/scholarships",
+            "updatedAt": request_data.get("updatedAt"),
+        }
+
+    waitlist = supabase_select(
+        "scholarship_waitlist_entries",
+        {"student_id": student_id, "status": "queued"},
+        limit=20,
+    )
+    if waitlist.get("ok") and waitlist.get("rows"):
+        row = waitlist["rows"][0]
+        return {
+            "key": f"waitlist:{row.get('id')}",
+            "status": "Queued",
+            "title": "Wait for an available scholarship slot",
+            "message": "You will be notified when a slot becomes available. Keep your documents current.",
+            "actionLabel": "View Scholarships",
+            "route": "/student-dashboard/scholarships",
+            "updatedAt": row.get("updated_at") or row.get("queued_at"),
+        }
+    return None
+
+
 def list_grantor_notifications(grantor_id: str) -> dict[str, Any]:
     grantor_id = str(grantor_id or "").strip()
     if not grantor_id:

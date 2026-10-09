@@ -259,8 +259,8 @@ export default function SignupPage() {
 	const scannedCorYear = String(documentScanResult.cor?.year || "").replace(/\D/g, "").slice(0, 1)
 	const hasCorStudentMismatch = Boolean(scannedCorStudentId && userId.trim() && scannedCorStudentId !== userId.trim())
 	const hasCorYearMismatch = Boolean(scannedCorYear && year && scannedCorYear !== year)
-	const hasCorIdentityMismatch = hasCorStudentMismatch || hasCorYearMismatch
-	const canUploadCog = documentScanState.cor === "done" && !hasCorIdentityMismatch
+	const hasUndetectedCorYear = documentScanState.cor === "done" && !scannedCorYear
+	const canUploadCog = documentScanState.cor === "done" && !hasCorStudentMismatch
 	const canUploadIdentity = canUploadCog && (isCogOptional || documentScanState.cog === "done")
 
 	useEffect(() => {
@@ -836,14 +836,11 @@ export default function SignupPage() {
 
 	const validateCorYearLock = () => {
 		if (!scannedCorYear) {
-			toast.error("The COR year level could not be detected. Upload a clearer COR.")
-			scrollToSection("section-cor")
-			return false
+			toast.warning("The COR year level could not be confirmed. You may continue, and the administrator will review your selected year level.")
+			return true
 		}
 		if (scannedCorYear !== year) {
-			toast.error(`Year Level must match Year ${scannedCorYear}, as detected from the COR.`)
-			scrollToSection("section-school")
-			return false
+			toast.warning(`The COR scan detected Year ${scannedCorYear}, while you selected Year ${year}. You may continue, and the administrator will review it.`)
 		}
 		return true
 	}
@@ -884,8 +881,8 @@ export default function SignupPage() {
 		const currentSemesterTag = getCurrentSemesterTag()
 		const expectedPreviousSemesterTag = getPreviousSemesterTag(currentSemesterTag)
 		const scannedSemesterTag = buildSemesterTagFromScan(extracted)
-		const corYear = documentScanResult.cor?.year || year
-		const corYearSource = documentScanResult.cor?.year ? "COR scan" : year ? "form field" : ""
+		const corYear = year || documentScanResult.cor?.year
+		const corYearSource = year ? "form field" : documentScanResult.cor?.year ? "COR scan" : ""
 		const expectedRogYear = getExpectedPreviousRogYearLevel(corYear, currentSemesterTag)
 		const scannedRogYear = String(extracted?.year || "").replace(/\D/g, "").slice(0, 1)
 		const parsedCurrentSemester = parseSemesterTag(currentSemesterTag)
@@ -1021,18 +1018,7 @@ export default function SignupPage() {
 			}
 
 			if (documentType === "cor" && !/^[1-4]$/.test(String(extracted?.year || "").replace(/\D/g, "").slice(0, 1))) {
-				const message = "The year level could not be detected from this COR. Upload a clearer university document."
-				setCorFile(null)
-				setCogFile(null)
-				setIdentityFile(null)
-				setIdentityKind("student_id")
-				setYear("")
-				setGwa("")
-				setDocumentScanResult((current) => ({ ...current, cor: null, cog: null }))
-				setDocumentUploadError("cor", message)
-				setDocumentScanState((current) => ({ ...current, cor: "error", cog: "idle" }))
-				toast.error(message)
-				return
+				toast.warning("The COR year level could not be confirmed. Select your year level manually; the administrator will review it.")
 			}
 
 			if (documentType === "cog" && extracted?.isValidCogDocument === false) {
@@ -1354,10 +1340,10 @@ export default function SignupPage() {
 
 	const isDocumentStageComplete = useMemo(() => {
 		return Boolean(
-			year && identityFile && documentScanState.cor === "done" && !hasCorIdentityMismatch &&
+			year && identityFile && documentScanState.cor === "done" && !hasCorStudentMismatch &&
 			(isCogOptional || (cogFile && gwa.trim() && documentScanState.cog === "done")),
 		)
-	}, [cogFile, documentScanState.cog, documentScanState.cor, gwa, hasCorIdentityMismatch, identityFile, isCogOptional, year])
+	}, [cogFile, documentScanState.cog, documentScanState.cor, gwa, hasCorStudentMismatch, identityFile, isCogOptional, year])
 	const showStudentFormStage = Boolean(
 		year && identityFile && documentScanState.cor === "done" &&
 		(isCogOptional || (cogFile && gwa.trim() && documentScanState.cog === "done")),
@@ -1551,14 +1537,13 @@ export default function SignupPage() {
 			const documentBatch = await createStudentSignupDocumentBatch({
 				studentId,
 				email: normalizedSignupEmail,
+				year,
 				identityKind,
 				corFile,
 				rogFile: cogFile,
 				identityFile,
 			})
-			if (String(documentBatch.year || "") !== String(year || "")) {
-				throw new Error("The COR year level changed during server validation. Upload the COR again.")
-			}
+			if (String(documentBatch.year || "") !== String(year || "")) throw new Error("The selected year level could not be saved. Please try again.")
 			const validationDocumentScan = {
 				cor: buildStoredDocumentScan(documentScanResult.cor, null, "cor"),
 				rog: buildStoredDocumentScan(documentScanResult.cog, null, "rog"),
@@ -2513,7 +2498,8 @@ export default function SignupPage() {
 											Year <span className="required">*</span>
 										</label>
 										<CustomSelect id="signup-year" buttonClassName="login-select" value={year} onChange={setYear} options={[1, 2, 3, 4].map((value) => ({ value, label: `Year ${value}` }))} placeholder="Select year level" />
-										{hasCorYearMismatch ? <p className="signup-field-error" role="alert">Year Level must match Year {scannedCorYear}, as detected from the COR.</p> : null}
+										{hasCorYearMismatch ? <p className="signup-field-warning" role="status">COR scan detected Year {scannedCorYear}. You selected Year {year}; you may continue and the administrator will review it.</p> : null}
+										{hasUndetectedCorYear ? <p className="signup-field-warning" role="status">The COR year level was not detected. Select the correct year; the administrator will review it.</p> : null}
 									</div>
 									<div className="signup-field">
 										<label className="login-label" htmlFor="signup-section">
@@ -2729,6 +2715,8 @@ export default function SignupPage() {
 											{year} - {section}
 										</span>
 									</div>
+									{hasCorYearMismatch ? <p className="signup-field-warning" role="status">The COR scan detected Year {scannedCorYear}, while you selected Year {year}. This will be sent to the administrator for review.</p> : null}
+									{hasUndetectedCorYear ? <p className="signup-field-warning" role="status">The COR scan could not confirm the year level. Your selected Year {year} will be sent to the administrator for review.</p> : null}
 									<div className="signup-review-row">
 										<span className="signup-review-label signup-review-label-group">
 											<span className="signup-review-row-icon" aria-hidden>

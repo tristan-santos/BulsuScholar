@@ -6,16 +6,22 @@ import {
 	HiOutlineEyeOff,
 	HiOutlineLockClosed,
 	HiOutlineMail,
+	HiOutlineXCircle,
 } from "react-icons/hi"
 import { toast } from "react-toastify"
 import {
 	GRANTOR_DEFAULT_PASSWORD,
 	GRANTOR_PASSWORD_CHANGE_ID_KEY,
 } from "../constants/grantorAuth"
-import { getRecord, serverTimestamp, upsertProvider } from "../services/supabaseDataService"
+import { completeGrantorPasswordChange, getRecord } from "../services/supabaseDataService"
 import { supabase } from "../services/supabaseClient"
 import { clearPortalIdentity } from "../services/portalSessionStorage"
-import { isPasswordStrong } from "../utils/passwordValidation"
+import {
+	PASSWORD_MIN_LENGTH,
+	PASSWORD_SPECIAL_CHARACTER_EXAMPLE,
+	getPasswordRequirements,
+	isPasswordStrong,
+} from "../utils/passwordValidation"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
@@ -33,6 +39,10 @@ export default function GrantorChangePasswordPage() {
 	const [returnPath] = useState(() =>
 		sessionStorage.getItem("bulsuscholar_userType") === "provider" ? "/provider-dashboard/profile" : "/",
 	)
+	const passwordRequirements = getPasswordRequirements(password)
+	const passwordMatches = Boolean(confirmPassword) && password === confirmPassword
+	const usesNewPassword = Boolean(password) && password !== GRANTOR_DEFAULT_PASSWORD
+	const canSubmit = isPasswordStrong(password) && usesNewPassword && passwordMatches && !isSubmitting
 
 	useEffect(() => {
 		const pendingGrantorId = sessionStorage.getItem(GRANTOR_PASSWORD_CHANGE_ID_KEY)
@@ -68,7 +78,7 @@ export default function GrantorChangePasswordPage() {
 		if (!grantorId) return
 
 		if (!isPasswordStrong(password)) {
-			toast.error("Password must include a capital letter, number, special character, and at least 6 characters.")
+			toast.error(`Password must include a capital letter, number, special character, and at least ${PASSWORD_MIN_LENGTH} characters.`)
 			return
 		}
 
@@ -92,15 +102,7 @@ export default function GrantorChangePasswordPage() {
 
 			const { error: authError } = await supabase.auth.updateUser({ password })
 			if (authError) throw authError
-			await upsertProvider(
-				grantorId,
-				{
-					mustChangePassword: false,
-					passwordChangeCompletedAt: serverTimestamp(),
-					passwordUpdatedAt: serverTimestamp(),
-				},
-				{ merge: true },
-			)
+			await completeGrantorPasswordChange(grantorId)
 
 			sessionStorage.removeItem(GRANTOR_PASSWORD_CHANGE_ID_KEY)
 			clearPortalIdentity()
@@ -171,6 +173,16 @@ export default function GrantorChangePasswordPage() {
 									)}
 								</button>
 							</div>
+							<div className="grantor-password-requirements" aria-live="polite">
+								<strong>Password requirements</strong>
+								<ul>
+									<li className={passwordRequirements.hasMinLength ? "is-met" : ""}><span aria-hidden>{passwordRequirements.hasMinLength ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}</span>At least {PASSWORD_MIN_LENGTH} characters</li>
+									<li className={passwordRequirements.hasCapital ? "is-met" : ""}><span aria-hidden>{passwordRequirements.hasCapital ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}</span>At least 1 capital letter</li>
+									<li className={passwordRequirements.hasNumber ? "is-met" : ""}><span aria-hidden>{passwordRequirements.hasNumber ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}</span>At least 1 number</li>
+									<li className={passwordRequirements.hasSpecial ? "is-met" : ""}><span aria-hidden>{passwordRequirements.hasSpecial ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}</span>At least 1 special character ({PASSWORD_SPECIAL_CHARACTER_EXAMPLE} and more)</li>
+									<li className={usesNewPassword ? "is-met" : ""}><span aria-hidden>{usesNewPassword ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}</span>Different from the default password</li>
+								</ul>
+							</div>
 
 							<label className="login-label" htmlFor="grantor-confirm-password">Confirm New Password</label>
 							<div className="login-input-wrap">
@@ -184,8 +196,9 @@ export default function GrantorChangePasswordPage() {
 									autoComplete="new-password"
 								/>
 							</div>
+							{confirmPassword ? <p className={`grantor-password-match ${passwordMatches ? "is-met" : "is-missing"}`}><span aria-hidden>{passwordMatches ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}</span>{passwordMatches ? "Passwords match" : "Passwords do not match"}</p> : null}
 
-							<button type="submit" className="login-submit" data-button-variant="positive" disabled={isSubmitting}>
+							<button type="submit" className="login-submit" data-button-variant="positive" disabled={!canSubmit}>
 								<HiOutlineCheckCircle aria-hidden /> {isSubmitting ? "Saving..." : "Save New Password"}
 							</button>
 

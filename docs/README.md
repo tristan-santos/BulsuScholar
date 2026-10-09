@@ -5,6 +5,8 @@
   Brevo production checklist.
 - `diagrams/` contains the maintained DFD and ERD source documents.
 - `email/` contains the canonical Supabase Auth email templates.
+- `SystemFlowchart.md` documents the complete Student, Grantor, Administrator,
+  and server-owned workflow with end-to-end Mermaid diagrams.
 - `SemiFinalRevisions.md` tracks the step-by-step roadmap for the remaining
   system revisions and their release gates.
 

@@ -57,6 +57,10 @@ export function requestScholarshipMaterialsWorkflow(payload = {}) {
 	return postWorkflow("/workflows/scholarship/materials/request", payload, { operation: "materials.request" })
 }
 
+export function preflightScholarshipMaterialsWorkflow(payload = {}) {
+	return postWorkflow("/workflows/scholarship/materials/preflight", payload, { operation: "generic.background" })
+}
+
 export function validateStudentSignupWorkflow(payload = {}) {
 	return postWorkflow("/workflows/student/signup/validate", payload, { operation: "generic.background" })
 }
@@ -67,10 +71,11 @@ export function checkStudentSignupAvailability(field, value) {
 	})
 }
 
-export async function createStudentSignupDocumentBatch({ studentId, email, identityKind, corFile, rogFile, identityFile }) {
+export async function createStudentSignupDocumentBatch({ studentId, email, year, identityKind, corFile, rogFile, identityFile }) {
 	const form = new FormData()
 	form.append("student_id", studentId)
 	form.append("email", email)
+	form.append("declared_year", year)
 	form.append("identity_kind", identityKind)
 	form.append("cor", corFile)
 	if (rogFile) form.append("rog", rogFile)

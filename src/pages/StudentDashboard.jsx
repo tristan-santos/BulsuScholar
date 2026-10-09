@@ -23,7 +23,6 @@ import {
 	HiOutlineAcademicCap,
 	HiOutlineBell,
 	HiOutlineCheckCircle,
-	HiOutlineClock,
 	HiOutlineDocumentText,
 	HiOutlineExclamation,
 	HiOutlineExternalLink,
@@ -38,6 +37,7 @@ import { toast } from "react-toastify"
 import { db } from "../services/supabaseDataService"
 import useThemeMode from "../hooks/useThemeMode"
 import useArchivedGrantorIds, { isAnnouncementBlockedByGrantor } from "../hooks/useArchivedGrantorIds"
+import useStudentProfilePhoto from "../hooks/useStudentProfilePhoto"
 import StudentFooter from "../components/StudentFooter"
 import StudentAnnouncementCard from "../components/StudentAnnouncementCard"
 import { getCurrentSemesterTag, normalizeScholarshipList, validateScholarshipDocuments } from "../services/scholarshipService"
@@ -224,6 +224,8 @@ export default function StudentDashboard() {
 	)
 	const [profileMenuOpen, setProfileMenuOpen] = useState(false)
 	const { theme, setTheme } = useThemeMode()
+	const { photoUrl: authenticatedProfilePhotoUrl } = useStudentProfilePhoto({ enabled: sessionState.isStudent })
+	const [failedProfilePhotoUrl, setFailedProfilePhotoUrl] = useState("")
 	const forcedLogoutRef = useRef(false)
 	const profileMenuRef = useRef(null)
 	const recommendationRequestKeyRef = useRef("")
@@ -568,7 +570,9 @@ export default function StudentDashboard() {
 		[announcements, readAnnouncementIds],
 	)
 	const _inboxBadgeCount = studentNotifications.length > 0 ? unreadStudentNotifications.length : unreadAnnouncementCount
-	const avatarUrl = user?.profileImageUrl || ""
+	const avatarUrl = authenticatedProfilePhotoUrl && authenticatedProfilePhotoUrl !== failedProfilePhotoUrl
+		? authenticatedProfilePhotoUrl
+		: ""
 	const studentAccessState = useMemo(() => getStudentAccessState(user || {}), [user])
 	const hasComplianceWarning = user?.soeComplianceWarning === true
 	const hasComplianceBlock = studentAccessState.soeComplianceBlocked
@@ -768,6 +772,7 @@ export default function StudentDashboard() {
 									src={avatarUrl}
 									alt="Profile"
 									className="student-header-avatar-image-mini"
+									onError={() => setFailedProfilePhotoUrl(avatarUrl)}
 								/>
 							) : (
 								<span>{userInitials}</span>
@@ -940,10 +945,6 @@ export default function StudentDashboard() {
 								</svg>
 								<span>My Profile</span>
 							</button>
-							<button type="button" className="student-action-card student-mini-btn student-mini-btn--secondary" onClick={() => navigate("/student-dashboard/history")}>
-								<HiOutlineClock className="student-action-icon" aria-hidden />
-								<span>History</span>
-							</button>
 							<button
 								type="button"
 								className="student-action-card student-mini-btn student-mini-btn--secondary"
@@ -1063,7 +1064,7 @@ export default function StudentDashboard() {
 							</header>
 							<div className="student-detail-profile">
 								<div className="student-detail-identity">
-									<span className="student-detail-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : userInitials}</span>
+									<span className="student-detail-avatar">{avatarUrl ? <img src={avatarUrl} alt={`${fullName} profile`} onError={() => setFailedProfilePhotoUrl(avatarUrl)} /> : userInitials}</span>
 									<div className="student-detail-name">
 										<h3>Welcome Back!!</h3>
 										<p>Welcome back{firstName ? `, ${firstName}` : ""}. Keep your scholarship profile and documents updated.</p>
@@ -1240,7 +1241,6 @@ export default function StudentDashboard() {
 								<button type="button" onClick={() => navigate("/student-dashboard/scholarships")}><HiOutlineAcademicCap /><span>Scholarships</span><small>View records and applications</small></button>
 								<button type="button" onClick={() => navigate("/student-dashboard/profile")}><HiOutlineUser /><span>My Profile</span><small>Update personal details</small></button>
 								<button type="button" onClick={() => navigate("/student-dashboard/announcements")}><HiOutlineBell /><span>Announcements</span><small>Read latest notices</small></button>
-								<button type="button" onClick={() => navigate("/student-dashboard/history")}><HiOutlineClock /><span>History</span><small>Review your scholarship activity</small></button>
 								<button type="button" onClick={handleContactSupport}><HiOutlineMail /><span>Support</span><small>Contact scholarship office</small></button>
 							</div>
 						</section>

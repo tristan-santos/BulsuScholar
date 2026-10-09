@@ -5902,9 +5902,9 @@ export default function ProviderDashboard() {
 							Boolean(importData),
 					})}
 				>
-					<div className="grantor-scholar-modal-shell" onClick={(event) => event.stopPropagation()}>
+					<div className={`grantor-scholar-modal-shell ${importData ? "grantor-scholar-modal-shell--import" : ""}`} onClick={(event) => event.stopPropagation()}>
 						<button type="button" className="grantor-scholar-modal-close" onClick={closeCreateModal} aria-label="Close add scholar dialog" title="Close"><HiX /></button>
-						<div className="grantor-scholar-modal grantor-scholar-modal--create" role="dialog" aria-modal="true" aria-label="Add scholar">
+						<div className={`grantor-scholar-modal grantor-scholar-modal--create ${importData ? "grantor-scholar-modal--import" : ""}`} role="dialog" aria-modal="true" aria-label="Add scholar">
 							<div className="admin-detail-info">
 								<header className="grantor-import-modal-head">
 									<div className="grantor-import-modal-icon" aria-hidden="true"><HiOutlineCloudUpload /></div>
@@ -5923,7 +5923,7 @@ export default function ProviderDashboard() {
 											</div>
 											<div className="grantor-import-actions">
 												<button type="button" className="grantor-action-btn grantor-action-btn--danger" onClick={removeSelectedImportRows} disabled={selectedImportRowIndexes.length === 0}><HiOutlineTrash /> Remove Selected</button>
-											<button type="button" className="grantor-action-btn grantor-action-btn--primary" onClick={clearGrantorScholarImport}><HiOutlineRefresh /> Clear & Restart</button>
+												<button type="button" className="grantor-action-btn grantor-action-btn--primary" onClick={clearGrantorScholarImport}><HiOutlineRefresh /> Clear & Restart</button>
 											</div>
 										</div>
 										<div className={`grantor-duplicate-policy-note ${importDuplicateCount > 0 ? "is-warning" : ""}`} role="note">

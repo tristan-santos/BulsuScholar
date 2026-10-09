@@ -714,8 +714,7 @@ export default function StudentAnnouncementDetailPage() {
 					<section className="student-announcement-detail-nav">
 						<button
 							type="button"
-							className="student-mini-btn student-mini-btn--secondary"
-							data-button-variant="neutral"
+							className="student-back-button"
 							onClick={() => navigate("/student-dashboard/announcements")}
 						>
 							<HiOutlineArrowLeft aria-hidden />
@@ -925,10 +924,10 @@ export default function StudentAnnouncementDetailPage() {
 							<p>The selected announcement may have been removed or archived by the provider.</p>
 							<button
 								type="button"
-								className="student-mini-btn student-mini-btn--primary"
+								className="student-back-button"
 								onClick={() => navigate("/student-dashboard/announcements")}
 							>
-								Back to Announcements
+								<HiOutlineArrowLeft aria-hidden /> Back to Announcements
 							</button>
 						</div>
 					)}

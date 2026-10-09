@@ -2,6 +2,8 @@ import { requireBackendApiUrl } from "../config/backendApi"
 import { buildPortalRequestHeaders, PortalApiError } from "./portalApi"
 import { trackedFetch } from "./operationTracker"
 
+export const STUDENT_PROFILE_PHOTO_UPDATED_EVENT = "bulsuscholar:student-profile-photo-updated"
+
 const baseUrl = () => requireBackendApiUrl("Student profile backend")
 
 async function parseResponse(response, fallback) {
@@ -45,7 +47,9 @@ export async function uploadStudentProfilePhoto(file) {
 		headers,
 		body: form,
 	}, "document.upload")
-	return parseResponse(response, "Profile photo upload failed")
+	const result = await parseResponse(response, "Profile photo upload failed")
+	window.dispatchEvent(new Event(STUDENT_PROFILE_PHOTO_UPDATED_EVENT))
+	return result
 }
 
 export async function getStudentProfilePhotoBlob() {
@@ -53,6 +57,9 @@ export async function getStudentProfilePhotoBlob() {
 		headers: await buildPortalRequestHeaders(),
 	}, "generic.background")
 	if (!response.ok) throw new PortalApiError("Unable to open your profile photo.", { status: response.status })
+	if (!String(response.headers.get("content-type") || "").toLowerCase().startsWith("image/")) {
+		throw new PortalApiError("The profile photo response was not an image.", { status: response.status })
+	}
 	return response.blob()
 }
 

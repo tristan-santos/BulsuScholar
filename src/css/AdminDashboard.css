@@ -1439,6 +1439,32 @@
 	font-size: 0.9rem;
 }
 
+.admin-pending-year-warning {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.4rem;
+	margin: 0.45rem 0;
+	padding: 0.55rem 0.65rem;
+	border-left: 3px solid #d97706;
+	background: #fffbeb;
+	color: #92400e;
+	font-size: 0.78rem;
+	font-weight: 650;
+	line-height: 1.4;
+}
+
+.admin-pending-year-warning svg {
+	flex: 0 0 auto;
+	margin-top: 0.1rem;
+}
+
+.admin-portal--dark .admin-pending-year-warning,
+.admin-dashboard--dark .admin-pending-year-warning {
+	border-left-color: #f59e0b;
+	background: rgba(120, 53, 15, 0.28);
+	color: #fde68a;
+}
+
 .admin-management-table {
 	width: 100%;
 	min-width: 780px;

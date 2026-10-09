@@ -494,6 +494,20 @@ export async function upsertProvider(providerId, fields = {}, options = {}) {
 	await mutatePortalData("/portal/data/mutate", { table: TABLES.providers, id: providerId, data, merge: false })
 }
 
+export async function completeGrantorPasswordChange(providerId) {
+	const completedAt = serverTimestamp()
+	await mutatePortalData("/portal/data/mutate", {
+		table: TABLES.providers,
+		id: providerId,
+		data: {
+			mustChangePassword: false,
+			passwordChangeCompletedAt: completedAt,
+			passwordUpdatedAt: completedAt,
+		},
+		merge: true,
+	})
+}
+
 export async function upsertAdmin(adminId, fields = {}, options = {}) {
 	let data = serializeData(fields)
 	if (options.merge) {

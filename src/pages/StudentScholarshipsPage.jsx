@@ -78,7 +78,7 @@ import {
 	GRANTOR_PORTAL_COLLECTION,
 	normalizeGrantorPortalSettings,
 } from "../services/grantorService"
-import { applyScholarshipWorkflow, loadWaitlistWorkflow, materialRequestWorkflow, rejectScholarshipInvitationWorkflow, requestScholarshipMaterialsWorkflow, resolveWaitlistOfferWorkflow, withdrawScholarshipWorkflow, updateScholarshipDocumentsWorkflow } from "../services/workflowService"
+import { applyScholarshipWorkflow, loadWaitlistWorkflow, materialRequestWorkflow, preflightScholarshipMaterialsWorkflow, rejectScholarshipInvitationWorkflow, requestScholarshipMaterialsWorkflow, resolveWaitlistOfferWorkflow, withdrawScholarshipWorkflow, updateScholarshipDocumentsWorkflow } from "../services/workflowService"
 import {
 	SCHOLARSHIP_CHOICE_ENABLED,
 	getGrantorApplicationBlock,
@@ -481,6 +481,9 @@ export default function StudentScholarshipsPage() {
 	const [userMenuOpen, setUserMenuOpen] = useState(false)
 	const [isMutating, setIsMutating] = useState(false)
 	const [confirmTarget, setConfirmTarget] = useState(null)
+	const [materialPreflight, setMaterialPreflight] = useState(null)
+	const [materialPreflightBusy, setMaterialPreflightBusy] = useState(false)
+	const [materialPreflightError, setMaterialPreflightError] = useState("")
 	const [documentUploadPrompt, setDocumentUploadPrompt] = useState(null)
 	const [expenseModalTarget, setExpenseModalTarget] = useState(null)
 	const [studentApplications, setStudentApplications] = useState([])
@@ -509,6 +512,36 @@ export default function StudentScholarshipsPage() {
 	const [waitlistState, setWaitlistState] = useState({ entries: [], offers: [] })
 	const [waitlistBusy, setWaitlistBusy] = useState("")
 	const [signedSoeBusy, setSignedSoeBusy] = useState("")
+
+	useEffect(() => {
+		if (!confirmTarget || !SCHOLARSHIP_CHOICE_ENABLED) {
+			setMaterialPreflight(null)
+			setMaterialPreflightError("")
+			return undefined
+		}
+		const applicationId = confirmTarget.applicationId || studentApplications.find((app) =>
+			app.applicationNumber === confirmTarget.applicationNumber && app.grantorId === confirmTarget.grantorId)?.id
+		if (!applicationId) {
+			setMaterialPreflight(null)
+			setMaterialPreflightError("This application could not be matched. Reload the page and try again.")
+			return undefined
+		}
+		let active = true
+		setMaterialPreflightBusy(true)
+		setMaterialPreflight(null)
+		setMaterialPreflightError("")
+		preflightScholarshipMaterialsWorkflow({ applicationId })
+			.then((result) => {
+				if (active) setMaterialPreflight(result)
+			})
+			.catch((error) => {
+				if (active) setMaterialPreflightError(error.message || "Readiness could not be checked.")
+			})
+			.finally(() => {
+				if (active) setMaterialPreflightBusy(false)
+			})
+		return () => { active = false }
+	}, [confirmTarget, studentApplications])
 	const { theme, setTheme } = useThemeMode()
 	const userMenuRef = useRef(null)
 	const forcedLogoutRef = useRef(false)
@@ -2158,6 +2191,7 @@ export default function StudentScholarshipsPage() {
 
 	const chooseScholarship = async (target) => {
 		if (SCHOLARSHIP_CHOICE_ENABLED) {
+			if (!materialPreflight?.eligible && !materialPreflight?.existingRequest) return
 			await requestMaterial(target, "soe")
 			return
 		}
@@ -2256,6 +2290,7 @@ export default function StudentScholarshipsPage() {
 					normalizeMaterialRequest(result.materialRequest), ...prev.filter((item) => item.id !== result.materialRequest.id),
 				])
 				toast.success("Scholarship selected and materials request submitted.")
+				setConfirmTarget(null)
 				return
 			}
 			const selected = scholarships.find((item) => item.id === target.id)
@@ -2457,11 +2492,19 @@ export default function StudentScholarshipsPage() {
 				application_closed: "This application is already closed.",
 				authoritative_roster_managed: "Official roster scholarships complete automatically after all applicable documents are approved.",
 			}
+			const blockers = Array.isArray(error?.data?.blockers) ? error.data.blockers : []
+			if (blockers.length > 0) {
+				setMaterialPreflight((current) => ({
+					...(current || {}),
+					eligible: false,
+					blockers,
+				}))
+			}
 			if (!messages[error?.reason]) console.error(`Failed to request ${materialKey}:`, error)
 			toast.error(messages[error?.reason] || error.message || `${materialConfig?.label || "Material"} request failed. Please try again.`)
 		} finally {
 			setIsMutating(false)
-			setConfirmTarget(null)
+			if (!SCHOLARSHIP_CHOICE_ENABLED) setConfirmTarget(null)
 		}
 	}
 
@@ -2470,6 +2513,10 @@ export default function StudentScholarshipsPage() {
 		if (isScholarshipActionBlocked()) return
 		if (materialKey === "application_form") {
 			handleDownloadApplicationForm(target)
+			return
+		}
+		if (SCHOLARSHIP_CHOICE_ENABLED) {
+			setConfirmTarget(target)
 			return
 		}
 		if (hasMultipleScholarshipChoices) {
@@ -2507,7 +2554,7 @@ export default function StudentScholarshipsPage() {
 			)
 			return
 		}
-		if ((SCHOLARSHIP_CHOICE_ENABLED && !hasScholarshipCommitment(user || {})) || scholarships.length >= 2) {
+		if (scholarships.length >= 2) {
 			setConfirmTarget(target)
 			return
 		}
@@ -3952,10 +3999,38 @@ export default function StudentScholarshipsPage() {
 						>
 							<HiX aria-hidden />
 						</button>
+						<p className="student-soe-modal-kicker">Scholarship commitment</p>
 						<h3>Choose Scholarship</h3>
-						<p>
-							Select <strong>{confirmTarget.name}</strong> from {confirmTarget.grantorName || confirmTarget.provider}? Requesting materials will commit you to this scholarship and request the SOE and {getApplicationFormSource(confirmTarget).label}. Other pending applications will close and their slots will be returned. You cannot withdraw after confirming.
-						</p>
+						<div className="student-material-choice-summary">
+							<strong>{materialPreflight?.scholarship?.name || confirmTarget.name}</strong>
+							<span>{materialPreflight?.scholarship?.grantorName || confirmTarget.grantorName || confirmTarget.provider}</span>
+						</div>
+						{materialPreflightBusy ? <p className="student-material-preflight-loading">Checking application readiness...</p> : null}
+						{materialPreflightError ? <div className="student-material-blocker"><HiOutlineExclamation /><p>{materialPreflightError}</p></div> : null}
+						{materialPreflight ? (
+							<>
+								<div className="student-material-readiness">
+									<h4>Readiness checklist</h4>
+									{(materialPreflight.checklist || []).map((item) => (
+										<div key={item.code} className={item.ready ? "is-ready" : "is-blocked"}>
+											{item.ready ? <HiCheck /> : <HiOutlineExclamation />}
+											<span>{item.label}</span>
+										</div>
+									))}
+								</div>
+								{(materialPreflight.blockers || []).map((blocker) => (
+									<div className="student-material-blocker" key={blocker.code}>
+										<HiOutlineExclamation />
+										<p><strong>{blocker.message}</strong><button type="button" onClick={() => navigate(blocker.route)}>{blocker.actionLabel}</button></p>
+									</div>
+								))}
+								<div className="student-material-consequences">
+									<p><strong>Materials:</strong> {(materialPreflight.requiredMaterials || []).map((item) => item.label).join(" and ")}</p>
+									<p><strong>Other applications:</strong> {materialPreflight.affectedApplications?.length ? `${materialPreflight.affectedApplications.length} will close and ${materialPreflight.slotReleaseCount || 0} reserved slot(s) will be returned.` : "No competing application will close."}</p>
+									<p><strong>Final selection:</strong> You cannot withdraw after requesting these materials.</p>
+								</div>
+							</>
+						) : null}
 						<div className="student-soe-modal-actions">
 							<button type="button" className="student-mini-btn student-mini-btn--secondary"
 								disabled={isMutating} onClick={() => setConfirmTarget(null)}>Cancel</button>
@@ -3963,7 +4038,7 @@ export default function StudentScholarshipsPage() {
 								type="button"
 								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
 								onClick={() => chooseScholarship(confirmTarget)}
-								disabled={isMutating}
+								disabled={isMutating || materialPreflightBusy || (!materialPreflight?.eligible && !materialPreflight?.existingRequest)}
 							>
 								Request Materials
 							</button>

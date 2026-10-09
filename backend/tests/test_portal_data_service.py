@@ -40,6 +40,27 @@ class PortalDataScopeTests(unittest.TestCase):
                 service.mutate_portal_data(request, payload)
         self.assertEqual(raised.exception.status_code, 403)
 
+    def test_grantor_can_complete_own_password_change_with_narrow_patch(self):
+        request = Mock()
+        payload = {
+            "table": "providers",
+            "id": "grantor-1",
+            "data": {
+                "mustChangePassword": False,
+                "passwordChangeCompletedAt": "2026-10-04T10:00:00Z",
+                "passwordUpdatedAt": "2026-10-04T10:00:00Z",
+            },
+            "merge": True,
+        }
+        with (
+            patch.object(service, "enforce_portal_scope", side_effect=lambda request, identity, roles: identity.update({"actorType": "grantor", "actorId": "grantor-1"})),
+            patch.object(service, "supabase_document_upsert", return_value={"ok": True, "data": [{"id": "grantor-1"}]}) as upsert,
+        ):
+            result = service.mutate_portal_data(request, payload)
+
+        self.assertTrue(result["ok"])
+        upsert.assert_called_once_with("providers", "grantor-1", payload["data"], merge=True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 from backend import roster_workflow_service as service
 
 
@@ -125,6 +127,37 @@ class RosterWorkflowRpcTests(unittest.TestCase):
         rpc.assert_called_once_with("request_scholarship_materials", {
             "p_student_id": "20260001", "p_application_id": "application-1",
         })
+
+    def test_material_preflight_uses_authenticated_student(self):
+        readiness = {"eligible": False, "blockers": [{"code": "document_review_required"}]}
+        with patch.object(service, "enforce_portal_scope"), \
+                patch.object(service, "supabase_rpc", return_value={"ok": True, "data": readiness}) as rpc:
+            result = service.preflight_student_materials(object(), {
+                "actorType": "student", "actorId": "20260001",
+                "studentId": "forged-student", "applicationId": "application-1",
+            })
+        self.assertFalse(result["eligible"])
+        rpc.assert_called_once_with("scholarship_materials_preflight", {
+            "p_student_id": "20260001", "p_application_id": "application-1",
+        })
+
+    def test_material_business_failure_returns_structured_conflict(self):
+        rpc_results = [
+            {"ok": False, "reason": "document_review_required"},
+            {"ok": True, "data": {"blockers": [{
+                "code": "document_review_required", "message": "Wait for approval.",
+                "actionLabel": "Wait for Review", "route": "/student-dashboard/profile",
+            }]}},
+        ]
+        with patch.object(service, "enforce_portal_scope"), \
+                patch.object(service, "supabase_rpc", side_effect=rpc_results):
+            with self.assertRaises(HTTPException) as raised:
+                service.request_student_materials(object(), {
+                    "actorType": "student", "actorId": "20260001", "applicationId": "application-1",
+                })
+        self.assertEqual(409, raised.exception.status_code)
+        self.assertEqual("document_review_required", raised.exception.detail["code"])
+        self.assertEqual("Wait for Review", raised.exception.detail["blockers"][0]["actionLabel"])
 
     def test_full_admin_conflict_resolution_is_audited_rpc(self):
         with patch.object(service, "enforce_portal_scope"), \

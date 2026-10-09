@@ -48,6 +48,7 @@ try:
         commit_roster_import,
         list_roster_conflicts,
         preview_roster_import,
+        preflight_student_materials,
         resolve_roster_conflict,
         request_student_materials,
     )
@@ -99,6 +100,7 @@ try:
         list_admin_notifications,
         list_grantor_notifications,
         list_student_notifications,
+        get_student_required_action,
         supabase_document_get,
         supabase_select,
         create_log,
@@ -161,6 +163,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         commit_roster_import,
         list_roster_conflicts,
         preview_roster_import,
+        preflight_student_materials,
         resolve_roster_conflict,
         request_student_materials,
     )
@@ -212,6 +215,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         list_admin_notifications,
         list_grantor_notifications,
         list_student_notifications,
+        get_student_required_action,
         supabase_document_get,
         supabase_select,
         create_log,
@@ -606,7 +610,7 @@ def list_student_notifications_endpoint(request: Request, payload: dict[str, Any
     result = list_student_notifications(student_id)
     if not result.get("ok"):
         raise HTTPException(status_code=503, detail=result.get("reason") or "student_notifications_unavailable")
-    return result
+    return {**result, "requiredAction": get_student_required_action(student_id)}
 
 
 @app.post("/notifications/student/broadcast")
@@ -829,10 +833,11 @@ async def create_student_signup_document_batch_endpoint(
     cor: UploadFile = File(...),
     identity: UploadFile = File(...),
     rog: UploadFile | None = File(None),
+    declared_year: str = Form(""),
 ) -> dict[str, Any]:
     if public_config().get("portal", {}).get("allowStudentSignup") is False:
         raise HTTPException(status_code=403, detail="student_signup_disabled")
-    return await create_signup_document_batch(student_id, email, identity_kind, cor, identity, rog)
+    return await create_signup_document_batch(student_id, email, identity_kind, cor, identity, rog, declared_year)
 
 
 @app.post("/workflows/student/signup/finalize")
@@ -996,6 +1001,11 @@ def material_request_update_endpoint(request: Request, payload: dict[str, Any] =
 @app.post("/workflows/scholarship/materials/request")
 def request_student_materials_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return request_student_materials(request, payload)
+
+
+@app.post("/workflows/scholarship/materials/preflight")
+def preflight_student_materials_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return preflight_student_materials(request, payload)
 
 
 @app.post("/workflows/grantor/scholars/import/preview")

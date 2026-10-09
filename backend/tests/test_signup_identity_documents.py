@@ -80,6 +80,45 @@ class SignupIdentityDocumentTests(unittest.IsolatedAsyncioTestCase):
         result = await create_signup_document_batch("20260001", "student@example.com", "previous_school_id", cor, identity, rog)
         self.assertTrue(result["rogRequired"])
 
+    @patch("backend.signup_service.supabase_document_upsert", return_value={"ok": True})
+    @patch("backend.signup_service._store_bytes", side_effect=lambda path, body, content_type: {"bucket": "private", "path": path, "size": len(body)})
+    @patch("backend.signup_service._signup_document_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True})
+    @patch("backend.signup_service.previous_semester_tag", return_value="2025-2026-2ND")
+    @patch("backend.signup_service.get_current_semester_tag", return_value="2026-2027-1ST")
+    @patch("backend.signup_service.parse_pdf_document")
+    async def test_declared_year_mismatch_is_saved_for_admin_review(self, parse, _cycle, _previous, _policy, _store, upsert):
+        parse.side_effect = [cor_scan(2), rog_scan("2025-2026-2ND")]
+        cor, rog, identity = self.files()
+        result = await create_signup_document_batch(
+            "20260001", "student@example.com", "student_id", cor, identity, rog, declared_year="4",
+        )
+
+        self.assertEqual("4", result["year"])
+        self.assertEqual("2", result["detectedCorYear"])
+        self.assertTrue(result["yearLevelMismatch"])
+        saved_batch = upsert.call_args.args[2]
+        self.assertEqual("4", saved_batch["year"])
+        self.assertEqual("2", saved_batch["detectedCorYear"])
+        self.assertTrue(saved_batch["yearLevelMismatch"])
+
+    @patch("backend.signup_service.supabase_document_upsert", return_value={"ok": True})
+    @patch("backend.signup_service._store_bytes", side_effect=lambda path, body, content_type: {"bucket": "private", "path": path, "size": len(body)})
+    @patch("backend.signup_service._signup_document_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True})
+    @patch("backend.signup_service.previous_semester_tag", return_value="2025-2026-2ND")
+    @patch("backend.signup_service.get_current_semester_tag", return_value="2026-2027-1ST")
+    @patch("backend.signup_service.parse_pdf_document")
+    async def test_declared_year_allows_signup_when_cor_year_is_not_detected(self, parse, _cycle, _previous, _policy, _store, _upsert):
+        scan_without_year = {**cor_scan(4), "year": ""}
+        parse.side_effect = [scan_without_year, rog_scan("2025-2026-2ND")]
+        cor, rog, identity = self.files()
+        result = await create_signup_document_batch(
+            "20260001", "student@example.com", "student_id", cor, identity, rog, declared_year="4",
+        )
+
+        self.assertEqual("4", result["year"])
+        self.assertEqual("", result["detectedCorYear"])
+        self.assertFalse(result["yearLevelMismatch"])
+
     @patch("backend.signup_service._signup_document_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True})
     @patch("backend.signup_service.previous_semester_tag", return_value="2025-2026-2ND")
     @patch("backend.signup_service.get_current_semester_tag", return_value="2026-2027-1ST")

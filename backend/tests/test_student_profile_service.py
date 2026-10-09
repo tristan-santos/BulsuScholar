@@ -159,6 +159,82 @@ class StudentProfileValidationTests(unittest.TestCase):
 
 
 class StudentDocumentReviewTests(unittest.TestCase):
+    def test_latest_profile_submission_is_selected_globally_across_cycles(self):
+        rows = [
+            {"id": "old", "studentId": "student-1", "documentType": "profile", "academicCycle": "2025", "version": 9, "submittedAt": "2026-09-01T00:00:00Z"},
+            {"id": "new", "studentId": "student-1", "documentType": "profile", "academicCycle": "2026", "version": 1, "submittedAt": "2026-10-01T00:00:00Z"},
+            {"id": "other", "studentId": "student-2", "documentType": "profile", "academicCycle": "2025", "version": 2, "submittedAt": "2026-08-01T00:00:00Z"},
+        ]
+        latest = service._latest_profile_submissions(rows)
+        self.assertEqual("new", latest["student-1"]["id"])
+        self.assertEqual("other", latest["student-2"]["id"])
+
+    @patch.object(service, "create_log")
+    @patch.object(service, "supabase_document_update", return_value={"ok": True})
+    def test_resubmission_supersedes_only_older_pending_profile_requests(self, update, _log):
+        service._supersede_pending_profile_submissions([
+            {"id": "pending-old", "status": "pending", "profileRevisionId": "revision-old"},
+            {"id": "approved-old", "status": "approved", "profileRevisionId": "revision-approved"},
+            {"id": "replacement", "status": "pending", "profileRevisionId": "revision-new"},
+        ], "replacement")
+
+        self.assertEqual(2, update.call_count)
+        self.assertEqual(("student_document_submissions", "pending-old"), update.call_args_list[0].args[:2])
+        self.assertEqual("superseded", update.call_args_list[0].args[2]["status"])
+        self.assertEqual(("student_profile_revisions", "revision-old"), update.call_args_list[1].args[:2])
+
+    def test_admin_queue_returns_one_latest_profile_and_keeps_other_documents(self):
+        old_profile = {
+            "id": "profile-old", "studentId": "student-1", "documentType": "profile",
+            "status": "approved", "version": 1, "submittedAt": "2026-09-01T00:00:00Z",
+        }
+        new_profile = {
+            "id": "profile-new", "studentId": "student-1", "documentType": "profile",
+            "status": "pending", "version": 2, "submittedAt": "2026-10-01T00:00:00Z",
+        }
+        cor = {
+            "id": "cor-1", "studentId": "student-1", "documentType": "cor",
+            "status": "pending", "version": 1, "submittedAt": "2026-09-15T00:00:00Z",
+        }
+        with patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"})), \
+                patch.object(service, "_data_rows", side_effect=[[old_profile, new_profile, cor], [old_profile, new_profile]]), \
+                patch.object(service, "supabase_document_get", return_value={"row": {"id": "student-1"}, "data": {"fname": "Ana", "lname": "Santos", "year": "2", "course": "BSIT"}}), \
+                patch.object(service, "_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True}):
+            result = service.list_document_review_queue(object())
+
+        self.assertEqual({"cor-1", "profile-new"}, {item["id"] for item in result["submissions"]})
+        self.assertEqual(1, sum(item["documentType"] == "profile" for item in result["submissions"]))
+
+    def test_profile_status_filter_is_applied_after_latest_selection(self):
+        rows = [
+            {"id": "profile-old", "studentId": "student-1", "documentType": "profile", "status": "approved", "version": 1, "submittedAt": "2026-09-01T00:00:00Z"},
+            {"id": "profile-new", "studentId": "student-1", "documentType": "profile", "status": "pending", "version": 2, "submittedAt": "2026-10-01T00:00:00Z"},
+        ]
+        with patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"})), \
+                patch.object(service, "_data_rows", return_value=rows), \
+                patch.object(service, "_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True}):
+            result = service.list_document_review_queue(object(), status="approved", document_type="profile")
+        self.assertEqual([], result["submissions"])
+
+    def test_stale_profile_review_is_rejected_as_superseded(self):
+        old = {
+            "id": "profile-old", "studentId": "student-1", "documentType": "profile",
+            "status": "pending", "version": 1, "submittedAt": "2026-09-01T00:00:00Z",
+        }
+        new = {
+            "id": "profile-new", "studentId": "student-1", "documentType": "profile",
+            "status": "pending", "version": 2, "submittedAt": "2026-10-01T00:00:00Z",
+        }
+        with patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"})), \
+                patch.object(service, "supabase_document_get", return_value={"row": {"id": "profile-old"}, "data": old}), \
+                patch.object(service, "_data_rows", return_value=[old, new]), \
+                patch.object(service, "supabase_document_update") as update:
+            with self.assertRaises(HTTPException) as raised:
+                service.review_document_submission(object(), "profile-old", {"decision": "approved"})
+        self.assertEqual(409, raised.exception.status_code)
+        self.assertEqual("profile_submission_superseded", raised.exception.detail)
+        update.assert_not_called()
+
     @patch.object(service, "create_log")
     @patch.object(service, "supabase_rest_insert", return_value={"ok": True})
     @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": None})

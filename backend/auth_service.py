@@ -185,6 +185,11 @@ def _send_email_code(account: dict[str, Any]) -> dict[str, Any]:
         ),
     })
     if not delivery.get("sent"):
+        supabase_rpc("cancel_portal_email_challenge", {
+            "p_id": challenge_id,
+            "p_auth_user_id": account["data"]["authUserId"],
+            "p_reason": "delivery_failed",
+        })
         raise HTTPException(status_code=503, detail="email_verification_delivery_failed")
     return {
         "required": True,

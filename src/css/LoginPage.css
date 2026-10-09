@@ -732,3 +732,68 @@ html[data-theme="dark"] .password-visibility-toggle:active {
 	background: rgba(34, 197, 94, 0.2);
 	color: #86efac;
 }
+
+.grantor-password-requirements {
+	display: grid;
+	gap: 0.65rem;
+	margin-top: -0.35rem;
+	padding: 0.9rem 1rem;
+	border: 1px solid #d5e2dc;
+	border-radius: 7px;
+	background: #f8fbf9;
+}
+
+.grantor-password-requirements > strong {
+	color: #1f3f34;
+	font-size: 0.86rem;
+	font-weight: 700;
+}
+
+.grantor-password-requirements ul {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.5rem 0.85rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.grantor-password-requirements li,
+.grantor-password-match {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.45rem;
+	margin: 0;
+	color: #7b3d37;
+	font-size: 0.78rem;
+	font-weight: 500;
+	line-height: 1.4;
+}
+
+.grantor-password-requirements li span,
+.grantor-password-match span {
+	display: inline-grid;
+	place-items: center;
+	flex: 0 0 auto;
+	width: 17px;
+	height: 17px;
+	margin-top: 1px;
+}
+
+.grantor-password-requirements li svg,
+.grantor-password-match svg {
+	display: block;
+	width: 17px;
+	height: 17px;
+}
+
+.grantor-password-requirements li.is-met,
+.grantor-password-match.is-met {
+	color: #087044;
+}
+
+.grantor-password-match.is-missing { color: #a02b22; }
+
+@media (max-width: 520px) {
+	.grantor-password-requirements ul { grid-template-columns: 1fr; }
+}

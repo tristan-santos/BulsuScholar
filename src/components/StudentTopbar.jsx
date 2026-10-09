@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from "react-router-dom"
 import {
 	HiOutlineAcademicCap,
 	HiOutlineBell,
-	HiOutlineClock,
 	HiOutlineHome,
 	HiOutlineInbox,
 	HiOutlineLogout,
@@ -30,6 +29,7 @@ import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import ThemeToggle from "./ThemeToggle"
 import { supabase } from "../services/supabaseClient"
 import { clearPortalIdentity } from "../services/portalSessionStorage"
+import useStudentProfilePhoto from "../hooks/useStudentProfilePhoto"
 
 function getReadAnnouncementStorageKey(studentId = "") {
 	return `bulsuscholar_student_read_announcements_${studentId || "guest"}`
@@ -78,6 +78,7 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 		[currentPath],
 	)
 	const studentId = sessionStorage.getItem("bulsuscholar_userId") || ""
+	const { photoUrl: authenticatedAvatarUrl } = useStudentProfilePhoto({ enabled: Boolean(studentId) })
 	const [profileMenuOpen, setProfileMenuOpen] = useState(false)
 	const [studentNotifications, setStudentNotifications] = useState([])
 	const [announcements, setAnnouncements] = useState([])
@@ -226,7 +227,7 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 		[announcements, readAnnouncementIds, studentNotifications],
 	)
 	const inboxBadgeCount = unreadStudentNotifications.length + unreadAnnouncementCount
-	const avatarUrl = user?.profileImageUrl || ""
+	const avatarUrl = authenticatedAvatarUrl
 	const userInitials = getStudentInitials(user || {})
 	const fullName = getStudentName(user || {})
 	const studentEmail = user?.email ? String(user.email).trim().toLowerCase() : "Student account"
@@ -309,10 +310,6 @@ export default function StudentTopbar({ user, theme, setTheme }) {
 									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/scholarships") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/scholarships") ? "page" : undefined} onClick={() => goTo("/student-dashboard/scholarships")}>
 										<HiOutlineAcademicCap className="student-verified-dropdown-item-icon" />
 										Scholarships
-									</button>
-									<button type="button" className={`student-verified-dropdown-item ${isActiveRoute("/student-dashboard/history") ? "active" : ""}`} aria-current={isActiveRoute("/student-dashboard/history") ? "page" : undefined} onClick={() => goTo("/student-dashboard/history")}>
-										<HiOutlineClock className="student-verified-dropdown-item-icon" />
-										History
 									</button>
 								</nav>
 								<div className="student-verified-dropdown-theme">

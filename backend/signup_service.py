@@ -170,6 +170,7 @@ async def create_signup_document_batch(
     cor: UploadFile,
     identity: UploadFile,
     rog: UploadFile | None = None,
+    declared_year: str = "",
 ) -> dict[str, Any]:
     normalized_student_id = normalize_student_id(student_id)
     normalized_email = normalize_email(email)
@@ -183,9 +184,14 @@ async def create_signup_document_batch(
     scanned_student_id = normalize_student_id(cor_scan.get("studentId"))
     if not scanned_student_id or scanned_student_id != normalized_student_id:
         raise HTTPException(status_code=422, detail="cor_student_id_mismatch")
-    year = _signup_year(cor_scan.get("year"))
-    if not year:
+    detected_cor_year = _signup_year(cor_scan.get("year"))
+    submitted_year = _signup_year(declared_year)
+    if declared_year and not submitted_year:
+        raise HTTPException(status_code=422, detail="invalid_year_level")
+    if not detected_cor_year and not submitted_year:
         raise HTTPException(status_code=422, detail="cor_year_level_not_detected")
+    year = submitted_year or detected_cor_year
+    year_level_mismatch = bool(submitted_year and detected_cor_year and submitted_year != detected_cor_year)
 
     current_cycle = get_current_semester_tag()
     cor_cycle = build_semester_tag(cor_scan)
@@ -241,6 +247,8 @@ async def create_signup_document_batch(
             "status": "prepared",
             "academicCycle": current_cycle,
             "year": year,
+            "detectedCorYear": detected_cor_year,
+            "yearLevelMismatch": year_level_mismatch,
             "rogRequired": rog_required,
             "rogExemptionReason": "" if rog_required else "first_year_first_semester",
             "identityKind": identity_kind,
@@ -261,6 +269,8 @@ async def create_signup_document_batch(
         "batchId": batch_id,
         "batchSecret": secret,
         "year": year,
+        "detectedCorYear": detected_cor_year,
+        "yearLevelMismatch": year_level_mismatch,
         "academicCycle": current_cycle,
         "rogRequired": rog_required,
         "identityKind": identity_kind,
@@ -622,8 +632,6 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "reason": "missing_email"}
     if batch.get("studentId") != student_id or normalize_email(batch.get("email")) != email:
         return {"ok": False, "reason": "signup_document_batch_identity_mismatch"}
-    if str(student.get("year") or "") and _signup_year(student.get("year")) != str(batch.get("year") or ""):
-        return {"ok": False, "reason": "cor_year_level_mismatch", "detectedYearLevel": batch.get("year")}
     if not (batch_documents.get("identity") or {}).get("path"):
         return {"ok": False, "reason": "missing_identity_document"}
     if str(batch.get("identityKind") or "") not in ({"student_id", "previous_school_id", "government_id"} if student_year == "1" else {"student_id"}):
@@ -770,6 +778,11 @@ def validate_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         "cpNumber": cp_number,
         "documentBatch": batch,
         "year": student_year,
+        "yearLevelReview": {
+            "submittedYear": student_year,
+            "detectedCorYear": str(batch.get("detectedCorYear") or ""),
+            "mismatch": batch.get("yearLevelMismatch") is True,
+        },
         "cor": {
             "studentId": cor_student_id,
             "hash": cor_hash,
@@ -788,6 +801,8 @@ def _signup_submission_records(student_id: str, batch: dict[str, Any]) -> tuple[
     requirements = {
         "academicCycle": cycle,
         "yearLevel": year,
+        "detectedCorYear": str(batch.get("detectedCorYear") or ""),
+        "yearLevelMismatch": batch.get("yearLevelMismatch") is True,
         "semester": cycle.rsplit("-", 1)[-1],
         "rogRequired": bool(batch.get("rogRequired")),
         "rogExemptionReason": str(batch.get("rogExemptionReason") or ""),
@@ -898,6 +913,11 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
     student["isPending"] = True
     student["validatedAt"] = None
     student["year"] = str(claimed_batch.get("year") or validation.get("year") or student.get("year") or "")
+    student["yearLevelReview"] = validation.get("yearLevelReview") or {
+        "submittedYear": student["year"],
+        "detectedCorYear": str(claimed_batch.get("detectedCorYear") or ""),
+        "mismatch": claimed_batch.get("yearLevelMismatch") is True,
+    }
     student.setdefault("createdAt", utc_now_iso())
     student["updatedAt"] = utc_now_iso()
 

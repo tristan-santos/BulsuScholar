@@ -53,6 +53,7 @@ def list_pending_student_accounts(request: Request) -> dict[str, Any]:
             "createdAt": data.get("createdAt"),
             "emailConfirmedAt": data.get("emailConfirmedAt"),
             "accountReviewStatus": data.get("accountReviewStatus") or "pending_email",
+            "yearLevelReview": data.get("yearLevelReview") if isinstance(data.get("yearLevelReview"), dict) else {},
             "documents": documents,
         })
     return {"ok": True, "accounts": accounts}

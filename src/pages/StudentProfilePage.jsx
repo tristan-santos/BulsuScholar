@@ -15,10 +15,19 @@ import {
 import { toast } from "react-toastify"
 import StudentTopbar from "../components/StudentTopbar"
 import StudentFooter from "../components/StudentFooter"
+import StudentDatePicker from "../components/StudentDatePicker"
+import CustomSelect from "../components/CustomSelect"
+import {
+	OTHER_PROVINCE_VALUE,
+	REGION_III_PROVINCE_OPTIONS,
+	getBarangaysByLocation,
+	getCitiesByProvince,
+	getRegionProvinceSelection,
+} from "../data/philippineLocations"
 import useThemeMode from "../hooks/useThemeMode"
+import useStudentProfilePhoto from "../hooks/useStudentProfilePhoto"
 import {
 	getStudentProfileWorkspace,
-	getStudentProfilePhotoBlob,
 	getStudentVerificationDocumentBlob,
 	previewStudentProfileDraft,
 	saveStudentProfileDraft,
@@ -33,15 +42,25 @@ import "../css/StudentPortalRefresh.css"
 const EMPTY_ADDRESS = { street: "", barangay: "", city: "", province: "", postalCode: "" }
 const EMPTY_PROFILE = {
 	fname: "", mname: "", lname: "", extension: "", email: "", cpNumber: "", birthDate: "",
-	guardianName: "", guardianContact: "", college: "", course: "", major: "", year: "", section: "",
-	profileImageUrl: "", permanentAddress: EMPTY_ADDRESS, currentAddress: EMPTY_ADDRESS,
+	guardianName: "", guardianContact: "", college: "", course: "", year: "", section: "",
+	profileImageUrl: "", permanentAddress: EMPTY_ADDRESS,
 }
+
+const COLLEGE_OPTIONS = ["CBA", "COE", "CICS", "COED", "CIT"]
 
 const DOCUMENT_LABELS = {
 	cor: "Certificate of Registration",
 	rog: "Report of Grades",
 	identity: "Identity Document",
 	profile: "Student Application Profile",
+}
+
+function FieldLabel({ children, required = false }) {
+	return (
+		<span className="student-profile-label-text">
+			{children}{required ? <span className="student-required-marker" aria-hidden="true">*</span> : null}
+		</span>
+	)
 }
 
 function statusLabel(entry = {}) {
@@ -126,26 +145,127 @@ function SignaturePad({ value, onChange }) {
 
 	return (
 		<div className="student-profile-signature">
-		<canvas ref={canvasRef} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish} aria-label="Draw your signature" />
-			<div>
-				<label className="student-profile-file-action"><HiOutlineUpload /> Upload signature<input type="file" accept="image/png,image/jpeg" onChange={upload} /></label>
-				<button type="button" data-button-variant="neutral" onClick={clear}><HiOutlineRefresh /> Clear</button>
+			<canvas ref={canvasRef} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish} aria-label="Draw your signature" />
+			<div className="student-profile-signature-actions">
+				<label className="student-profile-signature-button student-profile-signature-button--upload"><HiOutlineUpload aria-hidden="true" /> Upload signature<input type="file" accept="image/png,image/jpeg" onChange={upload} /></label>
+				<button type="button" className="student-profile-signature-button student-profile-signature-button--clear" onClick={clear}><HiOutlineRefresh aria-hidden="true" /> Clear</button>
 			</div>
-			<small>Draw with a mouse or finger, or upload a cropped PNG/JPG. A new signature is required for each submitted revision.</small>
+			<small>Draw with a mouse or finger, or upload a cropped PNG/JPG. A fresh signature is required each time you submit the form.</small>
 		</div>
 	)
 }
 
 function AddressFields({ title, value, onChange, required = false }) {
-	const update = (key, next) => onChange({ ...(value || EMPTY_ADDRESS), [key]: next })
+	const [provinceSelection, setProvinceSelection] = useState(() => getRegionProvinceSelection(value?.province))
+	const [barangayOptions, setBarangayOptions] = useState([])
+	const [barangayLoading, setBarangayLoading] = useState(false)
+	const [barangayError, setBarangayError] = useState("")
+	const address = { ...EMPTY_ADDRESS, ...(value || {}) }
+	const update = (key, next) => onChange({ ...address, [key]: next })
+	const updateMany = (next) => onChange({ ...address, ...next })
+
+	useEffect(() => {
+		let cancelled = false
+		const resetError = window.setTimeout(() => setBarangayError(""), 0)
+		if (provinceSelection === OTHER_PROVINCE_VALUE || !address.province || !address.city) {
+			const resetState = window.setTimeout(() => {
+				setBarangayOptions([])
+				setBarangayLoading(false)
+			}, 0)
+			return () => {
+				cancelled = true
+				window.clearTimeout(resetError)
+				window.clearTimeout(resetState)
+			}
+		}
+
+		const startLoading = window.setTimeout(() => setBarangayLoading(true), 0)
+		getBarangaysByLocation(address.province, address.city)
+			.then((options) => {
+				if (cancelled) return
+				setBarangayOptions(options)
+				if (options.length === 0) setBarangayError("Barangays could not be found for the selected city or municipality.")
+			})
+			.catch((error) => {
+				if (cancelled) return
+				console.error("Profile barangay lookup failed:", error)
+				setBarangayOptions([])
+				setBarangayError("Unable to load barangays. Please check your connection and try again.")
+			})
+			.finally(() => { if (!cancelled) setBarangayLoading(false) })
+
+		return () => {
+			cancelled = true
+			window.clearTimeout(resetError)
+			window.clearTimeout(startLoading)
+		}
+	}, [address.city, address.province, provinceSelection])
+
+	const availableBarangays = address.barangay && !barangayOptions.includes(address.barangay)
+		? [address.barangay, ...barangayOptions]
+		: barangayOptions
+
 	return (
 		<fieldset className="student-profile-address-group">
-			<legend>{title}{required ? " *" : ""}</legend>
-			<label>House / Street (optional)<input value={value?.street || ""} onChange={(event) => update("street", event.target.value)} /></label>
-			<label>Barangay{required ? " *" : ""}<input value={value?.barangay || ""} onChange={(event) => update("barangay", event.target.value)} /></label>
-			<label>City / Municipality{required ? " *" : ""}<input value={value?.city || ""} onChange={(event) => update("city", event.target.value)} /></label>
-			<label>Province{required ? " *" : ""}<input value={value?.province || ""} onChange={(event) => update("province", event.target.value)} /></label>
-			<label>Postal Code (optional)<input value={value?.postalCode || ""} onChange={(event) => update("postalCode", event.target.value)} inputMode="numeric" /></label>
+			<legend><FieldLabel required={required}>{title}</FieldLabel></legend>
+			<label>
+				<FieldLabel required={required}>Province</FieldLabel>
+				<CustomSelect
+					id="student-profile-province"
+					className="student-profile-custom-select"
+					buttonClassName="student-profile-control"
+					value={provinceSelection}
+					onChange={(nextProvince) => {
+						setProvinceSelection(nextProvince)
+						updateMany({ province: nextProvince === OTHER_PROVINCE_VALUE ? "" : nextProvince, city: "", barangay: "" })
+					}}
+					options={REGION_III_PROVINCE_OPTIONS}
+					placeholder="Select province"
+				/>
+			</label>
+			{provinceSelection === OTHER_PROVINCE_VALUE ? (
+				<label>
+					<FieldLabel required={required}>Province name</FieldLabel>
+					<input value={address.province} onChange={(event) => update("province", event.target.value)} placeholder="Enter province" />
+				</label>
+			) : null}
+			<label>
+				<FieldLabel required={required}>City / Municipality</FieldLabel>
+				{provinceSelection === OTHER_PROVINCE_VALUE ? (
+					<input value={address.city} onChange={(event) => updateMany({ city: event.target.value, barangay: "" })} placeholder="Enter city or municipality" />
+				) : (
+					<CustomSelect
+						id="student-profile-city"
+						className="student-profile-custom-select"
+						buttonClassName="student-profile-control"
+						value={address.city}
+						onChange={(nextCity) => updateMany({ city: nextCity, barangay: "" })}
+						disabled={!address.province}
+						options={address.province ? getCitiesByProvince(address.province) : []}
+						placeholder={address.province ? "Select city" : "Select province first"}
+					/>
+				)}
+			</label>
+			<label>
+				<FieldLabel required={required}>Barangay</FieldLabel>
+				{provinceSelection === OTHER_PROVINCE_VALUE ? (
+					<input value={address.barangay} onChange={(event) => update("barangay", event.target.value)} placeholder="Enter barangay" />
+				) : (
+					<CustomSelect
+						id="student-profile-barangay"
+						className="student-profile-custom-select"
+						buttonClassName="student-profile-control"
+						value={address.barangay}
+						onChange={(nextBarangay) => update("barangay", nextBarangay)}
+						disabled={!address.city || barangayLoading || availableBarangays.length === 0}
+						options={availableBarangays}
+						placeholder={!address.city ? "Select city first" : barangayLoading ? "Loading barangays..." : "Select barangay"}
+					/>
+				)}
+				{barangayError ? <small className="student-profile-address-error">{barangayError}</small> : null}
+			</label>
+			<label className="student-profile-address-street"><FieldLabel>Street / Subdivision <span className="student-label-optional">(Optional)</span></FieldLabel><input value={address.street} onChange={(event) => update("street", event.target.value)} placeholder="Street name / Subdivision" /></label>
+			<label><FieldLabel>Postal Code <span className="student-label-optional">(Optional)</span></FieldLabel><input value={address.postalCode} onChange={(event) => update("postalCode", event.target.value)} inputMode="numeric" placeholder="XXXX" /></label>
 		</fieldset>
 	)
 }
@@ -158,15 +278,13 @@ export default function StudentProfilePage({ formMode = false }) {
 	const [signature, setSignature] = useState("")
 	const [busy, setBusy] = useState("")
 	const [identityKind, setIdentityKind] = useState("student_id")
-	const [showCurrentAddress, setShowCurrentAddress] = useState(false)
-	const [profilePhotoUrl, setProfilePhotoUrl] = useState("")
+	const { photoUrl: profilePhotoUrl } = useStudentProfilePhoto()
 
 	const load = useCallback(async () => {
 		try {
 			const result = await getStudentProfileWorkspace()
 			setWorkspace(result)
-			setProfile({ ...EMPTY_PROFILE, ...(result.draft || {}), permanentAddress: { ...EMPTY_ADDRESS, ...(result.draft?.permanentAddress || {}) }, currentAddress: { ...EMPTY_ADDRESS, ...(result.draft?.currentAddress || {}) } })
-			setShowCurrentAddress(Boolean(Object.values(result.draft?.currentAddress || {}).some(Boolean)))
+			setProfile({ ...EMPTY_PROFILE, ...(result.draft || {}), permanentAddress: { ...EMPTY_ADDRESS, ...(result.draft?.permanentAddress || {}) } })
 		} catch (error) {
 			console.error("Unable to load student profile workspace.", error)
 			toast.error(error.message || "Unable to load your profile.")
@@ -174,21 +292,6 @@ export default function StudentProfilePage({ formMode = false }) {
 	}, [])
 
 	useEffect(() => { load() }, [load])
-	useEffect(() => {
-		if (!workspace?.student?.profileImage && !workspace?.draft?.profileImage && !workspace?.student?.profileImageUrl) {
-			setProfilePhotoUrl("")
-			return undefined
-		}
-		let active = true
-		let objectUrl = ""
-		getStudentProfilePhotoBlob().then((blob) => {
-			if (!active) return
-			objectUrl = URL.createObjectURL(blob)
-			setProfilePhotoUrl(objectUrl)
-		}).catch(() => setProfilePhotoUrl(""))
-		return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
-	}, [workspace?.draft?.profileImage, workspace?.student?.profileImage, workspace?.student?.profileImageUrl])
-
 	const latestSubmissions = useMemo(() => {
 		const result = {}
 		for (const item of workspace?.submissions || []) if (!result[item.documentType]) result[item.documentType] = item
@@ -203,18 +306,20 @@ export default function StudentProfilePage({ formMode = false }) {
 		if (latestSubmissions.identity?.documentKind) setIdentityKind(latestSubmissions.identity.documentKind)
 	}, [latestSubmissions.identity?.documentKind])
 	const profileCompleteness = useMemo(() => {
-		const required = ["fname", "lname", "email", "cpNumber", "birthDate", "guardianName", "guardianContact", "course", "year", "section"]
+		const required = ["fname", "lname", "email", "cpNumber", "birthDate", "guardianName", "guardianContact", "college", "course", "year", "section"]
 		const addressFields = ["barangay", "city", "province"]
-		const completed = required.filter((key) => String(profile[key] || "").trim()).length + addressFields.filter((key) => String(profile.permanentAddress?.[key] || "").trim()).length
-		return { completed, total: required.length + addressFields.length, percent: Math.round((completed / (required.length + addressFields.length)) * 100) }
-	}, [profile])
+		const hasPhoto = Boolean(workspace?.student?.profileImage?.path || workspace?.draft?.profileImage?.path || profilePhotoUrl)
+		const completed = required.filter((key) => String(profile[key] || "").trim()).length + addressFields.filter((key) => String(profile.permanentAddress?.[key] || "").trim()).length + (hasPhoto ? 1 : 0)
+		const total = required.length + addressFields.length + 1
+		return { completed, total, percent: Math.round((completed / total) * 100) }
+	}, [profile, profilePhotoUrl, workspace?.draft?.profileImage?.path, workspace?.student?.profileImage?.path])
 
 	const update = (key, value) => setProfile((current) => ({ ...current, [key]: value }))
 	const saveDraft = async () => {
 		if (profile.cpNumber && !isValidContactNumber(profile.cpNumber)) return toast.error(CONTACT_NUMBER_RULE_MESSAGE)
 		setBusy("save")
 		try {
-			const normalized = { ...profile, cpNumber: profile.cpNumber ? normalizeContactNumber(profile.cpNumber) : "", currentAddress: showCurrentAddress ? profile.currentAddress : EMPTY_ADDRESS }
+			const normalized = { ...profile, cpNumber: profile.cpNumber ? normalizeContactNumber(profile.cpNumber) : "" }
 			await saveStudentProfileDraft(normalized)
 			setProfile(normalized)
 			toast.success("Profile draft saved.")
@@ -228,7 +333,7 @@ export default function StudentProfilePage({ formMode = false }) {
 		if (!signature) return toast.error("Draw or upload your signature before submitting.")
 		setBusy("submit")
 		try {
-			await saveStudentProfileDraft({ ...profile, currentAddress: showCurrentAddress ? profile.currentAddress : EMPTY_ADDRESS })
+			await saveStudentProfileDraft(profile)
 			const result = await submitStudentProfile(signature)
 			setSignature("")
 			toast.success(result.submission?.status === "approved" ? "Profile submitted and approved automatically." : "Profile submitted for review.")
@@ -241,7 +346,7 @@ export default function StudentProfilePage({ formMode = false }) {
 	const previewDraft = async () => {
 		setBusy("preview")
 		try {
-			const blob = await previewStudentProfileDraft({ ...profile, currentAddress: showCurrentAddress ? profile.currentAddress : EMPTY_ADDRESS })
+			const blob = await previewStudentProfileDraft(profile)
 			const url = URL.createObjectURL(blob)
 			window.open(url, "_blank", "noopener,noreferrer")
 			setTimeout(() => URL.revokeObjectURL(url), 60000)
@@ -308,7 +413,7 @@ export default function StudentProfilePage({ formMode = false }) {
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 			<main className="student-shell student-profile-account-page">
 				<div className="student-profile-page-title">
-					<button type="button" data-button-variant="neutral" onClick={() => navigate("/student-dashboard")}><HiOutlineArrowLeft /> Back to Dashboard</button>
+					<button type="button" className="student-back-button" onClick={() => navigate("/student-dashboard")}><HiOutlineArrowLeft aria-hidden /> Back to Dashboard</button>
 					<div>
 						<span className="student-profile-page-kicker">Student records</span>
 						<h1 className="student-page-heading">My Profile</h1>
@@ -356,7 +461,7 @@ export default function StudentProfilePage({ formMode = false }) {
 								<label className="student-profile-label">Year Level *<select className="student-profile-input student-profile-input--locked" value={profile.year} disabled aria-disabled="true"><option value="">Select year</option>{[1,2,3,4].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
 								<label className="student-profile-label">Section *<input className="student-profile-input student-profile-input--locked" value={profile.section} readOnly aria-readonly="true" /></label>
 							</div>
-							<div className="student-profile-editor-actions"><button type="button" data-button-variant="positive" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave /> {busy === "save" ? "Saving..." : "Save"}</button></div>
+							<div className="student-profile-editor-actions"><button type="button" className="student-profile-action student-profile-action--primary" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave aria-hidden /> {busy === "save" ? "Saving..." : "Save"}</button></div>
 						</section>
 
 						<section className="student-profile-section-card student-profile-section-card--full student-document-vault">
@@ -393,55 +498,51 @@ export default function StudentProfilePage({ formMode = false }) {
 			<StudentTopbar user={user} theme={theme} setTheme={setTheme} />
 			<main className="student-shell">
 				<div className="student-profile-page-head">
-					<button type="button" data-button-variant="neutral" onClick={() => navigate("/student-dashboard/profile")}><HiOutlineArrowLeft /> Back to Document Vault</button>
-					<div><span>Student records</span><h1>Profile and document verification</h1><p>Save your information as a draft, then submit one signed revision for staff review.</p></div>
+					<button type="button" className="student-back-button" onClick={() => navigate("/student-dashboard/profile")}><HiOutlineArrowLeft aria-hidden /> Back to Document Vault</button>
+					<div><span>Student records</span><h1>Create Student Profile Form</h1><p>Complete the official profile, preview the filled template, then submit a signed revision.</p></div>
 					<span className="student-profile-cycle">{workspace.academicCycle}</span>
 				</div>
 
 				<section className="student-profile-editor" id="application-profile">
 					<header><div className="student-profile-editor-title">{profilePhotoUrl ? <img src={profilePhotoUrl} alt={`${profile.fname || "Student"} profile`} /> : <span className="student-profile-photo-fallback" aria-hidden>{`${profile.fname?.[0] || ""}${profile.lname?.[0] || ""}` || "ST"}</span>}<div><h2>Student Application Profile</h2><p>Your approved revision can be reused by scholarship applications in this academic cycle.</p></div></div><span className={`student-review-status student-review-status--${workspace.verification?.profile?.status || "missing"}`}>{statusLabel(workspace.verification?.profile)}</span></header>
 					<div className="student-profile-completeness"><div><strong>Required information</strong><span>{profileCompleteness.completed} of {profileCompleteness.total} complete</span></div><progress value={profileCompleteness.completed} max={profileCompleteness.total}>{profileCompleteness.percent}%</progress></div>
+					<div className="student-profile-photo-field">
+						<div className="student-profile-photo-preview">
+							{profilePhotoUrl ? <img src={profilePhotoUrl} alt={`${studentName} 2x2 profile`} /> : <span aria-hidden>{`${profile.fname?.[0] || ""}${profile.lname?.[0] || ""}` || "ST"}</span>}
+						</div>
+						<div><h3>Profile Picture</h3><p>Use a clear, front-facing PNG, JPG, or WebP photo. It will be center-cropped to the official 2x2 frame.</p></div>
+						<label className={`student-profile-photo-upload ${busy === "photo" ? "is-busy" : ""}`}><HiOutlineCamera aria-hidden /> {hasProfilePhoto ? "Change Photo" : "Upload Photo"}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; uploadPhoto(file) }} /></label>
+					</div>
 					<div className="student-profile-form-grid student-profile-form-grid--new">
-						<label>First Name *<input value={profile.fname} onChange={(event) => update("fname", event.target.value)} /></label>
-						<label>Middle Name<input value={profile.mname} onChange={(event) => update("mname", event.target.value)} /></label>
-						<label>Last Name *<input value={profile.lname} onChange={(event) => update("lname", event.target.value)} /></label>
-						<label>Extension<input value={profile.extension} onChange={(event) => update("extension", event.target.value)} placeholder="Jr., III" /></label>
-						<label>Email *<input className="student-profile-input--locked" type="email" value={profile.email} readOnly aria-readonly="true" title="Email changes require the account recovery workflow." /></label>
-						<label>Contact Number *<input className="student-profile-input--locked" value={profile.cpNumber} readOnly aria-readonly="true" /></label>
-						<label>Date of Birth *<input type="date" value={profile.birthDate} onChange={(event) => update("birthDate", event.target.value)} /></label>
-						<label>College<input value={profile.college} onChange={(event) => update("college", event.target.value)} /></label>
-						<label className="student-profile-wide">Course *<input className="student-profile-input--locked" value={profile.course} readOnly aria-readonly="true" /></label>
-						<label>Major<input value={profile.major} onChange={(event) => update("major", event.target.value)} /></label>
-						<label>Year Level *<select className="student-profile-input--locked" value={profile.year} disabled aria-disabled="true"><option value="">Select year</option>{[1,2,3,4].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
-						<label>Section *<input className="student-profile-input--locked" value={profile.section} readOnly aria-readonly="true" /></label>
-						<label>Legal Guardian *<input value={profile.guardianName} onChange={(event) => update("guardianName", event.target.value)} /></label>
-						<label>Guardian Contact *<input value={profile.guardianContact} onChange={(event) => update("guardianContact", sanitizeContactNumber(event.target.value))} inputMode="numeric" maxLength={11} /></label>
+						<label><FieldLabel required>First Name</FieldLabel><input value={profile.fname} onChange={(event) => update("fname", event.target.value)} /></label>
+						<label><FieldLabel>Middle Name</FieldLabel><input value={profile.mname} onChange={(event) => update("mname", event.target.value)} /></label>
+						<label><FieldLabel required>Last Name</FieldLabel><input value={profile.lname} onChange={(event) => update("lname", event.target.value)} /></label>
+						<label><FieldLabel>Extension</FieldLabel><input value={profile.extension} onChange={(event) => update("extension", event.target.value)} placeholder="Jr., III" /></label>
+						<label><FieldLabel required>Email Address</FieldLabel><input className="student-profile-input--locked" type="email" value={profile.email} readOnly aria-readonly="true" title="Email changes require the account recovery workflow." /></label>
+						<label><FieldLabel required>Contact Number</FieldLabel><input className="student-profile-input--locked" value={profile.cpNumber} readOnly aria-readonly="true" /></label>
+						<div className="student-profile-form-field"><FieldLabel required>Date of Birth</FieldLabel><StudentDatePicker value={profile.birthDate} onChange={(value) => update("birthDate", value)} /></div>
+						<div className="student-profile-form-field"><FieldLabel required>College</FieldLabel><CustomSelect id="student-profile-college" className="student-profile-custom-select" buttonClassName="student-profile-control" value={profile.college} onChange={(college) => update("college", college)} options={COLLEGE_OPTIONS} placeholder="Select college" ariaLabel="College" /></div>
+						<label className="student-profile-wide"><FieldLabel required>Academic Program Enrolled In</FieldLabel><input className="student-profile-input--locked" value={profile.course} readOnly aria-readonly="true" /></label>
+						<label><FieldLabel required>Year Level</FieldLabel><select className="student-profile-input--locked" value={profile.year} disabled aria-disabled="true"><option value="">Select year</option>{[1,2,3,4].map((year) => <option key={year} value={String(year)}>Year {year}</option>)}</select></label>
+						<label><FieldLabel required>Section</FieldLabel><input className="student-profile-input--locked" value={profile.section} readOnly aria-readonly="true" /></label>
+						<label className="student-profile-wide"><FieldLabel required>Legal Guardian&apos;s Full Name</FieldLabel><input value={profile.guardianName} onChange={(event) => update("guardianName", event.target.value)} /></label>
+						<label><FieldLabel required>Legal Guardian Contact Number</FieldLabel><input value={profile.guardianContact} onChange={(event) => update("guardianContact", sanitizeContactNumber(event.target.value))} inputMode="numeric" maxLength={11} /></label>
 					</div>
 					<AddressFields title="Permanent Address" required value={profile.permanentAddress} onChange={(value) => update("permanentAddress", value)} />
-					<label className="student-profile-address-toggle"><input type="checkbox" checked={showCurrentAddress} onChange={(event) => setShowCurrentAddress(event.target.checked)} /> Add a different current address</label>
-					{showCurrentAddress ? <AddressFields title="Current Address (optional)" value={profile.currentAddress} onChange={(value) => update("currentAddress", value)} /> : null}
 					<div className="student-profile-attestation"><h3>Applicant signature</h3><p>I attest that the information supplied in this profile is true and complete.</p><SignaturePad value={signature} onChange={setSignature} /></div>
 					<div className="student-profile-editor-actions">
-						<button type="button" data-button-variant="neutral" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave /> {busy === "save" ? "Saving..." : "Save Draft"}</button>
-						<button type="button" data-button-variant="neutral" disabled={Boolean(busy)} onClick={previewDraft}><HiOutlineEye /> {busy === "preview" ? "Preparing..." : "Preview"}</button>
-						<button type="button" data-button-variant="positive" disabled={!hasProfilePhoto || Boolean(busy)} onClick={submitProfile}><HiOutlineCheckCircle /> {busy === "submit" ? "Submitting..." : "Submit for Review"}</button>
-						{latestSubmissions.profile ? <><button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.profile)}><HiOutlineEye /> View generated PDF</button><button type="button" data-button-variant="none" onClick={() => download(latestSubmissions.profile)}><HiOutlineDownload /> Download PDF</button></> : null}
+						<div className="student-profile-editor-actions__primary">
+							<button type="button" className="student-profile-action student-profile-action--secondary" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave aria-hidden /> {busy === "save" ? "Saving..." : "Save Draft"}</button>
+							<button type="button" className="student-profile-action student-profile-action--secondary" disabled={Boolean(busy)} onClick={previewDraft}><HiOutlineEye aria-hidden /> {busy === "preview" ? "Preparing..." : "Preview"}</button>
+							<button type="button" className="student-profile-action student-profile-action--primary" disabled={!hasProfilePhoto || Boolean(busy)} onClick={submitProfile}><HiOutlineCheckCircle aria-hidden /> {busy === "submit" ? "Submitting..." : "Submit for Review"}</button>
+						</div>
+						{latestSubmissions.profile ? <div className="student-profile-editor-actions__pdf"><button type="button" className="student-profile-action student-profile-action--quiet" onClick={() => preview(latestSubmissions.profile)}><HiOutlineEye aria-hidden /> View PDF</button><button type="button" className="student-profile-action student-profile-action--quiet" onClick={() => download(latestSubmissions.profile)}><HiOutlineDownload aria-hidden /> Download PDF</button></div> : null}
 					</div>
-					{!hasProfilePhoto ? <p className="student-document-disabled-reason">Return to Document Vault and upload a profile photo before submitting.</p> : null}
+					{!hasProfilePhoto ? <p className="student-document-disabled-reason">Upload a profile photo before submitting.</p> : null}
 					{workspace.verification?.profile?.reason ? <p className="student-profile-rejection"><HiOutlineXCircle /> {workspace.verification.profile.reason}</p> : null}
 					{Object.keys(workspace.verification?.profile?.fieldErrors || {}).length ? <ul className="student-profile-field-errors">{Object.entries(workspace.verification.profile.fieldErrors).map(([field, message]) => <li key={field}><strong>{field}:</strong> {message}</li>)}</ul> : null}
 				</section>
 
-				<section className="student-verification-documents">
-					<header><div><h2>Required Documents</h2><p>Uploads stay pending until an authorized reviewer approves the exact version.</p></div></header>
-					<div className="student-document-review-grid">
-						<article id="cor"><HiOutlineDocumentText /><div><h3>Certificate of Registration</h3><p>Upload your university-issued Certificate of Registration generated by the university portal for the current academic cycle.</p><strong>{statusLabel(workspace.verification?.cor)}</strong>{workspace.verification?.cor?.reason ? <small>{workspace.verification.cor.reason}</small> : null}</div><div className="student-document-actions">{latestSubmissions.cor ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.cor)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {busy === "cor" ? "Uploading..." : "Upload PDF"}<input type="file" accept="application/pdf" disabled={Boolean(busy)} onChange={(event) => uploadDocument("cor", event.target.files?.[0])} /></label></div></article>
-						<article id="rog" className={!requirements.rogRequired ? "student-document-review-card--optional" : ""}><HiOutlineDocumentText /><div><h3>Report of Grades</h3><p>{requirements.rogRequired ? "Upload your Report of Grades from the immediately previous semester." : "ROG is not required because you are a first-year, first-semester student."}</p><strong>{statusLabel(workspace.verification?.rog)}</strong>{workspace.verification?.rog?.reason ? <small>{workspace.verification.rog.reason}</small> : null}</div>{requirements.rogRequired ? <div className="student-document-actions">{latestSubmissions.rog ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.rog)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {busy === "rog" ? "Uploading..." : "Upload PDF"}<input type="file" accept="application/pdf" disabled={Boolean(busy)} onChange={(event) => uploadDocument("rog", event.target.files?.[0])} /></label></div> : <HiOutlineCheckCircle className="student-document-exempt-icon" />}</article>
-						<article id="identity"><HiOutlineDocumentText /><div><h3>{latestSubmissions.identity ? submittedIdentityLabel : "Identity Document"}</h3><p>{requirements.identityRule === "alternative_photo_id_allowed" ? "First-year students may use a Student ID, previous-school photo ID, or government photo ID." : "Second-year and higher students must submit their Student ID."}</p><strong>{statusLabel(workspace.verification?.identity)}</strong>{workspace.verification?.identity?.reason ? <small>{workspace.verification.identity.reason}</small> : null}</div><div className="student-document-actions"><select value={identityKind} onChange={(event) => setIdentityKind(event.target.value)}><option value="student_id">Student ID</option>{requirements.identityRule === "alternative_photo_id_allowed" ? <><option value="previous_school_id">Previous-school ID</option><option value="government_id">Government ID</option></> : null}</select>{latestSubmissions.identity ? <button type="button" data-button-variant="none" onClick={() => preview(latestSubmissions.identity)}><HiOutlineEye /> View</button> : null}<label><HiOutlineUpload /> {busy === "identity" ? "Uploading..." : "Upload file"}<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" disabled={Boolean(busy)} onChange={(event) => uploadDocument("identity", event.target.files?.[0], identityKind)} /></label></div></article>
-					</div>
-				</section>
-
-				<section className="student-profile-version-history"><h2>Submitted Profile Revisions</h2>{workspace.revisions?.length ? <div>{workspace.revisions.map((revision) => <article key={revision.id}><span>Version {revision.version}</span><strong className={`student-review-status student-review-status--${revision.status}`}>{statusLabel(revision)}</strong><small>{revision.submittedAt ? new Date(revision.submittedAt).toLocaleString() : ""}</small>{revision.rejectionReason ? <p>{revision.rejectionReason}</p> : null}</article>)}</div> : <p>No profile revision has been submitted yet.</p>}</section>
 				<StudentFooter description="Manage your student profile and verification records." />
 			</main>
 		</div>

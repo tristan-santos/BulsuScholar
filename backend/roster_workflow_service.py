@@ -45,6 +45,38 @@ BLOCKING_DISPOSITIONS = {
     "existing_commitment_conflict",
 }
 
+MATERIAL_REQUEST_MESSAGES = {
+    "student_account_blocked": "Your account is not currently eligible to request materials.",
+    "roster_assignment_conflict": "The Scholarship Office must resolve your roster assignment conflict.",
+    "application_closed": "This application is no longer open.",
+    "authoritative_roster_managed": "This official roster scholarship is managed automatically while your documents are reviewed.",
+    "grantor_archived": "The grantor or scholarship is no longer available.",
+    "announcement_not_open_for_applications": "The scholarship is no longer available for this application.",
+    "grade_not_eligible": "Your current GWA does not meet this scholarship requirement.",
+    "document_review_required": "Upload all required documents and wait for their approval.",
+    "document_versions_changed": "A document changed after review and its current version must be approved.",
+    "profile_required": "Complete and submit your Student Application Profile.",
+    "application_requirement_pending": "An application-specific requirement is missing or awaiting review.",
+    "slot_reservation_missing": "This application no longer has a reserved slot. Contact the Scholarship Office.",
+    "scholarship_already_committed": "You have already committed to another scholarship.",
+    "commitment_requires_resolution": "The Scholarship Office must resolve your current scholarship commitment.",
+}
+
+
+def _material_blocker(reason: str) -> dict[str, str]:
+    route = "/student-dashboard/scholarships"
+    action = "View Application"
+    if reason in {"document_review_required", "document_versions_changed"}:
+        route, action = "/student-dashboard/profile", "Wait for Review"
+    elif reason == "profile_required":
+        route, action = "/student-dashboard/profile/form", "Complete Profile"
+    return {
+        "code": reason,
+        "message": MATERIAL_REQUEST_MESSAGES.get(reason, "The request is not ready to be submitted."),
+        "actionLabel": action,
+        "route": route,
+    }
+
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
@@ -355,6 +387,24 @@ def resolve_roster_conflict(request: Request, payload: dict[str, Any]) -> dict[s
     return {"ok": True, **(result.get("data") or {})}
 
 
+def preflight_student_materials(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"student"})
+    student_id = _text(payload.get("actorId"))
+    application_id = _text(payload.get("applicationId"))
+    if not application_id:
+        raise HTTPException(status_code=422, detail="application_id_required")
+    result = supabase_rpc("scholarship_materials_preflight", {
+        "p_student_id": student_id,
+        "p_application_id": application_id,
+    })
+    if not result.get("ok"):
+        reason = result.get("reason") or "material_preflight_failed"
+        if reason == "application_not_found":
+            raise HTTPException(status_code=404, detail={"code": reason, "message": "Application not found."})
+        raise HTTPException(status_code=503, detail={"code": reason, "message": "Material readiness could not be checked."})
+    return {"ok": True, **(result.get("data") or {})}
+
+
 def request_student_materials(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student"})
     student_id = _text(payload.get("actorId"))
@@ -366,7 +416,26 @@ def request_student_materials(request: Request, payload: dict[str, Any]) -> dict
         "p_application_id": application_id,
     })
     if not result.get("ok"):
-        return {"ok": False, "reason": result.get("reason") or "material_request_failed", "detail": result.get("detail")}
+        reason = result.get("reason") or "material_request_failed"
+        if reason in MATERIAL_REQUEST_MESSAGES:
+            blockers = [_material_blocker(reason)]
+            preflight = supabase_rpc("scholarship_materials_preflight", {
+                "p_student_id": student_id,
+                "p_application_id": application_id,
+            })
+            if preflight.get("ok") and isinstance(preflight.get("data"), dict):
+                blockers = preflight["data"].get("blockers") or blockers
+            raise HTTPException(status_code=409, detail={
+                "code": reason,
+                "message": MATERIAL_REQUEST_MESSAGES[reason],
+                "blockers": blockers,
+            })
+        if reason == "application_not_found":
+            raise HTTPException(status_code=404, detail={"code": reason, "message": "Application not found."})
+        raise HTTPException(status_code=503, detail={
+            "code": reason,
+            "message": "The material request could not be completed.",
+        })
     response = result.get("data") or {}
     material = response.get("materialRequest") if isinstance(response, dict) else None
     if isinstance(material, dict) and material.get("id"):

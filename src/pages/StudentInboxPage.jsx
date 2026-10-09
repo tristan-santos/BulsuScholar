@@ -124,7 +124,14 @@ function normalizeStudentNotification(row = {}, id = "", sourceTable = "studentN
 		reason: row.reason || row.rejectionReason || "",
 		notes: row.notes || row.rejectionNotes || "",
 		readAt: row.readAt || row.read_at || null,
+		route: String(row.route || ""),
+		actionLabel: String(row.actionLabel || ""),
 	}
+}
+
+function getSafeStudentRoute(value = "") {
+	const route = String(value || "").trim()
+	return route.startsWith("/student-dashboard") ? route : ""
 }
 
 function hasRoutableAnnouncementId(notification = {}) {
@@ -199,6 +206,7 @@ export default function StudentInboxPage() {
 	const [user, setUser] = useState(null)
 	const [userLoaded, setUserLoaded] = useState(() => !sessionState.isStudent)
 	const [notifications, setNotifications] = useState([])
+	const [requiredAction, setRequiredAction] = useState(null)
 	const [announcements, setAnnouncements] = useState([])
 	const [visibleAnnouncementIds, setVisibleAnnouncementIds] = useState(() => new Set())
 	const [readAnnouncementIds, setReadAnnouncementIds] = useState(() =>
@@ -255,6 +263,7 @@ export default function StudentInboxPage() {
 			try {
 				const result = await loadStudentNotifications()
 				if (!active) return
+				setRequiredAction(result.requiredAction || null)
 				setNotifications(
 					(result.notifications || [])
 						.map((item) => normalizeStudentNotification(item, item.id, item.sourceTable))
@@ -483,6 +492,11 @@ export default function StudentInboxPage() {
 		navigate(`/student-dashboard/announcements/${source}/${announcementId}`)
 	}
 
+	const openRequiredAction = () => {
+		const route = getSafeStudentRoute(requiredAction?.route)
+		if (route) navigate(route)
+	}
+
 	const renderInboxItemIcon = (notification) => {
 		if (isSystemInboxItem(notification)) return <HiOutlineBell />
 		if (notification.authorImage) return <img src={notification.authorImage} alt="" />
@@ -516,6 +530,19 @@ export default function StudentInboxPage() {
 								<button type="button" className="student-inbox-mark-read" data-button-variant="none" onClick={markAllNotificationsRead} disabled={unreadItems.length === 0}>Mark all read</button>
 							</div>
 						</header>
+						{requiredAction ? (
+							<section className="student-required-action" aria-labelledby="student-required-action-title">
+								<div className="student-required-action-icon"><HiOutlineBell aria-hidden /></div>
+								<div className="student-required-action-copy">
+									<span>Next Required Step <b>{requiredAction.status}</b></span>
+									<h3 id="student-required-action-title">{requiredAction.title}</h3>
+									<p>{requiredAction.message}</p>
+								</div>
+								{getSafeStudentRoute(requiredAction.route) ? (
+									<button type="button" onClick={openRequiredAction}>{requiredAction.actionLabel || "Continue"}</button>
+								) : null}
+							</section>
+						) : null}
 						<div className="student-inbox-list">
 							{inboxItems.length === 0 ? (
 								<div className="student-modern-empty"><HiOutlineInbox /><strong>Your inbox is empty.</strong><p>Personal student messages will appear here.</p></div>
@@ -577,6 +604,11 @@ export default function StudentInboxPage() {
 							))}
 						</div>
 						<footer className="student-inbox-detail-actions">
+							{getSafeStudentRoute(selectedNotification.route) ? (
+								<button type="button" className="student-inbox-detail-close" data-button-variant="positive" onClick={() => navigate(getSafeStudentRoute(selectedNotification.route))}>
+									{selectedNotification.actionLabel || "Open Related Page"}
+								</button>
+							) : null}
 							{selectedNotificationIsInvitation ? (
 								<>
 									<button type="button" className="student-inbox-detail-delete" data-button-variant="danger" onClick={() => navigate(`/student-dashboard/scholarships?invitation=${encodeURIComponent(selectedNotification.invitationId)}&action=reject`)}>

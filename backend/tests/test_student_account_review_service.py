@@ -21,7 +21,7 @@ class StudentAccountReviewTests(unittest.TestCase):
     @patch.object(service, "supabase_select")
     def test_pending_accounts_include_safe_signup_document_metadata(self, select, _):
         select.side_effect = [
-            {"ok": True, "rows": [{"id": "student-1", "data": {"fname": "Ana", "lname": "Student", "year": "1", "course": "BSIT"}}]},
+            {"ok": True, "rows": [{"id": "student-1", "data": {"fname": "Ana", "lname": "Student", "year": "4", "course": "BSIT", "yearLevelReview": {"submittedYear": "4", "detectedCorYear": "2", "mismatch": True}}}]},
             {"ok": True, "rows": [{"id": "identity-1", "data": {
                 "documentType": "identity", "documentKind": "government_id", "name": "id.jpg",
                 "status": "pending", "submittedAt": "2026-09-29T00:00:00Z", "file": {"path": "private/file.jpg"},
@@ -31,6 +31,7 @@ class StudentAccountReviewTests(unittest.TestCase):
         self.assertEqual("government_id", result["accounts"][0]["documents"][0]["documentKind"])
         self.assertNotIn("file", result["accounts"][0]["documents"][0])
         self.assertEqual("BSIT", result["accounts"][0]["course"])
+        self.assertTrue(result["accounts"][0]["yearLevelReview"]["mismatch"])
 
     @patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"}))
     @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": {"id": "student-1"}, "data": {

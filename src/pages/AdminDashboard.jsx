@@ -8418,7 +8418,12 @@ export default function AdminDashboard() {
 			setDocumentReviewFieldErrors((current) => ({ ...current, [submission.id]: "" }))
 			await loadDocumentReviewQueue()
 		} catch (error) {
-			toast.error(error.message || "Unable to save the review decision.")
+			if (error.status === 409 && error.reason === "profile_submission_superseded") {
+				toast.info("This profile request was replaced by a newer submission. The review queue has been refreshed.")
+				await loadDocumentReviewQueue()
+			} else {
+				toast.error(error.message || "Unable to save the review decision.")
+			}
 		} finally {
 			setIsBusy(false)
 		}
@@ -8802,6 +8807,8 @@ export default function AdminDashboard() {
 												<span>{account.emailConfirmedAt ? "Email confirmed" : "Waiting for email confirmation"}</span>
 												<h4>{account.name || account.id}</h4>
 												<p>{account.id} | {account.course || "Course unavailable"} | Year {account.year || "-"}</p>
+												{account.yearLevelReview?.mismatch ? <p className="admin-pending-year-warning"><HiOutlineExclamation /> Year level needs review: student selected Year {account.yearLevelReview.submittedYear || account.year || "-"}, while the COR scan detected Year {account.yearLevelReview.detectedCorYear || "-"}.</p> : null}
+												{account.yearLevelReview?.submittedYear && !account.yearLevelReview.detectedCorYear ? <p className="admin-pending-year-warning"><HiOutlineExclamation /> The COR scanner could not confirm a year level. Verify the student&apos;s selected Year {account.yearLevelReview.submittedYear || account.year || "-"} before approval.</p> : null}
 												<small>{account.email || "Email unavailable"}{account.createdAt ? ` | Submitted ${new Date(account.createdAt).toLocaleString()}` : ""}</small>
 												<div className="admin-pending-account-documents">
 													{(account.documents || []).map((document) => {

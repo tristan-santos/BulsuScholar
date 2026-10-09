@@ -2820,7 +2820,13 @@
 .grantor-scholar-modal-shell {
 	position: relative;
 	width: min(820px, 100%);
+	min-width: 0;
+	max-width: calc(100vw - 3rem);
 	max-height: calc(100vh - 3rem);
+}
+
+.grantor-scholar-modal-shell--import {
+	width: min(1120px, calc(100vw - 3rem));
 }
 
 .grantor-scholar-modal {
@@ -2872,6 +2878,8 @@
 
 .grantor-scholar-modal--create .admin-detail-info {
 	margin: 0;
+	min-width: 0;
+	max-width: 100%;
 	padding: 1rem;
 	border: 0;
 	border-radius: 0;
@@ -3308,6 +3316,8 @@
 	margin-top: 1.25rem;
 	display: flex;
 	flex-direction: column;
+	min-width: 0;
+	max-width: 100%;
 	gap: 1rem;
 	animation: fadeIn 0.3s ease-out;
 }
@@ -3316,6 +3326,8 @@
 	display: flex;
 	justify-content: space-between;
 	align-items: flex-start;
+	min-width: 0;
+	gap: 1rem;
 	padding: 0.85rem;
 	background: #f0fdf4;
 	border: 1px solid #bbf7d0;
@@ -3324,8 +3336,14 @@
 	font-size: 0.92rem;
 }
 
+.grantor-import-info > div:first-child {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
 .grantor-import-actions {
 	display: flex;
+	flex: 0 0 auto;
 	align-items: center;
 	justify-content: flex-end;
 	gap: 0.55rem;
@@ -3365,11 +3383,31 @@
 }
 
 .grantor-import-table-wrap {
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
 	max-height: 320px;
 	overflow: auto;
 	border: 1px solid #e2e8f0;
 	border-radius: 10px;
 	background: #fff;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
+}
+
+.grantor-scholar-modal--import {
+	overflow-x: hidden;
+}
+
+.grantor-scholar-modal--import .admin-table-pagination {
+	min-width: 0;
+	max-width: 100%;
+}
+
+.grantor-scholar-modal--import .grantor-import-modal-actions {
+	position: sticky;
+	bottom: 0;
+	z-index: 20;
 }
 
 .grantor-import-table {

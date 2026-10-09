@@ -28,7 +28,6 @@ const StudentInboxPage = lazy(() => import("./pages/StudentInboxPage"))
 const StudentScholarshipsPage = lazy(() => import("./pages/StudentScholarshipsPage"))
 const StudentRecommendedScholarshipsPage = lazy(() => import("./pages/StudentRecommendedScholarshipsPage"))
 const StudentProfilePage = lazy(() => import("./pages/StudentProfilePage"))
-const StudentHistoryPage = lazy(() => import("./pages/StudentHistoryPage"))
 const ProviderDashboard = lazy(() => import("./pages/ProviderDashboard"))
 const GrantorChangePasswordPage = lazy(() => import("./pages/GrantorChangePasswordPage"))
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"))
@@ -154,7 +153,6 @@ export default function App() {
 					<Route path="/student-dashboard/recommended-scholarships" element={<StudentRecommendedScholarshipsPage />} />
 					<Route path="/student-dashboard/profile" element={<StudentProfilePage />} />
 					<Route path="/student-dashboard/profile/form" element={<StudentProfilePage formMode />} />
-					<Route path="/student-dashboard/history" element={<StudentHistoryPage />} />
 					<Route path="/provider-dashboard/*" element={<ProviderDashboard />} />
 					<Route path="*" element={<NotFoundPage />} />
 				</Routes>

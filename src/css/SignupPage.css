@@ -1926,7 +1926,8 @@
 }
 
 .signup-availability,
-.signup-field-error {
+.signup-field-error,
+.signup-field-warning {
 	margin: 0.4rem 0 0;
 	font-size: 0.82rem;
 	line-height: 1.35;
@@ -1946,5 +1947,10 @@
 .signup-availability--invalid,
 .signup-field-error {
 	color: #b42318;
+	font-weight: 600;
+}
+
+.signup-field-warning {
+	color: #9a6700;
 	font-weight: 600;
 }

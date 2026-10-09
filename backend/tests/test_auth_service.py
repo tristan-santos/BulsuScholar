@@ -1,6 +1,7 @@
 import unittest
 import base64
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
@@ -22,6 +23,24 @@ def access_token(session_id="22222222-2222-2222-2222-222222222222"):
 
 
 class PortalLoginTests(unittest.TestCase):
+    def test_email_factor_policy_covers_inactive_students_and_grantors_only(self):
+        old_activity = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
+        self.assertTrue(service._email_verification_due(ACCOUNT, {"last_meaningful_activity_at": old_activity}))
+        grantor = {**ACCOUNT, "type": "grantor"}
+        self.assertTrue(service._email_verification_due(grantor, {"last_meaningful_activity_at": old_activity}))
+        admin = {**ACCOUNT, "type": "admin"}
+        self.assertFalse(service._email_verification_due(admin, {"last_meaningful_activity_at": old_activity}))
+        self.assertFalse(service._email_verification_due(ACCOUNT, {}))
+
+    def test_recent_activity_and_grace_period_skip_email_factor(self):
+        recent = (datetime.now(timezone.utc) - timedelta(days=29)).isoformat()
+        future_grace = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        self.assertFalse(service._email_verification_due(ACCOUNT, {"last_meaningful_activity_at": recent}))
+        self.assertFalse(service._email_verification_due(ACCOUNT, {
+            "last_meaningful_activity_at": "2026-01-01T00:00:00Z",
+            "otp_grace_until": future_grace,
+        }))
+
     def test_pending_student_cannot_login_or_bootstrap(self):
         pending = {**ACCOUNT, "table": "pending_students", "data": {**ACCOUNT["data"], "isPending": True}}
         with patch.object(service, "_find_account", return_value=pending), \
@@ -105,6 +124,16 @@ class PortalLoginTests(unittest.TestCase):
             result = service.login({"userId": ACCOUNT["id"], "password": "correct"})
         self.assertNotIn("session", result)
         self.assertTrue(result["emailVerification"]["required"])
+
+    def test_failed_email_delivery_cancels_generated_challenge(self):
+        with patch.object(service, "_code_hash", return_value="a" * 64), \
+                patch.object(service, "send_email_notification", return_value={"sent": False}), \
+                patch.object(service, "supabase_rpc", side_effect=[{"ok": True}, {"ok": True}]) as rpc:
+            with self.assertRaises(HTTPException) as raised:
+                service._send_email_code(ACCOUNT)
+        self.assertEqual(503, raised.exception.status_code)
+        self.assertEqual("cancel_portal_email_challenge", rpc.call_args_list[1].args[0])
+        self.assertEqual("delivery_failed", rpc.call_args_list[1].args[1]["p_reason"])
 
     def test_successful_password_check_cannot_override_concurrent_lock(self):
         auth_response = {

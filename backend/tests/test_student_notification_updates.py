@@ -4,6 +4,7 @@ from unittest.mock import patch
 from backend.supabase_ops import (
     list_admin_notifications,
     list_grantor_notifications,
+    get_student_required_action,
     list_student_notifications,
     update_grantor_notification,
     update_grantor_notifications,
@@ -128,6 +129,36 @@ class NotificationListTests(unittest.TestCase):
             {"data->>notificationFallbackTable": "adminNotifications"},
             select.call_args.args[1],
         )
+
+
+class RequiredActionTests(unittest.TestCase):
+    @patch("backend.supabase_ops.supabase_select")
+    @patch("backend.supabase_ops.supabase_document_get")
+    def test_rejected_document_is_the_single_required_action(self, get, select):
+        get.return_value = {"ok": True, "row": {"id": "student-a"}, "data": {
+            "documentVerification": {
+                "cor": {"status": "approved"},
+                "rog": {"status": "approved"},
+                "identity": {"status": "rejected", "submissionId": "document-1"},
+                "profile": {"status": "missing"},
+            },
+        }}
+        select.return_value = {"ok": True, "rows": []}
+        result = get_student_required_action("student-a")
+        self.assertEqual("document:identity:document-1", result["key"])
+        self.assertEqual("Replace Document", result["actionLabel"])
+        self.assertEqual("/student-dashboard/profile#identity", result["route"])
+
+    @patch("backend.supabase_ops.supabase_select")
+    @patch("backend.supabase_ops.supabase_document_get")
+    def test_active_waitlist_offer_takes_priority(self, get, select):
+        get.return_value = {"ok": True, "row": {"id": "student-a"}, "data": {}}
+        select.return_value = {"ok": True, "rows": [{
+            "id": "offer-1", "expires_at": "2026-10-07T00:00:00Z",
+        }]}
+        result = get_student_required_action("student-a")
+        self.assertEqual("waitlist-offer:offer-1", result["key"])
+        self.assertEqual("Review Offer", result["actionLabel"])
 
 
 if __name__ == "__main__":

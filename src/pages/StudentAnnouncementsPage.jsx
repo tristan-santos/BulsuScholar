@@ -276,8 +276,7 @@ export default function StudentAnnouncementsPage() {
 							</button>
 							<button
 								type="button"
-							className="student-mini-btn student-mini-btn--secondary"
-							data-button-variant="neutral"
+							className="student-back-button"
 								onClick={() => navigate("/student-dashboard")}
 							>
 								<HiOutlineArrowLeft aria-hidden />
