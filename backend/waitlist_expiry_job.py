@@ -5,6 +5,9 @@ import urllib.error
 import urllib.request
 
 
+USER_AGENT = "BulsuScholar-Waitlist-Expiry/1.0"
+
+
 def main() -> int:
     base_url = os.getenv("BACKEND_API_URL", "https://api.bulsuscholar.com").strip().rstrip("/")
     secret = os.getenv("CRON_SECRET", "").strip()
@@ -15,12 +18,25 @@ def main() -> int:
     request = urllib.request.Request(
         f"{base_url}/internal/cron/waitlist/expire",
         data=b"{}",
-        headers={"Content-Type": "application/json", "X-Cron-Secret": secret},
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+            "X-Cron-Secret": secret,
+        },
         method="POST",
     )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        response_body = error.read().decode("utf-8", errors="replace").strip()
+        detail = f": {response_body[:500]}" if response_body else ""
+        print(
+            f"Waitlist expiry failed: HTTP {error.code} {error.reason}{detail}",
+            file=sys.stderr,
+        )
+        return 1
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
         print(f"Waitlist expiry failed: {error}", file=sys.stderr)
         return 1

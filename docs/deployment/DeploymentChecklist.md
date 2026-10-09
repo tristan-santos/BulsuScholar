@@ -216,7 +216,11 @@ capacity will remain `0` initially.
    print one JSON result, and exit successfully.
 7. Use **Run now** once. Open its logs and confirm the output contains
    `"ok":true`. A `401`, `403`, timeout, or missing-secret message is a failed
-   setup. Keep Maintenance Mode on until it succeeds.
+   setup. A Cloudflare `403` with `error code: 1010` means the deployed worker
+   is missing the application `User-Agent` from the current
+   `backend.waitlist_expiry_job` implementation. Deploy the latest worker
+   version before testing the secret again. Keep Maintenance Mode on until it
+   succeeds.
 8. Run `Invoke-RestMethod https://api.bulsuscholar.com/deployment/health` and
    confirm `environment.hasCronSecret` is `True`.
 
