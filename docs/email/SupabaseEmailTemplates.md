@@ -2,7 +2,10 @@
 
 Paste these templates into Supabase Dashboard -> Authentication -> Email Templates.
 Brevo SMTP delivers them; Supabase creates the secure authentication URL. Keep
-Brevo transactional click tracking disabled so the link is not rewritten.
+Brevo transactional click tracking disabled so the link is not rewritten. The
+confirmation template sends the token hash to the portal first. The portal then
+verifies it with Supabase when the student opens the page, which prevents an
+email provider's link preview from consuming the confirmation before the student.
 
 ## Confirm Signup
 
@@ -50,7 +53,7 @@ Body:
         </td></tr>
         <tr><td align="center" style="padding:14px 30px 28px;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:separate;"><tr><td bgcolor="#00633c" style="border:1px solid #00633c;border-radius:6px;">
-            <a href="{{ .ConfirmationURL }}" aria-label="Confirm your BulsuScholar email address" style="display:inline-block;min-width:220px;padding:15px 24px;color:#ffffff;text-align:center;text-decoration:none;font-size:15px;font-weight:800;line-height:1.2;">Confirm Email Address&nbsp;&nbsp;&rarr;</a>
+            <a href="{{ .SiteURL }}/confirm-email?token_hash={{ .TokenHash }}&amp;type=email" aria-label="Confirm your BulsuScholar email address" style="display:inline-block;min-width:220px;padding:15px 24px;color:#ffffff;text-align:center;text-decoration:none;font-size:15px;font-weight:800;line-height:1.2;">Confirm Email Address&nbsp;&nbsp;&rarr;</a>
           </td></tr></table>
           <p style="margin:13px 0 0;color:#6b7c75;font-size:12px;line-height:1.5;">This secure link can only be used for this verification request.</p>
         </td></tr>
@@ -71,7 +74,7 @@ Body:
         </td></tr>
         <tr><td style="padding:20px 30px;background:#102a20;">
           <p style="margin:0;color:#dce9e3;font-size:12px;line-height:1.6;">Button not working? Paste this URL into your browser:</p>
-          <p style="margin:7px 0 0;color:#8ee0b8;font-size:11px;line-height:1.5;word-break:break-all;">{{ .ConfirmationURL }}</p>
+          <p style="margin:7px 0 0;color:#8ee0b8;font-size:11px;line-height:1.5;word-break:break-all;">{{ .SiteURL }}/confirm-email?token_hash={{ .TokenHash }}&amp;type=email</p>
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:17px;border-collapse:collapse;border-top:1px solid #365046;"><tr>
             <td style="padding-top:14px;color:#b9c9c2;font-size:11px;line-height:1.5;">Need assistance? <a href="mailto:support@bulsuscholar.com" style="color:#ffffff;text-decoration:underline;">support@bulsuscholar.com</a></td>
             <td align="right" style="padding-top:14px;color:#b9c9c2;font-size:11px;">bulsuscholar.com</td>

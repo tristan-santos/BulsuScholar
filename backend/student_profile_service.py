@@ -814,17 +814,6 @@ def submit_student_profile(request: Request, payload: dict[str, Any]) -> dict[st
     if not supabase_document_upsert("student_document_submissions", submission_id, submission, merge=False).get("ok"):
         raise HTTPException(status_code=503, detail="profile_submission_failed")
     _supersede_pending_profile_submissions(prior_profile_submissions, submission_id)
-    profile_file = {
-        "url": f"/student/profile/documents/{submission_id}/content", **pdf_ref,
-        "name": submission["name"], "uploadedAt": submission["submittedAt"],
-        "semesterTag": cycle, "submissionId": submission_id, "reviewStatus": "pending",
-        "profileRevisionId": revision_id,
-    }
-    supabase_document_update("students", student_id, {
-        "scholarshipApplicationFile": profile_file,
-        "applicationFormFile": profile_file,
-        "updatedAt": _now(),
-    })
     supabase_document_update("student_profile_drafts", student_id, {"status": "submitted", "submittedRevisionId": revision_id})
     if not _policy()["manualReviewEnabled"]:
         submission = _system_approve_submission(submission_id, submission, student)
@@ -1005,7 +994,7 @@ def review_document_submission(request: Request, submission_id: str, payload: di
 
 
 def _create_application_snapshots(student_id: str, submission: dict[str, Any], revision_id: str) -> None:
-    applications = _data_rows("scholarship_applications", {"data->>studentId": student_id}, limit=500)
+    applications = _data_rows("scholarship_applications", {"student_id": student_id}, limit=500)
     revision = supabase_document_get("student_profile_revisions", revision_id).get("data") or {}
     signature = _read_storage(revision.get("signature") or {})
     for application in applications:
@@ -1116,8 +1105,8 @@ def document_content(request: Request, submission_id: str) -> Response:
         if submission.get("status") != "approved":
             raise HTTPException(status_code=403, detail="document_not_approved")
         applications = _data_rows("scholarship_applications", {
-            "data->>studentId": str(submission.get("studentId") or ""),
-            "data->>grantorId": actor_id,
+            "student_id": str(submission.get("studentId") or ""),
+            "grantor_id": actor_id,
         }, limit=1)
         if not applications:
             raise HTTPException(status_code=403, detail="document_access_denied")

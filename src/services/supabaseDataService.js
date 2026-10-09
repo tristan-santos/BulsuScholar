@@ -16,6 +16,8 @@ export const TABLES = {
 	providers: "providers",
 	grantorPortals: "grantor_portals",
 	scholarshipApplications: "scholarship_applications",
+	studentScholarshipState: "student_scholarship_state",
+	studentScholarshipInvitations: "student_scholarship_invitations",
 	studentWarning: "student_warnings",
 	systemLogs: "systemLogs",
 }

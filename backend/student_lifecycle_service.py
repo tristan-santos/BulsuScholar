@@ -28,7 +28,8 @@ def _rpc_response(result: dict[str, Any], fallback: str) -> dict[str, Any]:
 
 
 def promote_email_confirmed_student(payload: dict[str, Any], auth_user: dict[str, Any]) -> dict[str, Any]:
-    student_id = str(payload.get("studentId") or auth_user.get("user_metadata", {}).get("user_id") or "").strip()
+    metadata = auth_user.get("user_metadata") if isinstance(auth_user.get("user_metadata"), dict) else {}
+    student_id = str(metadata.get("user_id") or metadata.get("studentId") or "").strip()
     email = str(auth_user.get("email") or "").strip().lower()
     if not student_id or not email or not auth_user.get("email_confirmed_at"):
         return {"ok": False, "reason": "confirmed_identity_mismatch", "message": LIFECYCLE_MESSAGES["confirmed_identity_mismatch"]}

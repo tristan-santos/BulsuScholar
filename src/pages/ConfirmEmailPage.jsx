@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
 import { HiOutlineCheckCircle, HiOutlineMail, HiOutlineXCircle } from "react-icons/hi"
 import { supabase } from "../services/supabaseClient"
+import { resolveSupabaseAuthCallback } from "../services/supabaseAuthCallback"
 import { promoteEmailConfirmedStudentWorkflow } from "../services/workflowService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -10,42 +10,31 @@ import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 
 export default function ConfirmEmailPage() {
 	const brandLogo = usePublicConfiguration().branding?.logoUrl || logo
-	const navigate = useNavigate()
 	const [status, setStatus] = useState("checking")
 	const [email, setEmail] = useState("")
+	const returnToLogin = () => window.location.assign("/")
 
 	useEffect(() => {
 		let active = true
 
 		const checkSession = async () => {
-			const code = new URLSearchParams(window.location.search).get("code")
-			
-			if (code) {
-				const { error } = await supabase.auth.exchangeCodeForSession(code)
-				if (!active) return
-				if (error) {
-					console.error("Email confirmation exchange failed.", error)
-					setStatus("error")
-					return
-				}
-			}
-
-			const { data, error } = await supabase.auth.getSession()
+			const { session, error, hadCallback } = await resolveSupabaseAuthCallback(supabase, {
+				allowedOtpTypes: ["email", "signup"],
+			})
 			if (!active) return
 
 			if (error) {
-				console.error("Confirmed session could not be loaded.", error)
-				setStatus("error")
+				console.error("Email confirmation could not be completed.", error)
+				setStatus(hadCallback ? "error" : "missing")
 				return
 			}
 
-			if (data?.session?.user) {
-				const user = data.session.user
+			if (session?.user) {
+				const user = session.user
 				const userEmailAddr = user.email || ""
 				setEmail(userEmailAddr)
-				const studentIdFromMetadata = String(user.user_metadata?.user_id || user.user_metadata?.studentId || "").trim()
 				try {
-					await promoteEmailConfirmedStudentWorkflow({ studentId: studentIdFromMetadata })
+					await promoteEmailConfirmedStudentWorkflow()
 				} catch (promotionError) {
 					console.error("Email confirmed but student activation failed.", promotionError)
 					setStatus("error")
@@ -54,9 +43,9 @@ export default function ConfirmEmailPage() {
 				setStatus("confirmed")
 				
 				// Sign out so they have to log in manually with Student ID
-				await supabase.auth.signOut()
+				await supabase.auth.signOut({ scope: "local" })
 				setTimeout(() => {
-					if (active) navigate("/", { replace: true })
+					if (active) window.location.replace("/")
 				}, 2000)
 				return
 			}
@@ -76,7 +65,7 @@ export default function ConfirmEmailPage() {
 			active = false
 			data?.subscription?.unsubscribe?.()
 		}
-	}, [navigate])
+	}, [])
 
 	const content = {
 		checking: {
@@ -120,7 +109,7 @@ export default function ConfirmEmailPage() {
 						<div className="signup-verified-wrap">{content.icon}</div>
 						<h2 className="signup-verified-title">{content.title}</h2>
 						<p className="signup-verified-details">{content.copy}</p>
-						<button type="button" className="login-submit login-submit--full" onClick={() => navigate("/")}>
+						<button type="button" className="login-submit login-submit--full" onClick={returnToLogin}>
 							Back to Login
 						</button>
 					</div>

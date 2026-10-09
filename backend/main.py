@@ -349,6 +349,8 @@ REQUIRED_SUPABASE_TABLES = [
     "grantor_portal_applications",
     "grantor_portal_announcements",
     "scholarship_applications",
+    "student_scholarship_state",
+    "student_scholarship_invitations",
     "soe_requests",
     "soe_downloads",
     "student_warnings",

@@ -292,7 +292,7 @@ def _active_student_commitments(student_id: str, student_data: dict[str, Any] | 
         if isinstance(entry, dict) and _is_active_scholarship_record(entry):
             commitments.append({**entry, "source": "student"})
 
-    applications_result = supabase_select("scholarship_applications", {"data->>studentId": student_id}, limit=0)
+    applications_result = supabase_select("scholarship_applications", {"student_id": student_id}, limit=0)
     if applications_result.get("ok"):
         for row in applications_result.get("rows") or []:
             data = row.get("data") if isinstance(row.get("data"), dict) else {}

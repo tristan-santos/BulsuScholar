@@ -22,6 +22,7 @@ READ_TABLES = {
     "admins", "admin_settings", "students", "pending_students", "providers",
     "grantor_portals", "grantor_portal_scholars", "grantor_portal_applications",
     "grantor_portal_announcements", "scholarship_applications", "soe_requests",
+    "student_scholarship_state", "student_scholarship_invitations",
     "soe_downloads", "announcements", "studentNotifications", "student_warnings", "systemLogs",
 }
 PUBLIC_REFERENCE_TABLES = {"announcements", "providers", "grantor_portals", "grantor_portal_announcements"}
@@ -33,6 +34,8 @@ ADMIN_PERMISSIONS = {
     "grantor_portal_applications": {"students", "grantors", "scholarships"},
     "grantor_portal_announcements": {"announcements", "scholarships"},
     "scholarship_applications": {"students", "scholarships", "requirements"},
+    "student_scholarship_state": {"students", "scholarships"},
+    "student_scholarship_invitations": {"students", "scholarships"},
     "soe_requests": {"requirements"}, "soe_downloads": {"requirements"},
     "announcements": {"announcements"}, "studentNotifications": set(),
     "student_warnings": {"students"}, "systemLogs": {"full_admin"},
@@ -99,15 +102,17 @@ def _scope_rows(request: Request, role: str, actor_id: str, table: str, rows: li
             return [row for row in rows if _text(row.get("id")) == actor_id]
         if table in {"scholarship_applications", "soe_requests", "soe_downloads", "studentNotifications", "student_warnings"}:
             return [row for row in rows if _student_id(row) == actor_id]
+        if table in {"student_scholarship_state", "student_scholarship_invitations"}:
+            return [row for row in rows if _text(row.get("student_id")) == actor_id or _student_id(row) == actor_id]
         raise HTTPException(status_code=403, detail="portal_data_table_not_allowed")
     if role == "grantor":
         if table == "providers":
             return [row for row in rows if _text(row.get("id")) == actor_id]
         if table in {"grantor_portals", "grantor_portal_scholars", "grantor_portal_applications", "grantor_portal_announcements", "scholarship_applications"}:
             return [row for row in rows if _grantor_id(row) == actor_id or (table == "grantor_portals" and _text(row.get("id")) == actor_id)]
-        if table in {"students", "pending_students", "soe_requests", "soe_downloads", "student_warnings"}:
+        if table in {"students", "pending_students", "soe_requests", "soe_downloads", "student_warnings", "student_scholarship_state", "student_scholarship_invitations"}:
             students = _grantor_student_ids(actor_id)
-            return [row for row in rows if (_text(row.get("id")) if table in {"students", "pending_students"} else _student_id(row)) in students]
+            return [row for row in rows if (_text(row.get("id")) if table in {"students", "pending_students"} else _text(row.get("student_id")) or _student_id(row)) in students]
         if table == "announcements":
             return rows
     raise HTTPException(status_code=403, detail="portal_data_table_not_allowed")
@@ -116,7 +121,7 @@ def _scope_rows(request: Request, role: str, actor_id: str, table: str, rows: li
 def _matches(row: dict[str, Any], condition: dict[str, Any]) -> bool:
     field = _text(condition.get("field"))
     operation = _text(condition.get("op") or "==")
-    actual = row.get("id") if field == "id" else _data(row).get(field)
+    actual = row.get(field) if field in row else _data(row).get(field)
     expected = condition.get("value")
     if operation == "in":
         return str(actual) in {str(item) for item in expected or []}
@@ -167,7 +172,7 @@ def query_portal_data(request: Request, payload: dict[str, Any]) -> dict[str, An
     order = payload.get("order") if isinstance(payload.get("order"), dict) else {}
     field = _text(order.get("field"))
     if field:
-        rows.sort(key=lambda row: str(row.get("id") if field == "id" else _data(row).get(field) or ""), reverse=order.get("direction") == "desc")
+        rows.sort(key=lambda row: str(row.get(field) if field in row else _data(row).get(field) or ""), reverse=order.get("direction") == "desc")
     offset, limit = max(0, int(payload.get("from") or 0)), min(500, max(1, int(payload.get("limit") or 500)))
     visible_rows = rows[offset:offset + limit]
     if identity["actorType"] == "student" and table == "grantor_portal_scholars":

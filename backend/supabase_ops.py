@@ -9,6 +9,22 @@ from typing import Any
 from uuid import uuid4
 
 
+STUDENT_SCHOLARSHIP_STATE_KEYS = {
+    "scholarshipCommitment", "rosterAssignmentState", "rosterDecisionPending",
+    "rosterMatchCount", "rosterMatchNotice", "rosterScholarshipChoice",
+    "scholarshipConflictMessage", "scholarshipConflictWarning",
+    "scholarshipRestrictionReason", "scholarshipLifecycleVersion",
+}
+STUDENT_SCHOLARSHIP_ARRAY_KEYS = {
+    "scholarships", "scholarshipApplicationHistory", "previousScholars",
+}
+STUDENT_PROFILE_FILE_KEYS = {"scholarshipApplicationFile", "applicationFormFile"}
+TERMINAL_SCHOLARSHIP_STATUSES = {
+    "rejected", "denied", "declined", "cancelled", "canceled", "withdrawn",
+    "archived", "resolved", "expired",
+}
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -121,6 +137,23 @@ def build_relational_columns(table: str, data: dict[str, Any]) -> dict[str, Any]
             "cor_hash": data.get("cor_hash") or data.get("corHash"),
             "account_id": data.get("account_id") or data.get("accountId"),
         }
+    if table == "scholarship_applications":
+        return {
+            "student_id": data.get("studentId") or data.get("studentNumber") or data.get("studentnumber"),
+            "grantor_id": data.get("grantorId") or data.get("providerId"),
+            "scholarship_id": data.get("scholarshipId") or data.get("announcementId"),
+            "academic_cycle": data.get("academicCycle") or data.get("semesterTag"),
+            "status": data.get("status") or "Unknown",
+        }
+    if table == "student_scholarship_invitations":
+        return {
+            "student_id": data.get("studentId"),
+            "grantor_id": data.get("grantorId") or data.get("providerId") or "unknown",
+            "scholarship_id": data.get("scholarshipId") or data.get("announcementId"),
+            "status": data.get("status") or "Pending",
+        }
+    if table == "student_scholarship_state":
+        return {"student_id": data.get("studentId") or data.get("student_id")}
     return {}
 
 
@@ -302,7 +335,139 @@ def supabase_admin_create_user(email: str, password: str, user_metadata: dict[st
         return {"ok": False, "reason": "supabase_auth_admin_error", "status": error.code, "detail": detail}
 
 
+def _raw_select(table: str, filters: dict[str, Any] | None = None, limit: int = 1) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not service_key:
+        return {"ok": False, "reason": "missing_supabase_server_config"}
+    query_parts = ["select=*"]
+    for field, value in (filters or {}).items():
+        query_parts.append(f"{urllib.parse.quote(str(field), safe='->')}=eq.{urllib.parse.quote(str(value or ''))}")
+    if limit:
+        query_parts.append(f"limit={int(limit)}")
+    request = urllib.request.Request(
+        f"{supabase_url}/rest/v1/{table}?{'&'.join(query_parts)}",
+        headers={"apikey": service_key, "Authorization": f"Bearer {service_key}", "Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return {"ok": True, "rows": json.loads(response.read().decode("utf-8") or "[]")}
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8")
+        reason = "missing_or_unloaded_supabase_table" if error.code == 404 and "PGRST205" in detail else "supabase_http_error"
+        return {"ok": False, "status": error.code, "reason": reason, "table": table, "detail": detail}
+
+
+def _scholarship_application_open(data: dict[str, Any]) -> bool:
+    status = str(data.get("status") or "").strip().lower()
+    return not (
+        data.get("archived") is True or data.get("frozen") is True or data.get("rejected") is True
+        or any(marker in status for marker in TERMINAL_SCHOLARSHIP_STATUSES)
+    )
+
+
+def _profile_file_from_submission(submission_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    file_data = data.get("file") if isinstance(data.get("file"), dict) else {}
+    return {
+        "url": f"/student/profile/documents/{submission_id}/content",
+        **file_data,
+        "name": data.get("name") or file_data.get("name") or "Student Application Profile.pdf",
+        "uploadedAt": data.get("submittedAt") or data.get("updatedAt"),
+        "semesterTag": data.get("academicCycle"),
+        "submissionId": submission_id,
+        "reviewStatus": data.get("status") or "pending",
+        "profileRevisionId": data.get("profileRevisionId"),
+    }
+
+
+def _hydrate_student_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return rows
+    student_ids = {str(row.get("id") or "").strip() for row in rows if row.get("id")}
+    applications_by_student: dict[str, list[dict[str, Any]]] = {student_id: [] for student_id in student_ids}
+    invitations_by_student: dict[str, list[dict[str, Any]]] = {student_id: [] for student_id in student_ids}
+    states: dict[str, dict[str, Any]] = {}
+    profile_files: dict[str, tuple[str, dict[str, Any]]] = {}
+
+    for row in (_raw_select("scholarship_applications", limit=0).get("rows") or []):
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        student_id = str(row.get("student_id") or data.get("studentId") or data.get("studentNumber") or "").strip()
+        if student_id in student_ids:
+            applications_by_student[student_id].append({"id": row.get("id"), **data})
+    for row in (_raw_select("student_scholarship_invitations", limit=0).get("rows") or []):
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        student_id = str(row.get("student_id") or data.get("studentId") or "").strip()
+        if student_id in student_ids:
+            invitations_by_student[student_id].append({"id": row.get("id"), **data})
+    for row in (_raw_select("student_scholarship_state", limit=0).get("rows") or []):
+        student_id = str(row.get("student_id") or "").strip()
+        if student_id in student_ids and isinstance(row.get("data"), dict):
+            states[student_id] = row["data"]
+    for row in (_raw_select("student_document_submissions", {"data->>documentType": "profile"}, limit=0).get("rows") or []):
+        data = row.get("data") if isinstance(row.get("data"), dict) else {}
+        student_id = str(data.get("studentId") or "").strip()
+        if student_id not in student_ids:
+            continue
+        sort_key = str(data.get("submittedAt") or data.get("updatedAt") or row.get("updated_at") or "")
+        if student_id not in profile_files or sort_key > profile_files[student_id][0]:
+            profile_files[student_id] = (sort_key, _profile_file_from_submission(str(row.get("id") or ""), data))
+
+    hydrated = []
+    for row in rows:
+        student_id = str(row.get("id") or "").strip()
+        base = row.get("data") if isinstance(row.get("data"), dict) else {}
+        applications = applications_by_student.get(student_id, [])
+        applications.sort(key=lambda item: str(item.get("updatedAt") or item.get("createdAt") or ""), reverse=True)
+        active = [item for item in applications if _scholarship_application_open(item)]
+        history = [item for item in applications if not _scholarship_application_open(item)]
+        data = {
+            **base,
+            **states.get(student_id, {}),
+            "scholarships": active,
+            "scholarshipApplicationHistory": history,
+            "scholarshipInvitations": invitations_by_student.get(student_id, []),
+        }
+        if student_id in profile_files:
+            data["scholarshipApplicationFile"] = profile_files[student_id][1]
+            data["applicationFormFile"] = profile_files[student_id][1]
+        hydrated.append({**row, "data": data})
+    return hydrated
+
+
+def _persist_student_workflow_fields(student_id: str, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    clean = dict(payload)
+    workflow_present = any(key in clean for key in STUDENT_SCHOLARSHIP_ARRAY_KEYS | STUDENT_SCHOLARSHIP_STATE_KEYS | STUDENT_PROFILE_FILE_KEYS | {"scholarshipInvitations"})
+    if not workflow_present:
+        return clean, None
+
+    workflow_payload = {
+        key: clean[key]
+        for key in STUDENT_SCHOLARSHIP_ARRAY_KEYS | STUDENT_SCHOLARSHIP_STATE_KEYS | {"scholarshipInvitations"}
+        if key in clean
+    }
+    if workflow_payload:
+        result = supabase_rpc("persist_student_scholarship_compatibility", {
+            "p_student_id": student_id,
+            "p_payload": workflow_payload,
+        })
+        if not result.get("ok"):
+            return clean, result
+
+    for key in STUDENT_SCHOLARSHIP_ARRAY_KEYS | STUDENT_SCHOLARSHIP_STATE_KEYS | {"scholarshipInvitations"}:
+        clean.pop(key, None)
+
+    for key in STUDENT_PROFILE_FILE_KEYS:
+        clean.pop(key, None)
+    return clean, None
+
+
 def supabase_document_insert(table: str, payload: dict[str, Any], parent_id: str | None = None) -> dict[str, Any]:
+    if table == "students":
+        student_id = str(payload.get("id") or payload.get("studentId") or payload.get("studentnumber") or "").strip()
+        payload, workflow_error = _persist_student_workflow_fields(student_id, expand_dotted_keys(payload))
+        if workflow_error:
+            return workflow_error
     row = {
         "id": payload.get("id") or str(uuid4()),
         "data": payload,
@@ -316,9 +481,14 @@ def supabase_document_insert(table: str, payload: dict[str, Any], parent_id: str
 
 def supabase_document_upsert(table: str, record_id: str, payload: dict[str, Any], merge: bool = True, parent_id: str | None = None) -> dict[str, Any]:
     payload = expand_dotted_keys(payload)
+    if table == "students":
+        payload, workflow_error = _persist_student_workflow_fields(record_id, payload)
+        if workflow_error:
+            return workflow_error
     if merge:
-        current = supabase_document_get(table, record_id, parent_id=parent_id)
-        existing_data = current.get("data", {}) if current.get("ok") else {}
+        current = _raw_select(table, {"id": record_id, **({"parent_id": parent_id} if parent_id else {})}, limit=1)
+        current_row = (current.get("rows") or [None])[0]
+        existing_data = current_row.get("data", {}) if isinstance(current_row, dict) else {}
         if not isinstance(existing_data, dict):
             existing_data = {}
         payload = deep_merge(existing_data, payload)
@@ -354,62 +524,21 @@ def supabase_document_upsert(table: str, record_id: str, payload: dict[str, Any]
 
 
 def supabase_document_get(table: str, record_id: str, parent_id: str | None = None) -> dict[str, Any]:
-    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
-    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    if not supabase_url or not service_key:
-        return {"ok": False, "reason": "missing_supabase_server_config"}
-    filters = f"id=eq.{record_id}"
-    if parent_id:
-        filters = f"{filters}&parent_id=eq.{parent_id}"
-    request = urllib.request.Request(
-        f"{supabase_url}/rest/v1/{table}?{filters}&select=*",
-        headers={
-            "apikey": service_key,
-            "Authorization": f"Bearer {service_key}",
-            "Accept": "application/json",
-        },
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            rows = json.loads(response.read().decode("utf-8") or "[]")
-            row = rows[0] if rows else None
-            return {"ok": True, "row": row, "data": row.get("data", {}) if row else {}}
-    except urllib.error.HTTPError as error:
-        return {"ok": False, "status": error.code, "detail": error.read().decode("utf-8")}
+    result = _raw_select(table, {"id": record_id, **({"parent_id": parent_id} if parent_id else {})}, limit=1)
+    if not result.get("ok"):
+        return result
+    rows = result.get("rows") or []
+    if table == "students":
+        rows = _hydrate_student_rows(rows)
+    row = rows[0] if rows else None
+    return {"ok": True, "row": row, "data": row.get("data", {}) if row else {}}
 
 
 def supabase_select(table: str, filters: dict[str, Any] | None = None, limit: int = 1) -> dict[str, Any]:
-    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
-    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-    if not supabase_url or not service_key:
-        return {"ok": False, "reason": "missing_supabase_server_config"}
-
-    query_parts = ["select=*"]
-    for field, value in (filters or {}).items():
-        query_parts.append(f"{urllib.parse.quote(str(field), safe='->')}=eq.{urllib.parse.quote(str(value or ''))}")
-    if limit:
-        query_parts.append(f"limit={int(limit)}")
-
-    request = urllib.request.Request(
-        f"{supabase_url}/rest/v1/{table}?{'&'.join(query_parts)}",
-        headers={
-            "apikey": service_key,
-            "Authorization": f"Bearer {service_key}",
-            "Accept": "application/json",
-        },
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            rows = json.loads(response.read().decode("utf-8") or "[]")
-            return {"ok": True, "rows": rows}
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8")
-        reason = "supabase_http_error"
-        if error.code == 404 and "PGRST205" in detail:
-            reason = "missing_or_unloaded_supabase_table"
-        return {"ok": False, "status": error.code, "reason": reason, "table": table, "detail": detail}
+    result = _raw_select(table, filters, limit)
+    if result.get("ok") and table == "students":
+        result["rows"] = _hydrate_student_rows(result.get("rows") or [])
+    return result
 
 
 def supabase_table_status(table: str) -> dict[str, Any]:
@@ -445,6 +574,12 @@ def supabase_document_update(table: str, record_id: str, payload: dict[str, Any]
     if not supabase_url or not service_key:
         return {"ok": False, "reason": "missing_supabase_server_config", "payload": payload}
 
+    payload = expand_dotted_keys(payload)
+    if table == "students":
+        payload, workflow_error = _persist_student_workflow_fields(record_id, payload)
+        if workflow_error:
+            return workflow_error
+
     filters = f"id=eq.{record_id}"
     if parent_id:
         filters = f"{filters}&parent_id=eq.{parent_id}"
@@ -467,7 +602,7 @@ def supabase_document_update(table: str, record_id: str, payload: dict[str, Any]
     existing_data = rows[0].get("data") if rows else {}
     if not isinstance(existing_data, dict):
         existing_data = {}
-    merged_data = deep_merge(existing_data, expand_dotted_keys(payload))
+    merged_data = deep_merge(existing_data, payload)
     body = {
         "data": merged_data,
         "updated_at": utc_now_iso(),

@@ -9,6 +9,7 @@ import {
 import { toast } from "react-toastify"
 import { isPasswordStrong } from "../utils/passwordValidation"
 import { supabase } from "../services/supabaseClient"
+import { resolveSupabaseAuthCallback } from "../services/supabaseAuthCallback"
 import { completePasswordRecovery } from "../services/portalAuthService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -30,18 +31,10 @@ export default function ResetPasswordPage() {
 		let mounted = true
 
 		const checkSession = async () => {
-			const code = new URLSearchParams(window.location.search).get("code")
-			if (code) {
-				const { error } = await supabase.auth.exchangeCodeForSession(code)
-				if (!mounted) return
-				if (error) {
-					setHasRecoverySession(false)
-					return
-				}
-			}
-
-			const { data } = await supabase.auth.getSession()
-			if (mounted) setHasRecoverySession(Boolean(data?.session && challenge))
+			const { session, error } = await resolveSupabaseAuthCallback(supabase, {
+				allowedOtpTypes: ["recovery"],
+			})
+			if (mounted) setHasRecoverySession(Boolean(!error && session && challenge))
 		}
 
 		void checkSession()

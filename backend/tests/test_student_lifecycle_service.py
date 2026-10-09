@@ -29,6 +29,16 @@ class StudentLifecycleServiceTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         rpc.assert_not_called()
 
+    @patch("backend.student_lifecycle_service.supabase_rpc")
+    def test_email_confirmation_ignores_spoofed_student_id(self, rpc):
+        rpc.return_value = {"ok": True, "data": {"pendingApproval": True}}
+        result = promote_email_confirmed_student(
+            {"studentId": "victim-id"},
+            {"id": "auth-a", "email": "student@example.com", "email_confirmed_at": "2026-09-22T00:00:00Z", "user_metadata": {"user_id": "real-id"}},
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual("real-id", rpc.call_args.args[1]["p_student_id"])
+
     @patch("backend.student_lifecycle_service.supabase_document_get")
     @patch("backend.student_lifecycle_service.supabase_rpc")
     def test_grantor_confirmation_uses_stored_pending_decision(self, rpc, document_get):
