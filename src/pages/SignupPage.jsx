@@ -38,6 +38,7 @@ import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import { beginOperation } from "../services/operationTracker"
 import { requirePublicAppUrl } from "../config/publicUrls"
+import { logEmailConfirmationStep, summarizeAuthError } from "../services/supabaseAuthCallback"
 
 const COURSES = [
 	{
@@ -1530,9 +1531,15 @@ export default function SignupPage() {
 		const normalizedSignupEmail = normalizeEmail(email)
 		const normalizedSignupCpNumber = normalizeCpNumber(cpNumber)
 		const finishSignupOperation = beginOperation("auth.signup")
+		const confirmationFlowId = globalThis.crypto?.randomUUID?.() || `signup-${Date.now()}`
 		let signupSucceeded = false
 		let signupError = null
 		try {
+			logEmailConfirmationStep("signup_review_accepted", {
+				flowId: confirmationFlowId,
+				studentIdLast4: studentId.slice(-4),
+				yearLevel: year,
+			})
 			const corHash = await getFileSha256(corFile)
 			const documentBatch = await createStudentSignupDocumentBatch({
 				studentId,
@@ -1544,6 +1551,10 @@ export default function SignupPage() {
 				identityFile,
 			})
 			if (String(documentBatch.year || "") !== String(year || "")) throw new Error("The selected year level could not be saved. Please try again.")
+			logEmailConfirmationStep("signup_document_batch_created", {
+				flowId: confirmationFlowId,
+				hasBatch: Boolean(documentBatch?.id || documentBatch?.batchId),
+			})
 			const validationDocumentScan = {
 				cor: buildStoredDocumentScan(documentScanResult.cor, null, "cor"),
 				rog: buildStoredDocumentScan(documentScanResult.cog, null, "rog"),
@@ -1567,6 +1578,7 @@ export default function SignupPage() {
 					documentScan: validationDocumentScan,
 				},
 			})
+			logEmailConfirmationStep("signup_server_validation_succeeded", { flowId: confirmationFlowId })
 
 			let authData = null
 			const storedDocumentScan = {
@@ -1607,19 +1619,16 @@ export default function SignupPage() {
 					preferredSupport: "",
 				},
 			}
-			console.log(
-				"SignupPage: Saving student record to database...",
-				registrationDraft,
-			)
-			console.log(
-				"SignupPage: Starting mandatory Supabase Auth email confirmation:",
-				normalizedSignupEmail,
-			)
+			const confirmationRedirect = `${requirePublicAppUrl()}/confirm-email`
+			logEmailConfirmationStep("signup_confirmation_send_started", {
+				flowId: confirmationFlowId,
+				redirectOrigin: new URL(confirmationRedirect).origin,
+			})
 			const { data: signupAuthData, error: authError } = await supabase.auth.signUp({
 					email: normalizedSignupEmail,
 					password,
 					options: {
-						emailRedirectTo: `${requirePublicAppUrl()}/confirm-email`,
+						emailRedirectTo: confirmationRedirect,
 						data: {
 							user_id: studentId,
 							user_type: "student",
@@ -1629,10 +1638,19 @@ export default function SignupPage() {
 			})
 
 			if (authError) {
-				console.error("SignupPage: Supabase Auth signUp ERROR:", authError)
+				console.error("[BulsuScholar][Email Confirmation] signup_confirmation_send_failed", {
+					flowId: confirmationFlowId,
+					error: summarizeAuthError(authError),
+				})
 				toast.error(authError.message || "Failed to create Supabase Auth account.")
 				return
 			}
+			logEmailConfirmationStep("signup_confirmation_send_accepted", {
+				flowId: confirmationFlowId,
+				authUserId: signupAuthData?.user?.id || "",
+				hasImmediateSession: Boolean(signupAuthData?.session),
+				emailConfirmationRequired: !signupAuthData?.session,
+			})
 
 			authData = signupAuthData
 			const baseData = {
@@ -1662,7 +1680,11 @@ export default function SignupPage() {
 				},
 			})
 
-			console.log("SignupPage: Student document saved through Python workflow", finalizeResult)
+			logEmailConfirmationStep("signup_pending_record_saved", {
+				flowId: confirmationFlowId,
+				studentIdLast4: studentId.slice(-4),
+				table: finalizeResult?.table || "",
+			})
 
 			signupSucceeded = true
 			toast.success("Account created. Confirm your email before signing in.")
@@ -1672,7 +1694,12 @@ export default function SignupPage() {
 
 		} catch (err) {
 			signupError = err
-			console.error("Error saving student:", err)
+			console.error("[BulsuScholar][Email Confirmation] signup_flow_failed", {
+				flowId: confirmationFlowId,
+				status: err?.status || 0,
+				reason: err?.reason || "",
+				error: summarizeAuthError(err),
+			})
 			const errorText = String(err?.reason || err?.message || "")
 			if (errorText.includes("student_id_exists")) setAvailability((current) => ({ ...current, studentId: { status: "used" } }))
 			if (errorText.includes("email_exists") || errorText.toLowerCase().includes("already registered")) setAvailability((current) => ({ ...current, email: { status: "used" } }))
@@ -2773,7 +2800,7 @@ export default function SignupPage() {
 														>
 															<HiOutlineIdentification />
 														</span>
-														<span>{corFile.name}</span>
+														<span className="signup-review-document-filename" title={corFile.name}>{corFile.name}</span>
 													</span>
 												</div>
 												<div className="signup-review-document-preview">
@@ -2817,7 +2844,7 @@ export default function SignupPage() {
 														>
 															<HiOutlineIdentification />
 														</span>
-														<span>{cogFile.name}</span>
+														<span className="signup-review-document-filename" title={cogFile.name}>{cogFile.name}</span>
 													</span>
 												</div>
 												<div className="signup-review-document-preview">
@@ -2843,7 +2870,7 @@ export default function SignupPage() {
 											<div className="signup-review-document" style={{ marginTop: "1rem" }}>
 												<div className="signup-review-document-info">
 													<span className="signup-review-document-label signup-review-label-group"><span className="signup-review-row-icon" aria-hidden><HiOutlineIdentification /></span><span>{identityKind === "student_id" ? "Student ID" : identityKind === "previous_school_id" ? "Previous-school photo ID" : "Government photo ID"}:</span></span>
-													<span className="signup-review-document-name signup-review-label-group"><span className="signup-review-row-icon" aria-hidden><HiOutlineIdentification /></span><span>{identityFile.name}</span></span>
+													<span className="signup-review-document-name signup-review-label-group"><span className="signup-review-row-icon" aria-hidden><HiOutlineIdentification /></span><span className="signup-review-document-filename" title={identityFile.name}>{identityFile.name}</span></span>
 												</div>
 												<div className="signup-review-document-preview">
 													{documentPreviewUrls.identity ? <img src={documentPreviewUrls.identity} alt={`${identityKind === "student_id" ? "Student ID" : identityKind === "previous_school_id" ? "Previous-school ID" : "Government ID"} preview`} className="signup-review-document-image" onClick={() => { setPreviewFile(identityFile); setShowImagePreview(true) }} /> : <button type="button" className="signup-review-document-image signup-review-document-placeholder" disabled>Preview unavailable</button>}

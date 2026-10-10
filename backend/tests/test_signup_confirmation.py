@@ -43,6 +43,7 @@ class SignupConfirmationTests(unittest.TestCase):
         self.assertIsNone(saved["validatedAt"])
         self.assertEqual("government_id", saved["schoolIdFile"]["documentKind"])
         self.assertEqual("pending", saved["documentVerification"]["identity"]["status"])
+        self.assertTrue(saved["confirmationEmailLastSentAt"])
 
     @patch("backend.signup_service.validate_student_signup")
     def test_backend_refuses_automatic_email_confirmation(self, validate):

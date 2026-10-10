@@ -32,6 +32,7 @@ import {
 	HiOutlineExternalLink,
 	HiOutlineHome,
 	HiOutlineLocationMarker,
+	HiOutlineMail,
 	HiOutlineInbox,
 	HiOutlineLogout,
 	HiOutlineMenu,
@@ -137,6 +138,7 @@ import {
 	getDocumentReviewQueue,
 	getPendingStudentAccounts,
 	getStudentVerificationDocumentBlob,
+	resendPendingStudentConfirmation,
 	reviewStudentDocument,
 	updateDocumentPolicy,
 } from "../services/studentProfileService"
@@ -168,6 +170,11 @@ const TREND_RANGES = ["daily", "weekly", "monthly", "yearly"]
 const SIX_MONTHS_MS = 1000 * 60 * 60 * 24 * 30 * 6
 const COMPLIANCE_BLOCK_THRESHOLD = 2
 const EMPTY_STATE_TEXT = "No results found matching your criteria."
+const confirmationResendSeconds = (availableAt, now = Date.now()) => {
+	const timestamp = Date.parse(availableAt || "")
+	return Number.isFinite(timestamp) ? Math.max(0, Math.ceil((timestamp - now) / 1000)) : 0
+}
+const formatConfirmationResendTime = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
 const DEFAULT_REPORT_FILTERS = Object.freeze({
 	search: "",
 	status: "All",
@@ -1223,6 +1230,8 @@ export default function AdminDashboard() {
 	const [documentReviewRows, setDocumentReviewRows] = useState([])
 	const [pendingStudentAccounts, setPendingStudentAccounts] = useState([])
 	const [pendingStudentAccountsLoading, setPendingStudentAccountsLoading] = useState(false)
+	const [pendingConfirmationResendId, setPendingConfirmationResendId] = useState("")
+	const [pendingConfirmationNow, setPendingConfirmationNow] = useState(Date.now())
 	const [documentReviewLoading, setDocumentReviewLoading] = useState(false)
 	const [documentReviewFilter, setDocumentReviewFilter] = useState("pending")
 	const [documentReviewType, setDocumentReviewType] = useState("")
@@ -8390,6 +8399,15 @@ export default function AdminDashboard() {
 		loadPendingStudentAccounts()
 	}, [activeSection, loadPendingStudentAccounts, studentViewTab])
 
+	useEffect(() => {
+		if (activeSection !== "students" || studentViewTab !== "pending-accounts") return undefined
+		const hasCooldown = pendingStudentAccounts.some((account) => !account.emailConfirmedAt && confirmationResendSeconds(account.confirmationResendAvailableAt) > 0)
+		if (!hasCooldown) return undefined
+		setPendingConfirmationNow(Date.now())
+		const timer = window.setInterval(() => setPendingConfirmationNow(Date.now()), 1000)
+		return () => window.clearInterval(timer)
+	}, [activeSection, pendingStudentAccounts, studentViewTab])
+
 	const approvePendingStudent = async (account) => {
 		setIsBusy(true)
 		try {
@@ -8400,6 +8418,25 @@ export default function AdminDashboard() {
 			toast.error(error.message || "Unable to approve this student account.")
 		} finally {
 			setIsBusy(false)
+		}
+	}
+
+	const resendPendingConfirmation = async (account) => {
+		setPendingConfirmationResendId(account.id)
+		try {
+			const result = await resendPendingStudentConfirmation(account.id)
+			toast.success(result.reconciled ? "Email was already confirmed. The account is ready for approval." : "Confirmation email resent.")
+			await loadPendingStudentAccounts()
+		} catch (error) {
+			if (error.status === 429) await loadPendingStudentAccounts()
+			const messages = {
+				confirmation_resend_cooldown: "Please wait for the resend countdown to finish.",
+				confirmation_resend_in_progress: "Another administrator is already resending this confirmation email.",
+				confirmation_email_provider_rate_limited: "Supabase temporarily limited confirmation emails. Try again later.",
+			}
+			toast.error(messages[error.reason] || error.message || "Unable to resend the confirmation email.")
+		} finally {
+			setPendingConfirmationResendId("")
 		}
 	}
 
@@ -8800,7 +8837,10 @@ export default function AdminDashboard() {
 								<div className="admin-empty-state"><HiOutlineCheckCircle /><strong>No pending student accounts</strong><span>All submitted accounts have been processed.</span></div>
 							) : (
 								<div className="admin-document-review-list">
-									{pendingStudentAccounts.map((account, index) => (
+									{pendingStudentAccounts.map((account, index) => {
+										const resendSeconds = confirmationResendSeconds(account.confirmationResendAvailableAt, pendingConfirmationNow)
+										const resendBusy = pendingConfirmationResendId === account.id
+										return (
 										<article key={account.id} className="admin-document-review-card admin-document-review-card--pending">
 											<div className="admin-document-review-order">{index + 1}</div>
 											<div className="admin-document-review-summary">
@@ -8818,11 +8858,13 @@ export default function AdminDashboard() {
 												</div>
 											</div>
 											<div className="admin-document-review-actions">
+												{!account.emailConfirmedAt ? <button type="button" data-button-variant="neutral" disabled={resendBusy || resendSeconds > 0} title={resendSeconds > 0 ? `Confirmation email can be resent in ${formatConfirmationResendTime(resendSeconds)}` : "Resend the Supabase account confirmation email"} onClick={() => resendPendingConfirmation(account)}><HiOutlineMail /> {resendBusy ? "Sending..." : resendSeconds > 0 ? `Resend in ${formatConfirmationResendTime(resendSeconds)}` : "Resend Confirmation"}</button> : null}
 												<button type="button" data-button-variant="positive" disabled={isBusy || !account.emailConfirmedAt} title={account.emailConfirmedAt ? "Approve this account" : "The student must confirm their email first"} onClick={() => approvePendingStudent(account)}><HiOutlineCheckCircle /> Approve Account</button>
 												{!account.emailConfirmedAt ? <small>Email confirmation is required before approval.</small> : null}
 											</div>
 										</article>
-									))}
+										)
+									})}
 								</div>
 							)}
 						</section>

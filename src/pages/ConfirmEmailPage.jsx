@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { HiOutlineCheckCircle, HiOutlineMail, HiOutlineXCircle } from "react-icons/hi"
 import { supabase } from "../services/supabaseClient"
-import { resolveSupabaseAuthCallback } from "../services/supabaseAuthCallback"
+import { logEmailConfirmationStep, resolveSupabaseAuthCallback, summarizeAuthError } from "../services/supabaseAuthCallback"
 import { promoteEmailConfirmedStudentWorkflow } from "../services/workflowService"
 import "../css/LoginPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
@@ -18,13 +18,17 @@ export default function ConfirmEmailPage() {
 		let active = true
 
 		const checkSession = async () => {
+			logEmailConfirmationStep("page_session_resolution_started", {})
 			const { session, error, hadCallback } = await resolveSupabaseAuthCallback(supabase, {
 				allowedOtpTypes: ["email", "signup"],
 			})
 			if (!active) return
 
 			if (error) {
-				console.error("Email confirmation could not be completed.", error)
+				console.error("[BulsuScholar][Email Confirmation] callback_resolution_failed", {
+					hadCallback,
+					error: summarizeAuthError(error),
+				})
 				setStatus(hadCallback ? "error" : "missing")
 				return
 			}
@@ -33,16 +37,32 @@ export default function ConfirmEmailPage() {
 				const user = session.user
 				const userEmailAddr = user.email || ""
 				setEmail(userEmailAddr)
+				logEmailConfirmationStep("confirmed_session_ready", {
+					authUserId: user.id,
+					emailConfirmed: Boolean(user.email_confirmed_at),
+				})
 				try {
-					await promoteEmailConfirmedStudentWorkflow()
+					logEmailConfirmationStep("pending_account_promotion_started", { authUserId: user.id })
+					const promotion = await promoteEmailConfirmedStudentWorkflow()
+					logEmailConfirmationStep("pending_account_promotion_succeeded", {
+						authUserId: user.id,
+						pendingApproval: promotion?.pendingApproval === true,
+						alreadyActive: promotion?.alreadyActive === true,
+					})
 				} catch (promotionError) {
-					console.error("Email confirmed but student activation failed.", promotionError)
+					console.error("[BulsuScholar][Email Confirmation] pending_account_promotion_failed", {
+						authUserId: user.id,
+						status: promotionError?.status || 0,
+						reason: promotionError?.reason || "",
+						error: summarizeAuthError(promotionError),
+					})
 					setStatus("activation-error")
 					return
 				}
 				setStatus("confirmed")
 				
 				// Sign out so they have to log in manually with Student ID
+				logEmailConfirmationStep("confirmation_flow_completed", { authUserId: user.id })
 				await supabase.auth.signOut({ scope: "local" })
 				setTimeout(() => {
 					if (active) window.location.replace("/")

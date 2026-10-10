@@ -115,6 +115,12 @@ export function approvePendingStudentAccount(studentId) {
 	})
 }
 
+export function resendPendingStudentConfirmation(studentId) {
+	return jsonRequest(`/admin/students/pending/${encodeURIComponent(studentId)}/resend-confirmation`, {
+		method: "POST",
+	})
+}
+
 export function reviewStudentDocument(submissionId, decision) {
 	return jsonRequest(`/admin/document-reviews/${encodeURIComponent(submissionId)}`, {
 		method: "POST",

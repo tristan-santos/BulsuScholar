@@ -918,8 +918,10 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
         "detectedCorYear": str(claimed_batch.get("detectedCorYear") or ""),
         "mismatch": claimed_batch.get("yearLevelMismatch") is True,
     }
-    student.setdefault("createdAt", utc_now_iso())
-    student["updatedAt"] = utc_now_iso()
+    signup_created_at = utc_now_iso()
+    student.setdefault("createdAt", signup_created_at)
+    student.setdefault("confirmationEmailLastSentAt", signup_created_at)
+    student["updatedAt"] = signup_created_at
 
     document_patch, submission_records = _signup_submission_records(student_id, claimed_batch)
     student.update(document_patch)

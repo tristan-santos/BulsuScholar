@@ -43,7 +43,7 @@ try:
     )
     from .signup_service import check_signup_availability, create_signup_document_batch, finalize_student_signup, validate_student_signup
     from .student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
-    from .student_account_review_service import approve_pending_student_account, list_pending_student_accounts
+    from .student_account_review_service import approve_pending_student_account, list_pending_student_accounts, resend_pending_student_confirmation
     from .roster_workflow_service import (
         commit_roster_import,
         list_roster_conflicts,
@@ -158,7 +158,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     )
     from signup_service import check_signup_availability, create_signup_document_batch, finalize_student_signup, validate_student_signup
     from student_lifecycle_service import confirm_grantor_admin_decision, promote_email_confirmed_student
-    from student_account_review_service import approve_pending_student_account, list_pending_student_accounts
+    from student_account_review_service import approve_pending_student_account, list_pending_student_accounts, resend_pending_student_confirmation
     from roster_workflow_service import (
         commit_roster_import,
         list_roster_conflicts,
@@ -864,6 +864,11 @@ def pending_student_accounts_endpoint(request: Request) -> dict[str, Any]:
 @app.post("/admin/students/pending/{student_id}/approve")
 def approve_pending_student_account_endpoint(request: Request, student_id: str) -> dict[str, Any]:
     return approve_pending_student_account(request, student_id)
+
+
+@app.post("/admin/students/pending/{student_id}/resend-confirmation")
+def resend_pending_student_confirmation_endpoint(request: Request, student_id: str) -> dict[str, Any]:
+    return resend_pending_student_confirmation(request, student_id)
 
 
 @app.get("/student/profile/workspace")

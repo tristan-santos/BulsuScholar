@@ -61,7 +61,7 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 		const detail = data?.message || detailObject?.message || data?.detail || data?.reason || data?.error || data?.result || data?.results || data
 		throw new PortalApiError(typeof detail === "string" ? detail : JSON.stringify(detail), {
 			status: response.status,
-			reason: String(data?.reason || detailObject?.code || (typeof data?.detail === "string" ? data.detail : "") || data?.error || ""),
+			reason: String(data?.reason || detailObject?.reason || detailObject?.code || (typeof data?.detail === "string" ? data.detail : "") || data?.error || ""),
 			data: detailObject ? { ...data, ...detailObject } : data,
 		})
 	}

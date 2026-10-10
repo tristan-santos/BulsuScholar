@@ -1116,6 +1116,7 @@
 
 .signup-review-document-info {
 	flex: 1;
+	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 0.2rem;
@@ -1130,8 +1131,20 @@
 
 .signup-review-document-name {
 	display: block;
+	min-width: 0;
+	max-width: 100%;
 	color: #1f2937;
 	font-size: 0.875rem;
+}
+
+.signup-review-document-filename {
+	display: block;
+	flex: 1;
+	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .signup-review-document-size {

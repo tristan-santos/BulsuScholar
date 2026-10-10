@@ -14,6 +14,7 @@ export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "", {
 	auth: {
 		persistSession: true,
 		autoRefreshToken: !isAuthCallbackRoute,
+		flowType: "implicit",
 		// Confirmation and recovery routes process every supported callback shape
 		// explicitly so a stale stored session cannot race the email callback.
 		detectSessionInUrl: false,

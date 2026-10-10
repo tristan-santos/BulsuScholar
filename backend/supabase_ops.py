@@ -335,6 +335,70 @@ def supabase_admin_create_user(email: str, password: str, user_metadata: dict[st
         return {"ok": False, "reason": "supabase_auth_admin_error", "status": error.code, "detail": detail}
 
 
+def supabase_admin_get_user(auth_user_id: str) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not service_key:
+        return {"ok": False, "reason": "missing_supabase_server_config"}
+    if not str(auth_user_id or "").strip():
+        return {"ok": False, "reason": "missing_auth_user_id"}
+
+    request = urllib.request.Request(
+        f"{supabase_url}/auth/v1/admin/users/{urllib.parse.quote(str(auth_user_id).strip(), safe='')}",
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8") or "{}")
+            return {"ok": True, "user": data}
+    except urllib.error.HTTPError as error:
+        return {
+            "ok": False,
+            "reason": "auth_user_not_found" if error.code == 404 else "supabase_auth_admin_error",
+            "status": error.code,
+            "detail": error.read().decode("utf-8"),
+        }
+
+
+def supabase_resend_signup_confirmation(email: str, redirect_to: str) -> dict[str, Any]:
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    normalized_email = str(email or "").strip().lower()
+    if not supabase_url or not service_key:
+        return {"ok": False, "reason": "missing_supabase_server_config"}
+    if not normalized_email or not str(redirect_to or "").strip():
+        return {"ok": False, "reason": "missing_confirmation_resend_fields"}
+
+    query = urllib.parse.urlencode({"redirect_to": str(redirect_to).strip()})
+    request = urllib.request.Request(
+        f"{supabase_url}/auth/v1/resend?{query}",
+        data=json.dumps({"email": normalized_email, "type": "signup"}).encode("utf-8"),
+        headers={
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8") or "{}")
+            return {"ok": True, "data": data}
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8")
+        return {
+            "ok": False,
+            "reason": "confirmation_email_provider_rate_limited" if error.code == 429 else "confirmation_email_delivery_failed",
+            "status": error.code,
+            "detail": detail,
+        }
+
+
 def _raw_select(table: str, filters: dict[str, Any] | None = None, limit: int = 1) -> dict[str, Any]:
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
     service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
