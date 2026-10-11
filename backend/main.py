@@ -912,8 +912,8 @@ async def upload_student_profile_document_endpoint(
 
 
 @app.get("/student/profile/documents/{submission_id}/content")
-def student_profile_document_content_endpoint(request: Request, submission_id: str) -> Response:
-    return document_content(request, submission_id)
+def student_profile_document_content_endpoint(request: Request, submission_id: str, purpose: str = "") -> Response:
+    return document_content(request, submission_id, purpose)
 
 
 @app.get("/student/profile/snapshots/{snapshot_id}/content")

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
-import { HiOutlineCheckCircle, HiOutlineMail, HiOutlineXCircle } from "react-icons/hi"
+import { HiOutlineArrowLeft, HiOutlineCheckCircle, HiOutlineClock, HiOutlineMail, HiOutlineXCircle } from "react-icons/hi"
 import { supabase } from "../services/supabaseClient"
-import { logEmailConfirmationStep, resolveSupabaseAuthCallback, summarizeAuthError } from "../services/supabaseAuthCallback"
+import { resolveSupabaseAuthCallback } from "../services/supabaseAuthCallback"
 import { promoteEmailConfirmedStudentWorkflow } from "../services/workflowService"
 import "../css/LoginPage.css"
+import "../css/ConfirmEmailPage.css"
 import loginBackground from "../assets/LoginBackground.jpg"
 import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
@@ -18,17 +19,12 @@ export default function ConfirmEmailPage() {
 		let active = true
 
 		const checkSession = async () => {
-			logEmailConfirmationStep("page_session_resolution_started", {})
 			const { session, error, hadCallback } = await resolveSupabaseAuthCallback(supabase, {
 				allowedOtpTypes: ["email", "signup"],
 			})
 			if (!active) return
 
 			if (error) {
-				console.error("[BulsuScholar][Email Confirmation] callback_resolution_failed", {
-					hadCallback,
-					error: summarizeAuthError(error),
-				})
 				setStatus(hadCallback ? "error" : "missing")
 				return
 			}
@@ -37,32 +33,15 @@ export default function ConfirmEmailPage() {
 				const user = session.user
 				const userEmailAddr = user.email || ""
 				setEmail(userEmailAddr)
-				logEmailConfirmationStep("confirmed_session_ready", {
-					authUserId: user.id,
-					emailConfirmed: Boolean(user.email_confirmed_at),
-				})
 				try {
-					logEmailConfirmationStep("pending_account_promotion_started", { authUserId: user.id })
 					const promotion = await promoteEmailConfirmedStudentWorkflow()
-					logEmailConfirmationStep("pending_account_promotion_succeeded", {
-						authUserId: user.id,
-						pendingApproval: promotion?.pendingApproval === true,
-						alreadyActive: promotion?.alreadyActive === true,
-					})
-				} catch (promotionError) {
-					console.error("[BulsuScholar][Email Confirmation] pending_account_promotion_failed", {
-						authUserId: user.id,
-						status: promotionError?.status || 0,
-						reason: promotionError?.reason || "",
-						error: summarizeAuthError(promotionError),
-					})
+					setStatus(promotion.accountActivated ? "activated" : "confirmed")
+				} catch {
 					setStatus("activation-error")
 					return
 				}
-				setStatus("confirmed")
 				
 				// Sign out so they have to log in manually with Student ID
-				logEmailConfirmationStep("confirmation_flow_completed", { authUserId: user.id })
 				await supabase.auth.signOut({ scope: "local" })
 				setTimeout(() => {
 					if (active) window.location.replace("/")
@@ -89,27 +68,38 @@ export default function ConfirmEmailPage() {
 
 	const content = {
 		checking: {
-			icon: <HiOutlineMail className="signup-verified-icon" />,
+			icon: <HiOutlineMail />,
+			label: "Verification in progress",
 			title: "Confirming your email",
 			copy: "Please wait while we verify your confirmation link.",
 		},
 		confirmed: {
-			icon: <HiOutlineCheckCircle className="signup-verified-icon" />,
+			icon: <HiOutlineCheckCircle />,
+			label: "Confirmation complete",
 			title: "Email confirmed",
-			copy: email ? `${email} is confirmed. Your account is awaiting scholarship office approval. We will email you when it is ready.` : "Your account is awaiting scholarship office approval. We will email you when it is ready.",
+			copy: "Your account is now waiting for Scholarship Office approval. We will email you when you can sign in.",
+		},
+		activated: {
+			icon: <HiOutlineCheckCircle />,
+			label: "Account ready",
+			title: "Welcome to BulsuScholar",
+			copy: "Your email and signup documents were approved automatically. You can now sign in using your Student ID.",
 		},
 		missing: {
-			icon: <HiOutlineXCircle className="signup-verified-icon" />,
+			icon: <HiOutlineXCircle />,
+			label: "Link unavailable",
 			title: "Confirmation link not active",
 			copy: "Open this page from the latest confirmation email. The link may be expired or already used.",
 		},
 		error: {
-			icon: <HiOutlineXCircle className="signup-verified-icon" />,
+			icon: <HiOutlineXCircle />,
+			label: "Confirmation failed",
 			title: "Unable to confirm email",
 			copy: "Request a new confirmation email or contact support if the problem continues.",
 		},
 		"activation-error": {
-			icon: <HiOutlineXCircle className="signup-verified-icon" />,
+			icon: <HiOutlineClock />,
+			label: "Action still required",
 			title: "Email confirmed, activation pending",
 			copy: "Your email was confirmed, but we could not place your account in the approval queue. Refresh this page to try again or contact support if the problem continues.",
 		},
@@ -127,18 +117,23 @@ export default function ConfirmEmailPage() {
 				</div>
 			</div>
 
-			<div className="login-panel login-panel-form">
-				<div className="login-form-inner">
-					<img src={brandLogo} alt="Bulacan State University Office of the Scholarships" className="login-form-logo" />
-					<div className="signup-pending-inner">
-						<div className="signup-verified-wrap">{content.icon}</div>
-						<h2 className="signup-verified-title">{content.title}</h2>
-						<p className="signup-verified-details">{content.copy}</p>
-						<button type="button" className="login-submit login-submit--full" onClick={returnToLogin}>
-							Back to Login
+			<div className="login-panel login-panel-form confirm-email-panel">
+				<div className="confirm-email-shell">
+					<img src={brandLogo} alt="Bulacan State University Office of the Scholarships" className="confirm-email-logo" />
+					<section className={`confirm-email-card confirm-email-card--${status}`} aria-live="polite">
+						<div className="confirm-email-status-icon" aria-hidden="true">{content.icon}</div>
+						<span className="confirm-email-kicker">{content.label}</span>
+						<h2>{content.title}</h2>
+						<p>{content.copy}</p>
+						{["confirmed", "activated"].includes(status) && email ? <div className="confirm-email-address"><HiOutlineMail /><span title={email}>{email}</span></div> : null}
+						{status === "confirmed" ? <div className="confirm-email-next-step"><HiOutlineClock /><span><strong>Next step</strong>Scholarship Office account review</span></div> : null}
+						{status === "activated" ? <div className="confirm-email-next-step"><HiOutlineCheckCircle /><span><strong>Next step</strong>Sign in and complete your Student Application Profile</span></div> : null}
+						<button type="button" className="confirm-email-back" onClick={returnToLogin}>
+							<HiOutlineArrowLeft /> {status === "activated" ? "Continue to Login" : "Back to Login"}
 						</button>
+						{["confirmed", "activated"].includes(status) ? <small className="confirm-email-redirect">Returning to login automatically...</small> : null}
+					</section>
 					</div>
-				</div>
 			</div>
 		</div>
 	)

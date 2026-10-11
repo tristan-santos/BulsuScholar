@@ -91,8 +91,9 @@ export async function uploadStudentVerificationDocument(documentType, file, docu
 	return parseResponse(response, "Document upload failed")
 }
 
-export async function getStudentVerificationDocumentBlob(submissionId) {
-	const response = await trackedFetch(`${baseUrl()}/student/profile/documents/${encodeURIComponent(submissionId)}/content`, {
+export async function getStudentVerificationDocumentBlob(submissionId, purpose = "") {
+	const params = purpose ? `?purpose=${encodeURIComponent(purpose)}` : ""
+	const response = await trackedFetch(`${baseUrl()}/student/profile/documents/${encodeURIComponent(submissionId)}/content${params}`, {
 		headers: await buildPortalRequestHeaders(),
 	}, "document.download")
 	if (!response.ok) throw new PortalApiError("Unable to open this document.", { status: response.status })

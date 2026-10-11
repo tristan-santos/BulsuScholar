@@ -907,6 +907,9 @@ def list_document_review_queue(request: Request, status: str = "", document_type
         submissions = [
             item for item in _data_rows("student_document_submissions", filters, limit=1000)
             if item.get("documentType") != "profile"
+            and item.get("source") != "student_signup"
+            and not item.get("signupBatchId")
+            and not str(item.get("id") or "").startswith("signup_document_")
         ]
 
     if document_type in {"", "profile"}:
@@ -1086,7 +1089,7 @@ def profile_snapshot_content(request: Request, snapshot_id: str) -> Response:
     return Response(content=body, media_type="application/pdf", headers={"Content-Disposition": "inline; filename=\"Student_Application_Profile.pdf\""})
 
 
-def document_content(request: Request, submission_id: str) -> Response:
+def document_content(request: Request, submission_id: str, purpose: str = "") -> Response:
     actor_id = str(request.headers.get("x-portal-actor-id") or "").strip()
     actor_type = str(request.headers.get("x-portal-actor-type") or "").strip().lower()
     record = supabase_document_get("student_document_submissions", submission_id)
@@ -1098,7 +1101,7 @@ def document_content(request: Request, submission_id: str) -> Response:
         if actor_id != str(submission.get("studentId") or ""):
             raise HTTPException(status_code=403, detail="document_owner_mismatch")
     elif actor_type == "admin":
-        _reviewer(request)
+        reviewer_id, reviewer = _reviewer(request)
     elif actor_type in {"grantor", "provider"}:
         identity: dict[str, Any] = {}
         enforce_portal_scope(request, identity, {"grantor"})
@@ -1113,6 +1116,23 @@ def document_content(request: Request, submission_id: str) -> Response:
     else:
         raise HTTPException(status_code=403, detail="document_access_denied")
     body = _read_storage(submission.get("file") or {})
+    is_signup_document = (
+        submission.get("source") == "student_signup"
+        or bool(submission.get("signupBatchId"))
+        or submission_id.startswith("signup_document_")
+    )
+    if actor_type == "admin" and purpose == "preview" and is_signup_document:
+        previewed_at = _now()
+        supabase_document_insert("student_document_reviews", {
+            "submissionId": submission_id,
+            "studentId": submission.get("studentId"),
+            "reviewerId": reviewer_id,
+            "reviewerRole": reviewer.get("role"),
+            "decision": "previewed",
+            "reason": "",
+            "notes": "Document opened in the administrator preview modal.",
+            "createdAt": previewed_at,
+        })
     return Response(content=body, media_type=str((submission.get("file") or {}).get("type") or "application/octet-stream"), headers={"Content-Disposition": f"inline; filename=\"{submission.get('name') or 'document'}\""})
 
 

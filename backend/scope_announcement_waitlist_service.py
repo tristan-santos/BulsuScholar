@@ -396,8 +396,67 @@ def publish_targeted_announcement(request: Request, payload: dict[str, Any]) -> 
 
 
 def list_waitlist(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
-    _, student_id = _actor(request, payload, {"student"}, owner_key="studentId")
+    actor_type, actor_id = _actor(request, payload, {"student", "grantor"}, owner_key="studentId")
     all_entries = _all("scholarship_waitlist_entries")
+    if actor_type == "grantor":
+        grantor_id = _provider_owner(actor_type, actor_id, _text(payload.get("grantorId")))
+        announcement_id = _text(payload.get("announcementId"))
+        if not announcement_id:
+            raise HTTPException(status_code=422, detail="announcement_required")
+        announcement = supabase_document_get("grantor_portal_announcements", announcement_id, parent_id=grantor_id)
+        if not announcement.get("ok") or not announcement.get("data"):
+            raise HTTPException(status_code=404, detail="announcement_not_found")
+
+        queue = sorted(
+            (entry for entry in all_entries
+             if _text(entry.get("announcement_id")) == announcement_id
+             and _text(entry.get("grantor_id")) == grantor_id),
+            key=lambda entry: (_text(entry.get("queued_at")), _text(entry.get("id"))),
+        )
+        queued_position = 0
+        students = {row["id"]: row for row in _all("students")}
+        entries = []
+        for entry in queue:
+            if entry.get("status") == "queued":
+                queued_position += 1
+            student = students.get(_text(entry.get("student_id")), {})
+            entries.append({
+                "id": entry.get("id"),
+                "studentId": entry.get("student_id"),
+                "studentName": " ".join(filter(None, [
+                    _text(student.get("fname")), _text(student.get("mname")), _text(student.get("lname")),
+                ])),
+                "course": student.get("course") or student.get("program"),
+                "yearLevel": student.get("yearLevel") or student.get("year"),
+                "status": entry.get("status"),
+                "queuePosition": queued_position if entry.get("status") == "queued" else None,
+                "queuedAt": entry.get("queued_at"),
+                "offeredAt": entry.get("offered_at"),
+                "expiresAt": entry.get("expires_at"),
+                "applicationNumber": (entry.get("application_snapshot") or {}).get("applicationNumber"),
+            })
+        offers_result = supabase_select("scholarship_waitlist_offers", {"announcement_id": announcement_id}, limit=0)
+        offers = [{
+            "id": row.get("id"),
+            "entryId": row.get("entry_id"),
+            "studentId": row.get("student_id"),
+            "status": row.get("status"),
+            "expiresAt": row.get("expires_at"),
+            "resolvedAt": row.get("resolved_at"),
+        } for row in (offers_result.get("rows") or [])]
+        return {
+            "ok": True,
+            "announcementId": announcement_id,
+            "entries": entries,
+            "offers": offers,
+            "counts": {
+                "queued": sum(1 for entry in entries if entry["status"] == "queued"),
+                "offered": sum(1 for entry in entries if entry["status"] == "offered"),
+                "total": len(entries),
+            },
+        }
+
+    student_id = actor_id
     student_entries = [entry for entry in all_entries if entry.get("student_id") == student_id]
     for entry in student_entries:
         if entry.get("status") != "queued":

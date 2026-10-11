@@ -114,6 +114,7 @@ import {
 	createGrantorScholarsWorkflow,
 	fetchFilteredApplicantsReportWorkflow,
 	inviteArchivedGrantorScholarsWorkflow,
+	loadWaitlistWorkflow,
 	republishGrantorAnnouncementWorkflow,
 	previewRosterImportWorkflow,
 	previewAnnouncementAudienceWorkflow,
@@ -484,6 +485,16 @@ function sectionFromPath(pathname = "") {
 	if (pathname.startsWith("/provider-dashboard/profile")) return "profile"
 	if (pathname.startsWith("/provider-dashboard/inbox")) return "inbox"
 	return SECTIONS.find((section) => pathname.startsWith(section.path))?.id || "dashboard"
+}
+
+function announcementIdFromPath(pathname = "") {
+	const prefix = "/provider-dashboard/announcements/"
+	if (!pathname.startsWith(prefix)) return ""
+	try {
+		return decodeURIComponent(pathname.slice(prefix.length).split("/")[0] || "")
+	} catch {
+		return ""
+	}
 }
 
 function statusClass(value = "") {
@@ -918,6 +929,7 @@ export default function ProviderDashboard() {
 	const [applicationDateSort, setApplicationDateSort] = useState("desc")
 	const [applicationArchiveTab, setApplicationArchiveTab] = useState("active")
 	const [applicationFilters, setApplicationFilters] = useState({ status: "", location: "", scholarship: "", cycle: "", documentState: "", trackingStage: "" })
+	const [applicationFiltersOpen, setApplicationFiltersOpen] = useState(false)
 	const [applicationExportBusy, setApplicationExportBusy] = useState("")
 	const [applicantReportOpen, setApplicantReportOpen] = useState(false)
 	const [applicantReportFormat, setApplicantReportFormat] = useState("pdf")
@@ -947,6 +959,9 @@ export default function ProviderDashboard() {
 	const [announcementApplicationProfileFile, setAnnouncementApplicationProfileFile] = useState(null)
 	const [announcementImagePreview, setAnnouncementImagePreview] = useState("")
 	const [selectedAnnouncement, setSelectedAnnouncement] = useState(null)
+	const [announcementWaitlist, setAnnouncementWaitlist] = useState({ entries: [], offers: [], counts: { queued: 0, offered: 0, total: 0 } })
+	const [announcementWaitlistLoading, setAnnouncementWaitlistLoading] = useState(false)
+	const [announcementWaitlistError, setAnnouncementWaitlistError] = useState("")
 	const [showAllAnnouncements, setShowAllAnnouncements] = useState(false)
 	const [showCreateAnnouncementModal, setShowCreateAnnouncementModal] = useState(false)
 	const [announcementArchiveConfirmId, setAnnouncementArchiveConfirmId] = useState("")
@@ -1105,6 +1120,7 @@ export default function ProviderDashboard() {
 		[grantorId, grantorName, profile?.providerType],
 	)
 	const activeSection = useMemo(() => sectionFromPath(location.pathname), [location.pathname])
+	const announcementDetailId = useMemo(() => announcementIdFromPath(location.pathname), [location.pathname])
 	const activeScholars = useMemo(() => scholars.filter((row) => row.archived !== true), [scholars])
 	const warningScholars = useMemo(
 		() => activeScholars.filter((row) => row.scholarshipConflictWarning || row.duplicateScholarshipWarning || row.duplicateScholarshipDetected),
@@ -1185,6 +1201,34 @@ export default function ProviderDashboard() {
 		() => announcements.filter((item) => isAnnouncementArchived(item)),
 		[announcements],
 	)
+	const announcementDetail = useMemo(
+		() => announcementDetailId ? announcements.find((item) => String(item.id) === announcementDetailId) || null : null,
+		[announcementDetailId, announcements],
+	)
+	const loadAnnouncementWaitlist = useCallback(async () => {
+		if (!grantorId || !announcementDetailId) return
+		setAnnouncementWaitlistLoading(true)
+		setAnnouncementWaitlistError("")
+		setAnnouncementWaitlist({ entries: [], offers: [], counts: { queued: 0, offered: 0, total: 0 } })
+		try {
+			const result = await loadWaitlistWorkflow({ grantorId, announcementId: announcementDetailId })
+			setAnnouncementWaitlist({
+				entries: Array.isArray(result?.entries) ? result.entries : [],
+				offers: Array.isArray(result?.offers) ? result.offers : [],
+				counts: result?.counts || { queued: 0, offered: 0, total: 0 },
+			})
+		} catch (error) {
+			setAnnouncementWaitlistError(error?.message || "The waitlist queue could not be loaded.")
+			setAnnouncementWaitlist({ entries: [], offers: [], counts: { queued: 0, offered: 0, total: 0 } })
+		} finally {
+			setAnnouncementWaitlistLoading(false)
+		}
+	}, [announcementDetailId, grantorId])
+
+	useEffect(() => {
+		if (!announcementDetailId) return
+		loadAnnouncementWaitlist()
+	}, [announcementDetailId, loadAnnouncementWaitlist])
 	const selectedExistingScholarshipTitle = useMemo(() => {
 		if (!announcementForm.applicationEnabled || announcementScholarshipChoice === ANNOUNCEMENT_NEW_SCHOLARSHIP_VALUE) return ""
 		const title = String(announcementForm.title || "").trim()
@@ -1632,6 +1676,12 @@ export default function ProviderDashboard() {
 			return applicationDateSort === "asc" ? leftDate - rightDate : rightDate - leftDate
 		})
 	}, [applicationRowsForTab, applicationSearch, applicationDateSort, applicationFilters])
+	const announcementApplications = useMemo(
+		() => announcementDetailId
+			? enrichedApplications.filter((row) => String(row.announcementId || "") === announcementDetailId)
+			: [],
+		[announcementDetailId, enrichedApplications],
+	)
 	const applicantReportPayload = useMemo(() => ({
 		grantorId,
 		search: applicationSearch,
@@ -4019,7 +4069,7 @@ export default function ProviderDashboard() {
 					{slotState.managed ? <span className={`scholarship-slot-badge ${slotState.low ? "is-low" : ""} ${slotState.full ? "is-full" : ""}`}>{slotState.full ? slotState.label : slotState.configured ? `${slotState.remainingSlots} of ${slotState.totalSlots} slots remaining` : slotState.label}</span> : null}
 				</div>
 				<footer className="grantor-announcement-card-actions">
-					<button type="button" className="grantor-announcement-view-btn" onClick={() => setSelectedAnnouncement(item)}><HiOutlineEye /> View</button>
+					<button type="button" className="grantor-announcement-view-btn" onClick={() => navigate(`/provider-dashboard/announcements/${encodeURIComponent(item.id)}`)}><HiOutlineEye /> View</button>
 					{item.applicationEnabled === true && !archived ? <button type="button" className="grantor-announcement-slots-btn" onClick={() => openSlotCapacityModal(item)}><HiOutlineUsers /> {slotState.configured ? "Edit Slots" : "Set Slots"}</button> : null}
 					{archived ? <span className="grantor-announcement-archived-note">Archived</span> : <button type="button" className="grantor-announcement-archive-btn" data-button-variant="danger" onClick={() => handleArchiveAnnouncement(item.id)} disabled={busy === `archive-announcement-${item.id}`}><HiOutlineTrash /> Archive</button>}
 				</footer>
@@ -4698,9 +4748,12 @@ export default function ProviderDashboard() {
 						</div>
 						<div className="grantor-applications-filter-shell">
 							<div className="grantor-applications-filter-head">
-								<div><strong>Filter applicants</strong><span>{visibleApplications.length} matching {visibleApplications.length === 1 ? "record" : "records"}</span></div>
-								<button type="button" className="grantor-clear-filters-btn" onClick={clearApplicationFilters} disabled={activeApplicationFilterCount === 0}>Clear filters{activeApplicationFilterCount ? ` (${activeApplicationFilterCount})` : ""}</button>
+								<button type="button" className="grantor-filter-toggle" aria-expanded={applicationFiltersOpen} aria-controls="grantor-application-filters" onClick={() => setApplicationFiltersOpen((open) => !open)}>
+									<span><HiOutlineSearch /><span><strong>Filter applicants</strong><small>{visibleApplications.length} matching {visibleApplications.length === 1 ? "record" : "records"}{activeApplicationFilterCount ? ` | ${activeApplicationFilterCount} active` : ""}</small></span></span>
+									<HiChevronDown className={applicationFiltersOpen ? "is-open" : ""} />
+								</button>
 							</div>
+							{applicationFiltersOpen ? <div id="grantor-application-filters" className="grantor-applications-filter-content">
 							<div className="grantor-applications-search-row">
 								<label className="grantor-search-field"><span className="sr-only">Search applications</span><HiOutlineSearch /><input type="search" aria-label="Search applications" placeholder="Search applicant, student ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
 								<button
@@ -4717,6 +4770,8 @@ export default function ProviderDashboard() {
 							<div className="grantor-applications-filters">
 								{[["status", "Status", "Any status"], ["location", "Location", "Any location"], ["scholarship", "Scholarship", "Any scholarship"], ["cycle", "Academic cycle", "Any cycle"], ["documentState", "Document review", "Any review state"], ["trackingStage", "Tracking stage", "Any stage"]].map(([key, label, allLabel]) => <label key={key}><span>{label}</span><select value={applicationFilters[key]} onChange={(event) => setApplicationFilters((current) => ({ ...current, [key]: event.target.value }))}><option value="">{allLabel}</option>{applicationFilterOptions[key].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>)}
 							</div>
+							<div className="grantor-applications-filter-footer"><button type="button" className="grantor-clear-filters-btn" onClick={clearApplicationFilters} disabled={activeApplicationFilterCount === 0}>Clear filters{activeApplicationFilterCount ? ` (${activeApplicationFilterCount})` : ""}</button></div>
+							</div> : null}
 						</div>
 						<div className="admin-table-wrap grantor-applications-table-wrap">
 							<table className="admin-management-table grantor-applications-table">
@@ -4753,7 +4808,43 @@ export default function ProviderDashboard() {
 					</section>
 				) : null}
 
-				{activeSection === "announcements" ? (
+				{activeSection === "announcements" && announcementDetailId ? (
+					<section className="grantor-announcement-detail-page">
+						<button type="button" className="grantor-announcement-detail-back" onClick={() => navigate("/provider-dashboard/announcements")}><HiChevronLeft /> Back to Announcements</button>
+						{announcementDetail ? <>
+							<header className="grantor-announcement-detail-hero">
+								<div className="grantor-announcement-detail-media"><img src={getAnnouncementImageUrls(announcementDetail)[0] || logo2} alt="" onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = logo2 }} /></div>
+								<div>
+									<span className={`grantor-announcement-status ${isAnnouncementArchived(announcementDetail) ? "is-archived" : ""}`}>{isAnnouncementArchived(announcementDetail) ? "Archived" : announcementDetail.status || "Open"}</span>
+									<h2>{announcementDetail.title || "Scholarship Announcement"}</h2>
+									<p>{announcementDetail.subtitle || announcementDetail.description || "Scholarship application notice"}</p>
+									<div className="grantor-announcement-detail-meta"><span><HiOutlineCalendar /> {announcementDetail.applicationWindow || "Window not specified"}</span><span><HiOutlineUsers /> {getScholarshipSlotState(announcementDetail).label}</span></div>
+								</div>
+							</header>
+							<div className="grantor-announcement-detail-summary">
+								<article><span>Applications</span><strong>{announcementApplications.length}</strong><small>Students who applied to this announcement</small></article>
+								<article><span>Waiting</span><strong>{announcementWaitlist.counts?.queued || 0}</strong><small>Students currently in queue order</small></article>
+								<article><span>Slot offers</span><strong>{announcementWaitlist.counts?.offered || 0}</strong><small>Students with a reserved 24-hour offer</small></article>
+							</div>
+							<section className="grantor-announcement-detail-section">
+								<header><div><span>Applicants</span><h3>Scholarship applications</h3><p>Applications submitted specifically through this scholarship announcement.</p></div><strong>{announcementApplications.length}</strong></header>
+								<div className="admin-table-wrap grantor-announcement-applicants-table"><table className="admin-management-table"><thead><tr><th>Student ID</th><th>Applicant</th><th>Application No.</th><th>Status</th><th>Applied</th><th>Action</th></tr></thead><tbody>
+									{announcementApplications.length === 0 ? <EmptyRow colSpan={6} message="No students have applied to this scholarship yet." /> : announcementApplications.map((row) => <tr key={row.id}><td>{row.studentId || "-"}</td><td>{row.fullName || "Applicant"}</td><td>{row.applicationNumber || row.id}</td><td><span className={statusClass(row.status)}>{row.status || "Pending"}</span></td><td>{formatRelativeDate(row.appliedAt || row.createdAt)}</td><td><button type="button" className="grantor-application-view-btn" onClick={() => openApplicationModal(row)}><HiOutlineEye /> View</button></td></tr>)}
+								</tbody></table></div>
+							</section>
+							<section className="grantor-announcement-detail-section grantor-waitlist-section">
+								<header><div><span>Waitlist</span><h3>Application queue</h3><p>Queue order is first-in, first-out. Offered slots remain reserved for 24 hours.</p></div><button type="button" className="grantor-waitlist-refresh" onClick={loadAnnouncementWaitlist} disabled={announcementWaitlistLoading} aria-label="Refresh waitlist" title="Refresh waitlist"><HiOutlineRefresh /></button></header>
+								{announcementWaitlistError ? <div className="grantor-waitlist-error"><HiOutlineExclamationCircle /> {announcementWaitlistError}</div> : null}
+								{announcementWaitlistLoading ? <div className="grantor-waitlist-empty">Loading the current queue...</div> : (() => {
+									const activeQueue = announcementWaitlist.entries.filter((entry) => ["queued", "offered"].includes(entry.status))
+									return activeQueue.length === 0 ? <div className="grantor-waitlist-empty">No students are currently waiting for this scholarship.</div> : <div className="grantor-waitlist-list">{activeQueue.map((entry) => <article key={entry.id}><span className={`grantor-waitlist-position ${entry.status === "offered" ? "is-offered" : ""}`}>{entry.status === "offered" ? <HiOutlineMail /> : entry.queuePosition}</span><div><strong>{entry.studentName || entry.studentId}</strong><span>{entry.studentId} | {entry.course || "Program unavailable"}{entry.yearLevel ? ` | Year ${entry.yearLevel}` : ""}</span><small>{entry.status === "offered" ? `Slot offered${entry.expiresAt ? ` until ${formatDateTime(entry.expiresAt)}` : ""}` : `Joined ${formatDateTime(entry.queuedAt)}`}</small></div><em>{entry.status === "offered" ? "Offer sent" : "Waiting"}</em></article>)}</div>
+								})()}
+							</section>
+						</> : <div className="grantor-waitlist-empty">This announcement is unavailable or does not belong to your grantor account.</div>}
+					</section>
+				) : null}
+
+				{activeSection === "announcements" && !announcementDetailId ? (
 					<section className="grantor-announcements-panel">
 						<header className="grantor-announcements-head">
 							<div className="grantor-announcements-title"><span><HiOutlineBell /></span><div><h2>Announcements</h2><p>Publish scholarship notices and application updates for students.</p></div></div>
@@ -4888,6 +4979,7 @@ export default function ProviderDashboard() {
 															<input type="text" className={announcementSubmitAttempted && announcementMissingFields.title ? "is-missing" : ""} placeholder="Enter new scholarship title" value={announcementForm.title} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, title: event.target.value }))} />
 														</label>
 													) : null}
+											{selectedExistingScholarshipTitle ? <p className="grantor-announcement-continuation-note"><HiOutlineArchive /> Publishing this continuation creates a new announcement and archives the previous one. Existing application history is preserved.</p> : null}
 												</>
 											) : (
 												<label><span>Announcement Title</span><input type="text" className={announcementSubmitAttempted && announcementMissingFields.title ? "is-missing" : ""} placeholder="Enter announcement title" value={announcementForm.title} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, title: event.target.value }))} /></label>

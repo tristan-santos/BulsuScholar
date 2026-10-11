@@ -17,7 +17,6 @@ import {
 import { Bar, Doughnut, Line } from "react-chartjs-2"
 import {
 	HiOutlineAcademicCap,
-	HiOutlineArrowLeft,
 	HiOutlineArchive,
 	HiOutlineBan,
 	HiOutlineBell,
@@ -1237,9 +1236,11 @@ export default function AdminDashboard() {
 	const [documentReviewType, setDocumentReviewType] = useState("")
 	const [documentReviewNotes, setDocumentReviewNotes] = useState({})
 	const [documentReviewFieldErrors, setDocumentReviewFieldErrors] = useState({})
+	const [documentReviewRejectId, setDocumentReviewRejectId] = useState("")
 	const [documentPolicyMode, setDocumentPolicyMode] = useState("cor_only")
 	const [manualDocumentReviewEnabled, setManualDocumentReviewEnabled] = useState(true)
 	const [documentExceptionForm, setDocumentExceptionForm] = useState({ studentId: "", exceptionType: "advising_slip", reason: "" })
+	const [documentExceptionOpen, setDocumentExceptionOpen] = useState(false)
 	const [studentArchiveTrendRange, setStudentArchiveTrendRange] = useState("monthly")
 	const [selectedStudentId, setSelectedStudentId] = useState("")
 	const [selectedScholarshipTrackingKey, setSelectedScholarshipTrackingKey] = useState("")
@@ -3757,7 +3758,7 @@ export default function AdminDashboard() {
 	}
 
 	useEffect(() => {
-		if (!previewDocument?.url) {
+		if (!previewDocument?.url && !previewDocument?.submissionId) {
 			setPreviewBlobUrl("")
 			setIsPreviewLoading(false)
 			setPreviewError("")
@@ -3770,7 +3771,11 @@ export default function AdminDashboard() {
 		setPreviewBlobUrl("")
 		setPreviewError("")
 
-		getStorageObjectBlob(previewDocument)
+		const blobRequest = previewDocument.submissionId
+			? getStudentVerificationDocumentBlob(previewDocument.submissionId, previewDocument.reviewContext === "pending-account" ? "preview" : "")
+			: getStorageObjectBlob(previewDocument)
+
+		blobRequest
 			.then(async (blob) => {
 				if (cancelled) return
 				if (previewDocument.isPdf) {
@@ -3784,6 +3789,15 @@ export default function AdminDashboard() {
 					objectUrl = URL.createObjectURL(blob)
 				}
 				setPreviewBlobUrl(objectUrl)
+				if (previewDocument.reviewContext === "pending-account") {
+					setPendingStudentAccounts((current) => current.map((account) => {
+						if (!(account.documents || []).some((document) => document.id === previewDocument.submissionId)) return account
+						const documents = account.documents.map((document) => document.id === previewDocument.submissionId ? { ...document, previewed: true } : document)
+						const requiredDocuments = documents.filter((document) => document.required !== false)
+						const previewedDocumentCount = requiredDocuments.filter((document) => document.previewed).length
+						return { ...account, documents, previewedDocumentCount, requiredDocumentCount: requiredDocuments.length, allDocumentsPreviewed: requiredDocuments.length > 0 && previewedDocumentCount === requiredDocuments.length }
+					}))
+				}
 			})
 			.catch((error) => {
 				if (cancelled) return
@@ -5733,9 +5747,11 @@ export default function AdminDashboard() {
 	}
 
 	const downloadPreviewDocument = async () => {
-		if (!previewDocument?.url) return
+		if (!previewDocument?.url && !previewDocument?.submissionId) return
 		try {
-			const blob = await getStorageObjectBlob(previewDocument)
+			const blob = previewDocument.submissionId
+				? await getStudentVerificationDocumentBlob(previewDocument.submissionId)
+				: await getStorageObjectBlob(previewDocument)
 			const url = URL.createObjectURL(blob)
 			const link = document.createElement("a")
 			link.href = url
@@ -8415,7 +8431,32 @@ export default function AdminDashboard() {
 			toast.success(result.emailSent ? "Student account approved and welcome email sent." : "Student account approved. Welcome email delivery is pending.")
 			await loadPendingStudentAccounts()
 		} catch (error) {
-			toast.error(error.message || "Unable to approve this student account.")
+			const messages = {
+				student_email_not_confirmed: "The student must confirm their email before this account can be approved.",
+				signup_documents_not_previewed: "Preview every required signup document before approving this account.",
+				signup_document_replacement_required: "A rejected signup document must be replaced before this account can be approved.",
+				signup_documents_missing: "This account is missing a required signup document.",
+			}
+			console.error("[BulsuScholar] Pending account approval failed", {
+				studentId: account.id,
+				accountReviewStatus: account.accountReviewStatus,
+				emailConfirmed: Boolean(account.emailConfirmedAt),
+				requiredDocumentCount: account.requiredDocumentCount,
+				previewedDocumentCount: account.previewedDocumentCount,
+				allDocumentsPreviewed: Boolean(account.allDocumentsPreviewed),
+				documents: (account.documents || []).map((document) => ({
+					type: document.documentType,
+					status: document.status,
+					required: Boolean(document.required),
+					previewed: Boolean(document.previewed),
+				})),
+				httpStatus: error.status,
+				reason: error.reason,
+				message: error.message,
+				serverResponse: error.data,
+			})
+			toast.error(messages[error.reason] || error.message || "Unable to approve this student account.")
+			await loadPendingStudentAccounts()
 		} finally {
 			setIsBusy(false)
 		}
@@ -8453,7 +8494,9 @@ export default function AdminDashboard() {
 			toast.success(decision === "approved" ? "Document approved." : "Document returned for correction.")
 			setDocumentReviewNotes((current) => ({ ...current, [submission.id]: "" }))
 			setDocumentReviewFieldErrors((current) => ({ ...current, [submission.id]: "" }))
-			await loadDocumentReviewQueue()
+			setDocumentReviewRejectId("")
+			if (submission.reviewContext === "pending-account") await loadPendingStudentAccounts()
+			else await loadDocumentReviewQueue()
 		} catch (error) {
 			if (error.status === 409 && error.reason === "profile_submission_superseded") {
 				toast.info("This profile request was replaced by a newer submission. The review queue has been refreshed.")
@@ -8475,20 +8518,31 @@ export default function AdminDashboard() {
 			await createDocumentException(documentExceptionForm)
 			toast.success("Document exception recorded.")
 			setDocumentExceptionForm((current) => ({ ...current, studentId: "", reason: "" }))
+			setDocumentExceptionOpen(false)
 		} catch (error) {
 			toast.error(error.message || "Unable to record the exception.")
 		}
 	}
 
 	const openVerificationDocument = async (submission) => {
-		try {
-			const blob = await getStudentVerificationDocumentBlob(submission.id)
-			const url = URL.createObjectURL(blob)
-			window.open(url, "_blank", "noopener,noreferrer")
-			setTimeout(() => URL.revokeObjectURL(url), 60000)
-		} catch (error) {
-			toast.error(error.message || "Unable to open this document.")
+		const labels = {
+			cor: "Certificate of Registration",
+			rog: "Report of Grades",
+			profile: "Student Application Profile",
+			student_id: "Student ID",
+			previous_school_id: "Previous-school ID",
+			government_id: "Government ID",
 		}
+		setPreviewDocument({
+			submissionId: submission.id,
+			title: submission.documentType === "identity"
+				? labels[submission.documentKind] || "Identity document"
+				: labels[submission.documentType] || "Student document",
+			name: submission.name || "document",
+			status: submission.status || "pending",
+			reviewContext: submission.reviewContext || "",
+			isPdf: isPreviewPdf({ name: submission.name, type: submission.contentType || submission.file?.type }),
+		})
 	}
 
 	const saveDocumentPolicyMode = async (mode) => {
@@ -8795,6 +8849,7 @@ export default function AdminDashboard() {
 		}
 
 		if (activeSection === "students") {
+			const studentListActive = ["students", "archived", "overview"].includes(studentViewTab)
 			return (
 				<section className="admin-management-panel admin-student-management">
 					<div className="admin-panel-head">
@@ -8805,32 +8860,27 @@ export default function AdminDashboard() {
 								<p className="admin-panel-copy">Search, review, archive, and report on live student records.</p>
 							</div>
 						</div>
-						<div className="admin-head-actions">
+						<div className="admin-student-view-navigation" role="tablist" aria-label="Student management sections">
+							<button type="button" role="tab" aria-selected={studentListActive} className={studentListActive ? "active" : ""} onClick={() => setStudentViewTab("students")}>
+								<HiOutlineUsers /> Student List
+							</button>
 							{adminIdentityRef.current?.role === "full_admin" ? (
-								<button type="button" className="admin-table-btn" onClick={() => setStudentViewTab("pending-accounts")}>
+								<button type="button" role="tab" aria-selected={studentViewTab === "pending-accounts"} className={studentViewTab === "pending-accounts" ? "active" : ""} onClick={() => setStudentViewTab("pending-accounts")}>
 									<HiOutlineClock /> Pending Accounts
 								</button>
 							) : null}
-							<button type="button" className="admin-table-btn" onClick={() => setStudentViewTab("documents")}>
+							<button type="button" role="tab" aria-selected={studentViewTab === "documents"} className={studentViewTab === "documents" ? "active" : ""} onClick={() => setStudentViewTab("documents")}>
 								<HiOutlineCheckCircle /> Document Review
-							</button>
-							<button
-								type="button"
-								className="admin-student-report-btn"
-								disabled={isReportExporting || !adminReportExportsEnabled}
-								onClick={() => openStudentReportPreview({ view: studentViewTab, search: studentSearch, course: studentCourse, year: studentYear }, filteredStudents)}
-							>
-								<HiOutlineDocumentText /> {isReportExporting ? "Preparing..." : "Generate Report"}
 							</button>
 						</div>
 					</div>
 					{studentViewTab === "pending-accounts" ? (
-						<section className="admin-document-review-workspace">
-							<header className="admin-document-review-toolbar">
-								<div><h3>Pending Student Accounts</h3><p>Review email confirmation and signup documents before activating an account.</p></div>
-								<div className="admin-head-actions">
-									<button type="button" className="admin-icon-button" data-button-variant="neutral" disabled={pendingStudentAccountsLoading} onClick={loadPendingStudentAccounts} aria-label="Refresh pending accounts" title="Refresh pending accounts"><HiOutlineRefresh /></button>
-									<button type="button" data-button-variant="neutral" onClick={() => setStudentViewTab("students")}><HiOutlineArrowLeft /> Student List</button>
+						<section className="admin-document-review-workspace admin-document-review-workspace--accounts">
+							<header className="admin-review-section-head">
+								<div><span className="admin-review-section-kicker">Account activation</span><h3>Pending Accounts</h3><p>Confirm each student&apos;s email and required signup documents.</p></div>
+								<div className="admin-review-section-tools">
+									<span className="admin-review-count">{pendingStudentAccounts.length} pending</span>
+									<button type="button" className="admin-review-refresh" disabled={pendingStudentAccountsLoading} onClick={loadPendingStudentAccounts} aria-label="Refresh pending accounts" title="Refresh pending accounts"><HiOutlineRefresh /></button>
 								</div>
 							</header>
 							{pendingStudentAccountsLoading ? <LoadingBars note="Loading pending student accounts..." /> : pendingStudentAccounts.length === 0 ? (
@@ -8840,27 +8890,40 @@ export default function AdminDashboard() {
 									{pendingStudentAccounts.map((account, index) => {
 										const resendSeconds = confirmationResendSeconds(account.confirmationResendAvailableAt, pendingConfirmationNow)
 										const resendBusy = pendingConfirmationResendId === account.id
+									const accountReady = Boolean(account.emailConfirmedAt && account.allDocumentsPreviewed)
 										return (
-										<article key={account.id} className="admin-document-review-card admin-document-review-card--pending">
+									<article key={account.id} className="admin-pending-account-card">
 											<div className="admin-document-review-order">{index + 1}</div>
-											<div className="admin-document-review-summary">
-												<span>{account.emailConfirmedAt ? "Email confirmed" : "Waiting for email confirmation"}</span>
+										<div className="admin-pending-account-main">
+											<div className="admin-pending-account-heading">
+												<div className="admin-document-review-summary">
+													<span>{account.emailConfirmedAt ? "Email confirmed" : "Waiting for email confirmation"}</span>
 												<h4>{account.name || account.id}</h4>
 												<p>{account.id} | {account.course || "Course unavailable"} | Year {account.year || "-"}</p>
 												{account.yearLevelReview?.mismatch ? <p className="admin-pending-year-warning"><HiOutlineExclamation /> Year level needs review: student selected Year {account.yearLevelReview.submittedYear || account.year || "-"}, while the COR scan detected Year {account.yearLevelReview.detectedCorYear || "-"}.</p> : null}
 												{account.yearLevelReview?.submittedYear && !account.yearLevelReview.detectedCorYear ? <p className="admin-pending-year-warning"><HiOutlineExclamation /> The COR scanner could not confirm a year level. Verify the student&apos;s selected Year {account.yearLevelReview.submittedYear || account.year || "-"} before approval.</p> : null}
 												<small>{account.email || "Email unavailable"}{account.createdAt ? ` | Submitted ${new Date(account.createdAt).toLocaleString()}` : ""}</small>
-												<div className="admin-pending-account-documents">
+												</div>
+												<span className={`admin-account-readiness ${accountReady ? "ready" : "waiting"}`}>{accountReady ? "Ready for approval" : `${account.previewedDocumentCount || 0} of ${account.requiredDocumentCount || 0} previewed`}</span>
+											</div>
+											<div className="admin-pending-account-documents">
+												<div className="admin-pending-documents-title"><strong>Signup documents</strong><span>Review the current copy of each required document.</span></div>
 													{(account.documents || []).map((document) => {
 														const label = document.documentType === "identity" ? ({ student_id: "Student ID", previous_school_id: "Previous-school ID", government_id: "Government ID" }[document.documentKind] || "Identity document") : document.documentType === "cor" ? "COR" : document.documentType === "rog" ? "ROG" : String(document.documentType || "Document").replaceAll("_", " ")
-														return <button key={document.id} type="button" className="grantor-document-link" onClick={() => openVerificationDocument(document)}><HiOutlineEye /><span>View {label} ({document.status || "pending"})</span></button>
+													return <article key={document.id} className="admin-pending-document-item">
+														<div><span>{label}</span><strong title={document.name}>{document.name || "Uploaded document"}</strong><small className={`admin-document-status ${document.previewed ? "admin-document-status--approved" : ""}`}>{document.previewed ? "Previewed" : "Not previewed"}</small></div>
+														<div className="admin-pending-document-actions">
+															<button type="button" data-button-variant={document.previewed ? "positive" : "neutral"} onClick={() => openVerificationDocument({ ...document, reviewContext: "pending-account" })}>{document.previewed ? <HiOutlineCheckCircle /> : <HiOutlineEye />} {document.previewed ? "Preview Again" : "Preview"}</button>
+														</div>
+													</article>
 													})}
+												{(account.documents || []).length === 0 ? <div className="admin-pending-documents-empty">No signup documents are available.</div> : null}
 												</div>
-											</div>
-											<div className="admin-document-review-actions">
+											<div className="admin-pending-account-actions">
 												{!account.emailConfirmedAt ? <button type="button" data-button-variant="neutral" disabled={resendBusy || resendSeconds > 0} title={resendSeconds > 0 ? `Confirmation email can be resent in ${formatConfirmationResendTime(resendSeconds)}` : "Resend the Supabase account confirmation email"} onClick={() => resendPendingConfirmation(account)}><HiOutlineMail /> {resendBusy ? "Sending..." : resendSeconds > 0 ? `Resend in ${formatConfirmationResendTime(resendSeconds)}` : "Resend Confirmation"}</button> : null}
-												<button type="button" data-button-variant="positive" disabled={isBusy || !account.emailConfirmedAt} title={account.emailConfirmedAt ? "Approve this account" : "The student must confirm their email first"} onClick={() => approvePendingStudent(account)}><HiOutlineCheckCircle /> Approve Account</button>
-												{!account.emailConfirmedAt ? <small>Email confirmation is required before approval.</small> : null}
+											<button type="button" className="admin-pending-approve-button" data-button-variant="positive" disabled={isBusy || !accountReady} title={!account.emailConfirmedAt ? "The student must confirm their email first" : !account.allDocumentsPreviewed ? "Preview every required signup document first" : "Approve this account"} onClick={() => approvePendingStudent(account)}><HiOutlineCheckCircle /> Approve Account</button>
+											{!accountReady ? <small>{!account.emailConfirmedAt ? "Email confirmation is required." : `Preview all ${account.requiredDocumentCount || "required"} signup documents to enable approval.`}</small> : null}
+											</div>
 											</div>
 										</article>
 										)
@@ -8870,18 +8933,20 @@ export default function AdminDashboard() {
 						</section>
 					) : studentViewTab === "documents" ? (
 						<section className="admin-document-review-workspace">
-							<header className="admin-document-review-toolbar">
-								<div><h3>Student Document Review</h3><p>Review the oldest submissions first. Scanner results never approve a file.</p></div>
-								<button type="button" data-button-variant="neutral" onClick={() => setStudentViewTab("students")}><HiOutlineArrowLeft /> Student List</button>
+							<header className="admin-review-section-head">
+								<div><span className="admin-review-section-kicker">Verification queue</span><h3>Document Review</h3><p>Preview and decide the latest profile and replacement submissions.</p></div>
+								<div className="admin-review-section-tools">
+									<span className="admin-review-count">{documentReviewRows.length} matching</span>
+									<button type="button" className="admin-review-refresh" disabled={documentReviewLoading} onClick={loadDocumentReviewQueue} aria-label="Refresh document review queue" title="Refresh document review queue"><HiOutlineRefresh /></button>
+								</div>
 							</header>
-							<div className="admin-document-review-controls">
+							<div className="admin-document-review-controls" aria-label="Document review filters">
 								<label>Status<select value={documentReviewFilter} onChange={(event) => setDocumentReviewFilter(event.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All statuses</option></select></label>
-								<label>Document<select value={documentReviewType} onChange={(event) => setDocumentReviewType(event.target.value)}><option value="">All documents</option><option value="cor">COR</option><option value="rog">ROG</option><option value="identity">Identity document</option><option value="profile">Application profile</option></select></label>
+								<label>Submission<select value={documentReviewType} onChange={(event) => setDocumentReviewType(event.target.value)}><option value="">All review submissions</option><option value="profile">Application Profile</option><option value="cor">COR replacement</option><option value="rog">ROG replacement</option><option value="identity">Identity replacement</option></select></label>
 								{adminIdentityRef.current?.role === "full_admin" ? <label>COR intake policy<select value={documentPolicyMode} onChange={(event) => saveDocumentPolicyMode(event.target.value)}><option value="cor_only">COR only</option><option value="advising_only">Advising Slip only</option><option value="either">COR or Advising Slip</option></select></label> : null}
-								{adminIdentityRef.current?.role === "full_admin" ? <div className="admin-document-review-toggle"><span><strong>Manual Document Review</strong><small>{manualDocumentReviewEnabled ? "New submissions wait for staff approval." : "New validated submissions are approved by the system."}</small></span><button type="button" className={`grantor-profile-switch ${manualDocumentReviewEnabled ? "active" : ""}`} role="switch" aria-checked={manualDocumentReviewEnabled} onClick={toggleManualDocumentReview} title="Toggle manual document review"><i /></button></div> : null}
-								<button type="button" className="admin-icon-button" data-button-variant="neutral" disabled={documentReviewLoading} onClick={loadDocumentReviewQueue} aria-label="Refresh document review queue" title="Refresh document review queue"><HiOutlineRefresh /></button>
+								{adminIdentityRef.current?.role === "full_admin" ? <div className={`admin-document-review-toggle ${manualDocumentReviewEnabled ? "is-on" : "is-off"}`}><span><strong>Manual Review {manualDocumentReviewEnabled ? "ON" : "OFF"}</strong><small>{manualDocumentReviewEnabled ? "Staff approval is required." : "Validated submissions are system-approved."}</small></span><button type="button" className={`grantor-profile-switch ${manualDocumentReviewEnabled ? "active" : ""}`} role="switch" aria-checked={manualDocumentReviewEnabled} aria-label={`${manualDocumentReviewEnabled ? "Disable" : "Enable"} manual document review`} onClick={toggleManualDocumentReview} title={`${manualDocumentReviewEnabled ? "Disable" : "Enable"} manual document review`}><i /></button></div> : null}
 							</div>
-							{adminIdentityRef.current?.role === "full_admin" ? <div className="admin-document-exception-form"><strong>Individual exception</strong><input placeholder="Student ID" value={documentExceptionForm.studentId} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, studentId: event.target.value }))} /><select value={documentExceptionForm.exceptionType} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, exceptionType: event.target.value }))}><option value="advising_slip">Advising Slip</option><option value="lost_student_id">Lost Student ID</option></select><input placeholder="Required reason" value={documentExceptionForm.reason} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, reason: event.target.value }))} /><button type="button" data-button-variant="positive" onClick={grantDocumentException}><HiOutlineCheckCircle /> Record Exception</button></div> : null}
+							{adminIdentityRef.current?.role === "full_admin" ? <section className={`admin-document-exception ${documentExceptionOpen ? "is-open" : ""}`}><div className="admin-document-exception-summary"><div className="admin-document-exception-icon"><HiOutlineInformationCircle /></div><div><strong>Individual Exception</strong><p>Authorize one student this academic cycle to submit an Advising Slip or an alternate ID when the standard document policy cannot be met.</p></div><button type="button" data-button-variant="neutral" aria-expanded={documentExceptionOpen} onClick={() => setDocumentExceptionOpen((open) => !open)}>{documentExceptionOpen ? "Close" : "Record Individual Exception"}</button></div>{documentExceptionOpen ? <div className="admin-document-exception-form"><label><span>Student ID</span><input placeholder="Enter student ID" value={documentExceptionForm.studentId} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, studentId: event.target.value }))} /></label><label><span>Exception type</span><select value={documentExceptionForm.exceptionType} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, exceptionType: event.target.value }))}><option value="advising_slip">Allow Advising Slip</option><option value="lost_student_id">Allow alternate identity document</option></select></label><label><span>Required reason</span><input placeholder="Explain why this exception is needed" value={documentExceptionForm.reason} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, reason: event.target.value }))} /></label><button type="button" data-button-variant="positive" onClick={grantDocumentException}><HiOutlineCheckCircle /> Save Exception</button></div> : null}</section> : null}
 							{documentReviewLoading ? <LoadingBars note="Loading document review queue..." /> : documentReviewRows.length === 0 ? (
 								<div className="admin-empty-state"><HiOutlineCheckCircle /><strong>No matching document submissions</strong><span>The selected queue is clear.</span></div>
 							) : (
@@ -8892,8 +8957,9 @@ export default function AdminDashboard() {
 											<div className="admin-document-review-summary"><span>{submission.documentType === "identity" ? ({ student_id: "Student ID", previous_school_id: "Previous-school ID", government_id: "Government ID" }[submission.documentKind] || "Identity document") : String(submission.documentType || "document").replaceAll("_", " ")}</span><h4>{submission.studentName || submission.studentId}</h4><p>{submission.studentId} | {submission.course || "Course unavailable"} | Year {submission.yearLevel || "-"}</p><small>{submission.name || "Uploaded document"} | Version {submission.version || 1} | {submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : ""}</small></div>
 											<div className="admin-document-review-actions">
 												<button type="button" data-button-variant="neutral" onClick={() => openVerificationDocument(submission)}><HiOutlineEye /> Preview</button>
-												{submission.status === "pending" ? <>{submission.documentType === "profile" ? <input aria-label={`Incorrect profile fields for ${submission.studentName || submission.studentId}`} placeholder="Incorrect fields, comma separated" value={documentReviewFieldErrors[submission.id] || ""} onChange={(event) => setDocumentReviewFieldErrors((current) => ({ ...current, [submission.id]: event.target.value }))} /> : null}<input aria-label={`Correction reason for ${submission.studentName || submission.studentId}`} placeholder="Correction reason (required to reject)" value={documentReviewNotes[submission.id] || ""} onChange={(event) => setDocumentReviewNotes((current) => ({ ...current, [submission.id]: event.target.value }))} /><button type="button" data-button-variant="danger" disabled={isBusy} onClick={() => decideStudentDocument(submission, "rejected")}><HiOutlineXCircle /> Reject</button><button type="button" data-button-variant="positive" disabled={isBusy} onClick={() => decideStudentDocument(submission, "approved")}><HiOutlineCheckCircle /> Approve</button></> : <span className={`admin-document-review-decision admin-document-review-decision--${submission.status}`}>{submission.status}{submission.rejectionReason ? `: ${submission.rejectionReason}` : ""}</span>}
+												{submission.status === "pending" ? <><button type="button" data-button-variant="danger" disabled={isBusy} onClick={() => setDocumentReviewRejectId(submission.id)}><HiOutlineXCircle /> Reject</button><button type="button" data-button-variant="positive" disabled={isBusy} onClick={() => decideStudentDocument(submission, "approved")}><HiOutlineCheckCircle /> Approve</button></> : <span className={`admin-document-review-decision admin-document-review-decision--${submission.status}`}>{submission.status}{submission.rejectionReason ? `: ${submission.rejectionReason}` : ""}</span>}
 											</div>
+											{documentReviewRejectId === submission.id ? <div className="admin-document-reject-panel">{submission.documentType === "profile" ? <label><span>Incorrect fields (optional)</span><input placeholder="Comma separated fields" value={documentReviewFieldErrors[submission.id] || ""} onChange={(event) => setDocumentReviewFieldErrors((current) => ({ ...current, [submission.id]: event.target.value }))} /></label> : null}<label><span>Correction reason</span><input autoFocus placeholder="Explain what the student must correct" value={documentReviewNotes[submission.id] || ""} onChange={(event) => setDocumentReviewNotes((current) => ({ ...current, [submission.id]: event.target.value }))} /></label><button type="button" data-button-variant="neutral" onClick={() => setDocumentReviewRejectId("")}>Cancel</button><button type="button" data-button-variant="danger" disabled={isBusy} onClick={() => decideStudentDocument(submission, "rejected")}><HiOutlineXCircle /> Confirm Rejection</button></div> : null}
 										</article>
 									))}
 								</div>
@@ -8984,15 +9050,25 @@ export default function AdminDashboard() {
 									onChange={setStudentViewTab}
 									className="admin-student-inline-tabs"
 								/>
-								<button
-									type="button"
-									className="admin-student-archive-btn"
-									disabled={selectedStudentIds.length === 0}
-									onClick={() => (studentViewTab === "archived" ? openBatchUnarchiveConfirmation() : openBatchArchiveConfirmation())}
-								>
-									{studentViewTab === "archived" ? <HiOutlineRefresh /> : <HiOutlineTrash />}
-									{studentViewTab === "archived" ? "Unarchive" : "Archive"} {selectedStudentIds.length > 0 ? `(${selectedStudentIds.length})` : ""}
-								</button>
+								<div className="admin-student-list-actions">
+									<button
+										type="button"
+										className="admin-student-archive-btn"
+										disabled={selectedStudentIds.length === 0}
+										onClick={() => (studentViewTab === "archived" ? openBatchUnarchiveConfirmation() : openBatchArchiveConfirmation())}
+									>
+										{studentViewTab === "archived" ? <HiOutlineRefresh /> : <HiOutlineTrash />}
+										{studentViewTab === "archived" ? "Unarchive" : "Archive"} {selectedStudentIds.length > 0 ? `(${selectedStudentIds.length})` : ""}
+									</button>
+									<button
+										type="button"
+										className="admin-student-report-btn"
+										disabled={isReportExporting || !adminReportExportsEnabled}
+										onClick={() => openStudentReportPreview({ view: studentViewTab, search: studentSearch, course: studentCourse, year: studentYear }, filteredStudents)}
+									>
+										<HiOutlineDocumentText /> {isReportExporting ? "Preparing..." : "Generate Report"}
+									</button>
+								</div>
 							</div>
 							<div className="admin-student-command-row">
 								<div className="admin-student-toolbar">
@@ -11798,7 +11874,7 @@ export default function AdminDashboard() {
 							<div>
 								<span>Document Preview</span>
 								<h3>{previewDocument.title}</h3>
-								<p>{previewDocument.name}</p>
+								<p>{previewDocument.name}{previewDocument.status ? ` · ${previewDocument.status}` : ""}</p>
 							</div>
 							<div className="admin-document-preview-actions">
 								<button type="button" className="admin-document-preview-download" onClick={downloadPreviewDocument}>

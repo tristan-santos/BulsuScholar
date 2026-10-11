@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 from datetime import datetime, timedelta, timezone
@@ -8,17 +9,32 @@ from fastapi import HTTPException, Request
 
 try:
     from .access_control import require_admin_bearer
-    from .email_service import send_email_notification
+    from .student_activation_service import (
+        activate_student_account,
+        latest_signup_documents as _latest_signup_documents,
+        load_signup_documents as _load_signup_documents,
+        required_signup_document_types as _required_signup_document_types,
+        required_signup_documents as _required_signup_documents,
+        signup_documents_ready as _signup_documents_ready,
+    )
     from .student_lifecycle_service import promote_email_confirmed_student
     from .supabase_ops import create_log, supabase_admin_get_user, supabase_document_get, supabase_resend_signup_confirmation, supabase_rpc, supabase_select
 except ImportError:  # pragma: no cover
     from access_control import require_admin_bearer
-    from email_service import send_email_notification
+    from student_activation_service import (
+        activate_student_account,
+        latest_signup_documents as _latest_signup_documents,
+        load_signup_documents as _load_signup_documents,
+        required_signup_document_types as _required_signup_document_types,
+        required_signup_documents as _required_signup_documents,
+        signup_documents_ready as _signup_documents_ready,
+    )
     from student_lifecycle_service import promote_email_confirmed_student
     from supabase_ops import create_log, supabase_admin_get_user, supabase_document_get, supabase_resend_signup_confirmation, supabase_rpc, supabase_select
 
 
 RESEND_COOLDOWN = timedelta(minutes=5)
+logger = logging.getLogger(__name__)
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -34,6 +50,21 @@ def _parse_datetime(value: Any) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _previewed_signup_document_ids(student_id: str, admin_id: str) -> set[str]:
+    result = supabase_select("student_document_reviews", {
+        "data->>studentId": student_id,
+        "data->>reviewerId": admin_id,
+        "data->>decision": "previewed",
+    }, limit=100)
+    if not result.get("ok"):
+        return set()
+    return {
+        str((row.get("data") or {}).get("submissionId") or "")
+        for row in result.get("rows") or []
+        if str((row.get("data") or {}).get("submissionId") or "")
+    }
 
 
 def _resend_availability(row: dict[str, Any], data: dict[str, Any]) -> tuple[str | None, int]:
@@ -62,27 +93,35 @@ def _require_full_admin(request: Request) -> str:
 
 
 def list_pending_student_accounts(request: Request) -> dict[str, Any]:
-    _require_full_admin(request)
+    admin_id = _require_full_admin(request)
     result = supabase_select("pending_students", limit=500)
     if not result.get("ok"):
         raise HTTPException(status_code=503, detail="pending_accounts_unavailable")
     accounts = []
     for row in result.get("rows") or []:
         data = row.get("data") or {}
-        document_result = supabase_select("student_document_submissions", {"data->>studentId": row.get("id")}, limit=20)
+        document_rows, documents_ready = _load_signup_documents(str(row.get("id") or ""))
+        required_documents = _required_signup_documents(document_rows)
+        required_document_types = _required_signup_document_types(document_rows)
+        previewed_ids = _previewed_signup_document_ids(str(row.get("id") or ""), admin_id)
+        required_ids = {str(document.get("id") or "") for document in required_documents}
+        has_all_required_documents = len(required_documents) == len(required_document_types)
         documents = []
-        if document_result.get("ok"):
-            documents = [
-                {
-                    "id": document.get("id"),
-                    "documentType": (document.get("data") or {}).get("documentType"),
-                    "documentKind": (document.get("data") or {}).get("documentKind"),
-                    "name": (document.get("data") or {}).get("name"),
-                    "status": (document.get("data") or {}).get("status"),
-                    "submittedAt": (document.get("data") or {}).get("submittedAt"),
-                }
-                for document in document_result.get("rows") or []
-            ]
+        for document in document_rows:
+            document_data = document.get("data") or {}
+            file_data = document_data.get("file") if isinstance(document_data.get("file"), dict) else {}
+            documents.append({
+                "id": document.get("id"),
+                "documentType": document_data.get("documentType"),
+                "documentKind": document_data.get("documentKind"),
+                "name": document_data.get("name"),
+                "contentType": file_data.get("type"),
+                "status": document_data.get("status"),
+                "rejectionReason": document_data.get("rejectionReason"),
+                "submittedAt": document_data.get("submittedAt"),
+                "previewed": str(document.get("id") or "") in previewed_ids,
+                "required": str(document.get("id") or "") in required_ids,
+            })
         resend_available_at, resend_retry_after = _resend_availability(row, data)
         accounts.append({
             "id": row.get("id"),
@@ -97,6 +136,10 @@ def list_pending_student_accounts(request: Request) -> dict[str, Any]:
             "confirmationResendRetryAfter": resend_retry_after,
             "yearLevelReview": data.get("yearLevelReview") if isinstance(data.get("yearLevelReview"), dict) else {},
             "documents": documents,
+            "documentsReady": documents_ready,
+            "requiredDocumentCount": len(required_document_types),
+            "previewedDocumentCount": len(required_ids & previewed_ids),
+            "allDocumentsPreviewed": has_all_required_documents and required_ids.issubset(previewed_ids),
         })
     return {"ok": True, "accounts": accounts}
 
@@ -111,28 +154,52 @@ def approve_pending_student_account(request: Request, student_id: str) -> dict[s
     data = pending.get("data") or {}
     if not data.get("emailConfirmedAt"):
         raise HTTPException(status_code=409, detail="student_email_not_confirmed")
-    result = supabase_rpc("approve_pending_student_account", {
-        "p_student_id": student_id,
-        "p_auth_user_id": str(data.get("authUserId") or ""),
-        "p_email": str(data.get("email") or ""),
-        "p_admin_id": admin_id,
-    })
-    if not result.get("ok"):
-        raise HTTPException(status_code=409, detail="account_approval_failed")
+    documents, _documents_ready = _load_signup_documents(student_id)
+    required_documents = _required_signup_documents(documents)
+    required_document_types = _required_signup_document_types(documents)
+    required_ids = {str(document.get("id") or "") for document in required_documents}
+    if len(required_documents) != len(required_document_types):
+        raise HTTPException(status_code=409, detail="signup_documents_missing")
+    if any(str((document.get("data") or {}).get("status") or "").lower() == "rejected" for document in required_documents):
+        raise HTTPException(status_code=409, detail="signup_document_replacement_required")
+    if not required_ids.issubset(_previewed_signup_document_ids(student_id, admin_id)):
+        raise HTTPException(status_code=409, detail="signup_documents_not_previewed")
 
-    name = " ".join(str(data.get(key) or "").strip() for key in ("fname", "lname")).strip()
-    email_result = send_email_notification({
-        "to": data.get("email"),
-        "toName": name,
-        "subject": "Welcome to BulsuScholar",
-        "html": "<p>Your BulsuScholar student account has been approved. You can now sign in with your Student ID.</p>",
-    })
+    try:
+        from .student_profile_service import review_document_submission
+    except ImportError:  # pragma: no cover
+        from student_profile_service import review_document_submission
+    for document in required_documents:
+        document_data = document.get("data") or {}
+        if str(document_data.get("status") or "").lower() == "pending":
+            review_document_submission(request, str(document.get("id") or ""), {
+                "decision": "approved",
+                "notes": "Approved with the pending student account after all required documents were previewed.",
+            })
+    result = activate_student_account(student_id, data, admin_id, "manual_admin_review")
+    if not result.get("ok"):
+        failure_reason = str(result.get("reason") or "supabase_rpc_error")
+        logger.error(
+            "Pending account approval failed student_id=%s admin_id=%s stage=account_activation reason=%s upstream_status=%s",
+            student_id,
+            admin_id,
+            failure_reason,
+            result.get("status"),
+        )
+        raise HTTPException(status_code=409, detail={
+            "code": "account_approval_failed",
+            "reason": failure_reason,
+            "stage": "account_activation",
+        })
+
     return {
         "ok": True,
         "approved": True,
         "studentId": student_id,
-        "emailSent": email_result.get("sent") is True,
-        "emailDeliveryReason": None if email_result.get("sent") else email_result.get("reason"),
+        "newlyApproved": result.get("newlyApproved") is True,
+        "alreadyActive": result.get("alreadyActive") is True,
+        "emailSent": result.get("welcomeEmailSent") is True,
+        "emailDeliveryReason": result.get("welcomeEmailDeliveryReason"),
     }
 
 

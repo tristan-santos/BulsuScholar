@@ -1,0 +1,123 @@
+.confirm-email-panel {
+	display: grid;
+	place-items: center;
+	padding: clamp(1.5rem, 5vw, 4rem);
+}
+
+.confirm-email-shell {
+	display: grid;
+	justify-items: center;
+	gap: 1.5rem;
+	width: min(100%, 520px);
+}
+
+.confirm-email-logo {
+	width: 76px;
+	height: 76px;
+	object-fit: contain;
+}
+
+.confirm-email-card {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+	padding: clamp(1.5rem, 4vw, 2.5rem);
+	border: 1px solid #d7e6df;
+	border-top: 4px solid #00633c;
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 0 18px 45px rgba(18, 49, 38, 0.1);
+	text-align: center;
+}
+
+.confirm-email-status-icon {
+	display: grid;
+	place-items: center;
+	width: 68px;
+	height: 68px;
+	margin-bottom: 1rem;
+	border-radius: 50%;
+	background: #eaf6f0;
+	color: #007247;
+}
+
+.confirm-email-status-icon svg { width: 34px; height: 34px; }
+.confirm-email-card--error .confirm-email-status-icon,
+.confirm-email-card--missing .confirm-email-status-icon { background: #fff0ef; color: #b42318; }
+.confirm-email-card--activation-error .confirm-email-status-icon { background: #fff7e8; color: #a15c00; }
+.confirm-email-card--error,
+.confirm-email-card--missing { border-top-color: #b42318; }
+.confirm-email-card--activation-error { border-top-color: #b86b00; }
+
+.confirm-email-kicker {
+	color: #007247;
+	font-size: .75rem;
+	font-weight: 800;
+	text-transform: uppercase;
+}
+
+.confirm-email-card h2 {
+	margin: .45rem 0 .65rem;
+	color: #102d23;
+	font-size: clamp(1.55rem, 4vw, 2rem);
+	line-height: 1.2;
+}
+
+.confirm-email-card > p {
+	max-width: 420px;
+	margin: 0;
+	color: #5d7069;
+	font-size: .98rem;
+	line-height: 1.65;
+}
+
+.confirm-email-address,
+.confirm-email-next-step {
+	display: flex;
+	align-items: center;
+	gap: .7rem;
+	width: 100%;
+	margin-top: 1.25rem;
+	padding: .85rem 1rem;
+	border: 1px solid #d4e4dc;
+	border-radius: 6px;
+	background: #f6faf8;
+	color: #24483b;
+	text-align: left;
+}
+
+.confirm-email-address svg,
+.confirm-email-next-step svg { flex: 0 0 auto; width: 20px; height: 20px; color: #007247; }
+.confirm-email-address span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.confirm-email-next-step span { display: grid; gap: .1rem; }
+.confirm-email-next-step strong { color: #17372c; font-size: .78rem; }
+
+.confirm-email-back {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: .55rem;
+	width: 100%;
+	min-height: 48px;
+	margin-top: 1.4rem;
+	padding: .7rem 1rem;
+	border: 1px solid #00633c;
+	border-radius: 6px;
+	background: #00633c;
+	color: #fff;
+	font: inherit;
+	font-weight: 750;
+	cursor: pointer;
+}
+
+.confirm-email-back:hover { background: #004f30; }
+.confirm-email-back:focus-visible { outline: 3px solid rgba(0, 99, 60, .25); outline-offset: 3px; }
+.confirm-email-back svg { width: 19px; height: 19px; }
+.confirm-email-redirect { margin-top: .8rem; color: #768880; font-size: .76rem; }
+
+@media (max-width: 760px) {
+	.confirm-email-panel { min-height: 100vh; padding: 1.25rem; }
+	.confirm-email-logo { width: 64px; height: 64px; }
+	.confirm-email-card { padding: 1.5rem 1.1rem; }
+}

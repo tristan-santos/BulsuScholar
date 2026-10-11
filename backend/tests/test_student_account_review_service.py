@@ -24,15 +24,18 @@ class StudentAccountReviewTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 403)
 
     @patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"}))
+    @patch.object(service, "_previewed_signup_document_ids", return_value=set())
+    @patch.object(service, "_load_signup_documents")
     @patch.object(service, "supabase_select")
-    def test_pending_accounts_include_safe_signup_document_metadata(self, select, _):
-        select.side_effect = [
-            {"ok": True, "rows": [{"id": "student-1", "data": {"fname": "Ana", "lname": "Student", "year": "4", "course": "BSIT", "yearLevelReview": {"submittedYear": "4", "detectedCorYear": "2", "mismatch": True}}}]},
-            {"ok": True, "rows": [{"id": "identity-1", "data": {
+    def test_pending_accounts_include_safe_signup_document_metadata(self, select, load_documents, _previews, _):
+        select.return_value = {
+            "ok": True,
+            "rows": [{"id": "student-1", "data": {"fname": "Ana", "lname": "Student", "year": "4", "course": "BSIT", "yearLevelReview": {"submittedYear": "4", "detectedCorYear": "2", "mismatch": True}}}],
+        }
+        load_documents.return_value = ([{"id": "signup_document_batch_identity", "data": {
                 "documentType": "identity", "documentKind": "government_id", "name": "id.jpg",
-                "status": "pending", "submittedAt": "2026-09-29T00:00:00Z", "file": {"path": "private/file.jpg"},
-            }}]},
-        ]
+                "status": "pending", "source": "student_signup", "submittedAt": "2026-09-29T00:00:00Z", "file": {"path": "private/file.jpg"},
+            }}], False)
         result = service.list_pending_student_accounts(self.request)
         self.assertEqual("government_id", result["accounts"][0]["documents"][0]["documentKind"])
         self.assertNotIn("file", result["accounts"][0]["documents"][0])
@@ -40,6 +43,19 @@ class StudentAccountReviewTests(unittest.TestCase):
         self.assertTrue(result["accounts"][0]["yearLevelReview"]["mismatch"])
         self.assertIn("confirmationResendAvailableAt", result["accounts"][0])
         self.assertEqual(0, result["accounts"][0]["confirmationResendRetryAfter"])
+        self.assertFalse(result["accounts"][0]["documentsReady"])
+        self.assertFalse(result["accounts"][0]["allDocumentsPreviewed"])
+
+    def test_signup_documents_are_deduplicated_to_latest_of_each_type(self):
+        rows = [
+            {"id": "signup_document_old_cor", "data": {"documentType": "cor", "source": "student_signup", "status": "pending", "submittedAt": "2026-09-01T00:00:00Z"}},
+            {"id": "signup_document_new_cor", "data": {"documentType": "cor", "source": "student_signup", "status": "approved", "submittedAt": "2026-10-01T00:00:00Z"}},
+            {"id": "signup_document_identity", "data": {"documentType": "identity", "source": "student_signup", "status": "approved", "submittedAt": "2026-10-01T00:00:00Z"}},
+            {"id": "replacement_rog", "data": {"documentType": "rog", "source": "student_profile", "status": "pending", "submittedAt": "2026-10-02T00:00:00Z"}},
+        ]
+        selected = service._latest_signup_documents(rows)
+        self.assertEqual(["signup_document_new_cor", "signup_document_identity"], [row["id"] for row in selected])
+        self.assertTrue(service._signup_documents_ready(selected))
 
     @patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"}))
     @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": {"id": "student-1"}, "data": {
@@ -54,21 +70,62 @@ class StudentAccountReviewTests(unittest.TestCase):
 
     @patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"}))
     @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": {"id": "student-1"}, "data": {
+        "authUserId": "auth-1", "email": "student@example.com", "emailConfirmedAt": "2026-10-10T00:00:00Z",
+    }})
+    @patch.object(service, "_load_signup_documents", return_value=([], False))
+    @patch.object(service, "supabase_rpc")
+    def test_account_approval_requires_signup_documents(self, rpc, *_):
+        with self.assertRaises(HTTPException) as error:
+            service.approve_pending_student_account(self.request, "student-1")
+        self.assertEqual(409, error.exception.status_code)
+        self.assertEqual("signup_documents_missing", error.exception.detail)
+        rpc.assert_not_called()
+
+    @patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"}))
+    @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": {"id": "student-1"}, "data": {
         "authUserId": "auth-1", "email": "student@example.com", "fname": "Student",
         "emailConfirmedAt": "2026-09-22T00:00:00Z",
     }})
-    @patch.object(service, "supabase_rpc", return_value={"ok": True, "data": {"approved": True}})
-    @patch.object(service, "send_email_notification", return_value={"sent": False, "reason": "mail_unavailable"})
-    def test_approval_reports_email_failure_separately(self, send_email, rpc, *_):
+    @patch.object(service, "activate_student_account", return_value={
+        "ok": True, "approved": True, "newlyApproved": True, "alreadyActive": False,
+        "welcomeEmailSent": False, "welcomeEmailDeliveryReason": "mail_unavailable",
+    })
+    @patch.object(service, "_load_signup_documents", return_value=([{
+        "id": "signup_document_cor", "data": {"documentType": "cor", "status": "approved"},
+    }, {
+        "id": "signup_document_identity", "data": {"documentType": "identity", "status": "approved"},
+    }], True))
+    @patch.object(service, "_previewed_signup_document_ids", return_value={"signup_document_cor", "signup_document_identity"})
+    def test_approval_reports_email_failure_separately(self, _previews, _documents, activate, *_):
         result = service.approve_pending_student_account(self.request, "student-1")
         self.assertTrue(result["approved"])
         self.assertFalse(result["emailSent"])
         self.assertEqual(result["emailDeliveryReason"], "mail_unavailable")
-        rpc.assert_called_once_with("approve_pending_student_account", {
-            "p_student_id": "student-1", "p_auth_user_id": "auth-1",
-            "p_email": "student@example.com", "p_admin_id": "admin-1",
-        })
-        send_email.assert_called_once()
+        activate.assert_called_once_with("student-1", {
+            "authUserId": "auth-1", "email": "student@example.com", "fname": "Student",
+            "emailConfirmedAt": "2026-09-22T00:00:00Z",
+        }, "admin-1", "manual_admin_review")
+
+    @patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"}))
+    @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": {"id": "student-1"}, "data": {
+        "authUserId": "auth-1", "email": "student@example.com", "emailConfirmedAt": "2026-09-22T00:00:00Z",
+    }})
+    @patch.object(service, "activate_student_account", return_value={"ok": False, "status": 400, "reason": "confirmed_identity_mismatch"})
+    @patch.object(service, "_load_signup_documents", return_value=([{
+        "id": "signup_document_cor", "data": {"documentType": "cor", "status": "approved"},
+    }, {
+        "id": "signup_document_identity", "data": {"documentType": "identity", "status": "approved"},
+    }], True))
+    @patch.object(service, "_previewed_signup_document_ids", return_value={"signup_document_cor", "signup_document_identity"})
+    def test_account_approval_reports_database_failure_stage(self, _previews, _documents, _activate, *_):
+        with self.assertRaises(HTTPException) as error:
+            service.approve_pending_student_account(self.request, "student-1")
+        self.assertEqual(409, error.exception.status_code)
+        self.assertEqual({
+            "code": "account_approval_failed",
+            "reason": "confirmed_identity_mismatch",
+            "stage": "account_activation",
+        }, error.exception.detail)
 
     @patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"}))
     @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": {"id": "student-1"}, "data": {

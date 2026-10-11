@@ -1,6 +1,6 @@
 import io
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pdfplumber
 from fastapi import HTTPException
@@ -159,6 +159,21 @@ class StudentProfileValidationTests(unittest.TestCase):
 
 
 class StudentDocumentReviewTests(unittest.TestCase):
+    @patch.object(service, "supabase_document_insert", return_value={"ok": True})
+    @patch.object(service, "_read_storage", return_value=b"image-bytes")
+    @patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"}))
+    @patch.object(service, "supabase_document_get", return_value={"row": {"id": "signup_document_1"}, "data": {
+        "studentId": "student-1", "documentType": "cor", "source": "student_signup",
+        "name": "cor.pdf", "file": {"type": "application/pdf"},
+    }})
+    def test_admin_preview_records_signup_document_preview(self, _get, _reviewer, _read, insert):
+        request = Mock()
+        request.headers = {"x-portal-actor-id": "admin-1", "x-portal-actor-type": "admin"}
+        response = service.document_content(request, "signup_document_1", "preview")
+        self.assertEqual(b"image-bytes", response.body)
+        self.assertEqual("student_document_reviews", insert.call_args.args[0])
+        self.assertEqual("previewed", insert.call_args.args[1]["decision"])
+
     def test_latest_profile_submission_is_selected_globally_across_cycles(self):
         rows = [
             {"id": "old", "studentId": "student-1", "documentType": "profile", "academicCycle": "2025", "version": 9, "submittedAt": "2026-09-01T00:00:00Z"},
@@ -183,7 +198,7 @@ class StudentDocumentReviewTests(unittest.TestCase):
         self.assertEqual("superseded", update.call_args_list[0].args[2]["status"])
         self.assertEqual(("student_profile_revisions", "revision-old"), update.call_args_list[1].args[:2])
 
-    def test_admin_queue_returns_one_latest_profile_and_keeps_other_documents(self):
+    def test_admin_queue_returns_one_latest_profile_and_keeps_only_replacement_documents(self):
         old_profile = {
             "id": "profile-old", "studentId": "student-1", "documentType": "profile",
             "status": "approved", "version": 1, "submittedAt": "2026-09-01T00:00:00Z",
@@ -196,8 +211,13 @@ class StudentDocumentReviewTests(unittest.TestCase):
             "id": "cor-1", "studentId": "student-1", "documentType": "cor",
             "status": "pending", "version": 1, "submittedAt": "2026-09-15T00:00:00Z",
         }
+        # Signup documents are reviewed with the pending account, not in this queue.
+        signup_identity = {
+            "id": "signup_document_batch_identity", "studentId": "student-1", "documentType": "identity",
+            "source": "student_signup", "signupBatchId": "batch", "status": "pending", "submittedAt": "2026-09-16T00:00:00Z",
+        }
         with patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"})), \
-                patch.object(service, "_data_rows", side_effect=[[old_profile, new_profile, cor], [old_profile, new_profile]]), \
+                patch.object(service, "_data_rows", side_effect=[[old_profile, new_profile, cor, signup_identity], [old_profile, new_profile]]), \
                 patch.object(service, "supabase_document_get", return_value={"row": {"id": "student-1"}, "data": {"fname": "Ana", "lname": "Santos", "year": "2", "course": "BSIT"}}), \
                 patch.object(service, "_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True}):
             result = service.list_document_review_queue(object())

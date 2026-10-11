@@ -1042,9 +1042,97 @@
 .grantor-applications-filter-head > div { display: flex; align-items: baseline; gap: 0.65rem; min-width: 0; }
 .grantor-applications-filter-head strong { color: #17342a; font-size: 0.92rem; }
 .grantor-applications-filter-head span { color: #64748b; font-size: 0.76rem; }
+.grantor-applications-filter-head { padding-bottom: 0; }
+.grantor-filter-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	width: 100%;
+	min-height: 48px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: #17342a;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.grantor-filter-toggle > span { display: flex; align-items: center; gap: .75rem; min-width: 0; }
+.grantor-filter-toggle > span > svg { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; color: #087044; }
+.grantor-filter-toggle > span > span { display: grid; gap: .12rem; min-width: 0; }
+.grantor-filter-toggle strong { color: #17342a; font-size: .92rem; }
+.grantor-filter-toggle small { color: #64748b; font-size: .76rem; font-weight: 500; }
+.grantor-filter-toggle > svg { flex: 0 0 auto; transition: transform .2s ease; }
+.grantor-filter-toggle > svg.is-open { transform: rotate(180deg); }
+.grantor-filter-toggle:focus-visible { border-radius: 4px; outline: 3px solid rgba(0, 99, 60, .2); outline-offset: 3px; }
+.grantor-applications-filter-content { display: grid; gap: .8rem; padding-top: .9rem; border-top: 1px solid #d8e5df; }
+.grantor-applications-filter-footer { display: flex; justify-content: flex-end; }
+.grantor-announcement-continuation-note { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: .5rem; margin: 0; padding: .7rem .8rem; border-left: 3px solid #c58a19; background: #fff8e8; color: #76520c; font-size: .76rem; line-height: 1.45; }
+.grantor-announcement-continuation-note svg { width: 1rem; height: 1rem; flex: 0 0 auto; margin-top: .08rem; }
 .grantor-clear-filters-btn { padding: 0; border: 0; background: transparent; color: #00633c; font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
 .grantor-clear-filters-btn:disabled { color: #9aa9a2; cursor: not-allowed; }
 .grantor-clear-filters-btn:focus-visible { border-radius: 3px; outline: 3px solid rgba(0, 99, 60, 0.2); outline-offset: 3px; }
+
+/* Grantor scholarship announcement detail */
+.grantor-announcement-detail-page { display: grid; gap: 1.15rem; min-width: 0; }
+.grantor-announcement-detail-back {
+	display: inline-flex;
+	align-items: center;
+	gap: .42rem;
+	justify-self: start;
+	min-height: 38px;
+	padding: .45rem .7rem;
+	border: 0;
+	background: transparent;
+	color: #315549;
+	font: inherit;
+	font-weight: 700;
+	cursor: pointer;
+}
+.grantor-announcement-detail-back:hover { background: #edf7f2; color: #00633c; }
+.grantor-announcement-detail-back:focus-visible { border-radius: 5px; outline: 3px solid rgba(0, 99, 60, .2); outline-offset: 2px; }
+.grantor-announcement-detail-hero {
+	display: grid;
+	grid-template-columns: minmax(230px, 34%) minmax(0, 1fr);
+	align-items: stretch;
+	overflow: hidden;
+	border: 1px solid #d2e2da;
+	border-radius: 8px;
+	background: #fff;
+}
+.grantor-announcement-detail-media { min-height: 250px; background: #eaf4ef; }
+.grantor-announcement-detail-media img { width: 100%; height: 100%; min-height: 250px; object-fit: cover; }
+.grantor-announcement-detail-hero > div:last-child { display: flex; align-items: flex-start; flex-direction: column; justify-content: center; min-width: 0; padding: clamp(1.25rem, 3vw, 2.4rem); }
+.grantor-announcement-detail-hero h2 { margin: .65rem 0 .35rem; color: #102a20; font-size: clamp(1.55rem, 2.5vw, 2.25rem); line-height: 1.15; overflow-wrap: anywhere; }
+.grantor-announcement-detail-hero p { max-width: 760px; margin: 0; color: #587169; line-height: 1.55; }
+.grantor-announcement-detail-meta { display: flex; flex-wrap: wrap; gap: .6rem 1.2rem; margin-top: 1.15rem; color: #315549; font-size: .82rem; font-weight: 700; }
+.grantor-announcement-detail-meta span { display: inline-flex; align-items: center; gap: .38rem; }
+.grantor-announcement-detail-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
+.grantor-announcement-detail-summary article { display: grid; grid-template-columns: 1fr auto; gap: .18rem .8rem; padding: 1rem; border: 1px solid #d5e3dd; border-radius: 7px; background: #f8fbf9; }
+.grantor-announcement-detail-summary span { color: #526b61; font-size: .76rem; font-weight: 750; text-transform: uppercase; }
+.grantor-announcement-detail-summary strong { grid-row: span 2; color: #00633c; font-size: 1.55rem; }
+.grantor-announcement-detail-summary small { color: #65766f; line-height: 1.35; }
+.grantor-announcement-detail-section { min-width: 0; padding: 1rem; border: 1px solid #d5e3dd; border-radius: 8px; background: #fff; }
+.grantor-announcement-detail-section > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: .9rem; border-bottom: 1px solid #e0ebe5; }
+.grantor-announcement-detail-section > header span { color: #087044; font-size: .68rem; font-weight: 850; text-transform: uppercase; }
+.grantor-announcement-detail-section > header h3 { margin: .15rem 0; color: #17342a; font-size: 1.08rem; }
+.grantor-announcement-detail-section > header p { margin: 0; color: #65766f; font-size: .78rem; }
+.grantor-announcement-detail-section > header > strong { display: grid; place-items: center; min-width: 38px; height: 38px; border-radius: 50%; background: #e8f5ef; color: #087044; }
+.grantor-announcement-applicants-table { margin-top: .9rem; }
+.grantor-waitlist-refresh { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; border: 0; border-radius: 6px; background: #edf7f2; color: #087044; cursor: pointer; }
+.grantor-waitlist-refresh:hover { background: #dcefe6; }
+.grantor-waitlist-refresh:disabled { cursor: wait; opacity: .6; }
+.grantor-waitlist-list { display: grid; gap: .55rem; margin-top: .9rem; }
+.grantor-waitlist-list article { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: .8rem; padding: .8rem; border: 1px solid #dbe7e1; border-radius: 6px; background: #fbfdfc; }
+.grantor-waitlist-position { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #e6f4ed; color: #087044; font-weight: 850; }
+.grantor-waitlist-position.is-offered { background: #fff2cf; color: #9a6500; }
+.grantor-waitlist-list article > div { display: grid; gap: .12rem; min-width: 0; }
+.grantor-waitlist-list strong { overflow: hidden; color: #17342a; text-overflow: ellipsis; white-space: nowrap; }
+.grantor-waitlist-list span:not(.grantor-waitlist-position), .grantor-waitlist-list small { color: #65766f; font-size: .75rem; overflow-wrap: anywhere; }
+.grantor-waitlist-list em { padding: .3rem .5rem; border-radius: 4px; background: #edf7f2; color: #087044; font-size: .7rem; font-style: normal; font-weight: 800; }
+.grantor-waitlist-empty, .grantor-waitlist-error { margin-top: .9rem; padding: 1.15rem; border: 1px dashed #bdd4c8; border-radius: 6px; color: #65766f; text-align: center; }
+.grantor-waitlist-error { display: flex; align-items: center; justify-content: center; gap: .45rem; border-color: #efc3bd; background: #fff7f6; color: #a42f25; }
 .grantor-applications-search-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 0.28fr); gap: 0.8rem; margin-bottom: 0.9rem; }
 .grantor-applications-search-row .grantor-search-field { position: relative; min-width: 0; }
 .grantor-applications-search-row .grantor-search-field > svg { position: absolute; z-index: 1; top: 50%; left: 0.9rem; width: 1rem; height: 1rem; color: #64748b; transform: translateY(-50%); pointer-events: none; }
@@ -3820,6 +3908,30 @@
 .grantor-portal--dark .grantor-application-tabs button.active::after { background: #34d399; }
 .grantor-portal--dark .grantor-applications-filter-head span,
 .grantor-portal--dark .grantor-applications-filters > label { color: #94a3b8; }
+.grantor-portal--dark .grantor-filter-toggle,
+.grantor-portal--dark .grantor-filter-toggle strong { color: #e9f5ef; }
+.grantor-portal--dark .grantor-filter-toggle small { color: #aabdb5; }
+.grantor-portal--dark .grantor-applications-filter-content { border-color: #36564b; }
+.grantor-portal--dark .grantor-announcement-continuation-note { background: #302712; color: #f4d88d; }
+.grantor-portal--dark .grantor-announcement-detail-back { color: #9be4c3; }
+.grantor-portal--dark .grantor-announcement-detail-back:hover { background: #183329; }
+.grantor-portal--dark .grantor-announcement-detail-hero,
+.grantor-portal--dark .grantor-announcement-detail-section { border-color: #36564b; background: #15231e; }
+.grantor-portal--dark .grantor-announcement-detail-media { background: #10201a; }
+.grantor-portal--dark .grantor-announcement-detail-hero h2,
+.grantor-portal--dark .grantor-announcement-detail-section > header h3,
+.grantor-portal--dark .grantor-waitlist-list strong { color: #eef8f4; }
+.grantor-portal--dark .grantor-announcement-detail-hero p,
+.grantor-portal--dark .grantor-announcement-detail-meta,
+.grantor-portal--dark .grantor-announcement-detail-section > header p,
+.grantor-portal--dark .grantor-waitlist-list span:not(.grantor-waitlist-position),
+.grantor-portal--dark .grantor-waitlist-list small { color: #b8cbc4; }
+.grantor-portal--dark .grantor-announcement-detail-summary article,
+.grantor-portal--dark .grantor-waitlist-list article { border-color: #36564b; background: #12211b; }
+.grantor-portal--dark .grantor-announcement-detail-section > header { border-color: #36564b; }
+.grantor-portal--dark .grantor-waitlist-refresh,
+.grantor-portal--dark .grantor-waitlist-list em { background: #183d2e; color: #8ee0bc; }
+.grantor-portal--dark .grantor-waitlist-empty { border-color: #36564b; color: #b8cbc4; }
 .grantor-portal--dark .grantor-date-sort-btn { border-color: #334155; background: #111827; color: #6ee7b7; }
 .grantor-portal--dark .grantor-report-modal,
 .grantor-portal--dark .grantor-report-modal-actions,
@@ -6502,3 +6614,30 @@
 .grantor-portal--dark .grantor-announcement-audience-grid input,
 .grantor-portal--dark .grantor-announcement-audience-grid select { background: #122b23; border-color: #456158; color: #f2fff9; }
 @media (max-width: 720px) { .grantor-announcement-audience-grid { grid-template-columns: 1fr; } }
+
+@media (max-width: 1024px) {
+	.grantor-announcement-detail-hero { grid-template-columns: minmax(210px, 38%) minmax(0, 1fr); }
+}
+
+@media (max-width: 768px) {
+	.grantor-announcement-detail-hero { grid-template-columns: 1fr; }
+	.grantor-announcement-detail-media,
+	.grantor-announcement-detail-media img { min-height: 220px; max-height: 320px; }
+	.grantor-announcement-detail-summary { grid-template-columns: 1fr; }
+	.grantor-announcement-detail-section > header { align-items: flex-start; }
+	.grantor-waitlist-list article { grid-template-columns: 42px minmax(0, 1fr); }
+	.grantor-waitlist-list em { grid-column: 2; justify-self: start; }
+}
+
+@media (max-width: 480px) {
+	.grantor-announcement-detail-page { gap: .8rem; }
+	.grantor-announcement-detail-hero > div:last-child,
+	.grantor-announcement-detail-section { padding: .85rem; }
+	.grantor-announcement-detail-media,
+	.grantor-announcement-detail-media img { min-height: 180px; }
+	.grantor-announcement-detail-meta { align-items: flex-start; flex-direction: column; }
+	.grantor-announcement-detail-section > header { flex-direction: column; }
+	.grantor-waitlist-refresh { align-self: flex-end; margin-top: -3rem; }
+	.grantor-waitlist-list article { grid-template-columns: 36px minmax(0, 1fr); padding: .7rem; }
+	.grantor-waitlist-position { width: 32px; height: 32px; }
+}

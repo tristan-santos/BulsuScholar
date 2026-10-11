@@ -115,6 +115,29 @@ class WaitlistTests(unittest.TestCase):
         self.assertEqual(1, len(result["entries"]))
         self.assertEqual(2, result["entries"][0]["queuePosition"])
 
+    def test_grantor_can_view_only_their_announcement_waitlist(self):
+        entries = [
+            {"id": "entry-1", "student_id": "student-1", "grantor_id": "grantor-a", "announcement_id": "announcement-1", "status": "queued", "queued_at": "2026-01-01T00:00:00Z", "application_snapshot": {"applicationNumber": "APP-1"}},
+            {"id": "entry-2", "student_id": "student-2", "grantor_id": "grantor-b", "announcement_id": "announcement-2", "status": "queued", "queued_at": "2026-01-01T00:01:00Z", "application_snapshot": {}},
+        ]
+        students = [{"id": "student-1", "fname": "Ana", "lname": "Santos", "course": "BSIT", "year": "4"}]
+        with patch.object(service, "_actor", return_value=("grantor", "grantor-a")), \
+                patch.object(service, "_all", side_effect=lambda table: entries if table == "scholarship_waitlist_entries" else students), \
+                patch.object(service, "supabase_document_get", return_value={"ok": True, "data": {"title": "Scholarship A"}}), \
+                patch.object(service, "supabase_select", return_value={"ok": True, "rows": []}):
+            result = service.list_waitlist(object(), {"grantorId": "grantor-a", "announcementId": "announcement-1"})
+        self.assertEqual(1, result["counts"]["queued"])
+        self.assertEqual("student-1", result["entries"][0]["studentId"])
+        self.assertEqual("Ana Santos", result["entries"][0]["studentName"])
+
+    def test_grantor_waitlist_requires_an_owned_announcement(self):
+        with patch.object(service, "_actor", return_value=("grantor", "grantor-a")), \
+                patch.object(service, "_all", return_value=[]), \
+                patch.object(service, "supabase_document_get", return_value={"ok": True, "data": {}}):
+            with self.assertRaises(HTTPException) as raised:
+                service.list_waitlist(object(), {"grantorId": "grantor-a", "announcementId": "outside"})
+        self.assertEqual(404, raised.exception.status_code)
+
     @patch.dict(os.environ, {"CRON_SECRET": "cron-secret"}, clear=False)
     def test_cron_rejects_wrong_secret(self):
         request = type("Request", (), {"headers": {"x-cron-secret": "wrong"}})()

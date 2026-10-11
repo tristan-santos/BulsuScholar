@@ -1593,6 +1593,7 @@ def republish_grantor_announcement(payload: dict[str, Any], defer_notifications:
 
     capacity = result.get("data") if isinstance(result.get("data"), dict) else {}
     announcement_data = capacity.get("announcement") if isinstance(capacity.get("announcement"), dict) else {}
+    replacement_announcement_id = str(capacity.get("announcementId") or announcement_id).strip()
     duplicate = capacity.get("idempotent") is True
     delivery = {
         "notification": {"ok": True, "queued": True},
@@ -1601,14 +1602,15 @@ def republish_grantor_announcement(payload: dict[str, Any], defer_notifications:
         "log": {"ok": True, "queued": True},
         "lowSlotNotification": {"ok": True, "queued": True},
     } if defer_notifications else deliver_grantor_announcement_notifications(
-        announcement_id,
+        replacement_announcement_id,
         announcement_data,
         grantor_id,
         duplicate,
     )
     return {
         "ok": True,
-        "id": announcement_id,
+        "id": replacement_announcement_id,
+        "previousAnnouncementId": capacity.get("previousAnnouncementId") or announcement_id,
         "duplicate": duplicate,
         "capacity": capacity,
         **delivery,

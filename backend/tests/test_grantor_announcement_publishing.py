@@ -109,16 +109,17 @@ class GrantorAnnouncementPublishingTests(unittest.TestCase):
 
     @patch("backend.workflow_service._archived_grantor_account", return_value=False)
     @patch("backend.workflow_service.supabase_rpc")
-    def test_republish_preserves_pool_and_stages_addition_atomically(self, rpc, _archived):
+    def test_republish_returns_the_new_replacement_announcement(self, rpc, _archived):
         rpc.return_value = {
             "ok": True,
             "data": {
-                "announcementId": "announcement-a",
+                "announcementId": "announcement-b",
+                "previousAnnouncementId": "announcement-a",
                 "totalSlots": 50,
                 "remainingSlots": 43,
                 "additionalSlots": 25,
                 "idempotent": False,
-                "announcement": {"id": "announcement-a", "title": "Scholarship A", "remainingSlots": 43},
+                "announcement": {"id": "announcement-b", "title": "Scholarship A", "remainingSlots": 43},
             },
         }
 
@@ -135,6 +136,8 @@ class GrantorAnnouncementPublishingTests(unittest.TestCase):
         }, defer_notifications=True)
 
         self.assertTrue(result["ok"])
+        self.assertEqual("announcement-b", result["id"])
+        self.assertEqual("announcement-a", result["previousAnnouncementId"])
         self.assertEqual(result["capacity"]["remainingSlots"], 43)
         rpc.assert_called_once_with("republish_grantor_scholarship", {
             "p_announcement_id": "announcement-a",

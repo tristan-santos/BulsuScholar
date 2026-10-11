@@ -38,7 +38,6 @@ import logo from "../assets/logo.png"
 import { usePublicConfiguration } from "../contexts/PublicConfigurationContext"
 import { beginOperation } from "../services/operationTracker"
 import { requirePublicAppUrl } from "../config/publicUrls"
-import { logEmailConfirmationStep, summarizeAuthError } from "../services/supabaseAuthCallback"
 
 const COURSES = [
 	{
@@ -1531,15 +1530,9 @@ export default function SignupPage() {
 		const normalizedSignupEmail = normalizeEmail(email)
 		const normalizedSignupCpNumber = normalizeCpNumber(cpNumber)
 		const finishSignupOperation = beginOperation("auth.signup")
-		const confirmationFlowId = globalThis.crypto?.randomUUID?.() || `signup-${Date.now()}`
 		let signupSucceeded = false
 		let signupError = null
 		try {
-			logEmailConfirmationStep("signup_review_accepted", {
-				flowId: confirmationFlowId,
-				studentIdLast4: studentId.slice(-4),
-				yearLevel: year,
-			})
 			const corHash = await getFileSha256(corFile)
 			const documentBatch = await createStudentSignupDocumentBatch({
 				studentId,
@@ -1551,10 +1544,6 @@ export default function SignupPage() {
 				identityFile,
 			})
 			if (String(documentBatch.year || "") !== String(year || "")) throw new Error("The selected year level could not be saved. Please try again.")
-			logEmailConfirmationStep("signup_document_batch_created", {
-				flowId: confirmationFlowId,
-				hasBatch: Boolean(documentBatch?.id || documentBatch?.batchId),
-			})
 			const validationDocumentScan = {
 				cor: buildStoredDocumentScan(documentScanResult.cor, null, "cor"),
 				rog: buildStoredDocumentScan(documentScanResult.cog, null, "rog"),
@@ -1578,8 +1567,6 @@ export default function SignupPage() {
 					documentScan: validationDocumentScan,
 				},
 			})
-			logEmailConfirmationStep("signup_server_validation_succeeded", { flowId: confirmationFlowId })
-
 			let authData = null
 			const storedDocumentScan = {
 				cor: buildStoredDocumentScan(documentScanResult.cor, null, "cor"),
@@ -1620,10 +1607,6 @@ export default function SignupPage() {
 				},
 			}
 			const confirmationRedirect = `${requirePublicAppUrl()}/confirm-email`
-			logEmailConfirmationStep("signup_confirmation_send_started", {
-				flowId: confirmationFlowId,
-				redirectOrigin: new URL(confirmationRedirect).origin,
-			})
 			const { data: signupAuthData, error: authError } = await supabase.auth.signUp({
 					email: normalizedSignupEmail,
 					password,
@@ -1638,19 +1621,9 @@ export default function SignupPage() {
 			})
 
 			if (authError) {
-				console.error("[BulsuScholar][Email Confirmation] signup_confirmation_send_failed", {
-					flowId: confirmationFlowId,
-					error: summarizeAuthError(authError),
-				})
 				toast.error(authError.message || "Failed to create Supabase Auth account.")
 				return
 			}
-			logEmailConfirmationStep("signup_confirmation_send_accepted", {
-				flowId: confirmationFlowId,
-				authUserId: signupAuthData?.user?.id || "",
-				hasImmediateSession: Boolean(signupAuthData?.session),
-				emailConfirmationRequired: !signupAuthData?.session,
-			})
 
 			authData = signupAuthData
 			const baseData = {
@@ -1658,7 +1631,7 @@ export default function SignupPage() {
 				scholarships: [],
 			}
 
-			const finalizeResult = await finalizeStudentSignupWorkflow({
+			await finalizeStudentSignupWorkflow({
 				studentId,
 				documentBatch,
 				auth: {
@@ -1680,12 +1653,6 @@ export default function SignupPage() {
 				},
 			})
 
-			logEmailConfirmationStep("signup_pending_record_saved", {
-				flowId: confirmationFlowId,
-				studentIdLast4: studentId.slice(-4),
-				table: finalizeResult?.table || "",
-			})
-
 			signupSucceeded = true
 			toast.success("Account created. Confirm your email before signing in.")
 			setVerificationStatus("email-confirmation")
@@ -1694,12 +1661,6 @@ export default function SignupPage() {
 
 		} catch (err) {
 			signupError = err
-			console.error("[BulsuScholar][Email Confirmation] signup_flow_failed", {
-				flowId: confirmationFlowId,
-				status: err?.status || 0,
-				reason: err?.reason || "",
-				error: summarizeAuthError(err),
-			})
 			const errorText = String(err?.reason || err?.message || "")
 			if (errorText.includes("student_id_exists")) setAvailability((current) => ({ ...current, studentId: { status: "used" } }))
 			if (errorText.includes("email_exists") || errorText.toLowerCase().includes("already registered")) setAvailability((current) => ({ ...current, email: { status: "used" } }))
