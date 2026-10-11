@@ -37,6 +37,65 @@ class StudentProfileRequirementTests(unittest.TestCase):
         self.assertEqual("exempt", summary["rog"]["status"])
         self.assertNotIn("submissionId", summary["rog"])
 
+    def test_semester_change_requires_current_cycle_document_renewal(self):
+        rows = [
+            {"documentType": "cor", "academicCycle": "2026-2027-1ST", "submittedAt": "2026-08-01T00:00:00Z"},
+            {"documentType": "rog", "academicCycle": "2026-2027-1ST", "submittedAt": "2026-08-02T00:00:00Z"},
+            {"documentType": "identity", "academicCycle": "2026-2027-1ST", "submittedAt": "2026-08-03T00:00:00Z"},
+            {"documentType": "profile", "academicCycle": "2026-2027-1ST", "submittedAt": "2026-08-04T00:00:00Z"},
+        ]
+        verification = {
+            "cor": {"status": "missing"}, "rog": {"status": "missing"},
+            "identity": {"status": "missing"}, "profile": {"status": "missing"},
+        }
+        result = service._document_renewal_summary(
+            rows, "2026-2027-2ND", {"rogRequired": True}, verification,
+        )
+        self.assertTrue(result["required"])
+        self.assertEqual("2026-2027-1ST", result["previousAcademicCycle"])
+        self.assertEqual(["cor", "rog", "identity", "profile"], result["outstandingDocumentTypes"])
+        self.assertEqual(["cor", "rog", "identity", "profile"], result["uploadDocumentTypes"])
+
+    def test_renewal_banner_clears_after_applicable_documents_are_approved(self):
+        rows = [
+            {"documentType": "cor", "academicCycle": "2026-2027-1ST", "submittedAt": "2026-08-01T00:00:00Z"},
+        ]
+        verification = {
+            "cor": {"status": "approved"}, "rog": {"status": "exempt"},
+            "identity": {"status": "approved"}, "profile": {"status": "approved"},
+        }
+        result = service._document_renewal_summary(
+            rows, "2026-2027-2ND", {"rogRequired": False}, verification,
+        )
+        self.assertFalse(result["required"])
+        self.assertEqual([], result["outstandingDocumentTypes"])
+
+    def test_submitted_renewal_documents_are_reported_as_waiting_for_review(self):
+        rows = [
+            {"documentType": "cor", "academicCycle": "2026-2027-1ST", "submittedAt": "2026-08-01T00:00:00Z"},
+        ]
+        verification = {
+            "cor": {"status": "pending"}, "rog": {"status": "approved"},
+            "identity": {"status": "approved"}, "profile": {"status": "approved"},
+        }
+        result = service._document_renewal_summary(
+            rows, "2026-2027-2ND", {"rogRequired": True}, verification,
+        )
+        self.assertTrue(result["required"])
+        self.assertEqual([], result["uploadDocumentTypes"])
+        self.assertEqual(["cor"], result["pendingReviewDocumentTypes"])
+
+    def test_new_student_without_older_cycle_documents_has_no_renewal_banner(self):
+        verification = {
+            "cor": {"status": "missing"}, "rog": {"status": "missing"},
+            "identity": {"status": "missing"}, "profile": {"status": "missing"},
+        }
+        result = service._document_renewal_summary(
+            [], "2026-2027-2ND", {"rogRequired": True}, verification,
+        )
+        self.assertFalse(result["required"])
+        self.assertEqual([], result["outstandingDocumentTypes"])
+
 
 class StudentProfileValidationTests(unittest.TestCase):
     def setUp(self):

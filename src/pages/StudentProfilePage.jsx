@@ -7,6 +7,7 @@ import {
 	HiOutlineDocumentText,
 	HiOutlineDownload,
 	HiOutlineEye,
+	HiOutlineExclamation,
 	HiOutlineRefresh,
 	HiOutlineSave,
 	HiOutlineUpload,
@@ -407,6 +408,14 @@ export default function StudentProfilePage({ formMode = false }) {
 		if (!submission) return "Not uploaded"
 		return `Current (${submission.academicCycle || workspace.academicCycle}) - ${statusLabel(verification)}`
 	}
+	const renewal = workspace.documentRenewal || {}
+	const renewalUploadLabels = (renewal.uploadDocumentTypes || []).map((type) => DOCUMENT_LABELS[type] || type)
+	const renewalPendingLabels = (renewal.pendingReviewDocumentTypes || []).map((type) => DOCUMENT_LABELS[type] || type)
+	const openDocumentVault = () => {
+		const vault = document.getElementById("document-vault")
+		vault?.scrollIntoView({ behavior: "smooth", block: "start" })
+		window.setTimeout(() => vault?.focus({ preventScroll: true }), 350)
+	}
 
 	if (!formMode) return (
 		<div className={`student-portal student-dashboard student-portal-view student-portal-view--profile student-profile-workspace ${theme === "dark" ? "student-dashboard--dark" : ""}`}>
@@ -421,6 +430,24 @@ export default function StudentProfilePage({ formMode = false }) {
 					</div>
 					<span className="student-profile-cycle">{workspace.academicCycle}</span>
 				</div>
+				{renewal.required ? (
+					<section className="student-profile-renewal-banner" role="status" aria-labelledby="student-profile-renewal-title">
+						<span className="student-profile-renewal-icon" aria-hidden="true"><HiOutlineExclamation /></span>
+						<div>
+							<span className="student-profile-renewal-kicker">New semester</span>
+							<h2 id="student-profile-renewal-title">Renew your student documents</h2>
+							<p>
+								The active semester is now <strong>{renewal.currentAcademicCycle || workspace.academicCycle}</strong>.
+								{renewalUploadLabels.length ? ` Upload current copies of ${renewalUploadLabels.join(", ")}.` : " Your current documents have been submitted."}
+								{renewalPendingLabels.length ? ` Waiting for review: ${renewalPendingLabels.join(", ")}.` : ""}
+							</p>
+						</div>
+						<button type="button" onClick={openDocumentVault}>
+							{renewalUploadLabels.length ? <HiOutlineUpload aria-hidden="true" /> : <HiOutlineEye aria-hidden="true" />}
+							{renewalUploadLabels.length ? "Renew Documents" : "View Document Status"}
+						</button>
+					</section>
+				) : null}
 
 				<section className="student-profile-modern-wrap">
 					<aside className="student-profile-cover" aria-label="Student summary">
@@ -464,7 +491,7 @@ export default function StudentProfilePage({ formMode = false }) {
 							<div className="student-profile-editor-actions"><button type="button" className="student-profile-action student-profile-action--primary" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave aria-hidden /> {busy === "save" ? "Saving..." : "Save"}</button></div>
 						</section>
 
-						<section className="student-profile-section-card student-profile-section-card--full student-document-vault">
+						<section id="document-vault" tabIndex="-1" className="student-profile-section-card student-profile-section-card--full student-document-vault">
 							<h2>Document Vault</h2>
 							<p className="student-profile-vault-sub">Upload and review COR, ROG, {submittedIdentityLabel}, and Student Application Profile records.</p>
 							<div className="student-vault-grid">

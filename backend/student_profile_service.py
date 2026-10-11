@@ -160,6 +160,45 @@ def _latest_by_type(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return output
 
 
+def _document_renewal_summary(
+    rows: list[dict[str, Any]],
+    cycle: str,
+    requirements: dict[str, Any],
+    verification: dict[str, Any],
+) -> dict[str, Any]:
+    required_types = ["cor"]
+    if requirements.get("rogRequired"):
+        required_types.append("rog")
+    required_types.extend(["identity", "profile"])
+
+    previous_rows = [
+        item for item in rows
+        if str(item.get("academicCycle") or "").strip()
+        and str(item.get("academicCycle") or "").strip() != cycle
+        and str(item.get("documentType") or "") in {"cor", "rog", "identity", "profile"}
+    ]
+    previous_cycle = ""
+    if previous_rows:
+        latest_previous = max(previous_rows, key=lambda item: str(item.get("submittedAt") or ""))
+        previous_cycle = str(latest_previous.get("academicCycle") or "")
+
+    statuses = {
+        document_type: str((verification.get(document_type) or {}).get("status") or "missing")
+        for document_type in required_types
+    }
+    outstanding_types = [document_type for document_type, status in statuses.items() if status != "approved"]
+    upload_types = [document_type for document_type, status in statuses.items() if status in {"missing", "rejected"}]
+    pending_types = [document_type for document_type, status in statuses.items() if status == "pending"]
+    return {
+        "required": bool(previous_rows and outstanding_types),
+        "currentAcademicCycle": cycle,
+        "previousAcademicCycle": previous_cycle,
+        "outstandingDocumentTypes": outstanding_types if previous_rows else [],
+        "uploadDocumentTypes": upload_types if previous_rows else [],
+        "pendingReviewDocumentTypes": pending_types if previous_rows else [],
+    }
+
+
 def _profile_submission_sort_key(item: dict[str, Any]) -> tuple[str, int, str]:
     try:
         version = int(item.get("version") or 0)
@@ -635,12 +674,16 @@ def get_student_profile_workspace(request: Request) -> dict[str, Any]:
     cycle, semester = _cycle()
     draft_record = supabase_document_get("student_profile_drafts", student_id)
     draft = _merge_profile_input(student, draft_record.get("data") or {}) if draft_record.get("row") else _seed_profile(student)
-    submissions = _data_rows("student_document_submissions", {"data->>studentId": student_id, "data->>academicCycle": cycle})
+    all_submissions = _data_rows("student_document_submissions", {"data->>studentId": student_id}, limit=1000)
+    submissions = [item for item in all_submissions if str(item.get("academicCycle") or "") == cycle]
     revisions = _data_rows("student_profile_revisions", {"data->>studentId": student_id}, limit=100)
     summary = _sync_verification(student_id, student, cycle, semester)
     return {
         "ok": True, "student": student, "draft": draft, "academicCycle": cycle,
         "requirements": summary["requirements"], "verification": summary,
+        "documentRenewal": _document_renewal_summary(
+            all_submissions, cycle, summary["requirements"], summary,
+        ),
         "submissions": sorted(submissions, key=lambda item: str(item.get("submittedAt") or ""), reverse=True),
         "revisions": sorted(revisions, key=lambda item: int(item.get("version") or 0), reverse=True),
         "policy": _policy(),

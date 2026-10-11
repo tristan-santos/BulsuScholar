@@ -7798,6 +7798,86 @@
 	font-size: 0.78rem;
 }
 
+.student-profile-renewal-banner {
+	display: grid;
+	grid-template-columns: 42px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.9rem;
+	margin: 0 0 1rem;
+	padding: 0.95rem 1rem;
+	border: 1px solid #f1c46b;
+	border-left: 4px solid #c77d00;
+	border-radius: 7px;
+	background: #fffaf0;
+	color: #523500;
+}
+
+.student-profile-renewal-icon {
+	display: grid;
+	place-items: center;
+	width: 42px;
+	height: 42px;
+	border-radius: 50%;
+	background: #fff1cc;
+	color: #a85f00;
+}
+
+.student-profile-renewal-icon svg {
+	width: 1.35rem;
+	height: 1.35rem;
+}
+
+.student-profile-renewal-kicker {
+	display: block;
+	margin-bottom: 0.14rem;
+	color: #9a5a00;
+	font-size: 0.67rem;
+	font-weight: 700;
+	text-transform: uppercase;
+}
+
+.student-profile-renewal-banner h2 {
+	margin: 0;
+	color: #3f2a00;
+	font-size: 0.98rem;
+	font-weight: 700;
+}
+
+.student-profile-renewal-banner p {
+	margin: 0.28rem 0 0;
+	color: #6f4b0a;
+	font-size: 0.78rem;
+	line-height: 1.5;
+}
+
+.student-profile-renewal-banner button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.42rem;
+	min-height: 40px;
+	padding: 0 0.9rem;
+	border: 1px solid #a85f00;
+	border-radius: 5px;
+	background: #fff;
+	color: #7a4600;
+	font: inherit;
+	font-size: 0.76rem;
+	font-weight: 700;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.student-profile-renewal-banner button:hover {
+	background: #fff1cc;
+}
+
+.student-profile-renewal-banner button:focus-visible,
+.student-document-vault:focus-visible {
+	outline: 3px solid rgba(168, 95, 0, 0.28);
+	outline-offset: 3px;
+}
+
 .student-profile-header-actions {
 	display: flex;
 	align-items: center;
@@ -7992,7 +8072,40 @@
 	background: #0f172a;
 }
 
+.student-dashboard--dark .student-profile-renewal-banner {
+	border-color: #7c5a1d;
+	border-left-color: #f0ad32;
+	background: #271f12;
+	color: #fde7b0;
+}
+
+.student-dashboard--dark .student-profile-renewal-icon {
+	background: #3a2b12;
+	color: #f4bd55;
+}
+
+.student-dashboard--dark .student-profile-renewal-kicker,
+.student-dashboard--dark .student-profile-renewal-banner h2,
+.student-dashboard--dark .student-profile-renewal-banner p {
+	color: #fde7b0;
+}
+
+.student-dashboard--dark .student-profile-renewal-banner button {
+	border-color: #c98a22;
+	background: #111827;
+	color: #fde7b0;
+}
+
 @media (max-width: 900px) {
+	.student-profile-renewal-banner {
+		grid-template-columns: 42px minmax(0, 1fr);
+	}
+
+	.student-profile-renewal-banner button {
+		grid-column: 1 / -1;
+		width: 100%;
+	}
+
 	.student-profile-modern-wrap {
 		grid-template-columns: 1fr;
 	}
