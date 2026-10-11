@@ -22,6 +22,7 @@ import {
 	HiOutlineBell,
 	HiOutlineChartBar,
 	HiOutlineChartPie,
+	HiOutlineCalendar,
 	HiOutlineClock,
 	HiOutlineCloudUpload,
 	HiOutlineDownload,
@@ -129,7 +130,7 @@ import {
 import { loadRecommendedScholarships } from "../services/recommendedScholarshipService"
 import { collectOtherRequirementDocuments } from "../services/otherRequirementService"
 import { closeFromModalBackdrop } from "../services/modalLayerService"
-import { createGrantorAuthAccount, updateAdminContact } from "../services/adminAccountService"
+import { activateAdminAcademicCycle, createGrantorAuthAccount, getAdminAcademicCycle, updateAdminContact } from "../services/adminAccountService"
 import { getLoginSecuritySettings, saveLoginSecuritySettings } from "../services/portalAuthService"
 import {
 	createDocumentException,
@@ -1410,6 +1411,9 @@ export default function AdminDashboard() {
 	const [adminPermissions, setAdminPermissions] = useState(null)
 	const [loginAttemptLimit, setLoginAttemptLimit] = useState(3)
 	const [savedLoginAttemptLimit, setSavedLoginAttemptLimit] = useState(3)
+	const [academicCycle, setAcademicCycle] = useState(null)
+	const [academicCycleForm, setAcademicCycleForm] = useState({ academicYear: "", semester: "1ST" })
+	const [academicCycleBusy, setAcademicCycleBusy] = useState(false)
 	const adminMenuRef = useRef(null)
 	const adminIdentityRef = useRef(null)
 
@@ -1482,6 +1486,24 @@ export default function AdminDashboard() {
 				if (!active) return
 				console.error("Unable to load login security settings.", error)
 				toast.error("Unable to load login security settings.")
+			})
+		return () => { active = false }
+	}, [activeSection, adminPermissions])
+
+	useEffect(() => {
+		if (activeSection !== "profile" || adminIdentityRef.current?.role !== "full_admin") return
+		let active = true
+		getAdminAcademicCycle()
+			.then((result) => {
+				if (!active) return
+				const cycle = result.academicCycle || {}
+				setAcademicCycle(cycle)
+				setAcademicCycleForm({ academicYear: cycle.academicYear || "", semester: cycle.semester || "1ST" })
+			})
+			.catch((error) => {
+				if (!active) return
+				console.error("Unable to load academic cycle.", error)
+				toast.error("Unable to load the active academic cycle.")
 			})
 		return () => { active = false }
 	}, [activeSection, adminPermissions])
@@ -7607,6 +7629,57 @@ export default function AdminDashboard() {
 		}
 	}
 
+	const handleAcademicCycleChange = async () => {
+		if (academicCycleBusy || !academicCycle) return
+		const academicYear = academicCycleForm.academicYear.trim()
+		const semester = academicCycleForm.semester
+		const yearMatch = academicYear.match(/^(\d{4})-(\d{4})$/)
+		if (!yearMatch || Number(yearMatch[2]) !== Number(yearMatch[1]) + 1) {
+			toast.error("Enter a consecutive academic year such as 2026-2027.")
+			return
+		}
+		const currentTag = academicCycle.semesterTag || `${academicCycle.academicYear}-${academicCycle.semester}`
+		const targetTag = `${academicYear}-${semester}`
+		if (targetTag === currentTag) return
+		const cycleOrder = (tag) => {
+			const match = String(tag).match(/^(\d{4})-\d{4}-(1ST|2ND)$/)
+			return match ? Number(match[1]) * 10 + (match[2] === "2ND" ? 2 : 1) : 0
+		}
+		const isRollback = cycleOrder(targetTag) < cycleOrder(currentTag)
+		const confirmed = await requestAdminConfirmation({
+			title: isRollback ? "Roll Back Academic Cycle" : "Activate Academic Cycle",
+			message: `Change the active cycle from ${currentTag} to ${targetTag}?`,
+			detail: isRollback
+				? "Existing records for the earlier semester will become current again, including its documents and scholarship progress."
+				: "Saved records will be restored when this cycle already exists. A first-time cycle starts the normal document renewal workflow.",
+			confirmLabel: isRollback ? "Roll Back Cycle" : "Activate Cycle",
+			tone: "warning",
+		})
+		if (!confirmed) return
+		setAcademicCycleBusy(true)
+		try {
+			const result = await activateAdminAcademicCycle({ academicYear, semester, expectedCurrentCycle: currentTag })
+			const cycle = result.academicCycle || {}
+			setAcademicCycle(cycle)
+			setAcademicCycleForm({ academicYear: cycle.academicYear || academicYear, semester: cycle.semester || semester })
+			toast.success(`${targetTag} is now active. ${Number(cycle.exactRestorationCount || 0)} application state(s) restored exactly.`)
+		} catch (error) {
+			if (error?.reason === "academic_cycle_changed") {
+				toast.error("Another administrator changed the academic cycle. The current value has been refreshed.")
+				const refreshed = await getAdminAcademicCycle().catch(() => null)
+				if (refreshed?.academicCycle) {
+					setAcademicCycle(refreshed.academicCycle)
+					setAcademicCycleForm({ academicYear: refreshed.academicCycle.academicYear || "", semester: refreshed.academicCycle.semester || "1ST" })
+				}
+			} else {
+				console.error("Unable to change academic cycle.", error)
+				toast.error(error?.message || "Unable to change the academic cycle.")
+			}
+		} finally {
+			setAcademicCycleBusy(false)
+		}
+	}
+
 	function createScholarshipPreviewConfig(rows, filterLabel, options = {}) {
 		const defaultColumns = ["Program Name", "Provider Type", "Total Slots", "Active Recipients", "Status"]
 		const defaultColumnDefinitions = [
@@ -8670,6 +8743,7 @@ export default function AdminDashboard() {
 							</section>
 
 							{adminIdentityRef.current?.role === "full_admin" ? (
+								<>
 								<section className="admin-profile-section">
 									<div className="admin-profile-section-head">
 										<HiOutlineShieldCheck />
@@ -8692,6 +8766,28 @@ export default function AdminDashboard() {
 										</label>
 									</div>
 								</section>
+								<section className="admin-profile-section admin-cycle-settings">
+									<div className="admin-profile-section-head">
+										<HiOutlineCalendar />
+										<div>
+											<h3>Academic Cycle</h3>
+											<p>Activate a new semester or restore a previously saved semester.</p>
+										</div>
+									</div>
+									<div className="admin-cycle-current">
+										<span>Current cycle</span>
+										<strong>{academicCycle?.semesterTag || "Loading..."}</strong>
+									</div>
+									<div className="admin-cycle-form">
+										<label><span>Academic Year</span><input value={academicCycleForm.academicYear} onChange={(event) => setAcademicCycleForm((current) => ({ ...current, academicYear: event.target.value }))} placeholder="2026-2027" /></label>
+										<label><span>Semester</span><select value={academicCycleForm.semester} onChange={(event) => setAcademicCycleForm((current) => ({ ...current, semester: event.target.value }))}><option value="1ST">1st Semester</option><option value="2ND">2nd Semester</option></select></label>
+										<button type="button" className="admin-safe-btn" onClick={handleAcademicCycleChange} disabled={academicCycleBusy || !academicCycle || `${academicCycleForm.academicYear.trim()}-${academicCycleForm.semester}` === (academicCycle.semesterTag || `${academicCycle.academicYear}-${academicCycle.semester}`)}>
+											<HiOutlineCalendar /> {academicCycleBusy ? "Changing..." : "Change Cycle"}
+										</button>
+									</div>
+									<p className="admin-cycle-note">Changing cycles does not delete files. Returning to a semester restores its saved documents and scholarship progress.</p>
+								</section>
+								</>
 							) : null}
 
 							<div className="admin-profile-actions">

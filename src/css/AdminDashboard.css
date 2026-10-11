@@ -11816,6 +11816,66 @@
 	gap: 0.75rem;
 }
 
+.admin-cycle-current {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	margin-bottom: 1rem;
+	padding: 0.8rem 0.9rem;
+	border: 1px solid #cfe2d8;
+	border-radius: 6px;
+	background: #f2f9f5;
+}
+
+.admin-cycle-current span,
+.admin-cycle-note {
+	color: #587092;
+	font-size: 0.8rem;
+}
+
+.admin-cycle-current strong {
+	color: #00633c;
+	font-size: 0.94rem;
+}
+
+.admin-cycle-form {
+	display: grid;
+	grid-template-columns: minmax(180px, 1fr) minmax(170px, 0.8fr) auto;
+	align-items: end;
+	gap: 0.85rem;
+}
+
+.admin-cycle-form label {
+	display: grid;
+	gap: 0.35rem;
+	color: #334155;
+	font-size: 0.78rem;
+	font-weight: 700;
+}
+
+.admin-cycle-form input,
+.admin-cycle-form select {
+	width: 100%;
+	min-height: 46px;
+	padding: 0 0.8rem;
+	border: 1px solid #c9ddd3;
+	border-radius: 6px;
+	background: #fbfefd;
+	color: #052e1f;
+	font: inherit;
+}
+
+.admin-cycle-form .admin-safe-btn {
+	min-height: 46px;
+	white-space: nowrap;
+}
+
+.admin-cycle-note {
+	margin: 0.75rem 0 0;
+	line-height: 1.5;
+}
+
 /* Redesigned admin overview */
 .admin-dashboard-overview,
 .admin-inbox-page {
@@ -12211,6 +12271,18 @@
 	border-color: #334155;
 }
 
+.admin-portal--dark .admin-cycle-current,
+.admin-portal--dark .admin-cycle-form input,
+.admin-portal--dark .admin-cycle-form select {
+	background: #0f172a;
+	border-color: #334155;
+	color: #f8fafc;
+}
+
+.admin-portal--dark .admin-cycle-current strong {
+	color: #86efac;
+}
+
 .admin-portal--dark .admin-account-card,
 .admin-portal--dark .admin-inbox-item.unread,
 .admin-portal--dark .admin-profile-toggle.active {
@@ -12307,6 +12379,14 @@
 }
 
 @media (max-width: 1100px) {
+	.admin-cycle-form {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.admin-cycle-form .admin-safe-btn {
+		grid-column: 1 / -1;
+		justify-self: start;
+	}
 	.admin-dashboard-overview .admin-kpi-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
@@ -12330,6 +12410,14 @@
 }
 
 @media (max-width: 640px) {
+	.admin-cycle-form {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-cycle-form .admin-safe-btn {
+		grid-column: auto;
+		width: 100%;
+	}
 	.admin-dashboard-overview .admin-kpi-grid {
 		grid-template-columns: 1fr;
 	}

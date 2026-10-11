@@ -295,6 +295,9 @@ def supabase_rpc(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
                 "scholarship_choice_required",
                 "invalid_application_documents",
                 "material_approval_required",
+                "academic_cycle_changed",
+                "invalid_academic_cycle",
+                "academic_cycle_actor_required",
             }
             if message in known_reasons:
                 reason = message
@@ -435,16 +438,17 @@ def _scholarship_application_open(data: dict[str, Any]) -> bool:
     )
 
 
-def _profile_file_from_submission(submission_id: str, data: dict[str, Any]) -> dict[str, Any]:
+def _document_file_from_submission(submission_id: str, data: dict[str, Any]) -> dict[str, Any]:
     file_data = data.get("file") if isinstance(data.get("file"), dict) else {}
     return {
         "url": f"/student/profile/documents/{submission_id}/content",
         **file_data,
-        "name": data.get("name") or file_data.get("name") or "Student Application Profile.pdf",
+        "name": data.get("name") or file_data.get("name") or "Student document",
         "uploadedAt": data.get("submittedAt") or data.get("updatedAt"),
         "semesterTag": data.get("academicCycle"),
         "submissionId": submission_id,
         "reviewStatus": data.get("status") or "pending",
+        "documentKind": data.get("documentKind"),
         "profileRevisionId": data.get("profileRevisionId"),
     }
 
@@ -456,7 +460,14 @@ def _hydrate_student_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     applications_by_student: dict[str, list[dict[str, Any]]] = {student_id: [] for student_id in student_ids}
     invitations_by_student: dict[str, list[dict[str, Any]]] = {student_id: [] for student_id in student_ids}
     states: dict[str, dict[str, Any]] = {}
-    profile_files: dict[str, tuple[str, dict[str, Any]]] = {}
+    cycle_documents: dict[str, dict[str, tuple[tuple[int, str, str], dict[str, Any]]]] = {}
+
+    cycle_result = _raw_select("system_configuration", {"id": "academic_cycle"}, limit=1)
+    cycle_rows = cycle_result.get("rows") or []
+    cycle_data = cycle_rows[0].get("data") if cycle_rows and isinstance(cycle_rows[0].get("data"), dict) else {}
+    active_cycle = str(cycle_data.get("semesterTag") or "").strip()
+    if not active_cycle and cycle_data.get("academicYear") and cycle_data.get("semester"):
+        active_cycle = f"{cycle_data['academicYear']}-{cycle_data['semester']}"
 
     for row in (_raw_select("scholarship_applications", limit=0).get("rows") or []):
         data = row.get("data") if isinstance(row.get("data"), dict) else {}
@@ -472,14 +483,25 @@ def _hydrate_student_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         student_id = str(row.get("student_id") or "").strip()
         if student_id in student_ids and isinstance(row.get("data"), dict):
             states[student_id] = row["data"]
-    for row in (_raw_select("student_document_submissions", {"data->>documentType": "profile"}, limit=0).get("rows") or []):
+    document_rows = (
+        _raw_select("student_document_submissions", {"data->>academicCycle": active_cycle}, limit=0).get("rows") or []
+        if active_cycle else []
+    )
+    for row in document_rows:
         data = row.get("data") if isinstance(row.get("data"), dict) else {}
         student_id = str(data.get("studentId") or "").strip()
-        if student_id not in student_ids:
+        document_type = str(data.get("documentType") or "").strip().lower()
+        if student_id not in student_ids or document_type not in {"cor", "rog", "identity", "profile"}:
             continue
-        sort_key = str(data.get("submittedAt") or data.get("updatedAt") or row.get("updated_at") or "")
-        if student_id not in profile_files or sort_key > profile_files[student_id][0]:
-            profile_files[student_id] = (sort_key, _profile_file_from_submission(str(row.get("id") or ""), data))
+        try:
+            version = int(data.get("version") or 0)
+        except (TypeError, ValueError):
+            version = 0
+        submission_id = str(row.get("id") or "")
+        sort_key = (version, str(data.get("submittedAt") or data.get("updatedAt") or row.get("updated_at") or ""), submission_id)
+        current = cycle_documents.setdefault(student_id, {}).get(document_type)
+        if current is None or sort_key > current[0]:
+            cycle_documents[student_id][document_type] = (sort_key, _document_file_from_submission(submission_id, data))
 
     hydrated = []
     for row in rows:
@@ -496,9 +518,20 @@ def _hydrate_student_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "scholarshipApplicationHistory": history,
             "scholarshipInvitations": invitations_by_student.get(student_id, []),
         }
-        if student_id in profile_files:
-            data["scholarshipApplicationFile"] = profile_files[student_id][1]
-            data["applicationFormFile"] = profile_files[student_id][1]
+        if active_cycle:
+            for key in ("corFile", "cogFile", "rogFile", "schoolIdFile", "scholarshipApplicationFile", "applicationFormFile"):
+                data.pop(key, None)
+            documents = cycle_documents.get(student_id, {})
+            if "cor" in documents:
+                data["corFile"] = documents["cor"][1]
+            if "rog" in documents:
+                data["cogFile"] = documents["rog"][1]
+                data["rogFile"] = documents["rog"][1]
+            if "identity" in documents:
+                data["schoolIdFile"] = documents["identity"][1]
+            if "profile" in documents:
+                data["scholarshipApplicationFile"] = documents["profile"][1]
+                data["applicationFormFile"] = documents["profile"][1]
         hydrated.append({**row, "data": data})
     return hydrated
 

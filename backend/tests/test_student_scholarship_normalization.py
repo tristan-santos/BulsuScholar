@@ -103,6 +103,32 @@ class StudentScholarshipCompatibilityTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in hydrated["scholarshipApplicationHistory"]], ["old"])
         self.assertEqual(hydrated["rosterMatchCount"], 1)
 
+    @patch("backend.supabase_ops._raw_select")
+    def test_student_read_uses_only_active_cycle_documents(self, raw_select):
+        def rows(table, filters=None, limit=1):
+            if table == "system_configuration":
+                return {"ok": True, "rows": [{"id": "academic_cycle", "data": {
+                    "academicYear": "2026-2027", "semester": "1ST", "semesterTag": "2026-2027-1ST",
+                }}]}
+            if table == "student_document_submissions":
+                self.assertEqual("2026-2027-1ST", filters["data->>academicCycle"])
+                return {"ok": True, "rows": [
+                    {"id": "cor-v1", "data": {"studentId": "student-1", "documentType": "cor", "version": 1, "academicCycle": "2026-2027-1ST", "name": "old-cor.pdf"}},
+                    {"id": "cor-v2", "data": {"studentId": "student-1", "documentType": "cor", "version": 2, "academicCycle": "2026-2027-1ST", "name": "current-cor.pdf"}},
+                    {"id": "profile-v1", "data": {"studentId": "student-1", "documentType": "profile", "version": 1, "academicCycle": "2026-2027-1ST", "name": "profile.pdf"}},
+                ]}
+            return {"ok": True, "rows": []}
+
+        raw_select.side_effect = rows
+        hydrated = supabase_ops._hydrate_student_rows([{"id": "student-1", "data": {
+            "corFile": {"name": "second-semester-cor.pdf"},
+            "scholarshipApplicationFile": {"name": "second-semester-profile.pdf"},
+        }}])[0]["data"]
+
+        self.assertEqual("current-cor.pdf", hydrated["corFile"]["name"])
+        self.assertEqual("profile.pdf", hydrated["scholarshipApplicationFile"]["name"])
+        self.assertEqual("2026-2027-1ST", hydrated["corFile"]["semesterTag"])
+
 
 if __name__ == "__main__":
     unittest.main()

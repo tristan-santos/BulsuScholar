@@ -610,10 +610,19 @@ def _validate_branding(data: dict[str, Any]) -> dict[str, Any]:
 def update_config(request: Request, identity: dict[str, Any], key: str, data: dict[str, Any]) -> dict[str, Any]:
     if key not in {"portal", "academic_cycle", "branding"}:
         raise HTTPException(status_code=404, detail="system_setting_not_found")
+    if key == "academic_cycle":
+        try:
+            from .academic_cycle_service import activate_academic_cycle
+        except ImportError:  # pragma: no cover
+            from academic_cycle_service import activate_academic_cycle
+        return activate_academic_cycle(
+            data,
+            actor_id=str(identity["root"]["id"]),
+            actor_type="root",
+        )
     current = _first("system_configuration", f"id=eq.{key}&select=*") or {"data": {}}
     allowed_fields = {
         "portal": {"maintenanceMode", "allowStudentSignup", "allowGrantorAnnouncements", "reportExportEnabled", "waitlistCapacity"},
-        "academic_cycle": {"academicYear", "semester"},
         "branding": {"productName", "fontFamily", "primaryColor", "accentColor", "logoUrl", "faviconUrl", "maintenanceMessage"},
     }
     server_fields = {"updatedBy", "updatedAt", "activatedAt", "semesterTag", "resetAt"}
@@ -629,11 +638,6 @@ def update_config(request: Request, identity: dict[str, Any], key: str, data: di
         if submitted["waitlistCapacity"] < 0 or submitted["waitlistCapacity"] > 10000:
             raise HTTPException(status_code=422, detail="invalid_waitlist_capacity")
     merged = {**(current.get("data") or {}), **submitted, "updatedBy": identity["root"]["id"], "updatedAt": now_iso()}
-    if key == "academic_cycle":
-        if not re.fullmatch(r"\d{4}-\d{4}", str(merged.get("academicYear") or "")) or merged.get("semester") not in {"1ST", "2ND"}:
-            raise HTTPException(status_code=422, detail="invalid_academic_cycle")
-        merged["semesterTag"] = f"{merged['academicYear']}-{merged['semester']}"
-        merged["activatedAt"] = now_iso()
     if key == "branding":
         merged = {**merged, **_validate_branding(merged)}
     _rest("system_configuration", method="POST", query="on_conflict=id", payload={"id": key, "data": merged, "updated_at": now_iso()}, prefer="resolution=merge-duplicates,return=representation")

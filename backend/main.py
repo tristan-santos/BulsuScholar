@@ -21,6 +21,7 @@ try:
     from .document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from .access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
     from .auth_service import complete_email_verification, complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, resend_email_verification, update_security_settings, validate_portal_session
+    from .academic_cycle_service import activate_admin_academic_cycle, get_admin_academic_cycle
     from .portal_data_service import delete_portal_data, mutate_portal_data, query_portal_data
     from .scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from .grantor_algorithms import (
@@ -136,6 +137,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from document_scanner import extract_image_text, get_scanner_dependency_status, parse_document, parse_pdf_document
     from access_control import enforce_material_update_scope, enforce_portal_scope, normalize_role, require_supabase_user
     from auth_service import complete_email_verification, complete_password_recovery, create_grantor_account, get_security_settings, login, request_password_recovery, resend_email_verification, update_security_settings, validate_portal_session
+    from academic_cycle_service import activate_admin_academic_cycle, get_admin_academic_cycle
     from portal_data_service import delete_portal_data, mutate_portal_data, query_portal_data
     from scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
     from grantor_algorithms import (
@@ -804,6 +806,16 @@ def admin_security_settings_endpoint(request: Request) -> dict[str, Any]:
 @app.post("/admin/security/settings")
 def admin_update_security_settings_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return update_security_settings(request, payload)
+
+
+@app.get("/admin/academic-cycle")
+def admin_academic_cycle_endpoint(request: Request) -> dict[str, Any]:
+    return get_admin_academic_cycle(request)
+
+
+@app.post("/admin/academic-cycle")
+def admin_activate_academic_cycle_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return activate_admin_academic_cycle(request, payload)
 
 
 @app.post("/admin/grantors/create-account")
