@@ -81,12 +81,7 @@ import { uploadToStorage } from "../services/storageService"
 import { addAnnouncementImageFiles, ANNOUNCEMENT_IMAGE_TYPES, getAnnouncementImageUrls, MAX_ANNOUNCEMENT_IMAGE_BYTES } from "../utils/announcementImages"
 import { createAdminNotification, createGrantorNotification, createStudentNotification, loadAdminNotifications, updateAdminNotification } from "../services/notificationService"
 import { commitRosterImportWorkflow, correctStudentNumberWorkflow, getGrantorScopeWorkflow, listRosterConflictsWorkflow, materialRequestWorkflow, previewAnnouncementAudienceWorkflow, previewRosterImportWorkflow, publishTargetedAnnouncementWorkflow, resolveRosterConflictWorkflow, saveGrantorScopeWorkflow, updateGrantorArchiveStateWorkflow, updateGrantorScholarsWorkflow } from "../services/workflowService"
-import { hasScholarshipCommitment, matchesScholarshipApplication } from "../services/scholarshipChoiceService"
-import {
-	findMatchingPendingInvitation,
-	getGrantorRejectionCooldown,
-	isManualArchiveForGrantor,
-} from "../services/grantorReapplicationService"
+import { matchesScholarshipApplication } from "../services/scholarshipChoiceService"
 import {
 	buildApplicationDecisionConfirmation,
 	canUseGrantorConfirmationForStep,
@@ -101,10 +96,10 @@ import {
 	normalizeGrantorScholar,
 } from "../services/grantorService"
 import {
-	downloadCanonicalReportPdfBlob,
-	downloadCanonicalReportCsv,
-	fetchCanonicalReportPdf,
-	fetchTopStudentsReport,
+	downloadAdminReportFile,
+	fetchAdminReportExport,
+	fetchAdminReportPreview,
+	getAdminReportHistory,
 	filterStudentRows,
 	formatDate,
 	mapScholarshipRows,
@@ -112,9 +107,6 @@ import {
 import {
 	ADMIN_REPORT_TYPES,
 	createCanonicalReport,
-	isWithinInclusiveDateRange,
-	matchesReportSearch,
-	overlapsInclusiveDateRange,
 } from "../services/reportCatalog"
 import {
 	getMaterialEntry,
@@ -1374,6 +1366,8 @@ export default function AdminDashboard() {
 		error: "",
 	})
 	const [reportPdfRetryKey, setReportPdfRetryKey] = useState(0)
+	const [reportHistory, setReportHistory] = useState([])
+	const [reportHistoryLoading, setReportHistoryLoading] = useState(false)
 
 	const [announcementTitle, setAnnouncementTitle] = useState("")
 	const [announcementDescription, setAnnouncementDescription] = useState("")
@@ -1431,7 +1425,12 @@ export default function AdminDashboard() {
 		let objectUrl = ""
 		setReportPdfPreview({ blob: null, filename: "", url: "", loading: true, error: "" })
 
-		fetchCanonicalReportPdf(reportPreview, { signal: controller.signal })
+		fetchAdminReportExport(
+			reportPreview.reportType || reportPreview.key,
+			reportPreview.filters || reportPreviewFilters,
+			"pdf",
+			{ previewOnly: true, signal: controller.signal },
+		)
 			.then(({ blob, filename }) => {
 				if (controller.signal.aborted) return
 				objectUrl = URL.createObjectURL(blob)
@@ -1453,7 +1452,18 @@ export default function AdminDashboard() {
 			controller.abort()
 			if (objectUrl) URL.revokeObjectURL(objectUrl)
 		}
-	}, [reportPdfRetryKey, reportPreview])
+	}, [reportPdfRetryKey, reportPreview, reportPreviewFilters])
+
+	useEffect(() => {
+		if (activeSection !== "reports") return undefined
+		let active = true
+		setReportHistoryLoading(true)
+		getAdminReportHistory()
+			.then((result) => { if (active) setReportHistory(result.history || []) })
+			.catch((error) => { if (active) console.error("Unable to load report history.", error) })
+			.finally(() => { if (active) setReportHistoryLoading(false) })
+		return () => { active = false }
+	}, [activeSection])
 
 	useEffect(() => {
 		const storedType = sessionStorage.getItem("bulsuscholar_userType")
@@ -4993,13 +5003,14 @@ export default function AdminDashboard() {
 	)
 
 	const reportPreviewTablePage = useMemo(
-		() =>
-			paginateRows(
-				reportPreview?.csvRows || [],
-				tablePages[`report_preview_${reportPreview?.key || "default"}`] || 1,
-				TABLE_PAGE_SIZE,
-			),
-		[reportPreview, tablePages],
+		() => ({
+			rows: reportPreview?.csvRows || [],
+			currentPage: Number(reportPreview?.page || 1),
+			totalPages: Number(reportPreview?.totalPages || 1),
+			startIndex: Number(reportPreview?.total || 0) === 0 ? 0 : (Number(reportPreview?.page || 1) - 1) * Number(reportPreview?.pageSize || TABLE_PAGE_SIZE) + 1,
+			endIndex: Math.min(Number(reportPreview?.total || 0), Number(reportPreview?.page || 1) * Number(reportPreview?.pageSize || TABLE_PAGE_SIZE)),
+		}),
+		[reportPreview],
 	)
 
 	const soeCheckingCounts = useMemo(
@@ -7856,40 +7867,6 @@ export default function AdminDashboard() {
 		]),
 	})
 
-	const createCompliancePreviewConfig = (rows, filterLabel) => ({
-		key: "compliance",
-		title: "Compliance Monitoring Report",
-		datasetTitle: "Compliance Monitoring",
-		description: "Preview non-compliance monitoring and scholarship records.",
-		filterLabel,
-		filename: `compliance-report-${Date.now()}`,
-		stats: [
-			{ label: "Rows", value: rows.length },
-			{ label: "High Risk", value: rows.filter((row) => Number(row.violationCount) >= COMPLIANCE_BLOCK_THRESHOLD).length },
-			{ label: "Flags", value: rows.filter((row) => row.complianceStatus === "Non-Compliant").length },
-		],
-		columnDefinitions: [
-			{ key: "studentId", label: "Student ID", weight: 1 },
-			{ key: "fullName", label: "Full Name", weight: 1.6 },
-			{ key: "scholarship", label: "Scholarship", weight: 1.5 },
-			{ key: "grantor", label: "Grantor", weight: 1.4 },
-			{ key: "status", label: "Compliance Status", weight: 1.15 },
-			{ key: "violations", label: "Violations", weight: 0.7 },
-			{ key: "blocked", label: "Blocked", weight: 0.7 },
-			{ key: "lastReviewed", label: "Last Reviewed", weight: 1 },
-		],
-		csvRows: rows.map((row) => [
-			row.studentId,
-			row.fullName,
-			row.scholarship,
-			row.grantor,
-			row.complianceStatus,
-			String(row.violationCount),
-			row.isBlocked ? "Yes" : "No",
-			row.lastReviewed,
-		]),
-	})
-
 	const openReportPreview = (config, options = {}) => {
 		if (!adminReportExportsEnabled) {
 			toast.error("Report exports are disabled in Admin Profile settings.")
@@ -7968,139 +7945,6 @@ export default function AdminDashboard() {
 		}
 	}
 
-	const openTopStudentsReportPreview = async (filters = DEFAULT_REPORT_FILTERS, previewOptions = {}) => {
-		const selectedGrantorLabel = filters.grantor === "All"
-			? "All"
-			: buildGrantorName(grantorRows.find((grantor) => grantor.id === filters.grantor) || {}) || filters.grantor
-		const selectedOfferingLabel = filters.scholarship === "All"
-			? "All active offerings"
-			: allCreatedScholarshipRows.find((offering) => offering.id === filters.scholarship)?.scholarship || filters.scholarship
-		const activeOfferings = allCreatedScholarshipRows.filter((offering) => {
-			if (offering.status !== "Open" || offering.applicationEnabled === false) return false
-			if (offering.slotsConfigured !== true || Number(offering.remainingSlots || 0) < 1) return false
-			if (filters.grantor !== "All" && String(offering.grantorId || "") !== filters.grantor) return false
-			if (filters.scholarship !== "All" && String(offering.id || "") !== filters.scholarship) return false
-			return matchesReportSearch([
-				offering.scholarship,
-				offering.grantorName,
-			], filters.search)
-		})
-		const eligibleStudents = studentProfiles.filter((student) => {
-			if (student.archived === true || student.sourceCollection !== "students") return false
-			const accountStatus = String(student.status || student.accountStatus || "").trim().toLowerCase()
-			if (student.disabled === true || student.adminBlocked === true || ["inactive", "disabled", "frozen"].includes(accountStatus)) return false
-			if (student.soeComplianceBlocked === true || getStudentRestrictionState(student).scholarshipEligibility || hasScholarshipCommitment(student)) return false
-			return !activeGrantorScholars.some((scholar) => matchesGrantorScholarToStudent(student, scholar))
-		})
-		const offerings = activeOfferings.map((offering) => {
-			const grantor = grantorRows.find((row) => row.id === offering.grantorId) || {}
-			return {
-				id: offering.id,
-				announcementId: offering.id,
-				title: offering.scholarship,
-				scholarshipTitle: offering.scholarship,
-				grantorId: offering.grantorId,
-				grantorName: offering.grantorName,
-				minimumGwa: offering.minimumGwa,
-				applicationEnabled: true,
-				applyOpen: true,
-				applicationsBlocked: false,
-				rosterCount: Number(grantor.totalScholars || 0),
-				province: grantor.province || "",
-				city: grantor.city || "",
-				barangay: grantor.barangay || "",
-				profileImageUrl: grantor.profileImageUrl || grantor.logoUrl || "",
-			}
-		})
-		const students = eligibleStudents.map((student) => {
-			const history = [
-				...(Array.isArray(student.scholarships) ? student.scholarships : []),
-				...(Array.isArray(student.scholarshipApplicationHistory) ? student.scholarshipApplicationHistory : []),
-			]
-			const ineligibleOfferingIds = activeOfferings
-				.filter((offering) => {
-					const hasInvitation = Boolean(findMatchingPendingInvitation(student, offering))
-					const manuallyArchived = history.some((record) => isManualArchiveForGrantor(record, offering))
-					return (manuallyArchived && !hasInvitation) || Boolean(getGrantorRejectionCooldown(student, offering))
-				})
-				.map((offering) => offering.id)
-			return {
-				id: student.id,
-				studentId: student.studentId || student.id,
-				fullName: student.fullName || studentFullName(student),
-				course: student.course || "-",
-				yearLevel: student.year || student.yearLevel || "-",
-				gwa: student.gwa || student.currentGwa || student.currentGWA || null,
-				province: student.province || "",
-				city: student.city || student.municipality || "",
-				barangay: student.barangay || "",
-				ineligibleOfferingIds,
-			}
-		})
-		const result = await fetchTopStudentsReport(students, offerings)
-		const columnDefinitions = [
-			{ key: "scholarship", label: "Scholarship", weight: 1.45 },
-			{ key: "grantor", label: "Grantor", weight: 1.35 },
-			{ key: "rank", label: "Rank", weight: 0.45 },
-			{ key: "studentId", label: "Student ID", weight: 0.9 },
-			{ key: "fullName", label: "Full Name", weight: 1.45 },
-			{ key: "course", label: "Course", weight: 1.35 },
-			{ key: "yearLevel", label: "Year", weight: 0.55 },
-			{ key: "gwa", label: "GWA", weight: 0.55 },
-			{ key: "score", label: "Score", weight: 0.6 },
-			{ key: "reasons", label: "Eligibility Reasons", weight: 1.8 },
-		]
-		const csvRows = (result.groups || []).flatMap((group) =>
-			(group.rows || []).map((row) => [
-				group.scholarship,
-				group.grantor,
-				row.rank,
-				toDisplayStudentId(row.studentId),
-				row.fullName,
-				row.course,
-				row.yearLevel,
-				row.gwa,
-				row.score,
-				row.reasons,
-			]),
-		)
-		const groupedPages = (result.groups || []).map((group) => ({
-			title: `${group.scholarship} - ${group.grantor}`,
-			subtitle: "Top 10 eligible students using the Recommendation Score - Not Official Ranking.",
-			columns: columnDefinitions,
-			rows: (group.rows || []).map((row) => [
-				group.scholarship,
-				group.grantor,
-				row.rank,
-				toDisplayStudentId(row.studentId),
-				row.fullName,
-				row.course,
-				row.yearLevel,
-				row.gwa,
-				row.score,
-				row.reasons,
-			]),
-		}))
-		openReportPreview({
-			key: ADMIN_REPORT_TYPES.TOP_STUDENTS,
-			reportType: ADMIN_REPORT_TYPES.TOP_STUDENTS,
-			title: "Top Students per Grantor Report",
-			datasetTitle: "Eligible Students by Scholarship Offering",
-			description: "Top eligible students ranked separately for each active scholarship offering.",
-			filterLabel: `Search: ${filters.search || "-"} | Grantor: ${selectedGrantorLabel} | Scholarship: ${selectedOfferingLabel}`,
-			filename: `top-students-per-grantor-${Date.now()}`,
-			stats: [
-				{ label: "Offerings", value: (result.groups || []).length },
-				{ label: "Ranked Students", value: csvRows.length },
-				{ label: "Eligible Pool", value: eligibleStudents.length },
-				{ label: "Algorithm", value: "Weighted" },
-			],
-			columnDefinitions,
-			csvRows,
-			groupedPages,
-		}, previewOptions)
-	}
-
 	const openReportCenterPreview = async (
 		reportType = ADMIN_REPORT_TYPES.STUDENTS,
 		requestedFilters = DEFAULT_REPORT_FILTERS,
@@ -8113,95 +7957,36 @@ export default function AdminDashboard() {
 		}
 		setIsReportExporting(true)
 		try {
-			const previewOptions = { origin: "central", filters }
-			const selectedGrantorLabel = filters.grantor === "All"
-				? "All"
-				: buildGrantorName(grantorRows.find((grantor) => grantor.id === filters.grantor) || {}) || filters.grantor
-			if (reportType === ADMIN_REPORT_TYPES.TOP_STUDENTS) {
-				await openTopStudentsReportPreview(filters, previewOptions)
-				return
-			}
-			if (reportType === ADMIN_REPORT_TYPES.STUDENTS) {
-				const reportById = new Map(allStudentReportRows.map((row) => [row.id, row]))
-				const rows = studentProfiles.filter((student) => {
-					const row = reportById.get(toDisplayStudentId(student.studentId || student.id))
-					if (!row) return false
-					return (
-						matchesReportSearch([row.id, row.fullName, row.course, row.grantor, row.currentStage], filters.search) &&
-						(filters.status === "All" || row.recordStatus === filters.status) &&
-						(filters.course === "All" || row.course === filters.course) &&
-						(filters.year === "All" || row.yearLevel === filters.year) &&
-						(filters.grantor === "All" || row.grantorIds.includes(filters.grantor) ||
-							(row.grantorIds.length === 0 && row.grantorNames.includes(selectedGrantorLabel.toLowerCase()))) &&
-						isWithinInclusiveDateRange(row.reportDate, filters.dateFrom, filters.dateTo)
-					)
-				})
-				openReportPreview(createStudentPreviewConfig({
-					view: filters.status === "Archived" ? "archived" : filters.status === "Active" ? "students" : "all",
-					search: filters.search,
-					course: filters.course,
-					year: filters.year,
-					grantor: filters.grantor,
-					grantorLabel: selectedGrantorLabel,
-				}, rows), previewOptions)
-				return
-			}
-			if (reportType === ADMIN_REPORT_TYPES.GRANTORS) {
-				const rows = grantorRows
-					.map((grantor) => ({
-						...buildGrantorReportRow(grantor),
-						activeScholarships: grantorAnnouncementsRaw.filter((announcement) =>
-							String(announcement.grantorId || "") === String(grantor.id || "") &&
-							isGrantorScholarshipApplicationAnnouncement(announcement) && !isAnnouncementArchived(announcement),
-						).length,
-					}))
-					.filter((row) =>
-						matchesReportSearch([row.id, row.name, row.email, row.organization], filters.search) &&
-						(filters.status === "All" || row.status === filters.status) &&
-						isWithinInclusiveDateRange(row.reportDate, filters.dateFrom, filters.dateTo),
-					)
-				openReportPreview(createGrantorPreviewConfig(rows, `Search: ${filters.search || "-"} | Status: ${filters.status} | Dates: ${filters.dateFrom || "Any"} to ${filters.dateTo || "Any"}`, filters.status === "Archived" ? "archived" : "grantors"), previewOptions)
-				return
-			}
-			if (reportType === ADMIN_REPORT_TYPES.SCHOLARSHIPS) {
-				const rows = allCreatedScholarshipRows.filter((row) =>
-					matchesReportSearch([row.scholarship, row.grantorName, row.status], filters.search) &&
-					(filters.status === "All" || row.status === filters.status) &&
-					(filters.grantor === "All" || String(row.grantorId || "") === filters.grantor) &&
-					overlapsInclusiveDateRange(
-						row.startDate || row.applicationStartDate || row.createdAt,
-						row.endDate || row.applicationEndDate || row.createdAt,
-						filters.dateFrom,
-						filters.dateTo,
-					),
-				)
-				openReportPreview(createOfferingPreviewConfig(rows, `Search: ${filters.search || "-"} | Status: ${filters.status} | Grantor: ${selectedGrantorLabel} | Application dates: ${filters.dateFrom || "Any"} to ${filters.dateTo || "Any"}`), previewOptions)
-				return
-			}
-			if (reportType === ADMIN_REPORT_TYPES.REQUIREMENTS) {
-				const rows = requirementReportRows.filter((row) =>
-					matchesReportSearch([row.applicationNumber, row.requestNumber, row.studentId, row.fullName, row.scholarshipName, row.grantor], filters.search) &&
-					(filters.status === "All" || row.reviewStateLabel === filters.status) &&
-						(filters.grantor === "All" || String(row.grantorId || "") === filters.grantor ||
-							(!row.grantorId && row.grantor.toLowerCase() === selectedGrantorLabel.toLowerCase())) &&
-					(filters.material === "All" || row.requestedMaterialsSummary.toLowerCase().includes(filters.material.toLowerCase())) &&
-					(filters.signing === "All" || row.signingStatusLabel === filters.signing) &&
-					isWithinInclusiveDateRange(row.reportDate, filters.dateFrom, filters.dateTo),
-				)
-				openReportPreview(createSoePreviewConfig(rows, `Search: ${filters.search || "-"} | Grantor: ${selectedGrantorLabel} | Review: ${filters.status} | Signing: ${filters.signing} | Material: ${filters.material} | Request dates: ${filters.dateFrom || "Any"} to ${filters.dateTo || "Any"}`, "Filtered Requests"), previewOptions)
-				return
-			}
-			const rows = complianceRows.filter((row) => {
-				const risk = row.violationCount >= COMPLIANCE_BLOCK_THRESHOLD ? "High Risk" : "Monitoring"
-				return matchesReportSearch([row.studentId, row.fullName, row.scholarship, row.grantor], filters.search) &&
-					(filters.status === "All" || row.complianceStatus === filters.status) &&
-					(filters.risk === "All" || risk === filters.risk) &&
-					isWithinInclusiveDateRange(row.reportDate, filters.dateFrom, filters.dateTo)
-			})
-			openReportPreview(createCompliancePreviewConfig(rows, `Search: ${filters.search || "-"} | Status: ${filters.status} | Risk: ${filters.risk} | Dates: ${filters.dateFrom || "Any"} to ${filters.dateTo || "Any"}`), previewOptions)
+			const result = await fetchAdminReportPreview(reportType, filters, { page: 1, pageSize: TABLE_PAGE_SIZE })
+			openReportPreview({
+				...result,
+				columnDefinitions: result.columns,
+				csvRows: result.rows,
+				filters,
+			}, { origin: "central", filters })
 		} catch (error) {
 			console.error("Unable to prepare report preview.", error)
 			toast.error(error?.message || "Unable to prepare the report preview.")
+		} finally {
+			setIsReportExporting(false)
+		}
+	}
+
+	const loadReportPreviewPage = async (page) => {
+		if (!reportPreview || isReportExporting) return
+		setIsReportExporting(true)
+		try {
+			const reportType = reportPreview.reportType || reportPreview.key
+			const filters = reportPreview.filters || reportPreviewFilters
+			const result = await fetchAdminReportPreview(reportType, filters, { page, pageSize: TABLE_PAGE_SIZE })
+			setReportPreview(createCanonicalReport({
+				...result,
+				columnDefinitions: result.columns,
+				csvRows: result.rows,
+				filters,
+			}))
+		} catch (error) {
+			toast.error(error?.message || "Unable to load this report page.")
 		} finally {
 			setIsReportExporting(false)
 		}
@@ -8215,17 +8000,14 @@ export default function AdminDashboard() {
 		}
 		setIsReportExporting(true)
 		try {
-			if (reportExportFormat === "csv") downloadCanonicalReportCsv(reportPreview)
-			else {
-				if (!reportPdfPreview.blob) {
-					throw new Error(reportPdfPreview.error || "The PDF preview is not ready yet.")
-				}
-				downloadCanonicalReportPdfBlob(
-					reportPdfPreview.blob,
-					reportPdfPreview.filename || `${reportPreview.filename}.pdf`,
-				)
-			}
+			const result = await fetchAdminReportExport(
+				reportPreview.reportType || reportPreview.key,
+				reportPreview.filters || reportPreviewFilters,
+				reportExportFormat,
+			)
+			downloadAdminReportFile(result.blob, result.filename)
 			toast.success(`Report exported as ${reportExportFormat.toUpperCase()}.`)
+			getAdminReportHistory().then((history) => setReportHistory(history.history || [])).catch(() => {})
 		} catch (error) {
 			console.error(error)
 			toast.error(error?.message || "Failed to export report.")
@@ -8379,7 +8161,7 @@ export default function AdminDashboard() {
 								<div className="admin-report-pdf-preview">
 									<div className="admin-report-preview-toolbar">
 										<span>PDF Preview</span>
-										<small>{reportPreview.csvRows.length} matching rows</small>
+										<small>{reportPreview.total ?? reportPreview.csvRows.length} matching rows</small>
 									</div>
 									{reportPdfPreview.loading ? (
 										<div className="admin-report-preview-state"><span className="admin-loading-spinner" aria-hidden /><strong>Generating PDF preview...</strong><p>This may take a moment for large reports.</p></div>
@@ -8427,13 +8209,13 @@ export default function AdminDashboard() {
 									{reportPreviewTablePage.totalPages > 1 ? (
 									<TablePagination
 										currentPage={reportPreviewTablePage.currentPage}
-										totalItems={reportPreview.csvRows.length}
-										onPageChange={(page) => setTablePage(`report_preview_${reportPreview.key || "default"}`, page)}
+										totalItems={reportPreview.total ?? reportPreview.csvRows.length}
+										onPageChange={loadReportPreviewPage}
 									/>
 									) : (
 									<div className="admin-report-preview-footer">
 										<span>
-											Showing {reportPreviewTablePage.startIndex}-{reportPreviewTablePage.endIndex} of {reportPreview.csvRows.length} rows | 25 per page
+											Showing {reportPreviewTablePage.startIndex}-{reportPreviewTablePage.endIndex} of {reportPreview.total ?? reportPreview.csvRows.length} rows | 25 per page
 										</span>
 									</div>
 									)}
@@ -10637,6 +10419,23 @@ export default function AdminDashboard() {
 										<span>Compliance records monitored</span>
 									</div>
 								</div>
+							</article>
+							<article className="admin-report-aside-card">
+								<span className="admin-report-card__eyebrow">Audit History</span>
+								<h3>Recent exports</h3>
+								{reportHistoryLoading ? <p>Loading export history...</p> : reportHistory.length === 0 ? (
+									<p>No administrator report exports have been recorded yet.</p>
+								) : (
+									<div className="admin-report-history-list">
+										{reportHistory.slice(0, 5).map((entry) => (
+											<div key={entry.id} className="admin-report-history-item">
+												<strong>{String(entry.reportType || "report").replaceAll("_", " ")}</strong>
+												<span>{String(entry.format || "").toUpperCase()} | {entry.rowCount || 0} rows</span>
+												<small>{formatDate(entry.createdAt)}</small>
+											</div>
+										))}
+									</div>
+								)}
 							</article>
 						</aside>
 					</div>

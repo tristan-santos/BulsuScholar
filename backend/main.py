@@ -36,6 +36,12 @@ try:
         sanitize_report_filename,
         validate_report_payload,
     )
+    from .admin_report_service import (
+        build_admin_report,
+        build_admin_report_export,
+        list_admin_report_history,
+        record_admin_report_export,
+    )
     from .scholarship_rules import (
         check_scholarship_eligibility,
         is_gwa_eligible,
@@ -151,6 +157,12 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
         build_report_pdf_bytes,
         sanitize_report_filename,
         validate_report_payload,
+    )
+    from admin_report_service import (
+        build_admin_report,
+        build_admin_report_export,
+        list_admin_report_history,
+        record_admin_report_export,
     )
     from scholarship_rules import (
         check_scholarship_eligibility,
@@ -1321,6 +1333,47 @@ def generate_pdf_report_endpoint(request: Request, payload: dict[str, Any] = Bod
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.post("/admin/reports/preview")
+def preview_admin_report_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    enforce_portal_scope(request, payload, {"admin"})
+    return build_admin_report(payload)
+
+
+@app.post("/admin/reports/export")
+def export_admin_report_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    enforce_portal_scope(request, payload, {"admin"})
+    if public_config().get("portal", {}).get("reportExportEnabled") is False:
+        raise HTTPException(status_code=403, detail="report_exports_disabled")
+    content, media_type, filename, report = build_admin_report_export(payload)
+    audit_id = record_admin_report_export(request, report, str(payload.get("format") or "pdf").lower())
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-Report-Audit-Id": audit_id,
+    }
+    return Response(content=content, media_type=media_type, headers=headers)
+
+
+@app.post("/admin/reports/file-preview")
+def preview_admin_report_file_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    enforce_portal_scope(request, payload, {"admin"})
+    content, media_type, filename, _report = build_admin_report_export({**payload, "format": "pdf"})
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@app.get("/admin/reports/history")
+def admin_report_history_endpoint(request: Request) -> dict[str, Any]:
+    payload = {
+        "actorType": "admin",
+        "actorId": str(request.headers.get("x-portal-actor-id") or ""),
+    }
+    enforce_portal_scope(request, payload, {"admin"})
+    return list_admin_report_history()
 
 
 @app.post("/reports/top-students/preview")

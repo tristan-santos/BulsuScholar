@@ -133,7 +133,7 @@ def require_admin_bearer(request: Request, actor_id: str) -> tuple[dict[str, Any
 
 
 def _required_admin_permissions(path: str) -> set[str]:
-    if path.startswith("/reports/"):
+    if path.startswith("/reports/") or path.startswith("/admin/reports/"):
         return {"reports"}
     if path.startswith("/workflows/applicants/"):
         return {"students", "reports"}

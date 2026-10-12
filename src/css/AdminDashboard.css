@@ -19773,3 +19773,36 @@
 	.admin-document-exception-summary > button { grid-column: 1; width: 100%; }
 	.admin-student-list-actions { grid-template-columns: 1fr; }
 }
+.admin-report-history-list {
+	display: grid;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.admin-report-history-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 3px 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--admin-border, #d7e5dd);
+}
+
+.admin-report-history-item:last-child {
+	border-bottom: 0;
+}
+
+.admin-report-history-item strong {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	text-transform: capitalize;
+	white-space: nowrap;
+}
+
+.admin-report-history-item span,
+.admin-report-history-item small {
+	color: var(--admin-muted, #5f7169);
+}
+
+.admin-report-history-item small {
+	grid-column: 1 / -1;
+}

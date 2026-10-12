@@ -11,6 +11,7 @@ from backend.access_control import _required_admin_permissions, require_supabase
 class AdminPermissionTests(unittest.TestCase):
     def test_sensitive_admin_route_groups_have_permissions(self):
         self.assertEqual({"reports"}, _required_admin_permissions("/reports/pdf"))
+        self.assertEqual({"reports"}, _required_admin_permissions("/admin/reports/export"))
         self.assertEqual({"grantors"}, _required_admin_permissions("/workflows/admin/grantors/archive-state"))
         self.assertEqual({"students"}, _required_admin_permissions("/admin/check-student-duplicates"))
         self.assertEqual({"requirements"}, _required_admin_permissions("/workflows/materials/update"))

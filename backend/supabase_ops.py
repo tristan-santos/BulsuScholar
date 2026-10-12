@@ -265,6 +265,8 @@ def supabase_rpc(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
                 "commitment_requires_resolution",
                 "document_review_required",
                 "document_versions_changed",
+                "profile_required",
+                "material_request_not_eligible",
                 "grantor_archived",
                 "grantor_not_found",
                 "student_account_blocked",

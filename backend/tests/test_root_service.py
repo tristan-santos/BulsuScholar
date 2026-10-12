@@ -242,6 +242,7 @@ class RootServiceTests(unittest.TestCase):
     def test_root_student_report_uses_fixed_schema_and_active_application_count(self, all_rows):
         datasets = {
             "students": [{"id": "20230001", "fullName": "Ana Santos", "course": "BSIT", "year": "2", "gwa": "1.50"}],
+            "student_scholarship_state": [],
             "providers": [],
             "grantor_portal_announcements": [],
             "scholarship_applications": [

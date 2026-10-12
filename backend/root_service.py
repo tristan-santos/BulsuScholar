@@ -483,6 +483,12 @@ def build_root_report(report_type: str) -> dict[str, Any]:
     if report_type not in ROOT_REPORT_COLUMNS:
         raise HTTPException(status_code=404, detail="root_report_not_found")
     students = _all_data_rows("students")
+    scholarship_states = _all_data_rows("student_scholarship_state")
+    state_by_student = {str(row.get("studentId") or row.get("student_id") or row.get("id")): row for row in scholarship_states}
+    students = [
+        {**student, **state_by_student.get(str(student.get("studentId") or student.get("studentnumber") or student.get("id")), {})}
+        for student in students
+    ]
     grantors = _all_data_rows("providers")
     announcements = _all_data_rows("grantor_portal_announcements")
     applications = _all_data_rows("scholarship_applications")
@@ -500,13 +506,13 @@ def build_root_report(report_type: str) -> dict[str, Any]:
             grantor_name = student.get("grantorName") or student.get("providerName")
             if not grantor_name and scholarship_entries:
                 grantor_name = scholarship_entries[0].get("grantorName") or scholarship_entries[0].get("providerName") or scholarship_entries[0].get("provider")
-            records.append({"studentId": student_id, "fullName": _full_name(student), "course": _text(student.get("course")), "yearLevel": _text(student.get("yearLevel") or student.get("year")), "gwa": _text(student.get("gwa") or student.get("currentGwa")), "grantor": _text(grantor_name), "activeApplications": len(owned), "currentStage": _text((owned[0] if owned else {}).get("currentStage") or (owned[0] if owned else {}).get("trackingStage")), "recordStatus": _text(student.get("recordStatus") or student.get("status") or "Active")})
+            records.append({"studentId": student_id, "fullName": _full_name(student), "course": _text(student.get("course")), "yearLevel": _text(student.get("yearLevel") or student.get("year")), "gwa": _text(student.get("gwa") or student.get("currentGwa")), "grantor": _text(grantor_name), "grantorIds": sorted({str(item.get("grantorId") or item.get("providerId")) for item in owned if item.get("grantorId") or item.get("providerId")}), "activeApplications": len(owned), "currentStage": _text((owned[0] if owned else {}).get("currentStage") or (owned[0] if owned else {}).get("trackingStage")), "recordStatus": "Archived" if student.get("archived") else _text(student.get("recordStatus") or student.get("status") or "Active"), "reportDate": student.get("updatedAt") or student.get("createdAt")})
     elif report_type == "grantors":
         for grantor in grantors:
             grantor_id = str(grantor.get("grantorId") or grantor.get("providerId") or grantor.get("id"))
             owned_announcements = [row for row in announcements if str(row.get("grantorId") or row.get("providerId")) == grantor_id and _is_open_record(row)]
             owned_students = {str(row.get("studentId") or row.get("studentnumber")) for row in active_applications if str(row.get("grantorId") or row.get("providerId")) == grantor_id}
-            records.append({"grantorId": grantor_id, "name": _text(grantor.get("grantorName") or grantor.get("providerName") or grantor.get("name")), "email": _text(grantor.get("email")), "organization": _text(grantor.get("organization") or grantor.get("organizationName")), "activeScholarships": len(owned_announcements), "scholars": len(owned_students), "accountStatus": _text(grantor.get("status") or ("Archived" if grantor.get("archived") else "Active")), "createdAt": _text(grantor.get("createdAt"))})
+            records.append({"grantorId": grantor_id, "name": _text(grantor.get("grantorName") or grantor.get("providerName") or grantor.get("name")), "email": _text(grantor.get("email")), "organization": _text(grantor.get("organization") or grantor.get("organizationName")), "activeScholarships": len(owned_announcements), "scholars": len(owned_students), "accountStatus": _text(grantor.get("status") or ("Archived" if grantor.get("archived") else "Active")), "createdAt": _text(grantor.get("createdAt")), "reportDate": grantor.get("createdAt") or grantor.get("updatedAt")})
     elif report_type == "scholarships":
         for item in announcements:
             announcement_id = str(item.get("announcementId") or item.get("id"))
@@ -514,7 +520,7 @@ def build_root_report(report_type: str) -> dict[str, Any]:
             related = [row for row in applications if str(row.get("announcementId")) == announcement_id]
             total = int(item.get("totalSlots") or 0)
             remaining = int(item.get("remainingSlots") or 0)
-            records.append({"title": _text(item.get("scholarshipTitle") or item.get("title")), "grantor": _text(item.get("grantorName") or item.get("providerLabel") or grantor.get("grantorName") or grantor.get("providerName")), "minimumGwa": _text(item.get("minimumGwa") or item.get("minGwa")), "totalSlots": total, "occupiedSlots": max(0, total - remaining), "remainingSlots": remaining, "applications": len(related), "window": f"{_text(item.get('applicationStart') or item.get('startDate'))} to {_text(item.get('applicationEnd') or item.get('endDate'))}", "status": _text(item.get("status") or ("Active" if _is_open_record(item) else "Closed"))})
+            records.append({"title": _text(item.get("scholarshipTitle") or item.get("title")), "scholarshipId": announcement_id, "grantor": _text(item.get("grantorName") or item.get("providerLabel") or grantor.get("grantorName") or grantor.get("providerName")), "grantorId": str(item.get("grantorId") or item.get("providerId") or ""), "minimumGwa": _text(item.get("minimumGwa") or item.get("minGwa")), "totalSlots": total, "occupiedSlots": max(0, total - remaining), "remainingSlots": remaining, "applications": len(related), "window": f"{_text(item.get('applicationStart') or item.get('startDate'))} to {_text(item.get('applicationEnd') or item.get('endDate'))}", "status": _text(item.get("status") or ("Active" if _is_open_record(item) else "Closed")), "reportDate": item.get("applicationStart") or item.get("startDate") or item.get("createdAt")})
     elif report_type == "requirements":
         requests = _all_data_rows("soe_requests")
         downloads = _all_data_rows("soe_downloads")
@@ -526,16 +532,47 @@ def build_root_report(report_type: str) -> dict[str, Any]:
             student = student_by_id.get(str(request_row.get("studentId") or application.get("studentId")), {})
             announcement = announcement_by_id.get(str(request_row.get("announcementId") or application.get("announcementId")), {})
             materials = request_row.get("materials") or request_row.get("requestedMaterials") or {}
-            records.append({"applicationNumber": _text(application_number), "requestNumber": _text(request_number), "student": _full_name(student) if student else _text(request_row.get("studentName")), "scholarship": _text(request_row.get("scholarshipTitle") or application.get("scholarshipTitle") or announcement.get("scholarshipTitle") or announcement.get("title")), "grantor": _text(request_row.get("grantorName") or application.get("grantorName") or announcement.get("grantorName")), "materials": _text(materials), "requestState": _text(request_row.get("status") or request_row.get("requestState")), "reviewState": _text(request_row.get("reviewState") or request_row.get("adminStatus")), "downloadState": _text(download.get("status") or download.get("downloadState")), "signingState": _text(download.get("signingState") or download.get("signatureStatus")), "requestedAt": _text(request_row.get("createdAt") or request_row.get("requestedAt")), "reviewedAt": _text(request_row.get("reviewedAt") or request_row.get("updatedAt")), "downloadedAt": _text(download.get("downloadedAt")), "signedAt": _text(download.get("signedAt") or download.get("updatedAt"))})
+            review_state = _text(request_row.get("reviewState") or request_row.get("adminStatus"), "Pending Approval")
+            if review_state.lower() in {"incoming", "pending", "pending review"}:
+                review_state = "Pending Approval"
+            else:
+                review_state = review_state.title()
+            signing_state = _text(download.get("signingState") or download.get("signatureStatus"), "Not Started").title()
+            records.append({"applicationNumber": _text(application_number), "requestNumber": _text(request_number), "student": _full_name(student) if student else _text(request_row.get("studentName")), "studentId": str(request_row.get("studentId") or application.get("studentId") or ""), "scholarship": _text(request_row.get("scholarshipTitle") or application.get("scholarshipTitle") or announcement.get("scholarshipTitle") or announcement.get("title")), "scholarshipId": str(request_row.get("scholarshipId") or application.get("announcementId") or ""), "grantor": _text(request_row.get("grantorName") or application.get("grantorName") or announcement.get("grantorName")), "grantorId": str(request_row.get("grantorId") or application.get("grantorId") or application.get("providerId") or ""), "materials": _text(materials), "requestState": _text(request_row.get("status") or request_row.get("requestState")), "reviewState": review_state, "downloadState": _text(download.get("status") or download.get("downloadState")), "signingState": signing_state, "requestedAt": _text(request_row.get("createdAt") or request_row.get("requestedAt")), "reviewedAt": _text(request_row.get("reviewedAt") or request_row.get("updatedAt")), "downloadedAt": _text(download.get("downloadedAt")), "signedAt": _text(download.get("signedAt") or download.get("updatedAt")), "reportDate": request_row.get("createdAt") or request_row.get("requestedAt")})
     elif report_type == "compliance":
         for student in students:
+            violation_count = int(student.get("complianceViolationCount") or 0)
+            if not (student.get("soeComplianceWarning") or student.get("soeComplianceBlocked") or violation_count > 0):
+                continue
             entries = [item for item in student.get("scholarships") or [] if isinstance(item, dict)]
             entry = next((item for item in entries if _is_open_record(item)), entries[0] if entries else {})
             violations = student.get("violations") or student.get("complianceViolations") or []
-            records.append({"student": _full_name(student), "scholarship": _text(entry.get("name") or entry.get("scholarshipTitle")), "grantor": _text(entry.get("grantorName") or entry.get("providerName") or student.get("grantorName")), "status": _text(student.get("complianceStatus") or student.get("status") or "Active"), "violations": _text(violations), "blocked": "Yes" if student.get("blocked") or student.get("applicationBlocked") else "No", "lastReview": _text(student.get("complianceReviewedAt") or student.get("updatedAt"))})
+            student_id = str(student.get("studentId") or student.get("studentnumber") or student.get("id"))
+            application = next((item for item in active_applications if str(item.get("studentId") or item.get("studentnumber")) == student_id), {})
+            records.append({"student": _full_name(student), "studentId": student_id, "scholarship": _text(application.get("scholarshipName") or application.get("scholarshipTitle") or entry.get("name") or entry.get("scholarshipTitle")), "grantor": _text(application.get("grantorName") or entry.get("grantorName") or entry.get("providerName") or student.get("grantorName")), "grantorId": str(application.get("grantorId") or application.get("providerId") or ""), "status": "Non-Compliant" if student.get("soeComplianceWarning") else "Monitoring", "violations": violation_count, "violationCount": violation_count, "blocked": "Yes" if student.get("soeComplianceBlocked") else "No", "lastReview": _text(student.get("lastComplianceReviewAt") or student.get("updatedAt")), "reportDate": student.get("lastComplianceReviewAt") or student.get("updatedAt")})
     else:
-        active_offerings = [row for row in announcements if _is_open_record(row) and (row.get("openForApplications") or row.get("isApplicationAnnouncement") or row.get("slotsConfigured"))]
-        eligible_students = [row for row in students if not row.get("scholarshipCommitment") and not row.get("selectedScholarshipId") and not row.get("blocked") and _is_open_record(row)]
+        roster_scholars = _all_data_rows("grantor_portal_scholars")
+        roster_student_ids = {
+            str(row.get("studentId") or row.get("studentNumber"))
+            for row in roster_scholars
+            if _is_open_record(row) and (row.get("studentId") or row.get("studentNumber"))
+        }
+        active_offerings = [
+            row for row in announcements
+            if _is_open_record(row)
+            and (row.get("openForApplications") or row.get("isApplicationAnnouncement") or row.get("slotsConfigured"))
+            and (row.get("slotsConfigured") is not True or int(row.get("remainingSlots") or 0) > 0)
+        ]
+        eligible_students = [
+            row for row in students
+            if not row.get("scholarshipCommitment")
+            and not row.get("selectedScholarshipId")
+            and not row.get("blocked")
+            and not row.get("soeComplianceBlocked")
+            and not (row.get("restrictions") or {}).get("scholarshipEligibility")
+            and str(row.get("studentId") or row.get("studentnumber") or row.get("id")) not in roster_student_ids
+            and _is_open_record(row)
+        ]
         groups: dict[str, list[dict[str, Any]]] = {str(item.get("announcementId") or item.get("id")): [] for item in active_offerings}
         for student in eligible_students:
             ranked = recommend_scholarships({"student": student, "scholarships": active_offerings})
@@ -548,7 +585,7 @@ def build_root_report(report_type: str) -> dict[str, Any]:
             candidates.sort(key=lambda value: (-float(value["recommendation"].get("score") or 0), _full_name(value["student"]).lower()))
             for rank, candidate in enumerate(candidates[:10], 1):
                 student, recommendation, offering = candidate["student"], candidate["recommendation"], candidate["offering"]
-                records.append({"rank": rank, "scholarship": _text(offering.get("scholarshipTitle") or offering.get("title")), "grantor": _text(offering.get("grantorName") or offering.get("providerLabel")), "studentId": _text(student.get("studentId") or student.get("studentnumber") or student.get("id")), "fullName": _full_name(student), "course": _text(student.get("course")), "yearLevel": _text(student.get("yearLevel") or student.get("year")), "gwa": _text(student.get("gwa") or student.get("currentGwa")), "score": recommendation.get("score") or 0, "reasons": ", ".join(recommendation.get("reasons") or []) or "Eligible"})
+                records.append({"rank": rank, "scholarship": _text(offering.get("scholarshipTitle") or offering.get("title")), "scholarshipId": str(offering.get("announcementId") or offering.get("id") or ""), "grantor": _text(offering.get("grantorName") or offering.get("providerLabel")), "grantorId": str(offering.get("grantorId") or offering.get("providerId") or ""), "studentId": _text(student.get("studentId") or student.get("studentnumber") or student.get("id")), "fullName": _full_name(student), "course": _text(student.get("course")), "yearLevel": _text(student.get("yearLevel") or student.get("year")), "gwa": _text(student.get("gwa") or student.get("currentGwa")), "score": recommendation.get("score") or 0, "reasons": ", ".join(recommendation.get("reasons") or []) or "Eligible"})
 
     columns = [{"key": key, "label": label, "weight": 1} for key, label in ROOT_REPORT_COLUMNS[report_type]]
     rows = [[_text(record.get(column["key"])) for column in columns] for record in records]

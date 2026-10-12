@@ -191,6 +191,52 @@ export function fetchTopStudentsReport(students = [], offerings = []) {
 	)
 }
 
+export function fetchAdminReportPreview(reportType, filters = {}, { page = 1, pageSize = 250 } = {}) {
+	return postPortalJson(
+		requireBackendApiUrl("Report backend"),
+		"/admin/reports/preview",
+		{ actorType: "admin", reportType, filters, page, pageSize },
+		"Admin report preview",
+		{ actor: { actorType: "admin" }, timeoutMs: 30000 },
+	)
+}
+
+export async function fetchAdminReportExport(reportType, filters = {}, format = "pdf", { previewOnly = false, signal } = {}) {
+	const path = previewOnly ? "/admin/reports/file-preview" : "/admin/reports/export"
+	const response = await fetch(`${requireBackendApiUrl("Report backend")}${path}`, {
+		method: "POST",
+		headers: await buildPortalRequestHeaders({ actorType: "admin" }),
+		body: JSON.stringify({ actorType: "admin", reportType, filters, format }),
+		signal,
+	})
+	if (!response.ok) {
+		const data = await response.json().catch(() => ({}))
+		const detail = typeof data.detail === "string" ? data.detail : data.detail?.message || data.detail?.code
+		const error = new Error(String(detail || "Admin report export failed.").replaceAll("_", " "))
+		error.status = response.status
+		error.reason = typeof data.detail === "string" ? data.detail : data.detail?.code
+		throw error
+	}
+	const blob = await response.blob()
+	if (!blob.size) throw new Error("The report backend returned an empty file.")
+	const disposition = response.headers.get("content-disposition") || ""
+	const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `bulsuscholar-${reportType}.${format}`
+	return { blob, filename, auditId: response.headers.get("x-report-audit-id") || "" }
+}
+
+export async function getAdminReportHistory() {
+	const response = await fetch(`${requireBackendApiUrl("Report backend")}/admin/reports/history`, {
+		headers: await buildPortalRequestHeaders({ actorType: "admin" }),
+	})
+	const data = await response.json().catch(() => ({}))
+	if (!response.ok) throw new Error(String(data.detail || "Report history unavailable.").replaceAll("_", " "))
+	return data
+}
+
+export function downloadAdminReportFile(blob, filename = "bulsuscholar-report") {
+	downloadBackendFile(blob, filename)
+}
+
 function protectSpreadsheetCell(value) {
 	const raw = String(value ?? "").replace(/\r\n?/g, "\n")
 	return /^[\t\r ]*[=+\-@]/.test(raw) ? `'${raw}` : raw
