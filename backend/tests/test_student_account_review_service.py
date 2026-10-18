@@ -127,6 +127,36 @@ class StudentAccountReviewTests(unittest.TestCase):
             "stage": "account_activation",
         }, error.exception.detail)
 
+    def test_account_approval_tolerates_document_approved_during_request(self):
+        pending_document = {
+            "id": "signup_document_identity",
+            "data": {"documentType": "identity", "status": "pending"},
+        }
+        approved_document = {
+            "id": "signup_document_identity",
+            "data": {"documentType": "identity", "status": "approved"},
+        }
+        pending_student = {
+            "ok": True,
+            "row": {"id": "student-1"},
+            "data": {
+                "authUserId": "auth-1",
+                "email": "student@example.com",
+                "emailConfirmedAt": "2026-10-18T00:00:00Z",
+            },
+        }
+        with patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"})), \
+                patch.object(service, "_previewed_signup_document_ids", return_value={"signup_document_identity"}), \
+                patch.object(service, "_load_signup_documents", side_effect=[([pending_document], False), ([approved_document], True)]), \
+                patch.object(service, "_required_signup_document_types", return_value=["identity"]), \
+                patch.object(service, "supabase_document_get", side_effect=[pending_student, {"ok": True, "data": {"status": "approved"}}]), \
+                patch.object(service, "activate_student_account", return_value={"ok": True, "approved": True, "newlyApproved": True}), \
+                patch("backend.student_profile_service.review_document_submission", side_effect=HTTPException(status_code=409, detail="document_already_reviewed")):
+            result = service.approve_pending_student_account(self.request, "student-1")
+
+        self.assertTrue(result["approved"])
+        self.assertTrue(result["newlyApproved"])
+
     @patch.object(service, "require_admin_bearer", return_value=({"id": "auth-admin"}, {"role": "full_admin"}))
     @patch.object(service, "supabase_document_get", return_value={"ok": True, "row": {"id": "student-1"}, "data": {
         "authUserId": "auth-1", "email": "student@example.com", "emailConfirmedAt": "2026-10-09T00:00:00Z",

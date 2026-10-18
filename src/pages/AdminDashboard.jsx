@@ -8288,8 +8288,10 @@ export default function AdminDashboard() {
 			const messages = {
 				student_email_not_confirmed: "The student must confirm their email before this account can be approved.",
 				signup_documents_not_previewed: "Preview every required signup document before approving this account.",
+				signup_documents_not_approved: "A required signup document could not be approved. Refresh the account and try again.",
 				signup_document_replacement_required: "A rejected signup document must be replaced before this account can be approved.",
 				signup_documents_missing: "This account is missing a required signup document.",
+				confirmed_identity_mismatch: "The confirmed email account does not match this pending student record.",
 			}
 			console.error("[BulsuScholar] Pending account approval failed", {
 				studentId: account.id,
@@ -8798,8 +8800,8 @@ export default function AdminDashboard() {
 												</div>
 											<div className="admin-pending-account-actions">
 												{!account.emailConfirmedAt ? <button type="button" data-button-variant="neutral" disabled={resendBusy || resendSeconds > 0} title={resendSeconds > 0 ? `Confirmation email can be resent in ${formatConfirmationResendTime(resendSeconds)}` : "Resend the Supabase account confirmation email"} onClick={() => resendPendingConfirmation(account)}><HiOutlineMail /> {resendBusy ? "Sending..." : resendSeconds > 0 ? `Resend in ${formatConfirmationResendTime(resendSeconds)}` : "Resend Confirmation"}</button> : null}
-											<button type="button" className="admin-pending-approve-button" data-button-variant="positive" disabled={isBusy || !accountReady} title={!account.emailConfirmedAt ? "The student must confirm their email first" : !account.allDocumentsPreviewed ? "Preview every required signup document first" : "Approve this account"} onClick={() => approvePendingStudent(account)}><HiOutlineCheckCircle /> Approve Account</button>
-											{!accountReady ? <small>{!account.emailConfirmedAt ? "Email confirmation is required." : `Preview all ${account.requiredDocumentCount || "required"} signup documents to enable approval.`}</small> : null}
+											<small className={accountReady ? "is-ready" : ""} aria-live="polite">{!account.emailConfirmedAt ? "Email confirmation is required." : !account.allDocumentsPreviewed ? `Preview all ${account.requiredDocumentCount || "required"} signup documents to enable approval.` : "All required documents have been previewed."}</small>
+											<button type="button" className="admin-pending-approve-button" data-button-variant="positive" disabled={isBusy || !accountReady} title={!account.emailConfirmedAt ? "The student must confirm their email first" : !account.allDocumentsPreviewed ? "Preview every required signup document first" : "Approve this account"} onClick={() => approvePendingStudent(account)}><HiOutlineCheckCircle /> {isBusy ? "Approving..." : "Approve Account"}</button>
 											</div>
 											</div>
 										</article>

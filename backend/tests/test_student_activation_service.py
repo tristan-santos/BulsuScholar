@@ -104,6 +104,21 @@ class StudentActivationServiceTests(unittest.TestCase):
         self.assertTrue(result["welcomeEmailSent"])
         send_welcome.assert_called_once()
 
+    @patch.object(service, "send_student_welcome_email")
+    @patch.object(service, "supabase_rpc")
+    def test_activation_retries_one_generic_rpc_failure(self, rpc, send_welcome):
+        rpc.side_effect = [
+            {"ok": False, "status": 503, "reason": "supabase_rpc_error"},
+            {"ok": True, "data": {"approved": True, "alreadyActive": True}},
+        ]
+        result = service.activate_student_account("20260001", {
+            "authUserId": "auth-1", "email": "student@example.com",
+        }, "admin-1", "manual_admin_review")
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["alreadyActive"])
+        self.assertEqual(2, rpc.call_count)
+        send_welcome.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

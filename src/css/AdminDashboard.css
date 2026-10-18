@@ -10248,6 +10248,7 @@
 	border-top: 1px solid #e1ebe6;
 }
 .admin-pending-account-actions small { color: #65766f; font-size: .72rem; }
+.admin-pending-account-actions small.is-ready { color: #087044; }
 .admin-pending-approve-button { min-width: 160px; }
 
 .admin-document-reject-panel {
@@ -19687,7 +19688,7 @@
 .admin-pending-account-documents { grid-template-columns: repeat(3, minmax(180px, 1fr)); }
 .admin-pending-document-item { grid-template-rows: 1fr auto; }
 .admin-pending-document-actions button { width: 100%; }
-.admin-pending-account-actions small { margin-right: auto; }
+.admin-pending-account-actions small { min-width: 0; margin-right: auto; }
 
 .admin-student-list-actions { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; }
 .admin-student-list-actions .admin-student-archive-btn,

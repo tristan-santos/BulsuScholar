@@ -10,10 +10,10 @@ async function parseResponse(response, fallback) {
 	const data = await response.json().catch(() => ({}))
 	if (!response.ok || data?.ok === false) {
 		const detail = data?.detail || data?.message || data?.reason || fallback
-		const message = typeof detail === "object" ? detail.code || JSON.stringify(detail) : String(detail)
+		const message = typeof detail === "object" ? detail.message || detail.reason || detail.code || JSON.stringify(detail) : String(detail)
 		throw new PortalApiError(message.replaceAll("_", " "), {
 			status: response.status,
-			reason: typeof detail === "object" ? detail.code || "" : String(detail),
+			reason: typeof detail === "object" ? detail.reason || detail.code || "" : String(detail),
 			data,
 		})
 	}

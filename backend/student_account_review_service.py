@@ -172,10 +172,30 @@ def approve_pending_student_account(request: Request, student_id: str) -> dict[s
     for document in required_documents:
         document_data = document.get("data") or {}
         if str(document_data.get("status") or "").lower() == "pending":
-            review_document_submission(request, str(document.get("id") or ""), {
-                "decision": "approved",
-                "notes": "Approved with the pending student account after all required documents were previewed.",
-            })
+            submission_id = str(document.get("id") or "")
+            try:
+                review_document_submission(request, submission_id, {
+                    "decision": "approved",
+                    "notes": "Approved with the pending student account after all required documents were previewed.",
+                })
+            except HTTPException as error:
+                # A concurrent approval or a repeated click is harmless. Confirm the
+                # authoritative state before continuing instead of failing the account.
+                if error.status_code != 409 or error.detail != "document_already_reviewed":
+                    raise
+                current = supabase_document_get("student_document_submissions", submission_id)
+                if str((current.get("data") or {}).get("status") or "").lower() != "approved":
+                    raise
+
+    # Review operations and account activation are separate service calls. Re-read
+    # the records so activation never relies on the card's stale document snapshot.
+    verified_documents, documents_ready = _load_signup_documents(student_id)
+    verified_required = _required_signup_documents(verified_documents)
+    if len(verified_required) != len(_required_signup_document_types(verified_documents)):
+        raise HTTPException(status_code=409, detail="signup_documents_missing")
+    if not documents_ready:
+        raise HTTPException(status_code=409, detail="signup_documents_not_approved")
+
     result = activate_student_account(student_id, data, admin_id, "manual_admin_review")
     if not result.get("ok"):
         failure_reason = str(result.get("reason") or "supabase_rpc_error")

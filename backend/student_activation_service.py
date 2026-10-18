@@ -165,12 +165,17 @@ def send_student_welcome_email(student_id: str, student: dict[str, Any], activat
 
 
 def activate_student_account(student_id: str, student: dict[str, Any], actor_id: str, activation_source: str) -> dict[str, Any]:
-    result = supabase_rpc("approve_pending_student_account", {
+    payload = {
         "p_student_id": student_id,
         "p_auth_user_id": str(student.get("authUserId") or ""),
         "p_email": str(student.get("email") or ""),
         "p_admin_id": actor_id,
-    })
+    }
+    result = supabase_rpc("approve_pending_student_account", payload)
+    # The approval function is transactionally idempotent. One retry safely covers
+    # a transient PostgREST/schema-cache response or a lost response after commit.
+    if not result.get("ok") and result.get("reason") == "supabase_rpc_error":
+        result = supabase_rpc("approve_pending_student_account", payload)
     if not result.get("ok"):
         return result
     activation = result.get("data") if isinstance(result.get("data"), dict) else {}
