@@ -1,6 +1,6 @@
 import io
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pdfplumber
 from fastapi import HTTPException
@@ -53,8 +53,8 @@ class StudentProfileRequirementTests(unittest.TestCase):
         )
         self.assertTrue(result["required"])
         self.assertEqual("2026-2027-1ST", result["previousAcademicCycle"])
-        self.assertEqual(["cor", "rog", "identity", "profile"], result["outstandingDocumentTypes"])
-        self.assertEqual(["cor", "rog", "identity", "profile"], result["uploadDocumentTypes"])
+        self.assertEqual(["cor", "rog", "profile"], result["outstandingDocumentTypes"])
+        self.assertEqual(["cor", "rog", "profile"], result["uploadDocumentTypes"])
 
     def test_renewal_banner_clears_after_applicable_documents_are_approved(self):
         rows = [
@@ -257,7 +257,7 @@ class StudentDocumentReviewTests(unittest.TestCase):
         self.assertEqual("superseded", update.call_args_list[0].args[2]["status"])
         self.assertEqual(("student_profile_revisions", "revision-old"), update.call_args_list[1].args[:2])
 
-    def test_admin_queue_returns_one_latest_profile_and_keeps_only_replacement_documents(self):
+    def test_admin_queue_returns_only_one_latest_profile_per_student(self):
         old_profile = {
             "id": "profile-old", "studentId": "student-1", "documentType": "profile",
             "status": "approved", "version": 1, "submittedAt": "2026-09-01T00:00:00Z",
@@ -281,8 +281,21 @@ class StudentDocumentReviewTests(unittest.TestCase):
                 patch.object(service, "_policy", return_value={"corMode": "cor_only", "manualReviewEnabled": True}):
             result = service.list_document_review_queue(object())
 
-        self.assertEqual({"cor-1", "profile-new"}, {item["id"] for item in result["submissions"]})
+        self.assertEqual({"profile-new"}, {item["id"] for item in result["submissions"]})
         self.assertEqual(1, sum(item["documentType"] == "profile" for item in result["submissions"]))
+
+    def test_active_account_replacement_cannot_be_manually_reviewed(self):
+        submission = {
+            "studentId": "student-1", "documentType": "cor", "status": "pending",
+        }
+        with patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"})), \
+                patch.object(service, "supabase_document_get", return_value={"row": {"id": "cor-1"}, "data": submission}), \
+                patch.object(service, "supabase_document_update") as update:
+            with self.assertRaises(HTTPException) as raised:
+                service.review_document_submission(object(), "cor-1", {"decision": "approved"})
+        self.assertEqual(409, raised.exception.status_code)
+        self.assertEqual("document_review_not_required", raised.exception.detail)
+        update.assert_not_called()
 
     def test_profile_status_filter_is_applied_after_latest_selection(self):
         rows = [
@@ -362,6 +375,53 @@ class StudentDocumentReviewTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as raised:
                 service.update_document_policy(object(), {"manualReviewEnabled": "no"})
         self.assertEqual(422, raised.exception.status_code)
+
+
+class StudentDocumentSubmissionPolicyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_valid_cor_is_system_approved_even_when_manual_account_review_is_enabled(self):
+        upload = Mock()
+        upload.filename = "cor.pdf"
+        upload.content_type = "application/pdf"
+        upload.read = AsyncMock(return_value=b"pdf")
+        approved = {
+            "studentId": "student-1", "documentType": "cor", "status": "approved",
+        }
+        with patch.object(service, "_student_id", return_value="student-1"), \
+                patch.object(service, "_require_student", return_value={"year": "2"}), \
+                patch.object(service, "_cycle", return_value=("2026-2027-1ST", "1ST")), \
+                patch.object(service, "_requirements", return_value={"corMode": "cor_only", "rogRequired": True}), \
+                patch.object(service, "parse_pdf_document", return_value={"isValidCorDocument": True, "documentTitle": "Certificate of Registration"}), \
+                patch.object(service, "_data_rows", return_value=[]), \
+                patch.object(service, "_store_bytes", return_value={"bucket": "student-documents", "path": "cor.pdf", "type": "application/pdf"}), \
+                patch.object(service, "supabase_document_upsert", return_value={"ok": True}), \
+                patch.object(service, "supabase_document_update", return_value={"ok": True}), \
+                patch.object(service, "_system_approve_submission", return_value=approved) as system_approve:
+            result = await service.upload_student_document(object(), "cor", upload)
+
+        self.assertEqual("approved", result["submission"]["status"])
+        system_approve.assert_called_once()
+
+    def test_profile_submission_never_uses_automatic_document_policy(self):
+        student = {"year": "2"}
+        with patch.object(service, "_student_id", return_value="student-1"), \
+                patch.object(service, "_require_student", return_value=student), \
+                patch.object(service, "_cycle", return_value=("2026-2027-1ST", "1ST")), \
+                patch.object(service, "_merge_profile_input", return_value={"profile": "valid"}), \
+                patch.object(service, "_validate_profile"), \
+                patch.object(service, "_decode_signature", return_value=b"signature"), \
+                patch.object(service, "_data_rows", side_effect=[[], []]), \
+                patch.object(service, "_store_bytes", return_value={"bucket": "student-documents", "path": "profile.pdf", "type": "application/pdf"}), \
+                patch.object(service, "_profile_pdf", return_value=b"pdf"), \
+                patch.object(service, "_requirements", return_value={"rogRequired": True}), \
+                patch.object(service, "supabase_document_upsert", return_value={"ok": True}), \
+                patch.object(service, "supabase_document_update", return_value={"ok": True}), \
+                patch.object(service, "_sync_verification", return_value={}), \
+                patch.object(service, "_notify_once"), \
+                patch.object(service, "_system_approve_submission") as system_approve:
+            result = service.submit_student_profile(object(), {"signatureDataUrl": "signature"})
+
+        self.assertEqual("pending", result["submission"]["status"])
+        system_approve.assert_not_called()
 
 
 if __name__ == "__main__":

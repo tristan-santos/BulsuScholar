@@ -796,7 +796,6 @@ def _signup_submission_records(student_id: str, batch: dict[str, Any]) -> tuple[
     cycle = str(batch.get("academicCycle") or get_current_semester_tag())
     year = str(batch.get("year") or "")
     manual_review = batch.get("manualReviewEnabled") is not False
-    status = "pending" if manual_review else "approved"
     now = utc_now_iso()
     requirements = {
         "academicCycle": cycle,
@@ -821,6 +820,9 @@ def _signup_submission_records(student_id: str, batch: dict[str, Any]) -> tuple[
                 verification["rog"] = {"status": "exempt", "exemptionReason": "first_year_first_semester"}
             continue
         submission_id = f"signup_document_{batch['id']}_{document_type}"
+        # COR and ROG have already passed the signup parser. Identity remains a
+        # manual Pending Account check when manual account review is enabled.
+        status = "pending" if manual_review and document_type == "identity" else "approved"
         submission = {
             "studentId": student_id,
             "academicCycle": cycle,
@@ -838,7 +840,7 @@ def _signup_submission_records(student_id: str, batch: dict[str, Any]) -> tuple[
             "updatedAt": now,
         }
         if status == "approved":
-            submission.update({"reviewedBy": "system", "reviewedAt": now, "reviewNotes": "Automatically approved under the active document policy."})
+            submission.update({"reviewedBy": "system", "reviewedAt": now, "reviewNotes": "Automatically approved after document validation.", "completionSource": "automatic_document_validation"})
         records.append((submission_id, submission))
         file_summary = {
             "url": f"/student/profile/documents/{submission_id}/content",
@@ -944,7 +946,8 @@ def finalize_student_signup(payload: dict[str, Any]) -> dict[str, Any]:
                 "reviewerRole": "system",
                 "decision": "approved",
                 "reason": "",
-                "notes": "Automatically approved under the active document policy.",
+                "notes": "Automatically approved after document validation.",
+                "completionSource": "automatic_document_validation",
                 "createdAt": submission.get("reviewedAt"),
             }, merge=False)
             create_log({

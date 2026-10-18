@@ -42,6 +42,7 @@ class SignupConfirmationTests(unittest.TestCase):
         self.assertTrue(saved["isPending"])
         self.assertIsNone(saved["validatedAt"])
         self.assertEqual("government_id", saved["schoolIdFile"]["documentKind"])
+        self.assertEqual("approved", saved["documentVerification"]["cor"]["status"])
         self.assertEqual("pending", saved["documentVerification"]["identity"]["status"])
         self.assertTrue(saved["confirmationEmailLastSentAt"])
 

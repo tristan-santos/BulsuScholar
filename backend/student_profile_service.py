@@ -169,7 +169,8 @@ def _document_renewal_summary(
     required_types = ["cor"]
     if requirements.get("rogRequired"):
         required_types.append("rog")
-    required_types.extend(["identity", "profile"])
+    # Identity is verified during account activation and is not renewed each cycle.
+    required_types.append("profile")
 
     previous_rows = [
         item for item in rows
@@ -517,6 +518,13 @@ def _notify_once(student_id: str, cycle: str, event_key: str, title: str, messag
 def _verification_summary(student_id: str, cycle: str, requirements: dict[str, Any]) -> dict[str, Any]:
     rows = _data_rows("student_document_submissions", {"data->>studentId": student_id, "data->>academicCycle": cycle})
     latest = _latest_by_type(rows)
+    if "identity" not in latest:
+        identity_rows = _data_rows("student_document_submissions", {
+            "data->>studentId": student_id, "data->>documentType": "identity",
+        }, limit=1000)
+        latest_identity = _latest_by_type(identity_rows).get("identity")
+        if latest_identity:
+            latest["identity"] = latest_identity
     summary: dict[str, Any] = {"academicCycle": cycle, "requirements": requirements}
     for document_type in ("cor", "rog", "identity", "profile"):
         row = latest.get(document_type) or {}
@@ -676,6 +684,12 @@ def get_student_profile_workspace(request: Request) -> dict[str, Any]:
     draft = _merge_profile_input(student, draft_record.get("data") or {}) if draft_record.get("row") else _seed_profile(student)
     all_submissions = _data_rows("student_document_submissions", {"data->>studentId": student_id}, limit=1000)
     submissions = [item for item in all_submissions if str(item.get("academicCycle") or "") == cycle]
+    if not any(item.get("documentType") == "identity" for item in submissions):
+        latest_identity = _latest_by_type([
+            item for item in all_submissions if item.get("documentType") == "identity"
+        ]).get("identity")
+        if latest_identity:
+            submissions.append(latest_identity)
     revisions = _data_rows("student_profile_revisions", {"data->>studentId": student_id}, limit=100)
     summary = _sync_verification(student_id, student, cycle, semester)
     return {
@@ -785,15 +799,15 @@ def _system_approve_submission(submission_id: str, submission: dict[str, Any], s
     update = {
         "status": "approved", "rejectionReason": "", "reviewNotes": "",
         "fieldErrors": {}, "reviewedBy": "system", "reviewedAt": reviewed_at,
-        "updatedAt": reviewed_at, "completionSource": "automatic_document_policy",
+        "updatedAt": reviewed_at, "completionSource": "automatic_document_validation",
     }
     if not supabase_document_update("student_document_submissions", submission_id, update).get("ok"):
         raise HTTPException(status_code=503, detail="automatic_document_review_failed")
     supabase_document_upsert("student_document_reviews", f"review_{submission_id}_system", {
         "submissionId": submission_id, "studentId": submission.get("studentId"),
         "reviewerId": "system", "reviewerRole": "system", "decision": "approved",
-        "reason": "", "notes": "Automatically approved under the active document policy.",
-        "fieldErrors": {}, "completionSource": "automatic_document_policy", "createdAt": reviewed_at,
+        "reason": "", "notes": "Automatically approved after document validation.",
+        "fieldErrors": {}, "completionSource": "automatic_document_validation", "createdAt": reviewed_at,
     }, merge=False)
     if submission.get("profileRevisionId"):
         supabase_document_update("student_profile_revisions", str(submission["profileRevisionId"]), update)
@@ -858,12 +872,8 @@ def submit_student_profile(request: Request, payload: dict[str, Any]) -> dict[st
         raise HTTPException(status_code=503, detail="profile_submission_failed")
     _supersede_pending_profile_submissions(prior_profile_submissions, submission_id)
     supabase_document_update("student_profile_drafts", student_id, {"status": "submitted", "submittedRevisionId": revision_id})
-    if not _policy()["manualReviewEnabled"]:
-        submission = _system_approve_submission(submission_id, submission, student)
-        revision = {**revision, "status": "approved", "reviewedBy": "system"}
-    else:
-        _sync_verification(student_id, student, cycle, semester)
-        _notify_once(student_id, cycle, f"profile:{submission_id}:pending", "Profile submitted", "Your Student Application Profile is waiting for document review.", "/student-dashboard/profile#profile")
+    _sync_verification(student_id, student, cycle, semester)
+    _notify_once(student_id, cycle, f"profile:{submission_id}:pending", "Profile submitted", "Your Student Application Profile is waiting for document review.", "/student-dashboard/profile#profile")
     return {"ok": True, "revision": {"id": revision_id, **revision}, "submission": {"id": submission_id, **submission}}
 
 
@@ -928,41 +938,25 @@ async def upload_student_document(request: Request, document_type: str, file: Up
         "documentKind": submission["documentKind"],
     }
     supabase_document_update("students", student_id, {compatibility_key: compatibility, "updatedAt": _now()})
-    if not _policy()["manualReviewEnabled"]:
-        submission = _system_approve_submission(submission_id, submission, student)
-    else:
-        _sync_verification(student_id, student, cycle, semester)
-        _notify_once(student_id, cycle, f"{document_type}:{submission_id}:pending", f"{document_type.upper()} submitted", "Your document is waiting for review.", f"/student-dashboard/profile#{document_type}")
+    # COR/ROG already passed the authoritative PDF parser above. Active-account
+    # identity replacements are optional and do not return to the admin queue.
+    submission = _system_approve_submission(submission_id, submission, student)
     return {"ok": True, "submission": {"id": submission_id, **submission}}
 
 
 def list_document_review_queue(request: Request, status: str = "", document_type: str = "", academic_cycle: str = "") -> dict[str, Any]:
     _reviewer(request)
-    filters: dict[str, Any] = {}
-    if status: filters["data->>status"] = status
-    if academic_cycle: filters["data->>academicCycle"] = academic_cycle
+    if document_type not in {"", "profile"}:
+        return {"ok": True, "submissions": [], "policy": _policy()}
 
-    if document_type == "profile":
-        submissions: list[dict[str, Any]] = []
-    else:
-        if document_type:
-            filters["data->>documentType"] = document_type
-        submissions = [
-            item for item in _data_rows("student_document_submissions", filters, limit=1000)
-            if item.get("documentType") != "profile"
-            and item.get("source") != "student_signup"
-            and not item.get("signupBatchId")
-            and not str(item.get("id") or "").startswith("signup_document_")
-        ]
-
-    if document_type in {"", "profile"}:
-        profile_rows = _data_rows("student_document_submissions", {"data->>documentType": "profile"}, limit=5000)
-        for item in _latest_profile_submissions(profile_rows).values():
-            if status and item.get("status") != status:
-                continue
-            if academic_cycle and item.get("academicCycle") != academic_cycle:
-                continue
-            submissions.append(item)
+    submissions: list[dict[str, Any]] = []
+    profile_rows = _data_rows("student_document_submissions", {"data->>documentType": "profile"}, limit=5000)
+    for item in _latest_profile_submissions(profile_rows).values():
+        if status and item.get("status") != status:
+            continue
+        if academic_cycle and item.get("academicCycle") != academic_cycle:
+            continue
+        submissions.append(item)
     students: dict[str, dict[str, Any]] = {}
     for item in submissions:
         student_id = str(item.get("studentId") or "")
@@ -990,6 +984,13 @@ def review_document_submission(request: Request, submission_id: str, payload: di
         raise HTTPException(status_code=404, detail="document_submission_not_found")
     submission = current.get("data") or {}
     submission["id"] = submission_id
+    is_signup_submission = (
+        submission.get("source") == "student_signup"
+        or bool(submission.get("signupBatchId"))
+        or submission_id.startswith("signup_document_")
+    )
+    if submission.get("documentType") != "profile" and not is_signup_submission:
+        raise HTTPException(status_code=409, detail="document_review_not_required")
     if submission.get("documentType") == "profile":
         profile_rows = _data_rows("student_document_submissions", {
             "data->>studentId": str(submission.get("studentId") or ""),

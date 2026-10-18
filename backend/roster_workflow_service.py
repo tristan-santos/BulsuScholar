@@ -53,8 +53,8 @@ MATERIAL_REQUEST_MESSAGES = {
     "grantor_archived": "The grantor or scholarship is no longer available.",
     "announcement_not_open_for_applications": "The scholarship is no longer available for this application.",
     "grade_not_eligible": "Your current GWA does not meet this scholarship requirement.",
-    "document_review_required": "Upload all required documents and wait for their approval.",
-    "document_versions_changed": "A document changed after review and its current version must be approved.",
+    "document_review_required": "Upload a valid current-semester COR and applicable ROG.",
+    "document_versions_changed": "The approved Student Application Profile has not been attached to this application.",
     "profile_required": "Complete and submit your Student Application Profile.",
     "application_requirement_pending": "An application-specific requirement is missing or awaiting review.",
     "slot_reservation_missing": "This application no longer has a reserved slot. Contact the Scholarship Office.",
@@ -66,7 +66,9 @@ MATERIAL_REQUEST_MESSAGES = {
 def _material_blocker(reason: str) -> dict[str, str]:
     route = "/student-dashboard/scholarships"
     action = "View Application"
-    if reason in {"document_review_required", "document_versions_changed"}:
+    if reason == "document_review_required":
+        route, action = "/student-dashboard/profile", "Upload Documents"
+    elif reason == "document_versions_changed":
         route, action = "/student-dashboard/profile", "Wait for Review"
     elif reason == "profile_required":
         route, action = "/student-dashboard/profile/form", "Complete Profile"

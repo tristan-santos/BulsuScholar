@@ -482,8 +482,9 @@ export default function StudentScholarshipsPage() {
 	const [isMutating, setIsMutating] = useState(false)
 	const [confirmTarget, setConfirmTarget] = useState(null)
 	const [materialPreflight, setMaterialPreflight] = useState(null)
-	const [materialPreflightBusy, setMaterialPreflightBusy] = useState(false)
 	const [materialPreflightError, setMaterialPreflightError] = useState("")
+	const [materialReadinessByApplication, setMaterialReadinessByApplication] = useState({})
+	const [materialRequestPhase, setMaterialRequestPhase] = useState("idle")
 	const [documentUploadPrompt, setDocumentUploadPrompt] = useState(null)
 	const [expenseModalTarget, setExpenseModalTarget] = useState(null)
 	const [studentApplications, setStudentApplications] = useState([])
@@ -513,35 +514,6 @@ export default function StudentScholarshipsPage() {
 	const [waitlistBusy, setWaitlistBusy] = useState("")
 	const [signedSoeBusy, setSignedSoeBusy] = useState("")
 
-	useEffect(() => {
-		if (!confirmTarget || !SCHOLARSHIP_CHOICE_ENABLED) {
-			setMaterialPreflight(null)
-			setMaterialPreflightError("")
-			return undefined
-		}
-		const applicationId = confirmTarget.applicationId || studentApplications.find((app) =>
-			app.applicationNumber === confirmTarget.applicationNumber && app.grantorId === confirmTarget.grantorId)?.id
-		if (!applicationId) {
-			setMaterialPreflight(null)
-			setMaterialPreflightError("This application could not be matched. Reload the page and try again.")
-			return undefined
-		}
-		let active = true
-		setMaterialPreflightBusy(true)
-		setMaterialPreflight(null)
-		setMaterialPreflightError("")
-		preflightScholarshipMaterialsWorkflow({ applicationId })
-			.then((result) => {
-				if (active) setMaterialPreflight(result)
-			})
-			.catch((error) => {
-				if (active) setMaterialPreflightError(error.message || "Readiness could not be checked.")
-			})
-			.finally(() => {
-				if (active) setMaterialPreflightBusy(false)
-			})
-		return () => { active = false }
-	}, [confirmTarget, studentApplications])
 	const { theme, setTheme } = useThemeMode()
 	const userMenuRef = useRef(null)
 	const forcedLogoutRef = useRef(false)
@@ -549,6 +521,8 @@ export default function StudentScholarshipsPage() {
 	const recommendationRequestKeyRef = useRef("")
 	const invitationRouteActionRef = useRef("")
 	const acceptInvitationRef = useRef(null)
+	const materialPreflightSequenceRef = useRef(new Map())
+	const materialPreflightRequestedRef = useRef(new Map())
 	const refreshWaitlist = useCallback(async () => {
 		if (!userId) return
 		try {
@@ -1463,6 +1437,73 @@ export default function StudentScholarshipsPage() {
 		},
 		[getLatestMaterialRequest, getLatestSoeDownloadForScholarship, isValidated, user],
 	)
+	const resolveMaterialApplicationId = useCallback((entry = null) => {
+		if (!entry) return ""
+		if (entry.applicationId) return String(entry.applicationId)
+		return String(studentApplications.find((application) =>
+			application.applicationNumber === entry.applicationNumber &&
+			application.grantorId === entry.grantorId)?.id || "")
+	}, [studentApplications])
+	const materialPreflightCandidates = useMemo(() => {
+		if (!SCHOLARSHIP_CHOICE_ENABLED) return []
+		const candidates = new Map()
+		for (const entry of [...studentApplications, ...scholarships]) {
+			const applicationId = resolveMaterialApplicationId(entry)
+			if (!applicationId || !getTrackingProgressForScholarship(entry).canRequestMaterials) continue
+			const tracking = entry?.tracking || {}
+			const fingerprint = JSON.stringify([
+				entry?.updatedAt || entry?.submittedAt || "",
+				entry?.status || "",
+				tracking.currentStepId || "",
+				tracking.updatedAt || "",
+				tracking.completedStepIds || [],
+				entry?.applicationFormFile?.profileRevisionId || "",
+				entry?.applicationFormFile?.submissionId || "",
+			])
+			candidates.set(applicationId, { applicationId, fingerprint })
+		}
+		return [...candidates.values()].sort((left, right) => left.applicationId.localeCompare(right.applicationId))
+	}, [getTrackingProgressForScholarship, resolveMaterialApplicationId, scholarships, studentApplications])
+
+	useEffect(() => {
+		for (const { applicationId, fingerprint } of materialPreflightCandidates) {
+			if (materialPreflightRequestedRef.current.get(applicationId) === fingerprint) continue
+			materialPreflightRequestedRef.current.set(applicationId, fingerprint)
+			setMaterialReadinessByApplication((current) => ({
+				...current,
+				[applicationId]: { status: "loading", data: null, error: "" },
+			}))
+			const sequence = (materialPreflightSequenceRef.current.get(applicationId) || 0) + 1
+			materialPreflightSequenceRef.current.set(applicationId, sequence)
+			preflightScholarshipMaterialsWorkflow({ applicationId })
+				.then((result) => {
+					if (materialPreflightSequenceRef.current.get(applicationId) !== sequence) return
+					setMaterialReadinessByApplication((current) => ({
+						...current,
+						[applicationId]: {
+							status: result.eligible || result.existingRequest ? "ready" : "blocked",
+							data: result,
+							error: "",
+						},
+					}))
+				})
+				.catch((error) => {
+					if (materialPreflightSequenceRef.current.get(applicationId) !== sequence) return
+					setMaterialReadinessByApplication((current) => ({
+						...current,
+						[applicationId]: { status: "error", data: null, error: error.message || "Readiness could not be checked." },
+					}))
+				})
+		}
+	}, [materialPreflightCandidates])
+
+	const closeMaterialConfirmation = useCallback(() => {
+		if (materialRequestPhase === "requesting") return
+		setConfirmTarget(null)
+		setMaterialPreflight(null)
+		setMaterialPreflightError("")
+		setMaterialRequestPhase("idle")
+	}, [materialRequestPhase])
 
 	const buildTrackingSummary = useCallback((kwspEntry) => {
 		const kwspCatalogItem = scholarshipCatalog.find((item) => item.providerType === kwspEntry?.providerType) || null
@@ -2191,7 +2232,7 @@ export default function StudentScholarshipsPage() {
 
 	const chooseScholarship = async (target) => {
 		if (SCHOLARSHIP_CHOICE_ENABLED) {
-			if (!materialPreflight?.eligible && !materialPreflight?.existingRequest) return
+			if (materialRequestPhase !== "ready" || (!materialPreflight?.eligible && !materialPreflight?.existingRequest)) return
 			await requestMaterial(target, "soe")
 			return
 		}
@@ -2279,18 +2320,20 @@ export default function StudentScholarshipsPage() {
 		if (!user || !userId || isMutating || !target) return
 		if (isScholarshipActionBlocked()) return
 		const materialConfig = getMaterialRequestType(materialKey)
+		if (SCHOLARSHIP_CHOICE_ENABLED) setMaterialRequestPhase("requesting")
 		setIsMutating(true)
 		try {
 			if (SCHOLARSHIP_CHOICE_ENABLED) {
-				const applicationId = target.applicationId || studentApplications.find((app) =>
-					app.applicationNumber === target.applicationNumber && app.grantorId === target.grantorId)?.id
+				const applicationId = resolveMaterialApplicationId(target)
 				const result = await requestScholarshipMaterialsWorkflow({ applicationId })
 				setUser((prev) => ({ ...(prev || {}), ...result.student }))
 				if (result.materialRequest) setStudentSoeRequests((prev) => [
 					normalizeMaterialRequest(result.materialRequest), ...prev.filter((item) => item.id !== result.materialRequest.id),
 				])
+				setMaterialRequestPhase("complete")
 				toast.success("Scholarship selected and materials request submitted.")
 				setConfirmTarget(null)
+				setMaterialPreflight(null)
 				return
 			}
 			const selected = scholarships.find((item) => item.id === target.id)
@@ -2484,8 +2527,8 @@ export default function StudentScholarshipsPage() {
 		} catch (error) {
 			const messages = {
 				grade_not_eligible: "Your current GWA does not meet this scholarship's requirement.",
-				document_review_required: "Your applicable profile documents must be approved before requesting materials.",
-				document_versions_changed: "A document changed after review. Wait for the corrected version to be approved.",
+				document_review_required: "Upload a valid current-semester COR and applicable ROG before requesting materials.",
+				document_versions_changed: "The approved Student Application Profile is not attached to this application yet.",
 				application_requirement_pending: "An application-specific requirement is missing or still waiting for review.",
 				slot_reservation_missing: "This application no longer has a reserved slot. Contact the Scholarship Office.",
 				roster_assignment_conflict: "The Scholarship Office must resolve your roster conflict before this application can continue.",
@@ -2499,6 +2542,20 @@ export default function StudentScholarshipsPage() {
 					eligible: false,
 					blockers,
 				}))
+			}
+			if (SCHOLARSHIP_CHOICE_ENABLED) {
+				const applicationId = resolveMaterialApplicationId(target)
+				setMaterialRequestPhase("blocked")
+				if (applicationId) {
+					setMaterialReadinessByApplication((current) => ({
+						...current,
+						[applicationId]: {
+							status: "blocked",
+							data: { ...(current[applicationId]?.data || {}), eligible: false, blockers },
+							error: error.message || "The request is no longer eligible.",
+						},
+					}))
+				}
 			}
 			if (!messages[error?.reason]) console.error(`Failed to request ${materialKey}:`, error)
 			toast.error(messages[error?.reason] || error.message || `${materialConfig?.label || "Material"} request failed. Please try again.`)
@@ -2516,6 +2573,15 @@ export default function StudentScholarshipsPage() {
 			return
 		}
 		if (SCHOLARSHIP_CHOICE_ENABLED) {
+			const applicationId = resolveMaterialApplicationId(target)
+			const readiness = materialReadinessByApplication[applicationId]
+			if (readiness?.status !== "ready" || (!readiness.data?.eligible && !readiness.data?.existingRequest)) {
+				toast.info(readiness?.error || "Material request eligibility is still being prepared.")
+				return
+			}
+			setMaterialPreflight(readiness.data)
+			setMaterialPreflightError("")
+			setMaterialRequestPhase("ready")
 			setConfirmTarget(target)
 			return
 		}
@@ -3410,6 +3476,12 @@ export default function StudentScholarshipsPage() {
 											const soeDownloadGate = getMaterialDownloadGate(entry, "soe")
 											const applicationFormSource = getApplicationFormSource(entry, getLatestMaterialRequest(entry))
 											const applicationFormGate = getMaterialDownloadGate(entry, "application_form")
+											const entryMaterialApplicationId = resolveMaterialApplicationId(entry)
+											const entryMaterialReadiness = materialReadinessByApplication[entryMaterialApplicationId]
+											const entryMaterialReady = !SCHOLARSHIP_CHOICE_ENABLED || (
+												entryMaterialReadiness?.status === "ready" &&
+												(entryMaterialReadiness.data?.eligible || entryMaterialReadiness.data?.existingRequest)
+											)
 											const materialRequestButtonLabel = soeRequestButtonState.label === "Request SOE Again"
 												? "Request Materials Again"
 												: soeRequestButtonState.label === "Request SOE"
@@ -3449,6 +3521,7 @@ export default function StudentScholarshipsPage() {
 																entry.adminBlocked === true ||
 																hasScholarshipActionBlock ||
 																!entryTrackingProgress.canRequestMaterials ||
+																		!entryMaterialReady ||
 																soeRequestButtonState.disabled
 															}
 															onClick={() => handleRequestMaterial(entry, "soe")}
@@ -3464,7 +3537,9 @@ export default function StudentScholarshipsPage() {
 																	? "Compliance Hold"
 																	: entry.adminBlocked === true
 																		? "Blocked by Office"
-																			: materialRequestButtonLabel}
+																			: SCHOLARSHIP_CHOICE_ENABLED && entryMaterialReadiness?.status === "loading"
+																				? "Checking eligibility..."
+																				: materialRequestButtonLabel}
 														</button>
 														<button
 															type="button"
@@ -3593,6 +3668,12 @@ export default function StudentScholarshipsPage() {
 										const soeDownloadGate = getMaterialDownloadGate(entry, "soe")
 										const applicationFormSource = getApplicationFormSource(entry, getLatestMaterialRequest(entry))
 										const applicationFormGate = getMaterialDownloadGate(entry, "application_form")
+										const entryMaterialApplicationId = resolveMaterialApplicationId(entry)
+										const entryMaterialReadiness = materialReadinessByApplication[entryMaterialApplicationId]
+										const entryMaterialReady = !SCHOLARSHIP_CHOICE_ENABLED || (
+											entryMaterialReadiness?.status === "ready" &&
+											(entryMaterialReadiness.data?.eligible || entryMaterialReadiness.data?.existingRequest)
+										)
 										const materialRequestButtonLabel = soeRequestButtonState.label === "Request SOE Again"
 											? "Request Materials Again"
 											: soeRequestButtonState.label === "Request SOE"
@@ -3674,9 +3755,11 @@ export default function StudentScholarshipsPage() {
 														entryFrozen ||
 																studentAccessState.isPortalAccessBlocked ||
 																studentAccessState.soeComplianceBlocked ||
+																	!entryTrackingProgress.canRequestMaterials ||
+																	!entryMaterialReady ||
 																(entry.adminBlocked === true && !canResolveMultipleScholarshipConflict)
 															}
-															onClick={() => setConfirmTarget(entry)}
+																onClick={() => handleRequestMaterial(entry, "soe")}
 														>
 															<HiOutlineCheckCircle />
 															{studentAccessState.isPortalAccessBlocked
@@ -3689,7 +3772,9 @@ export default function StudentScholarshipsPage() {
 																? "Compliance Hold"
 																: entry.adminBlocked === true && !canResolveMultipleScholarshipConflict
 																? "Blocked by Office"
-																: "Choose Scholarship"}
+																		: entryMaterialReadiness?.status === "loading" || !entryMaterialReadiness
+																			? "Checking eligibility..."
+																			: "Choose Scholarship"}
 														</button>
 													) : (
 														<>
@@ -3703,6 +3788,7 @@ export default function StudentScholarshipsPage() {
 																	entry.adminBlocked === true ||
 																	hasScholarshipActionBlock ||
 																	!entryTrackingProgress.canRequestMaterials ||
+																		!entryMaterialReady ||
 																	soeRequestButtonState.disabled
 																}
 																onClick={() => handleRequestMaterial(entry, "soe")}
@@ -3718,7 +3804,9 @@ export default function StudentScholarshipsPage() {
 																		? "Compliance Hold"
 																		: entry.adminBlocked === true
 																			? "Blocked by Office"
-																			: materialRequestButtonLabel}
+																			: SCHOLARSHIP_CHOICE_ENABLED && (entryMaterialReadiness?.status === "loading" || !entryMaterialReadiness)
+																				? "Checking eligibility..."
+																				: materialRequestButtonLabel}
 															</button>
 															<button
 																type="button"
@@ -3982,7 +4070,7 @@ export default function StudentScholarshipsPage() {
 			) : null}
 
 			{confirmTarget && (
-				<div className="student-soe-modal-backdrop" role="presentation" onClick={() => setConfirmTarget(null)}>
+				<div className="student-soe-modal-backdrop" role="presentation" onClick={closeMaterialConfirmation}>
 					<div
 						className="student-soe-modal"
 						role="dialog"
@@ -3993,7 +4081,8 @@ export default function StudentScholarshipsPage() {
 						<button
 							type="button"
 							className="student-soe-modal-close"
-							onClick={() => setConfirmTarget(null)}
+							onClick={closeMaterialConfirmation}
+							disabled={materialRequestPhase === "requesting"}
 							aria-label="Close scholarship confirmation"
 							title="Close"
 						>
@@ -4005,19 +4094,9 @@ export default function StudentScholarshipsPage() {
 							<strong>{materialPreflight?.scholarship?.name || confirmTarget.name}</strong>
 							<span>{materialPreflight?.scholarship?.grantorName || confirmTarget.grantorName || confirmTarget.provider}</span>
 						</div>
-						{materialPreflightBusy ? <p className="student-material-preflight-loading">Checking application readiness...</p> : null}
 						{materialPreflightError ? <div className="student-material-blocker"><HiOutlineExclamation /><p>{materialPreflightError}</p></div> : null}
 						{materialPreflight ? (
 							<>
-								<div className="student-material-readiness">
-									<h4>Readiness checklist</h4>
-									{(materialPreflight.checklist || []).map((item) => (
-										<div key={item.code} className={item.ready ? "is-ready" : "is-blocked"}>
-											{item.ready ? <HiCheck /> : <HiOutlineExclamation />}
-											<span>{item.label}</span>
-										</div>
-									))}
-								</div>
 								{(materialPreflight.blockers || []).map((blocker) => (
 									<div className="student-material-blocker" key={blocker.code}>
 										<HiOutlineExclamation />
@@ -4033,14 +4112,14 @@ export default function StudentScholarshipsPage() {
 						) : null}
 						<div className="student-soe-modal-actions">
 							<button type="button" className="student-mini-btn student-mini-btn--secondary"
-								disabled={isMutating} onClick={() => setConfirmTarget(null)}>Cancel</button>
+								disabled={materialRequestPhase === "requesting"} onClick={closeMaterialConfirmation}>Cancel</button>
 							<button
 								type="button"
 								className="student-program-apply-btn student-mini-btn student-mini-btn--primary"
 								onClick={() => chooseScholarship(confirmTarget)}
-								disabled={isMutating || materialPreflightBusy || (!materialPreflight?.eligible && !materialPreflight?.existingRequest)}
+								disabled={materialRequestPhase !== "ready" || (!materialPreflight?.eligible && !materialPreflight?.existingRequest)}
 							>
-								Request Materials
+								{materialRequestPhase === "requesting" ? "Requesting..." : "Request Materials"}
 							</button>
 						</div>
 					</div>

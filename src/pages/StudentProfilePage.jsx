@@ -493,7 +493,7 @@ export default function StudentProfilePage({ formMode = false }) {
 
 						<section id="document-vault" tabIndex="-1" className="student-profile-section-card student-profile-section-card--full student-document-vault">
 							<h2>Document Vault</h2>
-							<p className="student-profile-vault-sub">Upload and review COR, ROG, {submittedIdentityLabel}, and Student Application Profile records.</p>
+							<p className="student-profile-vault-sub">COR and ROG are validated automatically. Only the Student Application Profile waits for administrator review.</p>
 							<div className="student-vault-grid">
 								<article className="student-vault-card" id="cor">
 									<div><h3>COR</h3><p>{cycleDocumentText(latestSubmissions.cor, workspace.verification?.cor)}</p>{workspace.verification?.cor?.reason ? <small className="student-vault-reason">{workspace.verification.cor.reason}</small> : null}</div>

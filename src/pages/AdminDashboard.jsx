@@ -1226,7 +1226,6 @@ export default function AdminDashboard() {
 	const [pendingConfirmationNow, setPendingConfirmationNow] = useState(Date.now())
 	const [documentReviewLoading, setDocumentReviewLoading] = useState(false)
 	const [documentReviewFilter, setDocumentReviewFilter] = useState("pending")
-	const [documentReviewType, setDocumentReviewType] = useState("")
 	const [documentReviewNotes, setDocumentReviewNotes] = useState({})
 	const [documentReviewFieldErrors, setDocumentReviewFieldErrors] = useState({})
 	const [documentReviewRejectId, setDocumentReviewRejectId] = useState("")
@@ -8233,7 +8232,7 @@ export default function AdminDashboard() {
 		try {
 			const result = await getDocumentReviewQueue({
 				status: documentReviewFilter,
-				document_type: documentReviewType,
+				document_type: "profile",
 			})
 			setDocumentReviewRows(result.submissions || [])
 			setDocumentPolicyMode(result.policy?.corMode || "cor_only")
@@ -8244,7 +8243,7 @@ export default function AdminDashboard() {
 		} finally {
 			setDocumentReviewLoading(false)
 		}
-	}, [documentReviewFilter, documentReviewType])
+	}, [documentReviewFilter])
 
 	const loadPendingStudentAccounts = useCallback(async () => {
 		if (adminIdentityRef.current?.role !== "full_admin") return
@@ -8417,7 +8416,7 @@ export default function AdminDashboard() {
 		setManualDocumentReviewEnabled(next)
 		try {
 			await updateDocumentPolicy({ corMode: documentPolicyMode, manualReviewEnabled: next })
-			toast.success(next ? "Manual document review enabled." : "Automatic approval enabled for new validated submissions.")
+			toast.success(next ? "Manual account review enabled." : "Automatic account review enabled for validated signups.")
 		} catch (error) {
 			setManualDocumentReviewEnabled(!next)
 			toast.error(error.message || "Unable to update the review policy.")
@@ -8812,7 +8811,7 @@ export default function AdminDashboard() {
 					) : studentViewTab === "documents" ? (
 						<section className="admin-document-review-workspace">
 							<header className="admin-review-section-head">
-								<div><span className="admin-review-section-kicker">Verification queue</span><h3>Document Review</h3><p>Preview and decide the latest profile and replacement submissions.</p></div>
+								<div><span className="admin-review-section-kicker">Verification queue</span><h3>Document Review</h3><p>Preview and decide the latest Student Application Profile submission for each student.</p></div>
 								<div className="admin-review-section-tools">
 									<span className="admin-review-count">{documentReviewRows.length} matching</span>
 									<button type="button" className="admin-review-refresh" disabled={documentReviewLoading} onClick={loadDocumentReviewQueue} aria-label="Refresh document review queue" title="Refresh document review queue"><HiOutlineRefresh /></button>
@@ -8820,9 +8819,8 @@ export default function AdminDashboard() {
 							</header>
 							<div className="admin-document-review-controls" aria-label="Document review filters">
 								<label>Status<select value={documentReviewFilter} onChange={(event) => setDocumentReviewFilter(event.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="">All statuses</option></select></label>
-								<label>Submission<select value={documentReviewType} onChange={(event) => setDocumentReviewType(event.target.value)}><option value="">All review submissions</option><option value="profile">Application Profile</option><option value="cor">COR replacement</option><option value="rog">ROG replacement</option><option value="identity">Identity replacement</option></select></label>
 								{adminIdentityRef.current?.role === "full_admin" ? <label>COR intake policy<select value={documentPolicyMode} onChange={(event) => saveDocumentPolicyMode(event.target.value)}><option value="cor_only">COR only</option><option value="advising_only">Advising Slip only</option><option value="either">COR or Advising Slip</option></select></label> : null}
-								{adminIdentityRef.current?.role === "full_admin" ? <div className={`admin-document-review-toggle ${manualDocumentReviewEnabled ? "is-on" : "is-off"}`}><span><strong>Manual Review {manualDocumentReviewEnabled ? "ON" : "OFF"}</strong><small>{manualDocumentReviewEnabled ? "Staff approval is required." : "Validated submissions are system-approved."}</small></span><button type="button" className={`grantor-profile-switch ${manualDocumentReviewEnabled ? "active" : ""}`} role="switch" aria-checked={manualDocumentReviewEnabled} aria-label={`${manualDocumentReviewEnabled ? "Disable" : "Enable"} manual document review`} onClick={toggleManualDocumentReview} title={`${manualDocumentReviewEnabled ? "Disable" : "Enable"} manual document review`}><i /></button></div> : null}
+								{adminIdentityRef.current?.role === "full_admin" ? <div className={`admin-document-review-toggle ${manualDocumentReviewEnabled ? "is-on" : "is-off"}`}><span><strong>Manual Account Review {manualDocumentReviewEnabled ? "ON" : "OFF"}</strong><small>{manualDocumentReviewEnabled ? "New accounts wait for staff approval." : "Validated signups activate after email confirmation."}</small></span><button type="button" className={`grantor-profile-switch ${manualDocumentReviewEnabled ? "active" : ""}`} role="switch" aria-checked={manualDocumentReviewEnabled} aria-label={`${manualDocumentReviewEnabled ? "Disable" : "Enable"} manual account review`} onClick={toggleManualDocumentReview} title={`${manualDocumentReviewEnabled ? "Disable" : "Enable"} manual account review`}><i /></button></div> : null}
 							</div>
 							{adminIdentityRef.current?.role === "full_admin" ? <section className={`admin-document-exception ${documentExceptionOpen ? "is-open" : ""}`}><div className="admin-document-exception-summary"><div className="admin-document-exception-icon"><HiOutlineInformationCircle /></div><div><strong>Individual Exception</strong><p>Authorize one student this academic cycle to submit an Advising Slip or an alternate ID when the standard document policy cannot be met.</p></div><button type="button" data-button-variant="neutral" aria-expanded={documentExceptionOpen} onClick={() => setDocumentExceptionOpen((open) => !open)}>{documentExceptionOpen ? "Close" : "Record Individual Exception"}</button></div>{documentExceptionOpen ? <div className="admin-document-exception-form"><label><span>Student ID</span><input placeholder="Enter student ID" value={documentExceptionForm.studentId} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, studentId: event.target.value }))} /></label><label><span>Exception type</span><select value={documentExceptionForm.exceptionType} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, exceptionType: event.target.value }))}><option value="advising_slip">Allow Advising Slip</option><option value="lost_student_id">Allow alternate identity document</option></select></label><label><span>Required reason</span><input placeholder="Explain why this exception is needed" value={documentExceptionForm.reason} onChange={(event) => setDocumentExceptionForm((current) => ({ ...current, reason: event.target.value }))} /></label><button type="button" data-button-variant="positive" onClick={grantDocumentException}><HiOutlineCheckCircle /> Save Exception</button></div> : null}</section> : null}
 							{documentReviewLoading ? <LoadingBars note="Loading document review queue..." /> : documentReviewRows.length === 0 ? (
@@ -8832,7 +8830,7 @@ export default function AdminDashboard() {
 									{documentReviewRows.map((submission, index) => (
 										<article key={submission.id} className={`admin-document-review-card admin-document-review-card--${submission.status}`}>
 											<div className="admin-document-review-order">{index + 1}</div>
-											<div className="admin-document-review-summary"><span>{submission.documentType === "identity" ? ({ student_id: "Student ID", previous_school_id: "Previous-school ID", government_id: "Government ID" }[submission.documentKind] || "Identity document") : String(submission.documentType || "document").replaceAll("_", " ")}</span><h4>{submission.studentName || submission.studentId}</h4><p>{submission.studentId} | {submission.course || "Course unavailable"} | Year {submission.yearLevel || "-"}</p><small>{submission.name || "Uploaded document"} | Version {submission.version || 1} | {submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : ""}</small></div>
+											<div className="admin-document-review-summary"><span>Student Application Profile</span><h4>{submission.studentName || submission.studentId}</h4><p>{submission.studentId} | {submission.course || "Course unavailable"} | Year {submission.yearLevel || "-"}</p><small>{submission.name || "Uploaded document"} | Version {submission.version || 1} | {submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : ""}</small></div>
 											<div className="admin-document-review-actions">
 												<button type="button" data-button-variant="neutral" onClick={() => openVerificationDocument(submission)}><HiOutlineEye /> Preview</button>
 												{submission.status === "pending" ? <><button type="button" data-button-variant="danger" disabled={isBusy} onClick={() => setDocumentReviewRejectId(submission.id)}><HiOutlineXCircle /> Reject</button><button type="button" data-button-variant="positive" disabled={isBusy} onClick={() => decideStudentDocument(submission, "approved")}><HiOutlineCheckCircle /> Approve</button></> : <span className={`admin-document-review-decision admin-document-review-decision--${submission.status}`}>{submission.status}{submission.rejectionReason ? `: ${submission.rejectionReason}` : ""}</span>}
