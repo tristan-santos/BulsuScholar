@@ -233,6 +233,21 @@ class StudentDocumentReviewTests(unittest.TestCase):
         self.assertEqual("student_document_reviews", insert.call_args.args[0])
         self.assertEqual("previewed", insert.call_args.args[1]["decision"])
 
+    @patch.object(service, "supabase_document_insert", return_value={"ok": False, "reason": "schema_error"})
+    @patch.object(service, "_read_storage", return_value=b"image-bytes")
+    @patch.object(service, "_reviewer", return_value=("admin-1", {"role": "full_admin"}))
+    @patch.object(service, "supabase_document_get", return_value={"row": {"id": "signup_document_1"}, "data": {
+        "studentId": "student-1", "documentType": "identity", "source": "student_signup",
+        "name": "identity.jpg", "file": {"type": "image/jpeg"},
+    }})
+    def test_admin_preview_fails_when_audit_cannot_be_saved(self, _get, _reviewer, _read, _insert):
+        request = Mock()
+        request.headers = {"x-portal-actor-id": "admin-1", "x-portal-actor-type": "admin"}
+        with self.assertRaises(HTTPException) as error:
+            service.document_content(request, "signup_document_1", "preview")
+        self.assertEqual(503, error.exception.status_code)
+        self.assertEqual("document_preview_audit_failed", error.exception.detail)
+
     def test_latest_profile_submission_is_selected_globally_across_cycles(self):
         rows = [
             {"id": "old", "studentId": "student-1", "documentType": "profile", "academicCycle": "2025", "version": 9, "submittedAt": "2026-09-01T00:00:00Z"},

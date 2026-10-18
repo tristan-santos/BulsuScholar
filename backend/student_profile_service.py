@@ -1167,7 +1167,7 @@ def document_content(request: Request, submission_id: str, purpose: str = "") ->
     )
     if actor_type == "admin" and purpose == "preview" and is_signup_document:
         previewed_at = _now()
-        supabase_document_insert("student_document_reviews", {
+        preview_result = supabase_document_insert("student_document_reviews", {
             "submissionId": submission_id,
             "studentId": submission.get("studentId"),
             "reviewerId": reviewer_id,
@@ -1177,6 +1177,8 @@ def document_content(request: Request, submission_id: str, purpose: str = "") ->
             "notes": "Document opened in the administrator preview modal.",
             "createdAt": previewed_at,
         })
+        if not preview_result.get("ok"):
+            raise HTTPException(status_code=503, detail="document_preview_audit_failed")
     return Response(content=body, media_type=str((submission.get("file") or {}).get("type") or "application/octet-stream"), headers={"Content-Disposition": f"inline; filename=\"{submission.get('name') or 'document'}\""})
 
 

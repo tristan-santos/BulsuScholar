@@ -8293,7 +8293,7 @@ export default function AdminDashboard() {
 				signup_documents_missing: "This account is missing a required signup document.",
 				confirmed_identity_mismatch: "The confirmed email account does not match this pending student record.",
 			}
-			console.error("[BulsuScholar] Pending account approval failed", {
+			const approvalDiagnostic = {
 				studentId: account.id,
 				accountReviewStatus: account.accountReviewStatus,
 				emailConfirmed: Boolean(account.emailConfirmedAt),
@@ -8310,7 +8310,8 @@ export default function AdminDashboard() {
 				reason: error.reason,
 				message: error.message,
 				serverResponse: error.data,
-			})
+			}
+			console.error("[BulsuScholar] Pending account approval failed\n" + JSON.stringify(approvalDiagnostic, null, 2))
 			toast.error(messages[error.reason] || error.message || "Unable to approve this student account.")
 			await loadPendingStudentAccounts()
 		} finally {
