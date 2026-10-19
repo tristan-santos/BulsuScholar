@@ -8,6 +8,31 @@ from backend import scope_announcement_waitlist_service as service
 
 
 class ScopeAndApplicantTests(unittest.TestCase):
+    def test_scope_save_uses_canonical_region_three_pairs(self):
+        with patch.object(service, "_full_admin", return_value="admin-1"), \
+                patch.object(service, "supabase_document_get", return_value={"ok": True, "data": {"id": "grantor-a"}}), \
+                patch.object(service, "supabase_rpc", return_value={"ok": True, "data": {"policy": {"locations": []}}}) as rpc:
+            service.save_grantor_scope(object(), {
+                "grantorId": "grantor-a", "classification": "private", "enabled": True,
+                "name": "Bulacan", "locations": [{"province": "bulacan", "municipality": "Baliwag"}],
+            })
+        self.assertEqual("save_grantor_scope_policy_v2", rpc.call_args.args[0])
+        self.assertEqual(
+            [{"province": "Bulacan", "municipality": "Baliuag"}],
+            rpc.call_args.args[1]["p_locations"],
+        )
+
+    def test_scope_save_rejects_a_municipality_from_another_province(self):
+        with patch.object(service, "_full_admin", return_value="admin-1"), \
+                patch.object(service, "supabase_document_get", return_value={"ok": True, "data": {"id": "grantor-a"}}):
+            with self.assertRaises(HTTPException) as raised:
+                service.save_grantor_scope(object(), {
+                    "grantorId": "grantor-a", "classification": "private", "enabled": True,
+                    "locations": [{"province": "Bulacan", "municipality": "Angeles City"}],
+                })
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertEqual("scope_municipality_province_mismatch", raised.exception.detail)
+
     def test_grantor_cannot_query_another_grantor(self):
         with self.assertRaises(HTTPException) as raised:
             service._provider_owner("grantor", "grantor-a", "grantor-b")

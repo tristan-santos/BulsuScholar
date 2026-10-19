@@ -551,6 +551,7 @@ export default function StudentScholarshipsPage() {
 				grantor_archived: "This grantor is no longer accepting applications.",
 				announcement_not_open_for_applications: "This scholarship is no longer accepting applications.",
 				grade_not_eligible: "Your current GWA no longer meets this scholarship's requirement.",
+				location_out_of_scope: "Your permanent province and city or municipality are outside this grantor's approved service area.",
 			}
 			const reason = error?.reason || error?.message
 			toast.error(waitlistErrorMessages[reason] || error?.message || "Unable to update the waitlist offer.")
@@ -2170,6 +2171,7 @@ export default function StudentScholarshipsPage() {
 				grantor_application_exists: "You already have an active application with this grantor.",
 				reapply_cooldown_active: "The 24-hour reapplication cooldown for this grantor has not finished.",
 				archived_grantor_block: "This invitation is missing or no longer valid for the archived application.",
+				location_out_of_scope: "Your permanent province and city or municipality are outside this grantor's approved service area.",
 			}
 			toast.error(messages[error?.reason] || error?.message || "Failed to accept the scholarship invitation. Please try again.")
 		} finally {

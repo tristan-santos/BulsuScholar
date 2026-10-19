@@ -10843,6 +10843,70 @@
 .admin-grantor-scope-toggle .grantor-profile-switch.active i { transform: translateX(19px); }
 .admin-grantor-scope-toggle .grantor-profile-switch:focus-visible { outline: 3px solid rgba(0, 99, 60, .22); outline-offset: 2px; }
 
+.admin-region-scope {
+	display: grid;
+	gap: .75rem;
+	padding: .85rem;
+	border: 1px solid #cbdcd4;
+	border-radius: 8px;
+	background: #f8fbf9;
+}
+
+.admin-region-scope-head,
+.admin-region-scope-head > div,
+.admin-region-scope-province,
+.admin-region-scope-province > span {
+	display: flex;
+	align-items: center;
+}
+
+.admin-region-scope-head { justify-content: space-between; gap: 1rem; }
+.admin-region-scope-head > div { min-width: 0; gap: .6rem; }
+.admin-region-scope-head svg { width: 20px; height: 20px; flex: 0 0 20px; color: #007247; }
+.admin-region-scope-head span { display: grid; min-width: 0; gap: .12rem; }
+.admin-region-scope-head strong { color: #17372c; font-size: .84rem; }
+.admin-region-scope-head small { color: #65766f; font-size: .72rem; line-height: 1.35; }
+.admin-region-scope-head b { flex: 0 0 auto; padding: .32rem .5rem; border-radius: 4px; background: #e2f2ea; color: #00633c; font-size: .7rem; }
+
+.admin-region-scope-empty { margin: 0; padding: .6rem .7rem; border: 1px dashed #bdd0c7; border-radius: 6px; color: #687a72; font-size: .76rem; }
+.admin-region-scope-summary { display: grid; gap: .55rem; padding: .65rem .7rem; border: 1px solid #d6e5de; border-radius: 6px; background: #fff; }
+.admin-region-scope-summary > div { display: grid; grid-template-columns: minmax(90px, .25fr) minmax(0, 1fr); align-items: start; gap: .55rem; }
+.admin-region-scope-summary strong { padding-top: .25rem; color: #28483d; font-size: .73rem; }
+.admin-region-scope-summary span { display: flex; flex-wrap: wrap; gap: .35rem; }
+.admin-region-scope-summary button { display: inline-flex; align-items: center; gap: .25rem; min-height: 28px; padding: .25rem .42rem; border: 1px solid #b9d4c8; border-radius: 4px; background: #eef7f2; color: #075f3c; font-size: .7rem; cursor: pointer; }
+.admin-region-scope-summary button:hover:not(:disabled) { border-color: #007247; background: #e2f2ea; }
+.admin-region-scope-summary button:focus-visible { outline: 3px solid rgba(0, 99, 60, .18); outline-offset: 1px; }
+.admin-region-scope-summary button svg { width: 13px; height: 13px; }
+
+.admin-region-scope-groups { display: grid; gap: .45rem; }
+.admin-region-scope-groups > section { overflow: hidden; border: 1px solid #d4e2dc; border-radius: 6px; background: #fff; }
+.admin-region-scope-groups > section.is-open { border-color: #9fc8b6; }
+.admin-region-scope-province { width: 100%; min-height: 46px; justify-content: space-between; gap: .8rem; padding: .55rem .7rem; border: 0; background: #fff; color: #17372c; cursor: pointer; text-align: left; }
+.admin-region-scope-province:hover { background: #f0f7f4; }
+.admin-region-scope-province:focus-visible { outline: 3px solid rgba(0, 99, 60, .18); outline-offset: -3px; }
+.admin-region-scope-province > span { min-width: 0; justify-content: space-between; flex: 1; gap: .75rem; }
+.admin-region-scope-province strong { font-size: .78rem; }
+.admin-region-scope-province small { color: #6b7c75; font-size: .69rem; }
+.admin-region-scope-province > svg { width: 17px; height: 17px; flex: 0 0 17px; transition: transform .16s ease; }
+.admin-region-scope-groups > section.is-open .admin-region-scope-province > svg { transform: rotate(180deg); }
+.admin-region-scope-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; padding: .65rem; border-top: 1px solid #dce9e3; background: #f8fbf9; }
+.admin-region-scope-options label { display: flex; align-items: center; gap: .45rem; min-width: 0; min-height: 36px; padding: .42rem .5rem; border: 1px solid #d8e4de; border-radius: 5px; background: #fff; color: #344f45; cursor: pointer; }
+.admin-region-scope-options label:hover { border-color: #9fc8b6; }
+.admin-region-scope-options label.is-selected { border-color: #66aa8a; background: #eaf6f0; color: #005f39; }
+.admin-grantor-field .admin-region-scope-options input[type="checkbox"] { width: 16px; min-width: 16px; height: 16px; min-height: 16px; margin: 0; padding: 0; accent-color: #007247; box-shadow: none; }
+.admin-region-scope-options span { min-width: 0; overflow-wrap: anywhere; font-size: .72rem; font-weight: 700; }
+.admin-region-scope.is-disabled { opacity: .68; }
+.admin-region-scope.is-disabled .admin-region-scope-options label,
+.admin-region-scope.is-disabled .admin-region-scope-summary button { cursor: not-allowed; }
+.admin-region-scope-validation { display: block; margin-top: .1rem; color: #a33a24 !important; font-weight: 700; }
+
+.admin-scope-editor-toggle { align-content: start; }
+.admin-scope-editor-toggle input[type="checkbox"] { width: 20px; min-height: 20px; height: 20px; padding: 0; accent-color: #007247; }
+
+@media (max-width: 1100px) {
+	.admin-region-scope-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .admin-grantor-modal-actions {
 	display: flex;
 	justify-content: flex-end;
@@ -10936,6 +11000,24 @@
 .admin-portal--dark .admin-grantor-scope-copy strong { color: #e2e8f0; }
 .admin-portal--dark .admin-grantor-scope-copy small { color: #94a3b8; }
 
+.admin-portal--dark .admin-region-scope { border-color: rgba(148, 163, 184, .3); background: #111827; }
+.admin-portal--dark .admin-region-scope-head strong,
+.admin-portal--dark .admin-region-scope-province,
+.admin-portal--dark .admin-region-scope-summary strong { color: #e2e8f0; }
+.admin-portal--dark .admin-region-scope-head small,
+.admin-portal--dark .admin-region-scope-province small { color: #94a3b8; }
+.admin-portal--dark .admin-region-scope-head b { background: rgba(0, 114, 71, .28); color: #8ee0b8; }
+.admin-portal--dark .admin-region-scope-empty,
+.admin-portal--dark .admin-region-scope-summary,
+.admin-portal--dark .admin-region-scope-groups > section,
+.admin-portal--dark .admin-region-scope-province,
+.admin-portal--dark .admin-region-scope-options label { border-color: rgba(148, 163, 184, .28); background: #0f172a; }
+.admin-portal--dark .admin-region-scope-options { border-color: rgba(148, 163, 184, .22); background: #111827; }
+.admin-portal--dark .admin-region-scope-options label { color: #cbd5e1; }
+.admin-portal--dark .admin-region-scope-options label.is-selected { border-color: #39b97a; background: rgba(0, 114, 71, .25); color: #b9f2d4; }
+.admin-portal--dark .admin-region-scope-summary button { border-color: rgba(57, 185, 122, .45); background: rgba(0, 114, 71, .22); color: #b9f2d4; }
+.admin-portal--dark .admin-region-scope-validation { color: #fda48f !important; }
+
 .admin-portal--dark .admin-grantor-modal-actions {
 	border-top-color: rgba(148, 163, 184, 0.24);
 }
@@ -10962,6 +11044,9 @@
 	.admin-grantor-form-grid {
 		grid-template-columns: 1fr;
 	}
+
+	.admin-region-scope-options { grid-template-columns: 1fr; }
+	.admin-region-scope-summary > div { grid-template-columns: 1fr; }
 
 	.admin-grantor-modal-actions {
 		flex-direction: column-reverse;

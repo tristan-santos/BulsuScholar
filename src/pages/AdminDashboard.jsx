@@ -65,6 +65,7 @@ import TablePagination from "../components/TablePagination"
 import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import ThemeToggle from "../components/ThemeToggle"
 import CustomSelect from "../components/CustomSelect"
+import RegionLocationChecklist from "../components/RegionLocationChecklist"
 import NotFoundPage from "./NotFoundPage"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
@@ -1271,9 +1272,9 @@ export default function AdminDashboard() {
 		classification: "other",
 		scopeEnabled: false,
 		scopeName: "",
-		municipalities: "",
+		locations: [],
 	})
-	const [grantorScopeForm, setGrantorScopeForm] = useState({ classification: "other", enabled: false, name: "", municipalities: "" })
+	const [grantorScopeForm, setGrantorScopeForm] = useState({ classification: "other", enabled: false, name: "", locations: [] })
 	const [grantorScopeBusy, setGrantorScopeBusy] = useState(false)
 	const [isCreatingGrantor, setIsCreatingGrantor] = useState(false)
 
@@ -1286,7 +1287,7 @@ export default function AdminDashboard() {
 				classification: result.classification || "other",
 				enabled: result.policy?.enabled === true,
 				name: result.policy?.name || "",
-				municipalities: (result.policy?.municipalities || []).join("\n"),
+				locations: result.policy?.locations || [],
 			})
 		}).catch((error) => console.error("Unable to load grantor scope.", error))
 		return () => { active = false }
@@ -7460,7 +7461,7 @@ export default function AdminDashboard() {
 			classification: "other",
 			scopeEnabled: false,
 			scopeName: "",
-			municipalities: "",
+			locations: [],
 		})
 	}
 
@@ -7481,8 +7482,7 @@ export default function AdminDashboard() {
 			toast.error("First name, last name, and email are required.")
 			return
 		}
-		const municipalities = [...new Set(grantorForm.municipalities.split(/[\n,;]+/).map((value) => value.trim()).filter(Boolean))]
-		if (grantorForm.scopeEnabled && municipalities.length === 0) {
+		if (grantorForm.scopeEnabled && grantorForm.locations.length === 0) {
 			toast.error("Add at least one approved city or municipality when location scope is enabled.")
 			return
 		}
@@ -7506,7 +7506,7 @@ export default function AdminDashboard() {
 				locationScope: {
 					enabled: grantorForm.scopeEnabled,
 					name: grantorForm.scopeName.trim(),
-					municipalities,
+					locations: grantorForm.locations,
 				},
 				email,
 				temporaryPassword: GRANTOR_DEFAULT_PASSWORD,
@@ -7551,9 +7551,9 @@ export default function AdminDashboard() {
 				classification: grantorScopeForm.classification,
 				enabled: grantorScopeForm.enabled,
 				name: grantorScopeForm.name,
-				municipalities: grantorScopeForm.municipalities.split(/[,\n]/).map((value) => value.trim()).filter(Boolean),
+				locations: grantorScopeForm.locations,
 			})
-			setGrantorScopeForm((current) => ({ ...current, municipalities: (result.policy?.municipalities || []).join("\n") }))
+			setGrantorScopeForm((current) => ({ ...current, locations: result.policy?.locations || current.locations }))
 			toast.success("Grantor classification and location scope saved.")
 		} catch (error) {
 			toast.error(error?.message || "Unable to save the grantor scope.")
@@ -10958,7 +10958,7 @@ export default function AdminDashboard() {
 								</div>
 								{grantorForm.scopeEnabled ? <>
 									<label className="admin-grantor-field"><span>Scope Name</span><input type="text" value={grantorForm.scopeName} onChange={(event) => updateGrantorForm("scopeName", event.target.value)} placeholder="Example: District 2" /></label>
-									<label className="admin-grantor-field admin-grantor-field--wide"><span>Approved Cities / Municipalities</span><textarea value={grantorForm.municipalities} onChange={(event) => updateGrantorForm("municipalities", event.target.value)} placeholder="One city or municipality per line" rows="4" /><small>Applications are checked against the student's self-declared permanent address.</small></label>
+									<div className="admin-grantor-field admin-grantor-field--wide"><RegionLocationChecklist idPrefix="create-grantor-scope" value={grantorForm.locations} onChange={(locations) => updateGrantorForm("locations", locations)} /><small>Applications are checked against the student's self-declared permanent province and city or municipality. Barangays are not considered.</small>{grantorForm.locations.length === 0 ? <small className="admin-region-scope-validation" role="alert">Select at least one city or municipality.</small> : null}</div>
 								</> : null}
 								<label className="admin-grantor-field">
 									<span>Grantor ID</span>
@@ -11023,7 +11023,7 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta"><span>Office Street / Subdivision</span><strong>{selectedGrantor.street || selectedGrantor.address || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Postal Code</span><strong>{selectedGrantor.postalCode || selectedGrantor.zipCode || "-"}</strong></p>
 							</div>
-							{adminIdentityRef.current?.role === "full_admin" ? <section className="admin-scope-editor"><h4>Grantor Classification and Location Scope</h4><p>Eligibility uses the student's self-declared permanent address. It is not document-verified residence evidence.</p><div className="admin-grantor-form-grid"><label className="admin-grantor-field"><span>Classification</span><select value={grantorScopeForm.classification} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, classification: event.target.value }))}><option value="government">Government</option><option value="private">Private</option><option value="other">Others</option></select></label><label className="admin-grantor-field"><span>Scope name</span><input value={grantorScopeForm.name} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, name: event.target.value }))} placeholder="Example: District 2" /></label><label className="admin-grantor-field"><span>Approved cities/municipalities</span><textarea value={grantorScopeForm.municipalities} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, municipalities: event.target.value }))} placeholder="One municipality per line" /></label><label className="admin-grantor-field"><span>Enforce scope</span><input type="checkbox" checked={grantorScopeForm.enabled} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, enabled: event.target.checked }))} /></label></div><button type="button" data-button-variant="positive" disabled={grantorScopeBusy} onClick={saveSelectedGrantorScope}><HiOutlineSave /> {grantorScopeBusy ? "Saving..." : "Save Scope"}</button></section> : null}
+							{adminIdentityRef.current?.role === "full_admin" ? <section className="admin-scope-editor"><h4>Grantor Classification and Location Scope</h4><p>Eligibility uses the student's self-declared permanent province and city or municipality. Barangays are not considered.</p><div className="admin-grantor-form-grid"><label className="admin-grantor-field"><span>Classification</span><select value={grantorScopeForm.classification} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, classification: event.target.value }))}><option value="government">Government</option><option value="private">Private</option><option value="other">Others</option></select></label><label className="admin-grantor-field"><span>Scope name</span><input value={grantorScopeForm.name} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, name: event.target.value }))} placeholder="Example: District 2" /></label><div className={`admin-grantor-field admin-grantor-scope-toggle ${grantorScopeForm.enabled ? "is-on" : "is-off"}`}><div className="admin-grantor-scope-copy"><strong>Enforce Location Scope</strong><small>{grantorScopeForm.enabled ? "ON - Applications are limited to approved locations." : "OFF - Students from any location may apply."}</small></div><button type="button" className={`grantor-profile-switch ${grantorScopeForm.enabled ? "active" : ""}`} role="switch" aria-checked={grantorScopeForm.enabled} aria-label={`${grantorScopeForm.enabled ? "Disable" : "Enable"} location scope`} title={`${grantorScopeForm.enabled ? "Disable" : "Enable"} location scope`} onClick={() => setGrantorScopeForm((current) => ({ ...current, enabled: !current.enabled }))}><i /></button></div><div className="admin-grantor-field admin-grantor-field--wide"><RegionLocationChecklist idPrefix="edit-grantor-scope" value={grantorScopeForm.locations} disabled={!grantorScopeForm.enabled} onChange={(locations) => setGrantorScopeForm((current) => ({ ...current, locations }))} />{grantorScopeForm.enabled && grantorScopeForm.locations.length === 0 ? <small className="admin-region-scope-validation" role="alert">Select at least one city or municipality.</small> : null}</div></div><button type="button" data-button-variant="positive" disabled={grantorScopeBusy || (grantorScopeForm.enabled && grantorScopeForm.locations.length === 0)} onClick={saveSelectedGrantorScope}><HiOutlineSave /> {grantorScopeBusy ? "Saving..." : "Save Scope"}</button></section> : null}
 							<div className="admin-grantor-detail-stats">
 								<article><HiOutlineBell /><span>Current Scholarship</span><strong>{selectedGrantorCurrentScholarshipName}</strong></article>
 								<article><HiOutlineDocumentText /><span>Posted Announcements</span><strong>{selectedGrantorAnnouncements.length}</strong></article>

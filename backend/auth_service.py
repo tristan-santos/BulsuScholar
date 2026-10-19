@@ -13,10 +13,12 @@ from typing import Any
 from fastapi import HTTPException, Request
 
 try:
+    from .location_scope import canonicalize_scope_locations, legacy_scope_locations
     from .access_control import require_admin_bearer, require_supabase_user
     from .email_service import send_email_notification
     from .supabase_ops import supabase_admin_create_user, supabase_document_delete, supabase_document_get, supabase_document_upsert, supabase_rpc, supabase_select
 except ImportError:  # pragma: no cover
+    from location_scope import canonicalize_scope_locations, legacy_scope_locations
     from access_control import require_admin_bearer, require_supabase_user
     from email_service import send_email_notification
     from supabase_ops import supabase_admin_create_user, supabase_document_delete, supabase_document_get, supabase_document_upsert, supabase_rpc, supabase_select
@@ -458,15 +460,20 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
     password = str(payload.get("temporaryPassword") or "")
     classification = str(payload.get("grantorClassification") or "other").strip().lower()
     scope = payload.get("locationScope") if isinstance(payload.get("locationScope"), dict) else {}
-    municipalities = list(dict.fromkeys(
-        str(value or "").strip()[:100] for value in scope.get("municipalities") or [] if str(value or "").strip()
-    ))
+    try:
+        locations = (
+            canonicalize_scope_locations(scope.get("locations"))
+            if scope.get("locations") is not None
+            else legacy_scope_locations(scope.get("municipalities"))
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     if not grantor_id or not email or len(password) < 8:
         raise HTTPException(status_code=422, detail="invalid_grantor_auth_record")
     if classification not in {"government", "private", "other"}:
         raise HTTPException(status_code=422, detail="invalid_grantor_classification")
-    if scope.get("enabled") is True and not municipalities:
-        raise HTTPException(status_code=422, detail="scope_municipalities_required")
+    if scope.get("enabled") is True and not locations:
+        raise HTTPException(status_code=422, detail="scope_locations_required")
     if supabase_document_get("providers", grantor_id).get("row"):
         raise HTTPException(status_code=409, detail="grantor_id_already_exists")
     auth = supabase_admin_create_user(
@@ -512,11 +519,11 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
     if not provider.get("ok") or not portal.get("ok"):
         compensate_created_grantor()
         raise HTTPException(status_code=503, detail="grantor_record_creation_failed")
-    scope_result = supabase_rpc("save_grantor_scope_policy", {
+    scope_result = supabase_rpc("save_grantor_scope_policy_v2", {
         "p_grantor_id": grantor_id, "p_classification": classification,
         "p_name": str(scope.get("name") or "").strip()[:120],
         "p_enabled": scope.get("enabled") is True,
-        "p_municipalities": municipalities, "p_actor_id": actor_id,
+        "p_locations": locations, "p_actor_id": actor_id,
     })
     if not scope_result.get("ok"):
         compensate_created_grantor()

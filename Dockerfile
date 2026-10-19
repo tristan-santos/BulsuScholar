@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend backend
 COPY public public
+COPY shared shared
 RUN test -s "public/Templates/STUDENT PROFILE_APPLICATION-FORMAT.pdf" \
 	|| (echo "Missing official student profile PDF template" >&2; exit 1)
 

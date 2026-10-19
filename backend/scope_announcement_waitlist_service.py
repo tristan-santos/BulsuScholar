@@ -19,6 +19,7 @@ from uuid import uuid4
 from fastapi import HTTPException, Request
 
 try:
+    from .location_scope import canonicalize_scope_locations, legacy_scope_locations, policy_locations
     from .access_control import enforce_portal_scope, require_admin_bearer
     from .report_service import build_report_pdf_bytes
     from .supabase_ops import (
@@ -31,6 +32,7 @@ try:
         supabase_select,
     )
 except ImportError:  # pragma: no cover
+    from location_scope import canonicalize_scope_locations, legacy_scope_locations, policy_locations
     from access_control import enforce_portal_scope, require_admin_bearer
     from report_service import build_report_pdf_bytes
     from supabase_ops import (
@@ -99,11 +101,13 @@ def get_grantor_scope(request: Request, payload: dict[str, Any]) -> dict[str, An
     grantor_id = _provider_owner(actor_type, actor_id, _text(payload.get("grantorId")))
     provider = supabase_document_get("providers", grantor_id)
     policy = supabase_document_get("grantor_scope_policies", grantor_id)
+    policy_data = policy.get("data") or {"enabled": False, "name": "", "locations": [], "version": 0}
+    policy_data = {**policy_data, "locations": policy_locations(policy_data)}
     return {
         "ok": True,
         "grantorId": grantor_id,
         "classification": (provider.get("data") or {}).get("grantorClassification", "other"),
-        "policy": policy.get("data") or {"enabled": False, "name": "", "municipalities": [], "version": 0},
+        "policy": policy_data,
     }
 
 
@@ -116,15 +120,20 @@ def save_grantor_scope(request: Request, payload: dict[str, Any]) -> dict[str, A
     provider = supabase_document_get("providers", grantor_id)
     if not provider.get("ok") or not provider.get("data"):
         raise HTTPException(status_code=404, detail="grantor_not_found")
-    municipalities = list(dict.fromkeys(
-        _text(value)[:100] for value in payload.get("municipalities") or [] if _text(value)
-    ))
-    if payload.get("enabled") is True and not municipalities:
-        raise HTTPException(status_code=422, detail="scope_municipalities_required")
-    result = supabase_rpc("save_grantor_scope_policy", {
+    try:
+        locations = (
+            canonicalize_scope_locations(payload.get("locations"))
+            if payload.get("locations") is not None
+            else legacy_scope_locations(payload.get("municipalities"))
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if payload.get("enabled") is True and not locations:
+        raise HTTPException(status_code=422, detail="scope_locations_required")
+    result = supabase_rpc("save_grantor_scope_policy_v2", {
         "p_grantor_id": grantor_id, "p_classification": classification,
         "p_name": _text(payload.get("name"))[:120], "p_enabled": payload.get("enabled") is True,
-        "p_municipalities": municipalities, "p_actor_id": actor_id,
+        "p_locations": locations, "p_actor_id": actor_id,
     })
     if not result.get("ok"):
         raise HTTPException(status_code=503, detail=result.get("reason") or "grantor_scope_save_failed")
