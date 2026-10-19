@@ -10949,9 +10949,12 @@ export default function AdminDashboard() {
 									<span>Classification</span>
 									<select value={grantorForm.classification} onChange={(event) => updateGrantorForm("classification", event.target.value)}><option value="government">Government</option><option value="private">Private</option><option value="other">Others</option></select>
 								</label>
-								<div className="admin-grantor-field admin-grantor-scope-toggle">
-									<span>Enforce Location Scope</span>
-									<button type="button" className={`grantor-profile-switch ${grantorForm.scopeEnabled ? "active" : ""}`} role="switch" aria-checked={grantorForm.scopeEnabled} onClick={() => updateGrantorForm("scopeEnabled", !grantorForm.scopeEnabled)}><i /></button>
+								<div className={`admin-grantor-field admin-grantor-scope-toggle ${grantorForm.scopeEnabled ? "is-on" : "is-off"}`}>
+									<div className="admin-grantor-scope-copy">
+										<strong>Enforce Location Scope</strong>
+										<small>{grantorForm.scopeEnabled ? "ON - Applications are limited to approved locations." : "OFF - Students from any location may apply."}</small>
+									</div>
+									<button type="button" className={`grantor-profile-switch ${grantorForm.scopeEnabled ? "active" : ""}`} role="switch" aria-checked={grantorForm.scopeEnabled} aria-label={`${grantorForm.scopeEnabled ? "Disable" : "Enable"} location scope`} title={`${grantorForm.scopeEnabled ? "Disable" : "Enable"} location scope`} onClick={() => updateGrantorForm("scopeEnabled", !grantorForm.scopeEnabled)}><i /></button>
 								</div>
 								{grantorForm.scopeEnabled ? <>
 									<label className="admin-grantor-field"><span>Scope Name</span><input type="text" value={grantorForm.scopeName} onChange={(event) => updateGrantorForm("scopeName", event.target.value)} placeholder="Example: District 2" /></label>
