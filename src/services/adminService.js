@@ -191,22 +191,22 @@ export function fetchTopStudentsReport(students = [], offerings = []) {
 	)
 }
 
-export function fetchAdminReportPreview(reportType, filters = {}, { page = 1, pageSize = 250 } = {}) {
+export function fetchAdminReportPreview(reportType, filters = {}, { page = 1, pageSize = 250, dataset = "all", signal } = {}) {
 	return postPortalJson(
 		requireBackendApiUrl("Report backend"),
 		"/admin/reports/preview",
-		{ actorType: "admin", reportType, filters, page, pageSize },
+		{ actorType: "admin", reportType, filters, page, pageSize, dataset },
 		"Admin report preview",
-		{ actor: { actorType: "admin" }, timeoutMs: 30000 },
+		{ actor: { actorType: "admin" }, timeoutMs: 30000, signal },
 	)
 }
 
-export async function fetchAdminReportExport(reportType, filters = {}, format = "pdf", { previewOnly = false, signal } = {}) {
+export async function fetchAdminReportExport(reportType, filters = {}, format = "pdf", { previewOnly = false, signal, dataset = "all" } = {}) {
 	const path = previewOnly ? "/admin/reports/file-preview" : "/admin/reports/export"
 	const response = await fetch(`${requireBackendApiUrl("Report backend")}${path}`, {
 		method: "POST",
 		headers: await buildPortalRequestHeaders({ actorType: "admin" }),
-		body: JSON.stringify({ actorType: "admin", reportType, filters, format }),
+		body: JSON.stringify({ actorType: "admin", reportType, filters, format, dataset }),
 		signal,
 	})
 	if (!response.ok) {

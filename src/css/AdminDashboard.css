@@ -6913,6 +6913,7 @@
 
 .admin-report-preview-state {
 	display: grid;
+	width: 100%;
 	place-items: center;
 	align-content: center;
 	gap: 0.65rem;
@@ -6927,6 +6928,27 @@
 	margin: 0;
 	color: #64748b;
 }
+
+.admin-report-preview-state .admin-secondary-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: .45rem;
+	min-height: 42px;
+	padding: .55rem .9rem;
+	border: 1px solid #9cc5b1;
+	border-radius: 6px;
+	background: #fff;
+	color: #00633c;
+	font: inherit;
+	font-size: .82rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.admin-report-preview-state .admin-secondary-btn:hover { background: #edf7f2; }
+.admin-report-preview-state .admin-secondary-btn:focus-visible { outline: 3px solid #88c9a9; outline-offset: 3px; }
+.admin-portal--dark .admin-report-preview-state .admin-secondary-btn { background: #13251d; border-color: #3f7c5e; color: #a4e5c1; }
 
 .admin-report-preview-state--error > svg {
 	font-size: 1.8rem;

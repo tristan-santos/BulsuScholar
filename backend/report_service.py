@@ -123,8 +123,8 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
     page_width, page_height = page_size
     margin_left = 28
     margin_right = 28
-    margin_top = 98
-    margin_bottom = 72
+    margin_top = 132
+    margin_bottom = 90
 
     font_regular = "Times-Roman"
     font_bold = "Times-Bold"
@@ -230,11 +230,11 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
         if header_image:
             canvas.drawImage(
                 ImageReader(io.BytesIO(header_image)),
-                margin_left,
-                page_height - 82,
-                width=page_width - margin_left - margin_right,
-                height=70,
-                preserveAspectRatio=True,
+                0,
+                page_height - 114,
+                width=page_width,
+                height=108,
+                preserveAspectRatio=False,
                 anchor="c",
                 mask="auto",
             )
@@ -246,11 +246,11 @@ def build_report_pdf_bytes(payload: dict[str, Any]) -> bytes:
         if footer_image:
             canvas.drawImage(
                 ImageReader(io.BytesIO(footer_image)),
-                margin_left,
-                12,
-                width=page_width - margin_left - margin_right,
-                height=48,
-                preserveAspectRatio=True,
+                0,
+                16,
+                width=page_width,
+                height=64,
+                preserveAspectRatio=False,
                 anchor="c",
                 mask="auto",
             )

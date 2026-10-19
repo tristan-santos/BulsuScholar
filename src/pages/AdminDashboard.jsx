@@ -180,6 +180,7 @@ const DEFAULT_REPORT_FILTERS = Object.freeze({
 	scholarship: "All",
 	dateFrom: "",
 	dateTo: "",
+	providerType: "All",
 })
 const APPLICATION_REJECTION_REASONS = [
 	"Incomplete Documents",
@@ -365,16 +366,6 @@ function toProviderLabel(value = "") {
 	if (value === "morisson") return "Morisson"
 	if (value === "none") return "No Program"
 	return "Other"
-}
-
-function toScholarshipTabLabel(value = "") {
-	if (value === "overview") return "Overview"
-	if (value === "scholars") return "Scholars"
-	if (value === "tracking") return "Tracking"
-	if (value === "warning") return "Warning"
-	if (value === "archived") return "Archived"
-	if (value === "none") return "No Program"
-	return toProviderLabel(value)
 }
 
 function normalizeGrantorScholarLookupValue(value = "") {
@@ -697,20 +688,6 @@ function toGrantorStatus(grantor = {}) {
 	return grantor?.status || "Active"
 }
 
-function buildGrantorReportRow(grantor = {}) {
-	return {
-		id: grantor.id || "-",
-		name: buildGrantorName(grantor) || "-",
-		email: grantor.email || "-",
-		organization: grantor.organization || "-",
-		providerType: grantor.providerType || toProviderType(grantor.providerName || grantor.name || ""),
-		totalScholars: Number(grantor.totalScholars || 0),
-		status: toGrantorStatus(grantor),
-		createdAt: formatDate(grantor.createdAt),
-		reportDate: grantor.createdAt || grantor.updatedAt || null,
-	}
-}
-
 function toReviewStateLabel(value = "") {
 	const normalized = String(value).toLowerCase()
 	if (normalized === "signed") return "Approved"
@@ -1004,23 +981,6 @@ function toStudentReportRow(student) {
 			]
 				.filter(Boolean)
 				.join(", ") || "-",
-	}
-}
-
-function toScholarshipReportRow(row) {
-	return {
-		programName: row.programName,
-		providerType: row.providerType,
-		totalSlots: row.totalSlots,
-		activeRecipients: row.activeRecipients,
-		status: row.status,
-	}
-}
-
-function toScholarshipWarningReportRow(row) {
-	return {
-		studentId: toDisplayStudentId(row.studentId || row.studentNumber || row.id),
-		fullName: row.fullName || "-",
 	}
 }
 
@@ -1410,6 +1370,8 @@ export default function AdminDashboard() {
 	const [academicCycleBusy, setAcademicCycleBusy] = useState(false)
 	const adminMenuRef = useRef(null)
 	const adminIdentityRef = useRef(null)
+	const reportRequestRef = useRef(null)
+	useEffect(() => () => reportRequestRef.current?.abort(), [])
 
 	const setTablePage = useCallback((tableKey, page) => {
 		setTablePages((prev) => ({ ...prev, [tableKey]: page }))
@@ -1420,6 +1382,7 @@ export default function AdminDashboard() {
 			setReportPdfPreview({ blob: null, filename: "", url: "", loading: false, error: "" })
 			return undefined
 		}
+		if (reportPreview.preparing || reportPreview.preparationError) return undefined
 
 		const controller = new AbortController()
 		let objectUrl = ""
@@ -1429,7 +1392,7 @@ export default function AdminDashboard() {
 			reportPreview.reportType || reportPreview.key,
 			reportPreview.filters || reportPreviewFilters,
 			"pdf",
-			{ previewOnly: true, signal: controller.signal },
+			{ previewOnly: true, signal: controller.signal, dataset: reportPreview.dataset || "all" },
 		)
 			.then(({ blob, filename }) => {
 				if (controller.signal.aborted) return
@@ -2537,18 +2500,6 @@ export default function AdminDashboard() {
 	const grantorTablePage = useMemo(
 		() => paginateRows(visibleGrantorRows, tablePages[`grantors_${grantorTab}`] || 1, TABLE_PAGE_SIZE),
 		[grantorTab, tablePages, visibleGrantorRows],
-	)
-
-	const grantorReportRows = useMemo(
-		() => visibleGrantorRows.map((grantor) => ({
-			...buildGrantorReportRow(grantor),
-			activeScholarships: grantorAnnouncementsRaw.filter((announcement) =>
-				String(announcement.grantorId || announcement.providerId || "") === String(grantor.id || "") &&
-				isGrantorScholarshipApplicationAnnouncement(announcement) &&
-				!isAnnouncementArchived(announcement),
-			).length,
-		})),
-		[grantorAnnouncementsRaw, visibleGrantorRows],
 	)
 
 	const grantorLabelById = useMemo(
@@ -4058,143 +4009,6 @@ export default function AdminDashboard() {
 		[archivedScholarshipRows, scholarshipStudentRows, scholarshipTab, selectedScholarshipScholarKeys],
 	)
 
-	const scholarshipSectionPreviewConfig = (() => {
-		if (scholarshipTab === "scholarships") {
-			return createOfferingPreviewConfig(
-				visibleScholarshipRows,
-				`Table: Scholarships | Search: ${scholarshipSearch || "-"} | Scholarship: ${scholarshipProvider}`,
-				"Scholarship Offerings",
-			)
-		}
-
-		if (scholarshipTab === "overview") {
-			const overviewRows = visibleScholarshipRows.map((row) => toScholarshipReportRow(row))
-			return createScholarshipPreviewConfig(
-				overviewRows,
-				`Table: Overview | Search: ${scholarshipSearch || "-"} | Scholarship: ${scholarshipProvider}`,
-				{ datasetTitle: "Scholarships" },
-			)
-		}
-
-		if (scholarshipTab === "warning") {
-			const warningReportRows = visibleScholarshipRows.map((row) => toScholarshipWarningReportRow(row))
-			return createScholarshipPreviewConfig(warningReportRows, `Table: ${toScholarshipTabLabel(scholarshipTab)} | Search: ${scholarshipSearch || "-"}`, {
-				datasetTitle: "Warning Students",
-				description: "Preview of the currently selected scholarship warning table before export.",
-				stats: [
-					{ label: "Rows", value: warningReportRows.length },
-					{ label: "Students", value: new Set(warningReportRows.map((row) => row.studentId)).size },
-					{ label: "Warnings", value: warningReportRows.length },
-					{ label: "Search", value: scholarshipSearch.trim() ? "Filtered" : "All" },
-				],
-				columns: ["Student ID", "Full Name"],
-				csvRows: warningReportRows.map((row) => [row.studentId, row.fullName]),
-			})
-		}
-
-		if (scholarshipTab === "tracking") {
-			const trackingReportRows = visibleScholarshipRows.map((row) => ({
-				studentId: toDisplayStudentId(row.studentId || row.studentNumber),
-				fullName: row.fullName || "-",
-				scholarship: row.scholarship || "-",
-				grantor: toProviderLabel(row.provider),
-				currentStep: row.currentStepLabel || "-",
-				owner: row.currentStepOwnerLabel || "-",
-				status: row.status || "-",
-			}))
-
-			return createScholarshipPreviewConfig(
-				trackingReportRows,
-				`Table: Tracking | Search: ${scholarshipSearch || "-"} | Scholarship: ${scholarshipProvider}`,
-				{
-					datasetTitle: "Tracking Applications",
-					description: "Preview of scholarship application tracking rows before export.",
-					stats: [
-						{ label: "Rows", value: trackingReportRows.length },
-						{ label: "Students", value: new Set(trackingReportRows.map((row) => row.studentId)).size },
-						{ label: "Grantors", value: new Set(trackingReportRows.map((row) => row.grantor)).size },
-						{
-							label: "Current Step",
-							value: trackingReportRows.length > 0 ? trackingReportRows[0].currentStep : "-",
-						},
-					],
-					columns: ["Student ID", "Full Name", "Scholarship", "Grantor", "Current Step"],
-					csvRows: trackingReportRows.map((row) => [
-						row.studentId,
-						row.fullName,
-						row.scholarship,
-						row.grantor,
-						row.currentStep,
-					]),
-				},
-			)
-		}
-
-		const tableReportRows = visibleScholarshipRows.map((row) =>
-			scholarshipTab === "archived"
-				? {
-						studentId: toDisplayStudentId(row.studentId || row.studentNumber),
-						fullName: row.fullName || "-",
-						scholarship: row.scholarship || "-",
-						grantor: row.grantorName || toProviderLabel(row.provider),
-						yearLevel: row.yearLevel || "-",
-						archivedAt: row.archivedAtLabel || "-",
-						status: row.status || "-",
-					}
-				: {
-						studentId: toDisplayStudentId(row.studentId || row.studentNumber),
-						fullName: row.fullName || "-",
-						scholarship: row.scholarship || "-",
-						grantor: row.grantorName || toProviderLabel(row.provider),
-						yearLevel: row.yearLevel || "-",
-						status: row.status || "-",
-						updatedAt: row.updatedAtLabel || "-",
-					},
-		)
-
-		return createScholarshipPreviewConfig(
-			tableReportRows,
-			`Table: ${toScholarshipTabLabel(scholarshipTab)} | Search: ${scholarshipSearch || "-"} | Scholarship: ${scholarshipProvider}`,
-			{
-				datasetTitle: scholarshipTab === "archived" ? "Archived Scholars" : "Scholars",
-				description:
-					scholarshipTab === "archived"
-						? "Preview of archived grantor scholar rows before export."
-						: "Preview of the combined grantor scholar list before export.",
-				stats: [
-					{ label: "Rows", value: tableReportRows.length },
-					{ label: "Students", value: new Set(tableReportRows.map((row) => row.studentId)).size },
-					{ label: "Scholarships", value: new Set(tableReportRows.map((row) => row.scholarship)).size },
-					{ label: "Grantors", value: new Set(tableReportRows.map((row) => row.grantor)).size },
-				],
-				columns:
-					scholarshipTab === "archived"
-						? ["Student ID", "Full Name", "Scholarship", "Grantor", "Year Level", "Archived At", "Status"]
-						: ["Student ID", "Full Name", "Scholarship", "Grantor", "Year Level", "Updated", "Status"],
-				csvRows:
-					scholarshipTab === "archived"
-						? tableReportRows.map((row) => [
-								row.studentId,
-								row.fullName,
-								row.scholarship,
-								row.grantor,
-								row.yearLevel,
-								row.archivedAt,
-								row.status,
-							])
-						: tableReportRows.map((row) => [
-								row.studentId,
-								row.fullName,
-								row.scholarship,
-								row.grantor,
-								row.yearLevel,
-								row.updatedAt,
-								row.status,
-							]),
-			},
-		)
-	})()
-
 	const scholarshipOverviewProviderRows = useMemo(() => {
 		const counts = { kuya_win: 0, tina_pancho: 0, morisson: 0, other: 0, none: 0 }
 		filteredScholarships.forEach((row) => {
@@ -4929,23 +4743,6 @@ export default function AdminDashboard() {
 		}),
 		[allSoeRows, soeDownloadRows],
 	)
-	const requirementReportRowById = useMemo(
-		() => new Map(requirementReportRows.map((row) => [String(row.id || row.requestNumber || ""), row])),
-		[requirementReportRows],
-	)
-	const requestingSoeReportRows = useMemo(
-		() => requestingSoeRows.map((row) => requirementReportRowById.get(String(row.id || row.requestNumber || "")) || toSoeReportRow(row)),
-		[requestingSoeRows, requirementReportRowById],
-	)
-	const approvedSoeReportRows = useMemo(
-		() => approvedSoeRows.map((row) => requirementReportRowById.get(String(row.id || row.requestNumber || "")) || toSoeReportRow(row)),
-		[approvedSoeRows, requirementReportRowById],
-	)
-	const rejectedSoeReportRows = useMemo(
-		() => rejectedSoeRows.map((row) => requirementReportRowById.get(String(row.id || row.requestNumber || "")) || toSoeReportRow(row)),
-		[rejectedSoeRows, requirementReportRowById],
-	)
-
 	const soeCheckingRows = useMemo(() => {
 		const keyword = soeCheckSearch.trim().toLowerCase()
 		const activeSigningTab = ["pending", "previous", "rejected"].includes(soeCheckingTab)
@@ -5845,6 +5642,8 @@ export default function AdminDashboard() {
 	}
 
 	const closeReportPreview = () => {
+		reportRequestRef.current?.abort()
+		setIsReportExporting(false)
 		setReportPreview(null)
 		setReportExportFormat("pdf")
 		setReportPreviewOrigin("section")
@@ -7690,182 +7489,6 @@ export default function AdminDashboard() {
 		}
 	}
 
-	function createScholarshipPreviewConfig(rows, filterLabel, options = {}) {
-		const defaultColumns = ["Program Name", "Provider Type", "Total Slots", "Active Recipients", "Status"]
-		const defaultColumnDefinitions = [
-			{ key: "programName", label: "Program Name", weight: 2.2 },
-			{ key: "providerType", label: "Provider Type", weight: 1.5 },
-			{ key: "totalSlots", label: "Total Slots", weight: 0.8 },
-			{ key: "activeRecipients", label: "Active Recipients", weight: 0.9 },
-			{ key: "status", label: "Status", weight: 0.9 },
-		]
-		const datasetTitle = options.datasetTitle || "Scholarship Programs"
-		const defaultCsvRows = rows.map((row) => [
-			row.programName,
-			toProviderLabel(row.providerType),
-			String(row.totalSlots),
-			String(row.activeRecipients),
-			row.status,
-		])
-		return {
-			key: "scholarships",
-			title: options.title || `Scholarship Programs Report - ${datasetTitle}`,
-			datasetTitle,
-			description: options.description || "Preview of program distribution and performance data before export.",
-			filterLabel,
-			filename: `scholarships-report-${Date.now()}`,
-			stats: options.stats || [
-				{ label: "Programs", value: rows.length },
-				{ label: "Recipients", value: rows.reduce((sum, row) => sum + Number(row.activeRecipients || 0), 0) },
-				{ label: "Grantors", value: new Set(rows.map((row) => row.providerType)).size },
-				{
-					label: "Top Program",
-					value: rows.length > 0 ? rows.slice().sort((left, right) => right.activeRecipients - left.activeRecipients)[0].activeRecipients : 0,
-				},
-			],
-			columns: options.columns || defaultColumns,
-			columnDefinitions: options.columnDefinitions || (options.columns
-				? options.columns.map((label, index) => ({ key: `column_${index}`, label, weight: 1 }))
-				: defaultColumnDefinitions),
-			csvRows: options.csvRows || defaultCsvRows,
-		}
-	}
-
-	function createOfferingPreviewConfig(rows, filterLabel, datasetTitle = "Scholarship Offerings") {
-		const offeringRows = rows.map((row) => {
-			const hasTotalSlots = row.totalSlots !== null && row.totalSlots !== undefined && row.totalSlots !== "" && Number.isFinite(Number(row.totalSlots))
-			const hasRemainingSlots = row.remainingSlots !== null && row.remainingSlots !== undefined && row.remainingSlots !== "" && Number.isFinite(Number(row.remainingSlots))
-			const totalSlots = hasTotalSlots ? Number(row.totalSlots) : null
-			const remainingSlots = hasRemainingSlots ? Number(row.remainingSlots) : null
-			return {
-				scholarship: row.scholarship || getAnnouncementScholarshipTitle(row) || "-",
-				grantor: row.grantorName || "-",
-				minimumGwa: row.minimumGwa || "-",
-				totalSlots: totalSlots ?? "Not configured",
-				occupiedSlots: totalSlots !== null && remainingSlots !== null ? Math.max(0, totalSlots - remainingSlots) : "-",
-				remainingSlots: remainingSlots ?? "Not configured",
-				applications: Number(row.appliedCount || 0),
-				applicationWindow: row.applicationWindow || "-",
-				status: row.status || "-",
-				createdAt: row.createdAtLabel || "-",
-			}
-		})
-		return createScholarshipPreviewConfig(offeringRows, filterLabel, {
-			datasetTitle,
-			description: "Audit view of application announcements, capacity, demand, and application windows.",
-			stats: [
-				{ label: "Offerings", value: offeringRows.length },
-				{ label: "Applications", value: offeringRows.reduce((sum, row) => sum + row.applications, 0) },
-				{ label: "Configured Slots", value: offeringRows.reduce((sum, row) => sum + (Number(row.totalSlots) || 0), 0) },
-				{ label: "Remaining Slots", value: offeringRows.reduce((sum, row) => sum + (Number(row.remainingSlots) || 0), 0) },
-			],
-			columnDefinitions: [
-				{ key: "scholarship", label: "Scholarship", weight: 1.7 },
-				{ key: "grantor", label: "Grantor", weight: 1.5 },
-				{ key: "minimumGwa", label: "Minimum GWA", weight: 0.8 },
-				{ key: "totalSlots", label: "Total Slots", weight: 0.75 },
-				{ key: "occupiedSlots", label: "Occupied", weight: 0.7 },
-				{ key: "remainingSlots", label: "Remaining", weight: 0.75 },
-				{ key: "applications", label: "Applications", weight: 0.75 },
-				{ key: "applicationWindow", label: "Application Window", weight: 1.5 },
-				{ key: "status", label: "Status", weight: 0.85 },
-				{ key: "createdAt", label: "Created", weight: 0.9 },
-			],
-			csvRows: offeringRows,
-		})
-	}
-
-	const createGrantorPreviewConfig = (rows, filterLabel, view = "grantors") => {
-		const datasetTitle = view === "archived" ? "Archived Grantors" : "Grantors"
-		return {
-			key: "grantors",
-			reportType: "grantors",
-			title: `Grantor Management Report - ${datasetTitle}`,
-			datasetTitle,
-			description: "Preview of grantor account records before export.",
-			filterLabel,
-			filename: `grantors-report-${Date.now()}`,
-			stats: [
-				{ label: "Grantors", value: rows.length },
-				{ label: "Active", value: rows.filter((row) => row.status !== "Archived").length },
-				{ label: "Archived", value: rows.filter((row) => row.status === "Archived").length },
-				{ label: "Password Requests", value: rows.filter((row) => row.status === "Password Requested").length },
-			],
-			columnDefinitions: [
-				{ key: "id", label: "Grantor ID", weight: 1.1 },
-				{ key: "name", label: "Name", weight: 1.6 },
-				{ key: "email", label: "Email", weight: 1.7 },
-				{ key: "organization", label: "Organization", weight: 1.5 },
-				{ key: "activeScholarships", label: "Active Scholarships", weight: 0.9 },
-				{ key: "totalScholars", label: "Total Scholars", weight: 0.8 },
-				{ key: "status", label: "Account Status", weight: 1 },
-				{ key: "createdAt", label: "Created", weight: 1 },
-			],
-			csvRows: rows.map((row) => [
-				row.id,
-				row.name,
-				row.email,
-				row.organization,
-				String(row.activeScholarships || 0),
-				String(row.totalScholars),
-				row.status,
-				row.createdAt,
-			]),
-		}
-	}
-
-	const createSoePreviewConfig = (rows, filterLabel, datasetTitle = "All Requests") => ({
-		key: ADMIN_REPORT_TYPES.REQUIREMENTS,
-		reportType: ADMIN_REPORT_TYPES.REQUIREMENTS,
-		title: `Requirements Report - ${datasetTitle}`,
-		datasetTitle,
-		description: "Preview requirement request lifecycle data before exporting PDF or CSV.",
-		filterLabel,
-		filename: `requirements-request-report-${Date.now()}`,
-		stats: [
-			{ label: "Rows", value: rows.length },
-			{ label: "Pending", value: rows.filter((row) => String(row.reviewStateLabel).toLowerCase().includes("pending")).length },
-			{ label: "Approved", value: rows.filter((row) => String(row.reviewStateLabel).toLowerCase().includes("approved")).length },
-			{ label: "SOE Downloaded", value: rows.filter((row) => row.downloadStatusLabel === "Downloaded").length },
-		],
-		columnDefinitions: [
-			{ key: "applicationNumber", label: "Application No.", weight: 1.15 },
-			{ key: "requestNumber", label: "Request No.", weight: 1.1 },
-			{ key: "studentId", label: "Student ID", weight: 1 },
-			{ key: "fullName", label: "Student Name", weight: 1.45 },
-			{ key: "scholarshipName", label: "Scholarship", weight: 1.5 },
-			{ key: "grantor", label: "Grantor", weight: 1.35 },
-			{ key: "materials", label: "Materials", weight: 1.3 },
-			{ key: "status", label: "Request Status", weight: 1 },
-			{ key: "requestDate", label: "Request Date", weight: 1 },
-			{ key: "reviewState", label: "Review State", weight: 1 },
-			{ key: "reviewDate", label: "Review Date", weight: 1 },
-			{ key: "downloadState", label: "Download State", weight: 1.1 },
-			{ key: "downloadDate", label: "Download Date", weight: 1 },
-			{ key: "signingState", label: "Signing State", weight: 1.05 },
-			{ key: "signingDate", label: "Signing Date", weight: 1 },
-			{ key: "nextEligible", label: "Next Eligible", weight: 1 },
-		],
-		csvRows: rows.map((row) => [
-			row.applicationNumber || "-",
-			row.requestNumber || row.id || "-",
-			row.studentId || "-",
-			row.fullName || "-",
-			row.scholarshipName || "-",
-			row.grantor || "-",
-			row.visibleMaterialsSummary || row.requestedMaterialsSummary || "-",
-			row.status || "-",
-			formatDate(row.requestDate || row.timestamp || row.createdAt),
-			row.reviewStateLabel || "-",
-			formatDate(row.reviewDate),
-			row.downloadStatusLabel || "-",
-			formatDate(row.downloadDate),
-			row.signingStatusLabel || "Not Started",
-			formatDate(row.signingDate),
-			row.nextEligibleLabel || "-",
-		]),
-	})
-
 	const openReportPreview = (config, options = {}) => {
 		if (!adminReportExportsEnabled) {
 			toast.error("Report exports are disabled in Admin Profile settings.")
@@ -7875,6 +7498,7 @@ export default function AdminDashboard() {
 		const origin = options.origin === "central" ? "central" : "section"
 		const filters = { ...DEFAULT_REPORT_FILTERS, ...(options.filters || {}) }
 		setReportPreview(normalized)
+		setReportPdfPreview({ blob: null, filename: "", url: "", loading: true, error: "" })
 		setReportExportFormat("pdf")
 		setReportPreviewOrigin(origin)
 		setReportPreviewFilters(filters)
@@ -7886,98 +7510,55 @@ export default function AdminDashboard() {
 		}))
 	}
 
-	const createStudentPreviewConfig = (filters, rows) => {
-		const reportRows = buildStudentReportRows(rows)
-		const columnDefinitions = [
-			{ key: "id", label: "Student ID", weight: 1 },
-			{ key: "fullName", label: "Full Name", weight: 1.6 },
-			{ key: "course", label: "Course", weight: 1.6 },
-			{ key: "yearLevel", label: "Year Level", weight: 0.75 },
-			{ key: "gwa", label: "GWA", weight: 0.65 },
-			{ key: "grantor", label: "Grantor", weight: 1.45 },
-			{ key: "activeApplications", label: "Active Applications", weight: 0.85 },
-			{ key: "currentStage", label: "Current Stage", weight: 1.25 },
-			{ key: "recordStatus", label: "Record Status", weight: 0.9 },
-		]
-		const csvRows = reportRows.map((row) => [
-			row.id || "-",
-			row.fullName || "-",
-			row.course || "-",
-			row.yearLevel || "-",
-			row.gwa || "-",
-			row.grantor || "N/A",
-			String(row.activeApplications || 0),
-			row.currentStage || "Account Created",
-			row.recordStatus || "-",
-		])
-		const filterLabel = `View: ${filters.view || "students"} | Search: ${filters.search || "-"} | Course: ${filters.course || "All"} | Year: ${filters.year || "All"} | Grantor: ${filters.grantorLabel || filters.grantor || "All"}`
-		const datasetTitle = filters.view === "archived" ? "Archived Students" : filters.view === "all" ? "All Students" : "Students"
-		return {
-			key: "students",
-			title: `Student Management Report - ${datasetTitle}`,
-			datasetTitle,
-			description: "Preview of student records using the current management filters.",
-			filterLabel,
-			filename: `student-management-${Date.now()}`,
-			stats: [
-				{ label: "Records", value: reportRows.length },
-				{ label: "Active", value: reportRows.filter((row) => row.recordStatus === "Active").length },
-				{ label: "Archived", value: reportRows.filter((row) => row.recordStatus === "Archived").length },
-			],
-			columnDefinitions,
-			csvRows,
-			reportRows,
-			filters,
-		}
-	}
-
-	const openStudentReportPreview = async (filters, rows = filteredStudents) => {
-		if (isReportExporting) return
-		setIsReportExporting(true)
-		try {
-			openReportPreview(createStudentPreviewConfig(filters, rows))
-		} catch (error) {
-			console.error(error)
-			toast.error(error.message || "Unable to load the student report preview.")
-		} finally {
-			setIsReportExporting(false)
-		}
-	}
-
 	const openReportCenterPreview = async (
 		reportType = ADMIN_REPORT_TYPES.STUDENTS,
 		requestedFilters = DEFAULT_REPORT_FILTERS,
+		{ dataset = "all", origin = "central" } = {},
 	) => {
-		if (isReportExporting) return
+		if (!adminReportExportsEnabled) return toast.error("Report exports are disabled in Admin Profile settings.")
 		const filters = { ...DEFAULT_REPORT_FILTERS, ...(requestedFilters || {}) }
 		if (filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo) {
 			toast.error("The report start date cannot be after the end date.")
 			return
 		}
+		reportRequestRef.current?.abort()
+		const controller = new AbortController()
+		reportRequestRef.current = controller
+		openReportPreview({ key: reportType, reportType, dataset, filters,
+			title: "Preparing report", datasetTitle: dataset === "all" ? "All records" : dataset,
+			preparing: true, stats: [], columns: [], rows: [],
+		}, { origin, filters })
 		setIsReportExporting(true)
 		try {
-			const result = await fetchAdminReportPreview(reportType, filters, { page: 1, pageSize: TABLE_PAGE_SIZE })
+			const result = await fetchAdminReportPreview(reportType, filters, { page: 1, pageSize: TABLE_PAGE_SIZE, dataset, signal: controller.signal })
+			if (controller.signal.aborted) return
 			openReportPreview({
 				...result,
 				columnDefinitions: result.columns,
 				csvRows: result.rows,
 				filters,
-			}, { origin: "central", filters })
+			}, { origin, filters })
 		} catch (error) {
+			if (controller.signal.aborted) return
 			console.error("Unable to prepare report preview.", error)
-			toast.error(error?.message || "Unable to prepare the report preview.")
+			setReportPreview((current) => ({ ...current, title: "Report preview unavailable", preparing: false,
+				preparationError: error?.message || "Unable to prepare the report preview." }))
 		} finally {
-			setIsReportExporting(false)
+			if (!controller.signal.aborted) setIsReportExporting(false)
 		}
 	}
 
 	const loadReportPreviewPage = async (page) => {
 		if (!reportPreview || isReportExporting) return
+		reportRequestRef.current?.abort()
+		const controller = new AbortController()
+		reportRequestRef.current = controller
 		setIsReportExporting(true)
 		try {
 			const reportType = reportPreview.reportType || reportPreview.key
 			const filters = reportPreview.filters || reportPreviewFilters
-			const result = await fetchAdminReportPreview(reportType, filters, { page, pageSize: TABLE_PAGE_SIZE })
+			const result = await fetchAdminReportPreview(reportType, filters, { page, pageSize: TABLE_PAGE_SIZE, dataset: reportPreview.dataset || "all", signal: controller.signal })
+			if (controller.signal.aborted) return
 			setReportPreview(createCanonicalReport({
 				...result,
 				columnDefinitions: result.columns,
@@ -7985,14 +7566,14 @@ export default function AdminDashboard() {
 				filters,
 			}))
 		} catch (error) {
-			toast.error(error?.message || "Unable to load this report page.")
+			if (!controller.signal.aborted) toast.error(error?.message || "Unable to load this report page.")
 		} finally {
-			setIsReportExporting(false)
+			if (!controller.signal.aborted) setIsReportExporting(false)
 		}
 	}
 
 	const exportPreviewReport = async () => {
-		if (!reportPreview || isReportExporting) return
+		if (!reportPreview || isReportExporting || reportPreview.preparing || reportPreview.preparationError) return
 		if (!adminReportExportsEnabled) {
 			toast.error("Report exports are disabled in Admin Profile settings.")
 			return
@@ -8003,6 +7584,7 @@ export default function AdminDashboard() {
 				reportPreview.reportType || reportPreview.key,
 				reportPreview.filters || reportPreviewFilters,
 				reportExportFormat,
+				{ dataset: reportPreview.dataset || "all" },
 			)
 			downloadAdminReportFile(result.blob, result.filename)
 			toast.success(`Report exported as ${reportExportFormat.toUpperCase()}.`)
@@ -8066,9 +7648,8 @@ export default function AdminDashboard() {
 			setReportPreviewDraftFilters(defaults)
 			openReportCenterPreview(reportType, defaults)
 		}
-		const pdfExportUnavailable = reportExportFormat === "pdf" && (
-			reportPdfPreview.loading || !reportPdfPreview.blob
-		)
+		const pdfExportUnavailable = reportPreview.preparing || Boolean(reportPreview.preparationError)
+			|| (reportExportFormat === "pdf" && (reportPdfPreview.loading || !reportPdfPreview.blob))
 		return (
 			<div className="admin-detail-backdrop admin-detail-backdrop--report" role="presentation" onClick={closeReportPreview}>
 				<div className="admin-detail-shell admin-detail-shell--report admin-report-preview-modal-shell" onClick={(event) => event.stopPropagation()}>
@@ -8099,7 +7680,7 @@ export default function AdminDashboard() {
 									</button>
 								</div>
 								<button type="button" className="admin-export-btn" disabled={isReportExporting || pdfExportUnavailable} onClick={exportPreviewReport}>
-									{isReportExporting ? "Exporting..." : `Export ${reportExportFormat.toUpperCase()}`}
+									{reportPreview.preparing ? "Preparing..." : isReportExporting ? "Processing..." : `Export ${reportExportFormat.toUpperCase()}`}
 								</button>
 							</div>
 						</div>
@@ -8148,7 +7729,7 @@ export default function AdminDashboard() {
 							</section>
 						) : null}
 						<div className="admin-report-preview-stats">
-							{reportPreview.stats.map((stat) => (
+							{!reportPreview.preparing && !reportPreview.preparationError && reportPreview.stats.map((stat) => (
 								<article key={stat.label} className="admin-report-stat">
 									<strong>{stat.value}</strong>
 									<span>{stat.label}</span>
@@ -8156,7 +7737,11 @@ export default function AdminDashboard() {
 							))}
 						</div>
 						<div className="admin-report-preview-body">
-							{reportExportFormat === "pdf" ? (
+							{reportPreview.preparing ? (
+								<div className="admin-report-preview-state" role="status"><span className="admin-loading-spinner" aria-hidden /><strong>Preparing report...</strong></div>
+							) : reportPreview.preparationError ? (
+								<div className="admin-report-preview-state admin-report-preview-state--error" role="alert"><HiOutlineExclamation aria-hidden /><strong>Report preview unavailable</strong><p>{reportPreview.preparationError}</p><button type="button" className="admin-secondary-btn" onClick={() => openReportCenterPreview(reportType, reportPreview.filters, { dataset: reportPreview.dataset, origin: reportPreviewOrigin })}><HiOutlineRefresh /> Retry</button></div>
+							) : reportExportFormat === "pdf" ? (
 								<div className="admin-report-pdf-preview">
 									<div className="admin-report-preview-toolbar">
 										<span>PDF Preview</span>
@@ -8943,7 +8528,7 @@ export default function AdminDashboard() {
 										type="button"
 										className="admin-student-report-btn"
 										disabled={isReportExporting || !adminReportExportsEnabled}
-										onClick={() => openStudentReportPreview({ view: studentViewTab, search: studentSearch, course: studentCourse, year: studentYear }, filteredStudents)}
+										onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.STUDENTS, { search: studentSearch, course: studentCourse, year: studentYear }, { dataset: studentViewTab, origin: "section" })}
 									>
 										<HiOutlineDocumentText /> {isReportExporting ? "Preparing..." : "Generate Report"}
 									</button>
@@ -9077,7 +8662,7 @@ export default function AdminDashboard() {
 								type="button"
 								className="admin-student-report-btn"
 								disabled={!adminReportExportsEnabled}
-								onClick={() => openReportPreview(createGrantorPreviewConfig(grantorReportRows, `View: ${grantorTab} | Search: ${grantorSearch || "-"}`, grantorTab))}
+								onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.GRANTORS, { search: grantorSearch }, { dataset: grantorTab, origin: "section" })}
 							>
 								<HiOutlineDocumentText /> Generate Report
 							</button>
@@ -9255,7 +8840,7 @@ export default function AdminDashboard() {
 								type="button"
 								className="admin-scholarship-head-action admin-scholarship-head-action--secondary"
 								disabled={!adminReportExportsEnabled}
-								onClick={() => openReportPreview(scholarshipSectionPreviewConfig)}
+								onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.SCHOLARSHIPS, { search: scholarshipSearch, scholarship: scholarshipProvider }, { dataset: scholarshipTab, origin: "section" })}
 							>
 								<HiOutlineEye /> Generate
 							</button>
@@ -9817,14 +9402,6 @@ export default function AdminDashboard() {
 		}
 
 		if (activeSection === "requirements") {
-			const visibleRows =
-				soeTab === "requesting"
-					? requestingSoeReportRows
-					: soeTab === "approved"
-						? approvedSoeReportRows
-						: soeTab === "rejected"
-							? rejectedSoeReportRows
-							: soeCheckingRows.map((row) => toSoeReportRow(row))
 			return (
 				<section className="admin-management-panel admin-requirements-management">
 					<div className="admin-panel-head">
@@ -9842,17 +9419,13 @@ export default function AdminDashboard() {
 								type="button"
 								className="admin-export-btn admin-export-btn--mini"
 								disabled={!adminReportExportsEnabled}
-								onClick={() => openReportPreview(createSoePreviewConfig(
-									visibleRows,
-									`Tab: ${soeTab} | Search: ${soeSearch || "-"} | Chart Range: ${soeTrendRange}`,
-									soeTab === "requesting"
-										? "Pending Requests"
-										: soeTab === "approved"
-											? "Approved Requests"
-											: soeTab === "rejected"
-												? "Rejected Requests"
-												: "Signing Requests",
-								))}
+								onClick={() => openReportCenterPreview(ADMIN_REPORT_TYPES.REQUIREMENTS,
+								soeTab === "checking" ? {
+									search: soeCheckSearch,
+									signing: { pending: "Pending Signature", previous: "Signed", rejected: "Rejected" }[soeCheckingTab],
+									academicCycle: soeCheckingTab === "pending" ? currentSemesterTag : "All",
+								} : { search: soeSearch, material: soeMaterialFilter, providerType: soeProviderFilter },
+								{ dataset: soeTab === "checking" ? "signing" : soeTab, origin: "section" })}
 							>
 								<HiOutlineEye /> Generate Preview
 							</button>

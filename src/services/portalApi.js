@@ -33,15 +33,19 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 	let response
 	const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Math.max(1000, Number(options.timeoutMs)) : 0
 	const controller = timeoutMs > 0 ? new AbortController() : null
+	const abortFromCaller = () => controller?.abort()
+	if (options.signal?.aborted) abortFromCaller()
+	else options.signal?.addEventListener("abort", abortFromCaller, { once: true })
 	const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
 	try {
 		response = await trackedFetch(`${baseUrl}${path}`, {
 			method: "POST",
 			headers: await buildPortalRequestHeaders(options.actor || {}),
 			body: JSON.stringify(payload),
-			...(controller ? { signal: controller.signal } : {}),
+			...(controller || options.signal ? { signal: controller?.signal || options.signal } : {}),
 		}, options.operation || null)
 	} catch (error) {
+		if (options.signal?.aborted) throw error
 		if (error?.name === "AbortError") {
 			throw new PortalApiError(`${errorLabel} timed out. Please try again.`, {
 				status: 408,
@@ -53,6 +57,7 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 		})
 	} finally {
 		if (timeoutId) clearTimeout(timeoutId)
+		options.signal?.removeEventListener("abort", abortFromCaller)
 	}
 
 	const data = await response.json().catch(() => ({}))

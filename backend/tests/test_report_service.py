@@ -79,6 +79,14 @@ class ReportServiceTests(unittest.TestCase):
             self.assertIn("Review <69> & details", text)
             self.assertIn("Student 69", text)
             self.assertEqual(text.count("Student ID"), len(pdf.pages))
+            for page in pdf.pages:
+                self.assertEqual(2, len(page.images))
+                for image in page.images:
+                    self.assertAlmostEqual(0, image["x0"], delta=1)
+                    self.assertAlmostEqual(page.width, image["x1"], delta=1)
+                words = page.extract_words()
+                body_words = [word for word in words if not word["text"].startswith("Page") and word["top"] < page.height - 85]
+                self.assertTrue(all(word["top"] >= 130 for word in body_words))
 
     def test_top_students_report_requires_admin_identity(self):
         with self.assertRaises(HTTPException) as missing_identity:

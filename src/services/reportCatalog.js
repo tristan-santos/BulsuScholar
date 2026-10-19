@@ -44,6 +44,7 @@ export function createCanonicalReport(config = {}) {
 		key: config.key || config.reportType || "report",
 		reportType: config.reportType || config.key || "report",
 		columnDefinitions,
+		rows,
 		columns: columnDefinitions.map((column) => column.label),
 		csvRows: rows,
 		stats: Array.isArray(config.stats) ? config.stats : [],

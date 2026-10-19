@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -8,10 +9,12 @@ from uuid import uuid4
 from fastapi import HTTPException, Request
 
 try:
+    from .admin_report_datasets import build_section_dataset, REPORT_DATASETS
     from .report_service import MAX_REPORT_ROWS, build_report_pdf_bytes
     from .root_service import build_root_report
     from .supabase_ops import supabase_rest_insert, supabase_select
 except ImportError:  # pragma: no cover
+    from admin_report_datasets import build_section_dataset, REPORT_DATASETS
     from report_service import MAX_REPORT_ROWS, build_report_pdf_bytes
     from root_service import build_root_report
     from supabase_ops import supabase_rest_insert, supabase_select
@@ -27,7 +30,7 @@ ADMIN_REPORT_TYPES = {
 }
 ALLOWED_FILTERS = {
     "search", "status", "grantor", "course", "year", "material",
-    "signing", "risk", "scholarship", "dateFrom", "dateTo",
+    "signing", "risk", "scholarship", "dateFrom", "dateTo", "providerType", "academicCycle",
 }
 REPORT_TITLES = {
     "students": ("Student Management Report", "Student Records"),
@@ -121,9 +124,19 @@ def _within_dates(record: dict[str, Any], filters: dict[str, str]) -> bool:
 def _matches(report_type: str, record: dict[str, Any], filters: dict[str, str]) -> bool:
     if not _contains(record, filters["search"]) or not _within_dates(record, filters):
         return False
+    if filters["academicCycle"] != "All" and record.get("cycle") and record["cycle"] != filters["academicCycle"]:
+        return False
     if filters["grantor"] != "All":
         ids = record.get("grantorIds") or [record.get("grantorId")]
         if filters["grantor"] not in {_text(item) for item in ids if item}:
+            return False
+    if filters["scholarship"] != "All" and report_type != "top_students":
+        def normalize(value):
+            return re.sub(r"[^a-z0-9]+", " ", _text(value).lower()).strip()
+        selected = normalize(filters["scholarship"])
+        values = [record.get(key) for key in ("scholarshipId", "scholarship", "title", "programName")]
+        values.extend(record.get("scholarshipTitles") or [])
+        if selected not in {normalize(value) for value in values if value}:
             return False
     if report_type == "students":
         return (
@@ -136,9 +149,11 @@ def _matches(report_type: str, record: dict[str, Any], filters: dict[str, str]) 
     if report_type == "scholarships":
         return _equals_filter(record.get("status"), filters["status"])
     if report_type == "requirements":
-        material_ok = filters["material"] == "All" or filters["material"].lower() in _text(record.get("materials")).lower()
+        material_ok = (filters["material"] == "All" or filters["material"] in (record.get("materialKeys") or [])
+                       or filters["material"].lower() in _text(record.get("materials")).lower())
         signing_ok = _equals_filter(record.get("signingState"), filters["signing"])
-        return _equals_filter(record.get("reviewState"), filters["status"]) and material_ok and signing_ok
+        return (_equals_filter(record.get("reviewState"), filters["status"]) and material_ok and signing_ok
+                and _equals_filter(record.get("providerType"), filters["providerType"]))
     if report_type == "compliance":
         violations = record.get("violationCount")
         if violations is None:
@@ -151,24 +166,38 @@ def _matches(report_type: str, record: dict[str, Any], filters: dict[str, str]) 
 
 def _filter_label(filters: dict[str, str]) -> str:
     parts = []
-    for key in ("search", "status", "grantor", "course", "year", "material", "signing", "risk", "scholarship", "dateFrom", "dateTo"):
+    for key in ("search", "status", "grantor", "course", "year", "material", "signing", "risk", "scholarship", "dateFrom", "dateTo", "providerType", "academicCycle"):
         value = filters[key]
         if value and value != "All":
             parts.append(f"{key}: {value}")
     return " | ".join(parts) if parts else "All records"
 
 
-def _stats(report_type: str, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _stats(report_type: str, records: list[dict[str, Any]], dataset: str = "all") -> list[dict[str, Any]]:
     stats = [{"label": "Matching Records", "value": len(records)}]
+    if report_type == "scholarships" and dataset not in {"all", "scholarships"}:
+        if dataset == "overview":
+            stats.append({"label": "Active Recipients", "value": sum(int(row.get("activeRecipients") or 0) for row in records)})
+        else:
+            stats.extend([
+                {"label": "Students", "value": len({row.get("studentId") for row in records})},
+                {"label": "Grantors", "value": len({value for row in records for value in (row.get("grantorIds") or [row.get("grantorId")]) if value})},
+            ])
+        return stats
     if report_type == "students":
         stats.extend([
             {"label": "Active", "value": sum(_text(row.get("recordStatus")).lower() == "active" for row in records)},
             {"label": "Archived", "value": sum(_text(row.get("recordStatus")).lower() == "archived" for row in records)},
         ])
     elif report_type == "scholarships":
+        def numeric(value):
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
         stats.extend([
-            {"label": "Total Slots", "value": sum(int(row.get("totalSlots") or 0) for row in records)},
-            {"label": "Applications", "value": sum(int(row.get("applications") or 0) for row in records)},
+            {"label": "Total Slots", "value": sum(numeric(row.get("totalSlots")) for row in records)},
+            {"label": "Applications", "value": sum(numeric(row.get("applications")) for row in records)},
         ])
     elif report_type == "requirements":
         stats.extend([
@@ -187,7 +216,10 @@ def build_admin_report(payload: dict[str, Any], *, paginate: bool = True) -> dic
     if report_type not in ADMIN_REPORT_TYPES:
         raise HTTPException(status_code=422, detail="invalid_report_type")
     filters = _normalize_filters(payload.get("filters"))
-    source = build_root_report(report_type)
+    dataset = _text(payload.get("dataset"), "all")
+    if dataset not in REPORT_DATASETS[report_type]:
+        raise HTTPException(status_code=422, detail="invalid_report_dataset")
+    source = build_section_dataset(report_type, dataset) if dataset != "all" else build_root_report(report_type)
     records = [record for record in source.get("records") or [] if _matches(report_type, record, filters)]
     if len(records) > 10_000:
         raise HTTPException(status_code=422, detail="report_result_too_large")
@@ -197,25 +229,30 @@ def build_admin_report(payload: dict[str, Any], *, paginate: bool = True) -> dic
     columns = source.get("columns") or []
     rows = [[_text(record.get(column["key"]), "-") for column in columns] for record in visible]
     title, dataset_title = REPORT_TITLES[report_type]
+    dataset_title = source.get("datasetTitle") or dataset_title
+    if dataset != "all":
+        title = {"students": "Student Management Report", "grantors": "Grantor Management Report",
+                 "scholarships": "Scholarship Programs Report", "requirements": "Requirements Report"}[report_type]
     return {
         "ok": True,
         "reportType": report_type,
         "key": report_type,
+        "dataset": dataset,
         "title": title,
         "datasetTitle": dataset_title,
-        "description": "Server-authoritative report generated from current portal records.",
+        "description": "Review the selected records before exporting.",
         "columns": columns,
         "rows": rows,
         "csvRows": rows,
-        "stats": _stats(report_type, records),
+        "stats": _stats(report_type, records, dataset),
         "filters": filters,
-        "filterLabel": _filter_label(filters),
+        "filterLabel": f"Dataset: {dataset_title} | {_filter_label(filters)}",
         "page": page,
         "pageSize": page_size,
         "total": len(records),
         "totalPages": max(1, (len(records) + page_size - 1) // page_size),
         "generatedAt": _now_iso(),
-        "filename": f"bulsuscholar-{report_type}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        "filename": f"bulsuscholar-{report_type}-{dataset}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
     }
 
 
@@ -261,6 +298,7 @@ def record_admin_report_export(request: Request, report: dict[str, Any], export_
             "actorType": "admin",
             "actorId": actor_id,
             "reportType": report["reportType"],
+            "dataset": report.get("dataset", "all"),
             "filters": report["filters"],
             "format": export_format,
             "rowCount": report["total"],
