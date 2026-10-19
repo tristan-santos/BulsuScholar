@@ -1,4 +1,4 @@
-import region3Locations from "../../shared/region3Locations.json"
+import philippineLocations from "../../shared/philippineLocations.json"
 
 /**
  * Philippine provinces and their corresponding cities/municipalities.
@@ -1807,13 +1807,13 @@ const PHILIPPINE_LOCATIONS = {
 	],
 }
 
-export const PROVINCES = Object.keys(PHILIPPINE_LOCATIONS).sort()
+export const PROVINCES = Object.keys(philippineLocations).sort()
 
-export const REGION_III_PROVINCES = Object.keys(region3Locations)
+export const REGION_III_PROVINCES = ["Aurora", "Bataan", "Bulacan", "Nueva Ecija", "Pampanga", "Tarlac", "Zambales"]
 
 export const REGION_III_LOCATION_GROUPS = REGION_III_PROVINCES.map((province) => ({
 	province,
-	municipalities: [...region3Locations[province]],
+	municipalities: [...philippineLocations[province]],
 }))
 
 export const OTHER_PROVINCE_VALUE = "__other__"
@@ -1832,7 +1832,7 @@ export function getRegionProvinceSelection(province = "") {
 }
 
 export function getCitiesByProvince(province = "") {
-	return region3Locations[province] || PHILIPPINE_LOCATIONS[province] || []
+	return philippineLocations[province] || PHILIPPINE_LOCATIONS[province] || []
 }
 
 const PSGC_API_BASE_URL = "https://psgc.cloud/api/v2"

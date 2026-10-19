@@ -22,9 +22,15 @@ class LocationScopeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "scope_municipality_province_mismatch"):
             canonicalize_scope_locations([{"province": "Bulacan", "municipality": "Angeles City"}])
 
-    def test_province_must_be_in_region_three(self):
-        with self.assertRaisesRegex(ValueError, "scope_province_outside_region_iii"):
-            canonicalize_scope_locations([{"province": "Cavite", "municipality": "Bacoor"}])
+    def test_other_regions_are_supported(self):
+        self.assertEqual(
+            [{"province": "Cavite", "municipality": "Bacoor City"}],
+            canonicalize_scope_locations([{"province": "Cavite", "municipality": "Bacoor"}]),
+        )
+
+    def test_unknown_province_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "scope_province_not_supported"):
+            canonicalize_scope_locations([{"province": "Atlantis", "municipality": "Central"}])
 
     def test_duplicate_aliases_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "duplicate_scope_location"):
@@ -38,7 +44,10 @@ class LocationScopeTests(unittest.TestCase):
 
     def test_legacy_ambiguous_municipality_is_not_guessed(self):
         self.assertEqual([], legacy_scope_locations(["San Luis"]))
-        self.assertEqual([{"province": "Bulacan", "municipality": "Plaridel"}], legacy_scope_locations(["Plaridel"]))
+        self.assertEqual(
+            [{"province": "Aurora", "municipality": "Maria Aurora"}],
+            legacy_scope_locations(["Maria Aurora"]),
+        )
 
 
 if __name__ == "__main__":

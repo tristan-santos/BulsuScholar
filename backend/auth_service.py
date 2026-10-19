@@ -519,7 +519,7 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
     if not provider.get("ok") or not portal.get("ok"):
         compensate_created_grantor()
         raise HTTPException(status_code=503, detail="grantor_record_creation_failed")
-    scope_result = supabase_rpc("save_grantor_scope_policy_v2", {
+    scope_result = supabase_rpc("save_grantor_scope_policy_v3", {
         "p_grantor_id": grantor_id, "p_classification": classification,
         "p_name": str(scope.get("name") or "").strip()[:120],
         "p_enabled": scope.get("enabled") is True,

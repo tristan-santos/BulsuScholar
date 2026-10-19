@@ -284,6 +284,7 @@ def supabase_rpc(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
                 "invalid_scope_location",
                 "scope_locations_required",
                 "scope_province_outside_region_iii",
+                "scope_province_not_supported",
                 "scope_municipality_province_mismatch",
                 "duplicate_scope_location",
                 "application_requirement_pending",

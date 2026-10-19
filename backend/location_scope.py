@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 
-CATALOG_PATH = Path(__file__).resolve().parent.parent / "shared" / "region3Locations.json"
+CATALOG_PATH = Path(__file__).resolve().parent.parent / "shared" / "philippineLocations.json"
 
 
 def normalize_location(value: Any) -> str:
@@ -29,11 +29,11 @@ def _load_catalog() -> dict[str, list[str]]:
     }
 
 
-REGION3_LOCATIONS = _load_catalog()
-PROVINCE_LOOKUP = {normalize_location(province): province for province in REGION3_LOCATIONS}
+PHILIPPINE_LOCATIONS = _load_catalog()
+PROVINCE_LOOKUP = {normalize_location(province): province for province in PHILIPPINE_LOCATIONS}
 MUNICIPALITY_LOOKUP = {
     province: {normalize_location(municipality): municipality for municipality in municipalities}
-    for province, municipalities in REGION3_LOCATIONS.items()
+    for province, municipalities in PHILIPPINE_LOCATIONS.items()
 }
 
 
@@ -47,7 +47,7 @@ def canonicalize_scope_locations(values: Any) -> list[dict[str, str]]:
             raise ValueError("invalid_scope_location")
         province = PROVINCE_LOOKUP.get(normalize_location(value.get("province")))
         if not province:
-            raise ValueError("scope_province_outside_region_iii")
+            raise ValueError("scope_province_not_supported")
         municipality = MUNICIPALITY_LOOKUP[province].get(normalize_location(value.get("municipality")))
         if not municipality:
             raise ValueError("scope_municipality_province_mismatch")
@@ -63,7 +63,7 @@ def legacy_scope_locations(values: Any) -> list[dict[str, str]]:
     if not isinstance(values, list):
         return []
     candidates: dict[str, list[dict[str, str]]] = {}
-    for province, municipalities in REGION3_LOCATIONS.items():
+    for province, municipalities in PHILIPPINE_LOCATIONS.items():
         for municipality in municipalities:
             candidates.setdefault(normalize_location(municipality), []).append({
                 "province": province,

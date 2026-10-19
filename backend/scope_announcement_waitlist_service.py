@@ -130,7 +130,7 @@ def save_grantor_scope(request: Request, payload: dict[str, Any]) -> dict[str, A
         raise HTTPException(status_code=422, detail=str(error)) from error
     if payload.get("enabled") is True and not locations:
         raise HTTPException(status_code=422, detail="scope_locations_required")
-    result = supabase_rpc("save_grantor_scope_policy_v2", {
+    result = supabase_rpc("save_grantor_scope_policy_v3", {
         "p_grantor_id": grantor_id, "p_classification": classification,
         "p_name": _text(payload.get("name"))[:120], "p_enabled": payload.get("enabled") is True,
         "p_locations": locations, "p_actor_id": actor_id,

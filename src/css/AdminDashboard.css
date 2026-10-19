@@ -10903,6 +10903,26 @@
 .admin-region-scope-options label.is-selected { border-color: #66aa8a; background: #eaf6f0; color: #005f39; }
 .admin-grantor-field .admin-region-scope-options input[type="checkbox"] { width: 16px; min-width: 16px; height: 16px; min-height: 16px; margin: 0; padding: 0; accent-color: #007247; box-shadow: none; }
 .admin-region-scope-options span { min-width: 0; overflow-wrap: anywhere; font-size: .72rem; font-weight: 700; }
+.admin-region-scope-other-body { display: grid; gap: .7rem; padding: .7rem; border-top: 1px solid #dce9e3; background: #f8fbf9; }
+.admin-region-scope-search { display: grid; gap: .35rem; }
+.admin-region-scope-search > label { color: #344f45; font-size: .72rem; font-weight: 800; }
+.admin-region-scope-search > div { position: relative; }
+.admin-region-scope-search svg { position: absolute; top: 50%; left: .65rem; width: 16px; height: 16px; color: #698078; transform: translateY(-50%); pointer-events: none; }
+.admin-grantor-field .admin-region-scope-search input { min-height: 40px; padding-left: 2rem; border-radius: 6px; background: #fff; font-size: .78rem; }
+.admin-region-scope-search-results { display: grid; max-height: 220px; overflow-y: auto; border: 1px solid #d8e4de; border-radius: 6px; background: #fff; }
+.admin-region-scope-search-results > button { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-height: 40px; padding: .55rem .7rem; border: 0; border-bottom: 1px solid #e4ece8; background: #fff; color: #29473d; font-size: .75rem; font-weight: 750; text-align: left; cursor: pointer; }
+.admin-region-scope-search-results > button:last-child { border-bottom: 0; }
+.admin-region-scope-search-results > button:hover:not(:disabled),
+.admin-region-scope-search-results > button:focus-visible { background: #edf7f2; color: #00633c; }
+.admin-region-scope-search-results > button:focus-visible { outline: 3px solid rgba(0, 99, 60, .18); outline-offset: -3px; }
+.admin-region-scope-search-results small { color: #6b7c75; font-size: .67rem; font-weight: 700; }
+.admin-region-scope-search-results p,
+.admin-region-scope-options--other > p { margin: 0; padding: .7rem; color: #687a72; font-size: .74rem; }
+.admin-region-scope-selected-province { display: flex; align-items: center; gap: .55rem; min-height: 40px; padding: .45rem .6rem; border: 1px solid #c5dbd1; border-radius: 6px; background: #eef7f2; }
+.admin-region-scope-selected-province > span { color: #65766f; font-size: .68rem; font-weight: 700; }
+.admin-region-scope-selected-province > strong { min-width: 0; flex: 1; color: #075f3c; font-size: .77rem; }
+.admin-region-scope-selected-province > button { min-height: 30px; padding: .3rem .5rem; border: 1px solid #9fc8b6; border-radius: 4px; background: #fff; color: #00633c; font-size: .69rem; font-weight: 800; cursor: pointer; }
+.admin-region-scope-options--other { max-height: 260px; overflow-y: auto; border: 1px solid #d8e4de; border-radius: 6px; }
 .admin-region-scope.is-disabled { opacity: .68; }
 .admin-region-scope.is-disabled .admin-region-scope-options label,
 .admin-region-scope.is-disabled .admin-region-scope-summary button { cursor: not-allowed; }
@@ -11024,6 +11044,18 @@
 .admin-portal--dark .admin-region-scope-options label { color: #cbd5e1; }
 .admin-portal--dark .admin-region-scope-options label.is-selected { border-color: #39b97a; background: rgba(0, 114, 71, .25); color: #b9f2d4; }
 .admin-portal--dark .admin-region-scope-summary button { border-color: rgba(57, 185, 122, .45); background: rgba(0, 114, 71, .22); color: #b9f2d4; }
+.admin-portal--dark .admin-region-scope-other-body,
+.admin-portal--dark .admin-region-scope-search-results,
+.admin-portal--dark .admin-region-scope-search-results > button,
+.admin-portal--dark .admin-region-scope-search input { border-color: rgba(148, 163, 184, .28); background: #111827; color: #dbe7e1; }
+.admin-portal--dark .admin-region-scope-search > label,
+.admin-portal--dark .admin-region-scope-search-results small { color: #94a3b8; }
+.admin-portal--dark .admin-region-scope-search-results > button:hover:not(:disabled),
+.admin-portal--dark .admin-region-scope-search-results > button:focus-visible { background: #15271f; color: #8ee0bc; }
+.admin-portal--dark .admin-region-scope-selected-province { border-color: rgba(57, 185, 122, .4); background: rgba(0, 114, 71, .2); }
+.admin-portal--dark .admin-region-scope-selected-province > span { color: #94a3b8; }
+.admin-portal--dark .admin-region-scope-selected-province > strong { color: #b9f2d4; }
+.admin-portal--dark .admin-region-scope-selected-province > button { border-color: rgba(57, 185, 122, .45); background: #0f172a; color: #b9f2d4; }
 .admin-portal--dark .admin-region-scope-validation { color: #fda48f !important; }
 
 .admin-portal--dark .admin-grantor-modal-actions {
