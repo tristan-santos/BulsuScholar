@@ -10635,6 +10635,14 @@
 	box-shadow: 0 28px 70px rgba(15, 23, 42, 0.32);
 }
 
+.admin-detail-backdrop > .admin-detail-modal--grantor {
+	max-height: calc(100dvh - 2rem);
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
+}
+
 .admin-detail-modal--grantor .admin-detail-close {
 	position: absolute;
 	top: 16px;
