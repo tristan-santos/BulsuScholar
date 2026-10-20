@@ -1428,21 +1428,16 @@ export default function ProviderDashboard() {
 	}, [grantorId])
 
 	useEffect(() => {
-		setAnnouncementImagePreviews((prev) => {
-			prev.forEach((item) => URL.revokeObjectURL(item.url))
-			return announcementImageFiles.map((file) => ({
-				file,
-				name: file.name,
-				url: URL.createObjectURL(file),
-			}))
-		})
-	}, [announcementImageFiles])
-
-	useEffect(() => {
+		const previews = announcementImageFiles.map((file) => ({
+			file,
+			name: file.name,
+			url: URL.createObjectURL(file),
+		}))
+		setAnnouncementImagePreviews(previews)
 		return () => {
-			announcementImagePreviews.forEach((item) => URL.revokeObjectURL(item.url))
+			previews.forEach((item) => URL.revokeObjectURL(item.url))
 		}
-	}, [announcementImagePreviews])
+	}, [announcementImageFiles])
 
 	useEffect(() => {
 		if (!grantorId) return undefined
@@ -3620,7 +3615,10 @@ export default function ProviderDashboard() {
 
 	const selectAnnouncementImages = (fileList) => {
 		try {
-			setAnnouncementImageFiles((current) => addAnnouncementImageFiles(current, fileList))
+			// Copy the live FileList before the input is cleared or React defers the update.
+			const selectedFiles = Array.from(fileList || [])
+			const nextFiles = addAnnouncementImageFiles(announcementImageFiles, selectedFiles)
+			setAnnouncementImageFiles(nextFiles)
 			setAnnouncementAudiencePreview(null)
 		} catch (error) {
 			toast.error(error.message)
@@ -4755,7 +4753,7 @@ export default function ProviderDashboard() {
 							</div>
 							{applicationFiltersOpen ? <div id="grantor-application-filters" className="grantor-applications-filter-content">
 							<div className="grantor-applications-search-row">
-								<label className="grantor-search-field"><span className="sr-only">Search applications</span><HiOutlineSearch /><input type="search" aria-label="Search applications" placeholder="Search applicant, student ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
+								<label className="grantor-search-field"><HiOutlineSearch /><input type="search" aria-label="Search applications" placeholder="Search applicant, student ID, application number, or scholarship" value={applicationSearch} onChange={(event) => setApplicationSearch(event.target.value)} /></label>
 								<button
 									type="button"
 									className="grantor-date-sort-btn"
