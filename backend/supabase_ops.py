@@ -249,6 +249,8 @@ def supabase_rpc(function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
             parsed = json.loads(detail)
             message = str(parsed.get("message") or parsed.get("details") or "")
             known_reasons = {
+                "scholarship_requirement_not_found",
+                "requirement_upload_limit_reached",
                 "announcement_not_found",
                 "announcement_not_open_for_applications",
                 "invalid_slot_capacity",

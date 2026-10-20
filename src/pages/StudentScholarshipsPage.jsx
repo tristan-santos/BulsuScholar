@@ -31,6 +31,7 @@ import {
 import { db } from "../services/supabaseDataService"
 import StudentTopbar from "../components/StudentTopbar"
 import StudentFooter from "../components/StudentFooter"
+import StudentDocumentPreview from "../components/StudentDocumentPreview"
 import ApplicationScrollStack from "../components/ApplicationScrollStack"
 import "../css/AdminDashboard.css"
 import "../css/StudentDashboard.css"
@@ -78,7 +79,7 @@ import {
 	GRANTOR_PORTAL_COLLECTION,
 	normalizeGrantorPortalSettings,
 } from "../services/grantorService"
-import { applyScholarshipWorkflow, loadWaitlistWorkflow, materialRequestWorkflow, preflightScholarshipMaterialsWorkflow, rejectScholarshipInvitationWorkflow, requestScholarshipMaterialsWorkflow, resolveWaitlistOfferWorkflow, withdrawScholarshipWorkflow, updateScholarshipDocumentsWorkflow } from "../services/workflowService"
+import { applyScholarshipWorkflow, loadWaitlistWorkflow, materialRequestWorkflow, preflightScholarshipMaterialsWorkflow, rejectScholarshipInvitationWorkflow, requestScholarshipMaterialsWorkflow, resolveWaitlistOfferWorkflow, withdrawScholarshipWorkflow } from "../services/workflowService"
 import {
 	SCHOLARSHIP_CHOICE_ENABLED,
 	getGrantorApplicationBlock,
@@ -92,7 +93,7 @@ import {
 	loadRecommendedScholarships,
 } from "../services/recommendedScholarshipService"
 import { getNameInitials } from "../utils/nameInitials"
-import { uploadToStorage } from "../services/storageService"
+import { uploadScholarshipRequirementFiles } from "../services/scholarshipRequirementService"
 import {
 	findMatchingPendingInvitation,
 	getGrantorRejectionCooldown,
@@ -510,6 +511,8 @@ export default function StudentScholarshipsPage() {
 	const [soePreviewBytes, setSoePreviewBytes] = useState(null)
 	const [soePreviewRequestNumber, setSoePreviewRequestNumber] = useState("")
 	const [otherRequirementUploadBusy, setOtherRequirementUploadBusy] = useState("")
+	const requirementUploadLock = useRef(false)
+	const [requirementPreview, setRequirementPreview] = useState(null)
 	const [waitlistState, setWaitlistState] = useState({ entries: [], offers: [] })
 	const [waitlistBusy, setWaitlistBusy] = useState("")
 	const [signedSoeBusy, setSignedSoeBusy] = useState("")
@@ -1706,37 +1709,6 @@ export default function StudentScholarshipsPage() {
 		!kwspEntry ||
 		hasMultipleScholarshipChoices
 
-	const persistScholarships = async (nextScholarships, message = "") => {
-		if (SCHOLARSHIP_CHOICE_ENABLED) {
-			for (const entry of nextScholarships) {
-				const current = scholarships.find((item) => item.id === entry.id)
-				if (JSON.stringify(entry.otherRequirementUploads) === JSON.stringify(current?.otherRequirementUploads)) continue
-				const result = await updateScholarshipDocumentsWorkflow({ studentId: userId, applicationId: entry.applicationId,
-					actorType: "student", actorId: userId, field: "otherRequirementUploads", value: entry.otherRequirementUploads })
-				setUser((prev) => ({ ...(prev || {}), ...result.student }))
-			}
-			if (message) toast.success(message)
-			return
-		}
-		await materialRequestWorkflow({
-			updates: [
-				{
-					table: "students",
-					id: userId,
-					data: {
-						scholarships: nextScholarships,
-						updatedAt: serverTimestamp(),
-					},
-				},
-			],
-		})
-		setUser((prev) => ({ ...(prev || {}), scholarships: nextScholarships }))
-		await syncWarnings(nextScholarships)
-		if (message) {
-			toast.success(message)
-		}
-	}
-
 	const validateOtherRequirementFiles = (files = [], requirement = {}) => {
 		const expectedType = String(requirement.fileType || "PDF").toUpperCase()
 		return files.every((file) => {
@@ -1756,7 +1728,7 @@ export default function StudentScholarshipsPage() {
 	}
 
 	const handleOtherRequirementUpload = async (target, requirement, index, fileList) => {
-		if (!user || !userId || isMutating || !target || !requirement) return
+		if (!user || !userId || isMutating || otherRequirementUploadBusy || requirementUploadLock.current || !target || !requirement) return
 		const selected = scholarships.find((item) => item.id === target.id)
 		if (!selected) {
 			toast.error("Scholarship record not found.")
@@ -1782,48 +1754,22 @@ export default function StudentScholarshipsPage() {
 
 		const filesToUpload = files.slice(0, remainingSlots)
 		const busyKey = `${selected.id}_${requirementKey}`
+		requirementUploadLock.current = true
 		setOtherRequirementUploadBusy(busyKey)
 		try {
-			const uploads = await Promise.all(
-				filesToUpload.map((file) =>
-					uploadToStorage(file, {
-						folder: `students/${userId}/other-requirements/${selected.id || selected.requestNumber || "scholarship"}`,
-					}),
-				),
-			)
-			const preparedUploads = uploads.map((upload, uploadIndex) => ({
-				url: upload.url,
-				name: upload.name || filesToUpload[uploadIndex]?.name || requirement.name,
-				type: upload.type || filesToUpload[uploadIndex]?.type || requirement.fileType,
-				size: upload.size || filesToUpload[uploadIndex]?.size || 0,
-				path: upload.path || upload.publicId || "",
-				uploadedAt: new Date().toISOString(),
-			}))
-			const nextEntry = {
-				requirementId: requirementKey,
-				name: requirement.name,
-				fileType: requirement.fileType || "PDF",
-				uploadCount: uploadLimit,
-				files: [...existingFiles, ...preparedUploads].slice(0, uploadLimit),
-				updatedAt: new Date().toISOString(),
+			const applicationId = selected.applicationId || selected.id
+			const { application } = await uploadScholarshipRequirementFiles(applicationId, requirementKey, filesToUpload)
+			if (application) {
+				setStudentApplications((current) => current.map((item) => (item.applicationId || item.id) === applicationId ? { ...item, ...application } : item))
+				setUser((current) => ({ ...current, scholarships: (current?.scholarships || []).map((item) =>
+					(item.applicationId || item.id) === applicationId ? { ...item, ...application, id: item.id, applicationId } : item) }))
 			}
-			const nextScholarships = scholarships.map((item) =>
-				item.id === selected.id
-					? {
-							...item,
-							otherRequirementUploads: {
-								...(item.otherRequirementUploads || {}),
-								[requirementKey]: nextEntry,
-							},
-							updatedAt: serverTimestamp(),
-						}
-					: item,
-			)
-			await persistScholarships(nextScholarships, `${requirement.name} uploaded.`)
+			toast.success(`${requirement.name} uploaded.`)
 		} catch (error) {
 			console.error("Failed to upload other requirement:", error)
-			toast.error(`Failed to upload ${requirement.name}. Please try again.`)
+			toast.error(error.message || `Failed to upload ${requirement.name}. Please try again.`)
 		} finally {
+			requirementUploadLock.current = false
 			setOtherRequirementUploadBusy("")
 		}
 	}
@@ -1835,6 +1781,7 @@ export default function StudentScholarshipsPage() {
 		const entryRejected = isScholarshipRejected(entry)
 		const disabledByState =
 			isMutating ||
+			Boolean(otherRequirementUploadBusy) ||
 			entryFrozen ||
 			entryRejected ||
 			entry?.adminBlocked === true ||
@@ -1872,7 +1819,7 @@ export default function StudentScholarshipsPage() {
 											{uploadedFiles.map((file, fileIndex) => (
 												<li key={`${file.url || file.name}_${fileIndex}`}>
 													<HiOutlineDocumentText aria-hidden />
-													<span>{file.name || `${requirement.name} ${fileIndex + 1}`}</span>
+													{file.url?.startsWith("/scholarship-applications/") ? <button type="button" className="student-document-preview-open" onClick={() => setRequirementPreview({ ...file, requirementFile: true })}><HiOutlineEye /> {file.name || `${requirement.name} ${fileIndex + 1}`}</button> : <span>{file.name || `${requirement.name} ${fileIndex + 1}`}</span>}
 												</li>
 											))}
 										</ul>
@@ -4380,6 +4327,7 @@ export default function StudentScholarshipsPage() {
 					</div>
 				</div>
 			)}
+			{requirementPreview ? <StudentDocumentPreview submission={requirementPreview} onClose={() => setRequirementPreview(null)} /> : null}
 		</div>
 	)
 }

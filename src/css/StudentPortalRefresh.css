@@ -432,6 +432,12 @@
 	border-radius: 8px;
 }
 
+.student-profile-workspace .student-document-preview-close {
+	flex: 0 0 34px;
+	width: 34px;
+	min-width: 34px;
+}
+
 /* Announcements */
 .student-portal-view--announcements .student-announcement-page-actions,
 .student-portal-view--announcement-detail .student-announcement-detail-nav {

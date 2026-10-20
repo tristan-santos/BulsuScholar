@@ -1,5 +1,7 @@
 import { supabase } from "./supabaseClient"
 import { trackOperation } from "./operationTracker"
+import { requireBackendApiUrl } from "../config/backendApi"
+import { buildPortalRequestHeaders, PortalApiError } from "./portalApi"
 
 const DEFAULT_BUCKET = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || "bulsuscholar"
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -73,6 +75,16 @@ export async function removeStorageObject(file = {}) {
 
 export async function getStorageObjectBlob(file = {}) {
 	const url = file.url || file.publicUrl || ""
+	if (/^\/scholarship-applications\/[^/]+\/requirements\/[^/]+\/files\/[^/]+$/.test(url)) {
+		const response = await fetch(`${requireBackendApiUrl("Scholarship documents")}${url}`, {
+			headers: await buildPortalRequestHeaders(),
+		})
+		if (!response.ok) {
+			const data = await response.json().catch(() => ({}))
+			throw new PortalApiError(String(data.detail || "Unable to open this document").replaceAll("_", " "), { status: response.status })
+		}
+		return response.blob()
+	}
 	const { bucket, path } = parseSupabaseStorageLocation(file)
 	if (path) {
 		const { data, error } = await supabase.storage.from(bucket).download(path)

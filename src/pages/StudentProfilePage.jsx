@@ -17,6 +17,7 @@ import { toast } from "react-toastify"
 import StudentTopbar from "../components/StudentTopbar"
 import StudentFooter from "../components/StudentFooter"
 import StudentDatePicker from "../components/StudentDatePicker"
+import StudentDocumentPreview from "../components/StudentDocumentPreview"
 import CustomSelect from "../components/CustomSelect"
 import {
 	OTHER_PROVINCE_VALUE,
@@ -279,6 +280,7 @@ export default function StudentProfilePage({ formMode = false }) {
 	const [signature, setSignature] = useState("")
 	const [busy, setBusy] = useState("")
 	const [identityKind, setIdentityKind] = useState("student_id")
+	const [previewTarget, setPreviewTarget] = useState(null)
 	const { photoUrl: profilePhotoUrl } = useStudentProfilePhoto()
 
 	const load = useCallback(async () => {
@@ -348,9 +350,7 @@ export default function StudentProfilePage({ formMode = false }) {
 		setBusy("preview")
 		try {
 			const blob = await previewStudentProfileDraft(profile)
-			const url = URL.createObjectURL(blob)
-			window.open(url, "_blank", "noopener,noreferrer")
-			setTimeout(() => URL.revokeObjectURL(url), 60000)
+			setPreviewTarget({ id: "draft", name: "Student_Application_Profile_Draft.pdf", blob })
 		} catch (error) {
 			toast.error(error.message || "Unable to preview the draft.")
 		} finally { setBusy("") }
@@ -360,20 +360,13 @@ export default function StudentProfilePage({ formMode = false }) {
 		setBusy(type)
 		try {
 			await uploadStudentVerificationDocument(type, file, kind)
-			toast.success(`${DOCUMENT_LABELS[type]} submitted for review.`)
+			toast.success(`${DOCUMENT_LABELS[type]} updated and approved automatically.`)
 			await load()
 		} catch (error) {
 			toast.error(error.message || "Unable to upload the document.")
 		} finally { setBusy("") }
 	}
-	const preview = async (submission) => {
-		try {
-			const blob = await getStudentVerificationDocumentBlob(submission.id)
-			const url = URL.createObjectURL(blob)
-			window.open(url, "_blank", "noopener,noreferrer")
-			setTimeout(() => URL.revokeObjectURL(url), 60000)
-		} catch (error) { toast.error(error.message || "Unable to open the document.") }
-	}
+	const preview = (submission) => setPreviewTarget(submission)
 	const download = async (submission) => {
 		try {
 			const blob = await getStudentVerificationDocumentBlob(submission.id)
@@ -517,6 +510,7 @@ export default function StudentProfilePage({ formMode = false }) {
 				</section>
 			</main>
 			<StudentFooter />
+			{previewTarget ? <StudentDocumentPreview key={previewTarget.id} submission={previewTarget} onClose={() => setPreviewTarget(null)} /> : null}
 		</div>
 	)
 
@@ -572,6 +566,7 @@ export default function StudentProfilePage({ formMode = false }) {
 
 				<StudentFooter description="Manage your student profile and verification records." />
 			</main>
+			{previewTarget ? <StudentDocumentPreview key={previewTarget.id} submission={previewTarget} onClose={() => setPreviewTarget(null)} /> : null}
 		</div>
 	)
 }

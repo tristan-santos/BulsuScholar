@@ -24,6 +24,7 @@ try:
     from .academic_cycle_service import activate_admin_academic_cycle, get_admin_academic_cycle
     from .portal_data_service import delete_portal_data, mutate_portal_data, query_portal_data
     from .scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
+    from .scholarship_requirement_service import upload_requirement_files, requirement_file_content
     from .grantor_algorithms import (
         check_student_table_duplicates,
         evaluate_scholar_duplicate,
@@ -146,6 +147,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     from academic_cycle_service import activate_admin_academic_cycle, get_admin_academic_cycle
     from portal_data_service import delete_portal_data, mutate_portal_data, query_portal_data
     from scholarship_choice_service import mutate_scholarship_choice, update_scholarship_documents
+    from scholarship_requirement_service import upload_requirement_files, requirement_file_content
     from grantor_algorithms import (
         check_student_table_duplicates,
         evaluate_scholar_duplicate,
@@ -1004,6 +1006,16 @@ def grantor_confirm_admin_decision_endpoint(request: Request, payload: dict[str,
 def scholarship_documents_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     enforce_portal_scope(request, payload, {"student"}, owner_key="studentId")
     return update_scholarship_documents(payload)
+
+
+@app.post("/student/scholarships/{application_id}/requirements/{requirement_key}/files")
+async def scholarship_requirement_upload_endpoint(request: Request, application_id: str, requirement_key: str, files: list[UploadFile] = File(...)) -> dict[str, Any]:
+    return await upload_requirement_files(request, application_id, requirement_key, files)
+
+
+@app.get("/scholarship-applications/{application_id}/requirements/{requirement_key}/files/{file_id}")
+def scholarship_requirement_content_endpoint(request: Request, application_id: str, requirement_key: str, file_id: str) -> Response:
+    return requirement_file_content(request, application_id, requirement_key, file_id)
 
 
 @app.post("/workflows/admin/grantors/archive-state")

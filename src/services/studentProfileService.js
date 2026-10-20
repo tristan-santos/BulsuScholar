@@ -96,7 +96,7 @@ export async function getStudentVerificationDocumentBlob(submissionId, purpose =
 	const response = await trackedFetch(`${baseUrl()}/student/profile/documents/${encodeURIComponent(submissionId)}/content${params}`, {
 		headers: await buildPortalRequestHeaders(),
 	}, "document.download")
-	if (!response.ok) throw new PortalApiError("Unable to open this document.", { status: response.status })
+	if (!response.ok) await parseResponse(response, "Unable to open this document.")
 	return response.blob()
 }
 

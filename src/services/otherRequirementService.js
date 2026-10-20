@@ -59,6 +59,7 @@ export function collectOtherRequirementDocuments(scholarship = {}) {
 		return files
 			.filter((file) => file?.url)
 			.map((file, fileIndex) => ({
+				...file,
 				requirementId: requirement.id,
 				requirementName: requirement.name,
 				label: requirement.name,

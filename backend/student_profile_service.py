@@ -799,7 +799,7 @@ def _system_approve_submission(submission_id: str, submission: dict[str, Any], s
     update = {
         "status": "approved", "rejectionReason": "", "reviewNotes": "",
         "fieldErrors": {}, "reviewedBy": "system", "reviewedAt": reviewed_at,
-        "updatedAt": reviewed_at, "completionSource": "automatic_document_validation",
+        "updatedAt": reviewed_at,
     }
     if not supabase_document_update("student_document_submissions", submission_id, update).get("ok"):
         raise HTTPException(status_code=503, detail="automatic_document_review_failed")
@@ -882,7 +882,7 @@ async def upload_student_document(request: Request, document_type: str, file: Up
     student = _require_student(student_id)
     if document_type not in DOCUMENT_TYPES:
         raise HTTPException(status_code=422, detail="invalid_document_type")
-    body = await file.read()
+    body = await file.read(MAX_DOCUMENT_BYTES + 1)
     content_type = str(file.content_type or "").lower()
     if not body or len(body) > MAX_DOCUMENT_BYTES or content_type not in ALLOWED_DOCUMENT_TYPES:
         raise HTTPException(status_code=422, detail="invalid_document_file")
@@ -928,19 +928,24 @@ async def upload_student_document(request: Request, document_type: str, file: Up
         "documentKind": document_kind or document_type, "version": version, "status": "pending",
         "name": file.filename or f"{document_type}{extension}", "file": reference, "scan": scan,
         "requirementsSnapshot": requirements, "submittedAt": _now(), "updatedAt": _now(),
+        # Content metadata is immutable after insertion; approval changes review fields only.
+        "completionSource": "automatic_document_validation",
     }
-    supabase_document_upsert("student_document_submissions", submission_id, submission, merge=False)
+    saved = supabase_document_upsert("student_document_submissions", submission_id, submission, merge=False)
+    if not saved.get("ok"):
+        _delete_stored_bytes(reference)
+        raise HTTPException(status_code=503, detail="document_submission_save_failed")
+    # Do not replace the student's current pointer until automatic approval succeeds.
+    submission = {**submission, **_system_approve_submission(submission_id, submission, student)}
     compatibility_key = {"cor": "corFile", "rog": "cogFile", "identity": "schoolIdFile"}[document_type]
     compatibility = {
         "url": f"/student/profile/documents/{submission_id}/content", "path": reference["path"], "bucket": reference["bucket"],
         "name": submission["name"], "type": content_type, "size": len(body), "uploadedAt": submission["submittedAt"],
-        "semesterTag": cycle, "submissionId": submission_id, "reviewStatus": "pending",
+        "semesterTag": cycle, "submissionId": submission_id, "reviewStatus": "approved",
         "documentKind": submission["documentKind"],
     }
-    supabase_document_update("students", student_id, {compatibility_key: compatibility, "updatedAt": _now()})
-    # COR/ROG already passed the authoritative PDF parser above. Active-account
-    # identity replacements are optional and do not return to the admin queue.
-    submission = _system_approve_submission(submission_id, submission, student)
+    if not supabase_document_update("students", student_id, {compatibility_key: compatibility, "updatedAt": _now()}).get("ok"):
+        raise HTTPException(status_code=503, detail="document_profile_update_failed")
     return {"ok": True, "submission": {"id": submission_id, **submission}}
 
 
