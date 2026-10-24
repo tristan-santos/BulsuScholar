@@ -107,6 +107,7 @@ def get_grantor_scope(request: Request, payload: dict[str, Any]) -> dict[str, An
         "ok": True,
         "grantorId": grantor_id,
         "classification": (provider.get("data") or {}).get("grantorClassification", "other"),
+        "grantorType": (provider.get("data") or {}).get("grantorType", "internal"),
         "policy": policy_data,
     }
 
@@ -120,6 +121,9 @@ def save_grantor_scope(request: Request, payload: dict[str, Any]) -> dict[str, A
     provider = supabase_document_get("providers", grantor_id)
     if not provider.get("ok") or not provider.get("data"):
         raise HTTPException(status_code=404, detail="grantor_not_found")
+    grantor_type = _text(payload.get("grantorType") or provider["data"].get("grantorType") or "internal").lower()
+    if grantor_type not in {"internal", "external"}:
+        raise HTTPException(status_code=422, detail="invalid_grantor_type")
     try:
         locations = (
             canonicalize_scope_locations(payload.get("locations"))
@@ -130,8 +134,9 @@ def save_grantor_scope(request: Request, payload: dict[str, Any]) -> dict[str, A
         raise HTTPException(status_code=422, detail=str(error)) from error
     if payload.get("enabled") is True and not locations:
         raise HTTPException(status_code=422, detail="scope_locations_required")
-    result = supabase_rpc("save_grantor_scope_policy_v3", {
+    result = supabase_rpc("save_grantor_profile_policy", {
         "p_grantor_id": grantor_id, "p_classification": classification,
+        "p_grantor_type": grantor_type,
         "p_name": _text(payload.get("name"))[:120], "p_enabled": payload.get("enabled") is True,
         "p_locations": locations, "p_actor_id": actor_id,
     })
@@ -221,21 +226,20 @@ def list_filtered_applicants(request: Request, payload: dict[str, Any]) -> dict[
     }
 
 
-def build_applicant_export(request: Request, payload: dict[str, Any]) -> tuple[bytes, str, str]:
+def build_applicant_export(request: Request, payload: dict[str, Any]) -> tuple[bytes, str, str, dict[str, Any]]:
     result = list_filtered_applicants(request, {**payload, "page": 1, "pageSize": 100})
     # Fetch all pages server-side while preserving the authorized filter set.
     rows = result["rows"]
     total = int(result["total"])
     for page in range(2, (total + 99) // 100 + 1):
         rows.extend(list_filtered_applicants(request, {**payload, "page": page, "pageSize": 100})["rows"])
-    actor_type = _text(payload.get("actorType"))
-    actor_id = _text(payload.get("actorId"))
     export_format = _text(payload.get("format") or "csv").lower()
-    audit_id = f"report_{uuid4().hex}"
-    supabase_rest_insert("portal_report_audit_events", {"id": audit_id, "data": {
-        "actorType": actor_type, "actorId": actor_id, "grantorId": _text(payload.get("grantorId")),
+    if export_format not in {"pdf", "csv"}:
+        raise HTTPException(422, "invalid_report_format")
+    metadata = {
+        "grantorId": _text(payload.get("grantorId")),
         "filters": result["filters"], "format": export_format, "rowCount": len(rows), "createdAt": _iso(),
-    }})
+    }
     if export_format == "pdf":
         report_payload = {
             "title": "Grantor Applicant Report",
@@ -243,13 +247,24 @@ def build_applicant_export(request: Request, payload: dict[str, Any]) -> tuple[b
             "columns": ["Student ID", "Student", "Scholarship", "Status", "Location", "Cycle", "Document Review", "Tracking Stage"],
             "rows": [[row.get(key) or "" for key in ("studentId", "studentName", "scholarship", "status", "location", "academicCycle", "documentState", "trackingStage")] for row in rows],
         }
-        return build_report_pdf_bytes(report_payload), "application/pdf", "grantor-applicants.pdf"
+        return build_report_pdf_bytes(report_payload), "application/pdf", "grantor-applicants.pdf", metadata
     output = io.StringIO(newline="")
     columns = ["applicationNumber", "studentId", "studentName", "grantorName", "scholarship", "status", "location", "academicCycle", "documentState", "trackingStage"]
     writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
     writer.writeheader()
-    writer.writerows(rows)
-    return ("\ufeff" + output.getvalue()).encode("utf-8"), "text/csv; charset=utf-8", "grantor-applicants.csv"
+    def safe_cell(value):
+        text = str(value if value is not None else "")
+        return "'" + text if text.lstrip().startswith(("=", "+", "-", "@")) else text
+    writer.writerows({key: safe_cell(value) for key, value in row.items()} for row in rows)
+    return ("\ufeff" + output.getvalue()).encode("utf-8"), "text/csv; charset=utf-8", "grantor-applicants.csv", metadata
+
+
+def record_applicant_export(request: Request, metadata: dict[str, Any]) -> None:
+    saved = supabase_rest_insert("portal_report_audit_events", {"id": f"report_{uuid4().hex}", "data": {
+        **metadata, "actorId": request.headers.get("x-portal-actor-id"), "actorType": request.headers.get("x-portal-actor-type"),
+    }})
+    if not saved.get("ok"):
+        raise HTTPException(503, "report_export_audit_failed")
 
 
 def correct_student_number(request: Request, payload: dict[str, Any]) -> dict[str, Any]:

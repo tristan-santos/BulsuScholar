@@ -20,6 +20,11 @@ from PIL import Image, ImageOps
 from pypdf import PdfReader, PdfWriter
 
 try:
+    from .download_protection import processing_pdf
+except ImportError:  # pragma: no cover
+    from download_protection import processing_pdf
+
+try:
     from .access_control import enforce_portal_scope, require_admin_bearer
     from .document_scanner import parse_document, parse_pdf_document
     from .supabase_ops import (
@@ -877,7 +882,7 @@ def submit_student_profile(request: Request, payload: dict[str, Any]) -> dict[st
     return {"ok": True, "revision": {"id": revision_id, **revision}, "submission": {"id": submission_id, **submission}}
 
 
-async def upload_student_document(request: Request, document_type: str, file: UploadFile, document_kind: str = "") -> dict[str, Any]:
+async def upload_student_document(request: Request, document_type: str, file: UploadFile, document_kind: str = "", file_password: str = "") -> dict[str, Any]:
     student_id = _student_id(request)
     student = _require_student(student_id)
     if document_type not in DOCUMENT_TYPES:
@@ -886,6 +891,9 @@ async def upload_student_document(request: Request, document_type: str, file: Up
     content_type = str(file.content_type or "").lower()
     if not body or len(body) > MAX_DOCUMENT_BYTES or content_type not in ALLOWED_DOCUMENT_TYPES:
         raise HTTPException(status_code=422, detail="invalid_document_file")
+    original_body = body
+    if content_type == "application/pdf":
+        body = processing_pdf(body, file_password)
     cycle, semester = _cycle()
     requirements = _requirements(student, cycle, semester)
     scan: dict[str, Any] = {}
@@ -922,11 +930,19 @@ async def upload_student_document(request: Request, document_type: str, file: Up
     version = max([int(item.get("version") or 0) for item in existing] or [0]) + 1
     submission_id = f"document_{student_id}_{cycle}_{document_type}_{version}_{uuid4().hex[:8]}"
     extension = os.path.splitext(file.filename or "document")[1].lower() or (".pdf" if content_type == "application/pdf" else ".png")
-    reference = _store_bytes(f"students/{student_id}/verified-documents/{cycle}/{submission_id}{extension}", body, content_type)
+    reference = _store_bytes(f"students/{student_id}/verified-documents/{cycle}/{submission_id}{extension}", original_body, content_type)
+    preview_reference = None
+    if body != original_body:
+        try:
+            preview_reference = _store_bytes(f"students/{student_id}/verified-documents/{cycle}/{submission_id}.preview.pdf", body, content_type)
+        except Exception:
+            _delete_stored_bytes(reference)
+            raise
     submission = {
         "studentId": student_id, "academicCycle": cycle, "documentType": document_type,
         "documentKind": document_kind or document_type, "version": version, "status": "pending",
         "name": file.filename or f"{document_type}{extension}", "file": reference, "scan": scan,
+        **({"processingFile": preview_reference} if preview_reference else {}),
         "requirementsSnapshot": requirements, "submittedAt": _now(), "updatedAt": _now(),
         # Content metadata is immutable after insertion; approval changes review fields only.
         "completionSource": "automatic_document_validation",
@@ -934,13 +950,15 @@ async def upload_student_document(request: Request, document_type: str, file: Up
     saved = supabase_document_upsert("student_document_submissions", submission_id, submission, merge=False)
     if not saved.get("ok"):
         _delete_stored_bytes(reference)
+        if preview_reference:
+            _delete_stored_bytes(preview_reference)
         raise HTTPException(status_code=503, detail="document_submission_save_failed")
     # Do not replace the student's current pointer until automatic approval succeeds.
     submission = {**submission, **_system_approve_submission(submission_id, submission, student)}
     compatibility_key = {"cor": "corFile", "rog": "cogFile", "identity": "schoolIdFile"}[document_type]
     compatibility = {
         "url": f"/student/profile/documents/{submission_id}/content", "path": reference["path"], "bucket": reference["bucket"],
-        "name": submission["name"], "type": content_type, "size": len(body), "uploadedAt": submission["submittedAt"],
+        "name": submission["name"], "type": content_type, "size": len(original_body), "uploadedAt": submission["submittedAt"],
         "semesterTag": cycle, "submissionId": submission_id, "reviewStatus": "approved",
         "documentKind": submission["documentKind"],
     }
@@ -1138,7 +1156,7 @@ def profile_snapshot_content(request: Request, snapshot_id: str) -> Response:
     return Response(content=body, media_type="application/pdf", headers={"Content-Disposition": "inline; filename=\"Student_Application_Profile.pdf\""})
 
 
-def document_content(request: Request, submission_id: str, purpose: str = "") -> Response:
+def document_content(request: Request, submission_id: str, purpose: str = "", *, original: bool = False) -> Response:
     actor_id = str(request.headers.get("x-portal-actor-id") or "").strip()
     actor_type = str(request.headers.get("x-portal-actor-type") or "").strip().lower()
     record = supabase_document_get("student_document_submissions", submission_id)
@@ -1150,7 +1168,13 @@ def document_content(request: Request, submission_id: str, purpose: str = "") ->
         if actor_id != str(submission.get("studentId") or ""):
             raise HTTPException(status_code=403, detail="document_owner_mismatch")
     elif actor_type == "admin":
-        reviewer_id, reviewer = _reviewer(request)
+        if purpose == "preview":
+            reviewer_id, reviewer = _reviewer(request)
+        else:
+            reviewer_id = actor_id
+            _, reviewer = require_admin_bearer(request, actor_id)
+            if reviewer.get("role") not in {"full_admin", "student_reviewer"} and not {"students", "scholarships", "requirements"}.intersection(reviewer.get("permissions") or []):
+                raise HTTPException(status_code=403, detail="document_access_denied")
     elif actor_type in {"grantor", "provider"}:
         identity: dict[str, Any] = {}
         enforce_portal_scope(request, identity, {"grantor"})
@@ -1164,7 +1188,8 @@ def document_content(request: Request, submission_id: str, purpose: str = "") ->
             raise HTTPException(status_code=403, detail="document_access_denied")
     else:
         raise HTTPException(status_code=403, detail="document_access_denied")
-    body = _read_storage(submission.get("file") or {})
+    reference = submission.get("file") if original else submission.get("processingFile") or (submission.get("file") or {}).get("processingFile") or submission.get("file")
+    body = _read_storage(reference or {})
     is_signup_document = (
         submission.get("source") == "student_signup"
         or bool(submission.get("signupBatchId"))
@@ -1184,7 +1209,10 @@ def document_content(request: Request, submission_id: str, purpose: str = "") ->
         })
         if not preview_result.get("ok"):
             raise HTTPException(status_code=503, detail="document_preview_audit_failed")
-    return Response(content=body, media_type=str((submission.get("file") or {}).get("type") or "application/octet-stream"), headers={"Content-Disposition": f"inline; filename=\"{submission.get('name') or 'document'}\""})
+    return Response(content=body, media_type=str((submission.get("file") or {}).get("type") or "application/octet-stream"), headers={
+        "Content-Disposition": f"inline; filename*=UTF-8''{urllib.parse.quote(submission.get('name') or 'document', safe='')}",
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+    })
 
 
 def update_document_policy(request: Request, payload: dict[str, Any]) -> dict[str, Any]:

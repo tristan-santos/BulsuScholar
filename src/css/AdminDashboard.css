@@ -3404,19 +3404,104 @@
 }
 
 .admin-scholar-conflict-row {
-	justify-content: space-between;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(18rem, 1fr);
+	gap: 0.85rem 1rem;
 	padding-top: 0.75rem;
 	border-top: 1px solid #efd1ce;
 }
 
+.admin-roster-resolution-reason {
+	display: grid;
+	gap: 0.4rem;
+	flex: 1 1 20rem;
+	min-width: 0;
+}
+
+.admin-roster-resolution-reason textarea {
+	width: 100%;
+	min-height: 4.5rem;
+	box-sizing: border-box;
+	resize: vertical;
+	font: inherit;
+	padding: 0.65rem 0.75rem;
+	border: 1px solid #c8d9d1;
+	border-radius: 6px;
+	background: #fff;
+	color: #183c2d;
+}
+
+.admin-roster-resolution-reason textarea:focus-visible {
+	outline: 2px solid #007c50;
+	outline-offset: 2px;
+}
+
+.admin-portal--dark .admin-roster-resolution-reason textarea {
+	background: #17251e;
+	color: #e5eee9;
+	border-color: #50685a;
+}
+
 .admin-scholar-conflict-actions {
+	grid-column: 1 / -1;
 	flex-wrap: wrap;
 	justify-content: flex-end;
 }
 
+.admin-scholar-conflict-row > div:first-child {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.admin-scholar-conflict-actions button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	min-height: 42px;
+	max-width: 100%;
+	padding: 0.6rem 0.9rem;
+	border: 1px solid #006744;
+	border-radius: 6px;
+	background: #fff;
+	color: #006744;
+	font: inherit;
+	font-size: 0.88rem;
+	font-weight: 600;
+	white-space: normal;
+	cursor: pointer;
+}
+
+.admin-scholar-conflict-actions button[data-button-variant="positive"] {
+	background: #006744;
+	color: #fff;
+}
+
+.admin-scholar-conflict-actions button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.admin-scholar-conflict-actions button:focus-visible {
+	outline: 2px solid #006744;
+	outline-offset: 3px;
+}
+
+.admin-scholar-conflict-actions button svg {
+	flex: 0 0 1.1rem;
+	width: 1.1rem;
+	height: 1.1rem;
+}
+
+.admin-portal--dark .admin-scholar-conflict-actions button[data-button-variant="neutral"] {
+	background: #17251e;
+	color: #addec6;
+	border-color: #75b89b;
+}
+
 @media (max-width: 720px) {
 	.admin-scholar-conflict-row {
-		flex-direction: column;
+		grid-template-columns: minmax(0, 1fr);
 	}
 
 	.admin-scholar-conflict-actions,
@@ -19006,6 +19091,16 @@
 
 .admin-document-preview-body > .zoomable-preview {
 	min-height: min(70vh, 680px);
+}
+
+.admin-document-preview-body-stage.zoomable-preview__stage {
+	height: min(60vh, 640px);
+	min-height: 0;
+	max-height: none;
+}
+
+.admin-document-preview-body .admin-document-preview-body-stage .admin-document-preview-image {
+	max-height: min(calc(60vh - 2rem), 608px);
 }
 
 .admin-management-table--roomy.admin-management-table {

@@ -8,6 +8,7 @@ import FloatingHelpButton from "./components/FloatingHelpButton"
 import { PageLoading } from "./components/PortalLoading"
 import ModalDiscardConfirmation from "./components/ModalDiscardConfirmation"
 import ModalAccessibilityManager from "./components/ModalAccessibilityManager"
+import ProtectedDownloadDialog from "./components/ProtectedDownloadDialog"
 import OperationStatusProvider from "./components/OperationStatusProvider"
 import { trackedFetch } from "./services/operationTracker"
 import { PublicConfigurationContext } from "./contexts/PublicConfigurationContext"
@@ -166,6 +167,7 @@ export default function App() {
 				className="bulsuscholar-toast-container"
 			/>
 			<ModalAccessibilityManager />
+			<ProtectedDownloadDialog />
 			<ModalDiscardConfirmation />
 			</OperationStatusProvider>
 		</BrowserRouter>

@@ -16,6 +16,7 @@ connector.
 | Student | Creates an account, maintains a profile, submits documents, applies for scholarships, follows application progress, and completes scholarship requirements. |
 | Grantor | Publishes scholarship opportunities, reviews applicants, manages scholars, imports official scholar lists, and produces reports. |
 | Administrator | Approves accounts, verifies documents, manages grantors, reviews scholarship requirements, resolves conflicts, and oversees the system. |
+| Root Admin | Manages privileged settings, Root sessions, and restricted audit/file inventory access. |
 | System | Validates information, enforces scholarship rules, manages slots and records, generates notifications, and stores workflow results. |
 
 ## 2. Simplified Overall System Flow
@@ -51,7 +52,7 @@ flowchart TD
 
     subgraph Admin[ADMINISTRATOR]
         AccountReview[PROCESS: Review and approve student account]
-        DocumentReview[PROCESS: Review submitted documents]
+        DocumentReview[PROCESS: Review newest Student Application Profile]
         ApplicationReview[PROCESS: Complete administrator review stages]
         MaterialReview[PROCESS: Review requested scholarship materials]
     end
@@ -59,10 +60,14 @@ flowchart TD
     Start --> Register --> Validate
     Validate -- No --> Correction[/OUTPUT: Show information or document to correct/]
     Correction --> Register
-    Validate -- Yes --> Confirm --> AccountReview
+    Validate -- Yes --> Confirm --> Mode{DECISION: Manual Account Review enabled?}
+    Mode -- Yes --> AccountReview
+    Mode -- No --> AutoReady{DECISION: Applicable signup documents system-approved?}
+    AutoReady -- Yes --> Profile
+    AutoReady -- No --> Pending
     AccountReview --> Approved{DECISION: Account approved?}
     Approved -- No --> Pending[/OUTPUT: Account remains pending/]
-    Pending --> AccountReview
+    Pending --> EndPending([END: Account awaits required review or corrections])
     Approved -- Yes --> Profile --> DocumentReview
     DocumentReview --> Browse
     Publish --> Browse
@@ -106,12 +111,17 @@ flowchart TD
     Valid -- Yes --> Create[PROCESS: Create authentication and pending student records]
     Create --> Email[/OUTPUT: Send confirmation email/]
     Email --> Confirm[PROCESS: Student confirms email address]
-    Confirm --> Admin[PROCESS: Administrator reviews pending account]
+    Confirm --> Mode{DECISION: Manual Account Review enabled?}
+    Mode -- Yes --> Admin[PROCESS: Administrator previews all required signup documents]
+    Mode -- No --> Automatic{DECISION: All applicable signup documents system-approved?}
+    Automatic -- Yes --> Active
+    Automatic -- No --> Waiting([END: Remain pending until requirements are resolved])
     Admin --> Decision{DECISION: Approve account?}
     Decision -- No --> Pending[/OUTPUT: Account remains pending with reason/]
-    Pending --> Admin
+    Pending --> PendingEnd([END: Account remains pending])
     Decision -- Yes --> Active[/OUTPUT: Activate student account/]
-    Active --> End([END: Student may sign in])
+    Active --> Welcome[PROCESS: Attempt one welcome email for newly activated account]
+    Welcome --> End([END: Student may sign in; email failure does not undo activation])
 ```
 
 ## 4. Student Profile and Document Verification
@@ -136,16 +146,16 @@ flowchart TD
     FileValid -- Yes --> Submission[PROCESS: Save document submission]
     Revision --> Submission
 
-    Submission --> Policy{DECISION: Manual Document Review enabled?}
-    Policy -- No --> Auto[PROCESS: System approves validated submission]
-    Policy -- Yes --> Review[PROCESS: Authorized reviewer opens the document]
+    Submission --> Kind{DECISION: Student Application Profile?}
+    Kind -- No --> Auto[PROCESS: System approves validated COR or ROG or active-student ID replacement]
+    Kind -- Yes --> Review[PROCESS: Authorized reviewer opens the profile]
     Review --> Decision{DECISION: Approve document?}
     Decision -- No --> Rejected[/OUTPUT: Send rejection reason to student/]
     Rejected --> Choice
     Decision -- Yes --> Approved[/OUTPUT: Mark document approved/]
     Auto --> Approved
     Approved --> Ready{DECISION: Are all current requirements complete?}
-    Ready -- No --> Status
+    Ready -- No --> PendingEnd([END: Remaining requirements stay incomplete])
     Ready -- Yes --> End([END: Student profile is ready for scholarship use])
 ```
 
@@ -331,7 +341,7 @@ flowchart TD
     StudentDecision -- No --> StudentPending[/OUTPUT: Keep account pending with reason/]
     StudentDecision -- Yes --> StudentActive[/OUTPUT: Activate student account/]
 
-    Task -- Document Review --> Documents[PROCESS: Open current student submission]
+    Task -- Document Review --> Documents[PROCESS: Open newest Student Application Profile]
     Documents --> DocumentDecision{DECISION: Approve document?}
     DocumentDecision -- No --> DocumentReject[/OUTPUT: Save rejection reason and notify student/]
     DocumentDecision -- Yes --> DocumentApprove[/OUTPUT: Save approval and update verification/]
@@ -366,3 +376,68 @@ flowchart TD
     AdminOutput --> Return
     Return --> Task
 ```
+
+## 11. Protected Sensitive Downloads
+
+All matching connector labels are local to their diagram. An ending means the
+current operation finishes, not that the user's whole portal session ends.
+
+```mermaid
+flowchart TD
+    Start([START: Select official download]) --> Password[PROCESS: Generate a fresh 32-character random password in browser memory]
+    Password --> Save[/OUTPUT: Show password and Copy action/]
+    Save --> Ack{DECISION: User saved password?}
+    Ack -- Cancel --> Cancel([END: Clear temporary password; no download])
+    Ack -- Yes --> Request[/INPUT: Authenticated POST with resource identifier and download password/]
+    Request --> Authorized{DECISION: Session, role, ownership or relationship valid?}
+    Authorized -- No --> Deny([END: Deny without reading private file])
+    Authorized -- Yes --> Read[PROCESS: Read authorized original or build filtered report]
+    Read --> Type{DECISION: Ordinary unsigned unencrypted PDF?}
+    Type -- Yes --> PDF[PROCESS: Encrypt PDF copy with explicit AES-256]
+    Type -- No --> ZIP[PROCESS: AES-256 ZIP containing byte-identical original]
+    PDF --> Success{DECISION: Encryption successful?}
+    ZIP --> Success
+    Success -- No --> Fail[PROCESS: Attempt safe failure audit; never return plaintext]
+    Fail --> Failed([END: Show protection error; clear temporary password])
+    Success -- Yes --> Audit{DECISION: Append-only preparation audit saved?}
+    Audit -- No --> Failed
+    Audit -- Yes --> File[/OUTPUT: Protected file with generic filename and private no-store headers/]
+    File --> Cleanup[PROCESS: Clear password state and revoke temporary object URL]
+    Cleanup --> End([END: Protected download prepared])
+```
+
+The audit outcome is **prepared**, not proof that the browser saved or opened
+the file. Report export history records successful preparation only. Authenticated
+previews remain readable and do not create export-history events. A download
+never records the signup-document preview required for account approval.
+
+## 12. Password-Assisted PDF Re-upload
+
+```mermaid
+flowchart TD
+    Start([START: Choose upload]) --> Access{DECISION: Existing upload authorization passes?}
+    Access -- No --> Denied([END: Upload denied])
+    Access -- Yes --> File[/INPUT: Original PDF and optional temporary file password/]
+    File --> Encrypted{DECISION: PDF encrypted?}
+    Encrypted -- No --> Validate
+    Encrypted -- Yes --> Unlock{DECISION: Supplied password decrypts PDF?}
+    Unlock -- No --> Prompt[/OUTPUT: Request password or explain incorrect password/]
+    Prompt --> Retry{DECISION: Retry?}
+    Retry -- No --> Cancel([END: Cancel upload and clear password])
+    Retry -- Yes --> File
+    Unlock -- Yes --> Derivative[PROCESS: Create decrypted processing copy in memory]
+    Derivative --> Validate[PROCESS: Apply existing document-specific parser and policy validation]
+    Validate --> Valid{DECISION: Valid submission?}
+    Valid -- No --> Correction([END: Explain correction; no approved submission])
+    Valid -- Yes --> Store[PROCESS: Keep original bytes privately and separate private processing derivative if needed]
+    Store --> Kind{DECISION: Profile or school document?}
+    Kind -- Profile --> Pending[PROCESS: Keep newest profile pending for administrator review]
+    Kind -- School document --> Auto[PROCESS: System-approve valid COR or ROG or active-account identity replacement]
+    Pending --> End([END: Clear password; retain immutable history])
+    Auto --> End
+```
+
+Signup identity verification follows Section 3, not automatic active-account
+replacement rules. A processing derivative is not claimed to preserve a digital
+signature. The original signed SOE remains authoritative and is archived without
+rewriting for download. The password is not saved with either file.

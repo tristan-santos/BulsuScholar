@@ -807,8 +807,9 @@ def run_sql_maintenance(request: Request, identity: dict[str, Any], action: str)
     return {"ok": True, "action": action, "result": result}
 
 
-def collect_file_inventory(limit: int = 250) -> dict[str, Any]:
-    students = _rest("students", query=f"select=id,data&limit={min(1000, limit)}") or []
+def collect_file_inventory(limit: int = 250, student_id: str = "") -> dict[str, Any]:
+    identity_filter = f"&id=eq.{urllib.parse.quote(student_id, safe='')}" if student_id else ""
+    students = _rest("students", query=f"select=id,data&limit={min(1000, limit)}{identity_filter}") or []
     files: list[dict[str, Any]] = []
     keys = {"corFile", "cogFile", "rogFile", "idFile", "studentApplicationProfile", "applicationFormFile", "otherRequirementUploads"}
 
@@ -830,6 +831,14 @@ def collect_file_inventory(limit: int = 250) -> dict[str, Any]:
 
 
 def fetch_root_file(request: Request, identity: dict[str, Any], payload: dict[str, Any]) -> tuple[bytes, str, str]:
+    student_id = str(payload.get("studentId") or "")
+    document = str(payload.get("document") or "")
+    if not student_id or not document:
+        raise HTTPException(422, "stored_file_identifier_required")
+    matches = [item for item in collect_file_inventory(1000, student_id)["files"] if item["document"] == document]
+    if len(matches) != 1:
+        raise HTTPException(404, "stored_file_not_found")
+    payload = matches[0]
     supabase_url, key = _supabase_config()
     bucket = str(payload.get("bucket") or "bulsuscholar").strip()
     path = str(payload.get("path") or "").strip().lstrip("/")
@@ -852,7 +861,6 @@ def fetch_root_file(request: Request, identity: dict[str, Any], payload: dict[st
     if not content or len(content) > 20 * 1024 * 1024:
         raise HTTPException(status_code=422, detail="student_file_invalid_or_too_large")
     filename = re.sub(r"[^A-Za-z0-9._-]+", "-", str(payload.get("name") or path.rsplit("/", 1)[-1])) or "student-document"
-    audit(request, identity["root"]["id"], "student_file_downloaded", path, {"studentId": payload.get("studentId"), "size": len(content)})
     return content, content_type, filename
 
 
@@ -1074,6 +1082,15 @@ def remove_support(request: Request, identity: dict[str, Any], ticket_id: str) -
 def list_logs() -> dict[str, Any]:
     system = _rest("systemLogs", query="select=*&order=created_at.desc&limit=500") or []
     audit_rows = _rest("root_audit_logs", query="select=*&order=created_at.desc&limit=500") or []
+    downloads = _rest("protected_download_events", query="select=*&order=created_at.desc&limit=500") or []
+    audit_rows.extend({
+        "id": row["id"], "actor_id": row["actor_id"], "actor_type": row["actor_type"],
+        "action": "protected_download_" + row["outcome"], "target": row["resource"],
+        "details": {"protection": row["protection"], "format": row["format"],
+                    "resourceVersion": row["resource_version"], "reason": row["reason"]},
+        "created_at": row["created_at"],
+    } for row in downloads)
+    audit_rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
     return {"ok": True, "systemLogs": [_redact_sensitive({"id": row.get("id"), **(row.get("data") or {}), "createdAt": row.get("created_at")}) for row in system], "auditLogs": _redact_sensitive(audit_rows)}
 
 

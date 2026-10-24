@@ -218,6 +218,17 @@ def _account_disabled(account: dict[str, Any]) -> bool:
             or data.get("archived") is True or status in {"disabled", "inactive", "archived"})
 
 
+def _reconcile_verified_student(account: dict[str, Any]) -> dict[str, Any] | None:
+    if account["type"] != "student":
+        return None
+    result = supabase_rpc("reconcile_student_roster", {
+        "p_student_id": account["id"], "p_source": "verified_login",
+    })
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail="roster_reconciliation_unavailable")
+    return result.get("data") or {}
+
+
 def login(payload: dict[str, Any]) -> dict[str, Any]:
     user_id = str(payload.get("userId") or "").strip()
     password = str(payload.get("password") or "")
@@ -279,6 +290,7 @@ def login(payload: dict[str, Any]) -> dict[str, Any]:
     })
     if not verified.get("ok"):
         raise HTTPException(status_code=503, detail="verified_session_registration_failed")
+    roster_assignment = _reconcile_verified_student(account)
     return {
         "ok": True,
         "session": {
@@ -286,6 +298,7 @@ def login(payload: dict[str, Any]) -> dict[str, Any]:
             "refresh_token": auth.get("refresh_token"),
         },
         "account": _safe_account(account),
+        "rosterAssignment": roster_assignment,
     }
 
 
@@ -338,7 +351,8 @@ def complete_email_verification(payload: dict[str, Any]) -> dict[str, Any]:
     })
     if not completed.get("ok"):
         raise HTTPException(status_code=403, detail=completed.get("reason") or "email_verification_not_completed")
-    return {"ok": True, "session": {"access_token": auth.get("access_token"), "refresh_token": auth.get("refresh_token")}, "account": _safe_account(account)}
+    roster_assignment = _reconcile_verified_student(account)
+    return {"ok": True, "session": {"access_token": auth.get("access_token"), "refresh_token": auth.get("refresh_token")}, "account": _safe_account(account), "rosterAssignment": roster_assignment}
 
 
 def validate_portal_session(request: Request) -> dict[str, Any]:
@@ -459,6 +473,7 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
     email = str(payload.get("email") or "").strip().lower()
     password = str(payload.get("temporaryPassword") or "")
     classification = str(payload.get("grantorClassification") or "other").strip().lower()
+    grantor_type = str(payload.get("grantorType") or "internal").strip().lower()
     scope = payload.get("locationScope") if isinstance(payload.get("locationScope"), dict) else {}
     try:
         locations = (
@@ -472,6 +487,8 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
         raise HTTPException(status_code=422, detail="invalid_grantor_auth_record")
     if classification not in {"government", "private", "other"}:
         raise HTTPException(status_code=422, detail="invalid_grantor_classification")
+    if grantor_type not in {"internal", "external"}:
+        raise HTTPException(status_code=422, detail="invalid_grantor_type")
     if scope.get("enabled") is True and not locations:
         raise HTTPException(status_code=422, detail="scope_locations_required")
     if supabase_document_get("providers", grantor_id).get("row"):
@@ -506,6 +523,8 @@ def create_grantor_account(request: Request, payload: dict[str, Any]) -> dict[st
     record = {
         **{key: value for key, value in payload.items() if key not in {"temporaryPassword", "password"}},
         "providerId": grantor_id,
+        "grantorType": grantor_type,
+        "grantorClassification": classification,
         "email": email,
         "authUserId": auth_user_id,
         "mustChangePassword": True,

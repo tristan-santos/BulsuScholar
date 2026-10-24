@@ -2,6 +2,15 @@ import { supabase } from "./supabaseClient"
 import { trackedFetch } from "./operationTracker"
 import { getPortalIdentity } from "./portalSessionStorage"
 
+let pendingSessionRefresh = null
+
+async function refreshReadSession() {
+	if (!pendingSessionRefresh) {
+		pendingSessionRefresh = supabase.auth.refreshSession().finally(() => { pendingSessionRefresh = null })
+	}
+	return pendingSessionRefresh
+}
+
 export class PortalApiError extends Error {
 	constructor(message, { status = 0, reason = "", data = null } = {}) {
 		super(message)
@@ -38,12 +47,26 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 	else options.signal?.addEventListener("abort", abortFromCaller, { once: true })
 	const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
 	try {
-		response = await trackedFetch(`${baseUrl}${path}`, {
+		const send = async () => trackedFetch(`${baseUrl}${path}`, {
 			method: "POST",
 			headers: await buildPortalRequestHeaders(options.actor || {}),
 			body: JSON.stringify(payload),
 			...(controller || options.signal ? { signal: controller?.signal || options.signal } : {}),
 		}, options.operation || null)
+		response = await send()
+		// Retry only an authorized read, never a mutation or an OTP/revocation denial.
+		if (path === "/portal/data/query" && response.status === 401) {
+			const denial = await response.clone().json().catch(() => ({}))
+			if (denial.detail === "invalid_authentication_session") {
+				const identity = getPortalIdentity()
+				const { data: session } = await supabase.auth.getSession()
+				if (session?.session?.refresh_token) {
+					const refreshed = await refreshReadSession()
+					const current = getPortalIdentity()
+					if (!refreshed.error && refreshed.data?.session && current.userId === identity.userId && current.userType === identity.userType) response = await send()
+				}
+			}
+		}
 	} catch (error) {
 		if (options.signal?.aborted) throw error
 		if (error?.name === "AbortError") {

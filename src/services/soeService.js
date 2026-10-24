@@ -193,7 +193,7 @@ async function buildSoePdfDocument({
 	const pdfBytes = await pdfDoc.save()
 
 	if (autoDownload) {
-		downloadSoePdfBytes(
+		await downloadSoePdfBytes(
 			pdfBytes,
 			`SOE_${safeText(studentId || student?.studentnumber, "student")}.pdf`,
 		)
@@ -214,5 +214,5 @@ export function downloadSoePdfBytes(pdfBytes, fileName = "SOE.pdf") {
 	const signature = new TextDecoder("ascii").decode(bytes.slice(0, 5))
 	if (bytes.length < 5 || signature !== "%PDF-") throw new Error("invalid_soe_pdf")
 	const blob = new Blob([pdfBytes], { type: "application/pdf" })
-	triggerBlobDownload(blob, sanitizeDownloadFileName(fileName, "SOE.pdf"))
+	return triggerBlobDownload(blob, sanitizeDownloadFileName(fileName, "SOE.pdf"))
 }

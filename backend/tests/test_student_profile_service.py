@@ -397,7 +397,8 @@ class StudentDocumentSubmissionPolicyTests(unittest.IsolatedAsyncioTestCase):
         upload = Mock()
         upload.filename = "cor.pdf"
         upload.content_type = "application/pdf"
-        upload.read = AsyncMock(return_value=b"pdf")
+        from backend.tests.pdf_fixtures import valid_pdf
+        upload.read = AsyncMock(return_value=valid_pdf())
         approved = {
             "studentId": "student-1", "documentType": "cor", "status": "approved",
         }

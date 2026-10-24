@@ -1,11 +1,15 @@
 import { requireBackendApiUrl } from "../config/backendApi"
 import { buildPortalRequestHeaders, PortalApiError } from "./portalApi"
 import { trackedFetch } from "./operationTracker"
+import { fetchWithFilePasswords } from "./protectedDownloadService"
 
 async function request(path, options = {}) {
 	const headers = await buildPortalRequestHeaders()
 	if (options.body instanceof FormData) delete headers["Content-Type"]
-	const response = await trackedFetch(`${requireBackendApiUrl("Portal workflow backend")}${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+	const fetcher = (url, init) => trackedFetch(url, init)
+	const init = { ...options, headers: { ...headers, ...(options.headers || {}) } }
+	const url = `${requireBackendApiUrl("Portal workflow backend")}${path}`
+	const response = options.body instanceof FormData ? await fetchWithFilePasswords(url, init, { fetcher }) : await fetcher(url, init)
 	const contentType = response.headers.get("content-type") || ""
 	if (response.ok && !contentType.includes("application/json")) return response
 	const data = await response.json().catch(() => ({}))

@@ -1,4 +1,5 @@
 import { requireDocumentScanApiUrl } from "../config/backendApi"
+import { fetchWithFilePasswords } from "./protectedDownloadService"
 
 export async function scanStudentDocument(file, documentType = "cor") {
 	if (!file) return null
@@ -9,7 +10,7 @@ export async function scanStudentDocument(file, documentType = "cor") {
 
 	let response
 	try {
-		response = await fetch(
+		response = await fetchWithFilePasswords(
 			`${documentScanApiUrl}/scan-document?document_type=${encodeURIComponent(documentType)}`,
 			{
 				method: "POST",
@@ -18,6 +19,7 @@ export async function scanStudentDocument(file, documentType = "cor") {
 			},
 		)
 	} catch (error) {
+		if (error?.name === "AbortError") throw error
 		throw new Error(
 			`Document scanner is unavailable at ${documentScanApiUrl}. Check the backend deployment and CORS settings. ${error?.message || ""}`.trim(),
 		)

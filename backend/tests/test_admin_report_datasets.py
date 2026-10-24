@@ -144,7 +144,11 @@ class AdminReportDatasetTests(unittest.TestCase):
             self.assertEqual(200, response.status_code)
             audit.assert_not_called()
             self.assertEqual("archived", builder.call_args.args[0]["dataset"])
-            response = main.export_admin_report_endpoint(request, payload)
+            from backend.tests.pdf_fixtures import valid_pdf
+            payload["downloadProtection"] = {"password": "A" * 32}
+            builder.return_value = (valid_pdf(), "application/pdf", "report.pdf", report)
+            with patch("backend.download_protection.supabase_rest_insert", return_value={"ok": True}):
+                response = main.export_admin_report_endpoint(request, payload)
             audit.assert_called_once()
             self.assertEqual("audit-1", response.headers["x-report-audit-id"])
 

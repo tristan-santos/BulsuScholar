@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi import HTTPException
 
 from backend import student_profile_service as service
+from backend.tests.pdf_fixtures import valid_pdf
 
 
 class AutomaticDocumentReviewRegressionTests(unittest.TestCase):
@@ -55,7 +56,7 @@ class AutomaticDocumentReviewRegressionTests(unittest.TestCase):
 class StudentUploadPersistenceRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def run_upload(self, document_type, *, save_ok=True, approve_ok=True):
         upload = Mock(filename="document.pdf", content_type="application/pdf")
-        upload.read = AsyncMock(return_value=b"pdf")
+        upload.read = AsyncMock(return_value=valid_pdf())
         stored = {"bucket": "private", "path": "new-file", "type": "application/pdf"}
         calls = []
         saved = []

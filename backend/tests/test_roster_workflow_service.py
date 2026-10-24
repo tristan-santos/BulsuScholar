@@ -8,6 +8,9 @@ from backend import roster_workflow_service as service
 
 class RosterImportPreviewTests(unittest.TestCase):
     def setUp(self):
+        cycle_patch = patch.object(service, "_current_cycle", return_value="2026-2027-1ST")
+        cycle_patch.start()
+        self.addCleanup(cycle_patch.stop)
         self.payload = {
             "actorType": "grantor",
             "actorId": "grantor-1",
@@ -78,6 +81,7 @@ class RosterImportPreviewTests(unittest.TestCase):
                     "id": "application-1", "studentId": "20260001",
                     "grantorId": "grantor-1", "scholarshipId": "announcement-1",
                     "status": "Under Review",
+                    "academicCycle": "2026-2027-1ST",
                 }]
             return values
 
@@ -97,7 +101,7 @@ class RosterImportPreviewTests(unittest.TestCase):
         self.assertTrue(any(table == "roster_assignment_conflicts" for table, _, _ in saved))
 
     def test_existing_preview_is_idempotent(self):
-        stored = {"ok": True, "batchId": "batch-1", "status": "ready", "rows": []}
+        stored = {"ok": True, "batchId": "batch-1", "status": "committed", "rows": []}
         with patch.object(service, "enforce_portal_scope"), \
                 patch.object(service, "_preview_response", return_value=stored):
             result = service.preview_roster_import(object(), self.payload)
@@ -166,11 +170,13 @@ class RosterWorkflowRpcTests(unittest.TestCase):
             result = service.resolve_roster_conflict(object(), {
                 "actorId": "admin-1", "conflictId": "conflict-1",
                 "resolution": "existing", "selectedRosterId": "roster-1",
+                "reason": "Verified the original award with the provider.",
             })
         self.assertTrue(result["ok"])
-        rpc.assert_called_once_with("resolve_roster_assignment_conflict", {
+        rpc.assert_called_once_with("resolve_roster_assignment_conflict_v2", {
             "p_conflict_id": "conflict-1", "p_resolution": "existing",
             "p_selected_roster_id": "roster-1", "p_actor_id": "admin-1",
+            "p_reason": "Verified the original award with the provider.",
         })
 
 

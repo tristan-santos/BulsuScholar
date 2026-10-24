@@ -4,6 +4,8 @@ import ZoomableImagePreview from "./ZoomableImagePreview"
 import { getStudentVerificationDocumentBlob } from "../services/studentProfileService"
 import { convertPdfToImage } from "../utils/pdfConverter"
 import { getStorageObjectBlob } from "../services/supabaseStorageService"
+import { downloadStoredDocument, protectGeneratedBlob } from "../services/protectedDownloadService"
+import { toast } from "react-toastify"
 
 export default function StudentDocumentPreview({ submission, onClose }) {
 	const [preview, setPreview] = useState({ loading: true, error: "", imageUrl: "", fileUrl: "" })
@@ -45,7 +47,7 @@ export default function StudentDocumentPreview({ submission, onClose }) {
 				<header className="student-document-preview-head">
 					<div><h3 id="student-vault-preview-title">Document Preview</h3><p>{submission.name || "Student document"}</p></div>
 					<div className="student-document-preview-actions">
-						{preview.fileUrl ? <a className="student-document-preview-open" href={preview.fileUrl} download={submission.name || "document"}><HiOutlineDownload /> Download</a> : null}
+						{preview.fileUrl ? <button type="button" className="student-document-preview-open" onClick={async () => { try { if (submission.blob) await protectGeneratedBlob(submission.blob); else await downloadStoredDocument(submission) } catch (error) { toast.error(error.message) } }}><HiOutlineDownload /> Download</button> : null}
 						<button type="button" className="student-document-preview-close" onClick={onClose} aria-label="Close document preview" title="Close"><HiX /></button>
 					</div>
 				</header>

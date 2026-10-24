@@ -16,7 +16,8 @@ class ScopeAndApplicantTests(unittest.TestCase):
                 "grantorId": "grantor-a", "classification": "private", "enabled": True,
                 "name": "Bulacan", "locations": [{"province": "bulacan", "municipality": "Baliwag"}],
             })
-        self.assertEqual("save_grantor_scope_policy_v3", rpc.call_args.args[0])
+        self.assertEqual("save_grantor_profile_policy", rpc.call_args.args[0])
+        self.assertEqual("internal", rpc.call_args.args[1]["p_grantor_type"])
         self.assertEqual(
             [{"province": "Bulacan", "municipality": "Baliuag"}],
             rpc.call_args.args[1]["p_locations"],

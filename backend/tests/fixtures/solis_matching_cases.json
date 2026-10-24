@@ -1,0 +1,15 @@
+{
+  "datasetKind": "synthetic",
+  "cases": [
+    {"expectedDuplicate": true, "candidate": {"studentId": "SYN-001", "fullName": "Fixture Scholar One"}, "existing": {"studentId": "SYN001", "fullName": "Fixture Scholar One"}},
+    {"expectedDuplicate": true, "candidate": {"studentId": "SYN-002", "fullName": "Fixture Scholar Two"}, "existing": {"studentId": "SYN002", "fullName": "Different Recorded Name"}},
+    {"expectedDuplicate": true, "candidate": {"fullName": "Sample Student Three"}, "existing": {"fullName": "Three Sample Student"}},
+    {"expectedDuplicate": true, "candidate": {"fullName": "Example Student Four", "email": "four@example.test"}, "existing": {"fullName": "Example Studen Four", "email": "four@example.test"}},
+    {"expectedDuplicate": true, "candidate": {"fullName": "Fixture Scholar Five", "contactNumber": "09170000005"}, "existing": {"fullName": "Fixture Scholar Fiv", "contactNumber": "09170000005"}},
+    {"expectedDuplicate": false, "candidate": {"fullName": "Ana Santos", "email": "household@example.test"}, "existing": {"fullName": "Robert Cruz", "email": "household@example.test"}},
+    {"expectedDuplicate": false, "candidate": {"fullName": "Ana Santos", "contactNumber": "09170000000"}, "existing": {"fullName": "Robert Cruz", "contactNumber": "09170000000"}},
+    {"expectedDuplicate": false, "candidate": {"studentId": "SYN-101", "fullName": "Ana Santos"}, "existing": {"studentId": "OTHER-999", "fullName": "Robert Cruz"}},
+    {"expectedDuplicate": false, "candidate": {}, "existing": {}},
+    {"expectedDuplicate": false, "candidate": {"studentId": "SYN-201", "fullName": "Shared Common Name", "course": "BSIT", "year": "4", "city": "Baliwag", "province": "Bulacan"}, "existing": {"studentId": "SYN-202", "fullName": "Shared Common Name", "course": "BSIT", "year": "4", "city": "Baliwag", "province": "Bulacan"}}
+  ]
+}

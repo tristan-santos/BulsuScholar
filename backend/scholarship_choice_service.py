@@ -79,9 +79,6 @@ def reserve_scholarship_application(payload: dict[str, Any]) -> dict[str, Any]:
     invitation_id = str(payload.get("invitationId") or "").strip()
     student_result = supabase_document_get("students", student_id) if student_id else {"ok": False}
     student_data = student_result.get("data") or {}
-    if _normalize((student_data.get("rosterAssignmentState") or {}).get("status")) == "conflict":
-        return {"ok": False, "reason": "roster_assignment_conflict",
-                "message": CHOICE_MESSAGES["roster_assignment_conflict"]}
     stored_invitations = student_data.get("scholarshipInvitations")
     matching_invitation = next((invitation for invitation in stored_invitations or []
         if isinstance(invitation, dict) and _stored_invitation_matches(invitation, application, invitation_id)), None)
@@ -102,10 +99,8 @@ def reserve_scholarship_application(payload: dict[str, Any]) -> dict[str, Any]:
     # student/grantor/offering tuple instead of trusting a caller's record ID.
     application_id = str(uuid4())
     application_number = f"{student_id[-3:]}-{uuid4().hex[:8]}"
-    commitment = student_data.get("scholarshipCommitment") if isinstance(student_data.get("scholarshipCommitment"), dict) else {}
-    if commitment:
-        return {"ok": False, "reason": "scholarship_already_committed",
-                "message": CHOICE_MESSAGES["scholarship_already_committed"]}
+    # The transaction checks the normalized award and its cycle. A cached or
+    # historical commitment in a hydrated response must not decide eligibility.
     result = supabase_rpc("reserve_or_waitlist_scholarship", {
         "p_student_id": student_id, "p_announcement_id": announcement_id,
         "p_grantor_id": grantor_id, "p_application_id": application_id,

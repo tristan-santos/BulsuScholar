@@ -124,12 +124,9 @@ export async function downloadRootPdf(title, sourceRows) {
 		generatedAt: new Date().toISOString(),
 		filterLabel: "All records",
 	}
-	const response = await fetch(`${requireBackendApiUrl("Root report backend")}/root/reports/pdf`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(payload), operation: "report.generate" })
-	if (!response.ok) throw new Error("The root PDF report could not be generated.")
-	const blob = await response.blob()
-	if (!blob.size || !blob.type.includes("pdf")) throw new Error("The report backend returned an invalid PDF.")
-	const url = URL.createObjectURL(blob); const anchor = document.createElement("a")
-	anchor.href = url; anchor.download = payload.filename; anchor.click(); URL.revokeObjectURL(url)
+	const { protectedPost, saveProtectedFile } = await import("./protectedDownloadService")
+	const result = await protectedPost("/root/reports/pdf", payload, await rootHeaders(true))
+	if (result) saveProtectedFile(result.blob, result.filename)
 }
 
 export async function downloadRootCanonicalPdf(report) {
@@ -144,19 +141,18 @@ export async function downloadRootCanonicalPdf(report) {
 		filterLabel: report.filterLabel || "All records",
 		stats: [{ label: "Total Records", value: report.rowCount || report.rows.length }],
 	}
-	const response = await fetch(`${requireBackendApiUrl("Root report backend")}/root/reports/pdf`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(payload), operation: "report.generate" })
-	if (!response.ok) throw new Error("The root PDF report could not be generated.")
-	const blob = await response.blob()
-	if (!blob.size || !blob.type.includes("pdf")) throw new Error("The report backend returned an invalid PDF.")
-	const url = URL.createObjectURL(blob); const anchor = document.createElement("a")
-	anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url)
+	const { protectedPost, saveProtectedFile } = await import("./protectedDownloadService")
+	const result = await protectedPost("/root/reports/pdf", payload, await rootHeaders(true))
+	if (result) saveProtectedFile(result.blob, result.filename)
 }
 
 export async function downloadRootStudentFile(file) {
-	const response = await fetch(`${requireBackendApiUrl("Root file backend")}/root/files/download`, { method: "POST", headers: await rootHeaders(true), body: JSON.stringify(file), operation: "document.download" })
-	if (!response.ok) throw new Error("The student file is unavailable or access was denied.")
-	const blob = await response.blob()
-	if (!blob.size) throw new Error("The downloaded student file is empty.")
-	const url = URL.createObjectURL(blob); const anchor = document.createElement("a")
-	anchor.href = url; anchor.download = file.name || "student-document"; anchor.click(); URL.revokeObjectURL(url)
+	const { protectedPost, saveProtectedFile } = await import("./protectedDownloadService")
+	const result = await protectedPost("/root/files/download", file, await rootHeaders(true))
+	if (result) saveProtectedFile(result.blob, result.filename)
+}
+
+export async function getRootProtectionHeaders() {
+	if (!location.pathname.startsWith("/root") || !hasRootSession()) return {}
+	return rootHeaders(false)
 }

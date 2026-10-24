@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -896,6 +897,25 @@ def update_admin_review(payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": all(item.get("ok") for item in results), "results": results, "notifications": notification_results, "log": log_result}
 
 
+def _material_write_failure(results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    failure = next((item for item in results if not item.get("ok")), None)
+    if failure is None:
+        return None
+    reason = failure.get("reason") or "material_request_update_failed"
+    try:
+        detail = failure.get("detail") or {}
+        detail = json.loads(detail) if isinstance(detail, str) else detail
+        if isinstance(detail, dict) and detail.get("message") in {"scholarship_choice_required", "application_closed"}:
+            reason = detail["message"]
+    except (TypeError, ValueError):
+        pass
+    messages = {
+        "scholarship_choice_required": "This request has no matching scholarship commitment. Refresh the record or ask the scholarship office to check its assignment.",
+        "application_closed": "This material request does not match the student's current scholarship commitment.",
+    }
+    return {"ok": False, "reason": reason, "message": messages.get(reason, "The material request could not be saved. No success notification was sent."), "results": results}
+
+
 def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
     inserts = payload.get("inserts") or []
     updates = payload.get("updates") or []
@@ -958,6 +978,9 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
             results.append(supabase_document_upsert(table, record_id, data, merge=True))
         else:
             results.append(supabase_document_insert(table, data))
+        failure = _material_write_failure(results)
+        if failure:
+            return failure
     for update in updates:
         table = update.get("table")
         record_id = update.get("id")
@@ -992,6 +1015,9 @@ def update_material_request(payload: dict[str, Any]) -> dict[str, Any]:
             results.append(supabase_document_upsert(table, record_id, data, merge=True))
         else:
             results.append(supabase_document_update(table, record_id, data))
+        failure = _material_write_failure(results)
+        if failure:
+            return failure
     notification = None
     grantor_notification = None
     student_notification = None

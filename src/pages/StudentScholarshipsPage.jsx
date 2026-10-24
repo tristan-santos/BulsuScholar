@@ -2896,7 +2896,7 @@ export default function StudentScholarshipsPage() {
 				previewTarget?.id ||
 				""
 			const soeRequestNumber = resolveSoeRequestNumber(soePreviewRequestNumber, userId)
-			downloadSoePdfBytes(
+			await downloadSoePdfBytes(
 				soePreviewBytes,
 				`SOE_${userId}_${applicationNumber || soeRequestNumber}.pdf`,
 			)

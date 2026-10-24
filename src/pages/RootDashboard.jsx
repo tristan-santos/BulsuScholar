@@ -44,17 +44,19 @@ function cycleOrder(tag) {
 	const match = String(tag || "").match(/^(\d{4})-\d{4}-(1ST|2ND)$/)
 	return match ? Number(match[1]) * 10 + (match[2] === "2ND" ? 2 : 1) : 0
 }
-function downloadCsv(filename, rows) {
+async function downloadCsv(filename, rows) {
 	if (!rows.length) return toast.info("There are no records to export.")
 	const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))].filter((key) => !/password|token|secret/i.test(key))
 	const protect = (value) => {
 		let text = pretty(value).replaceAll('"', '""')
-		if (/^[=+\-@]/.test(text)) text = `'${text}`
+		if (/^[\t\r ]*[=+\-@]/.test(text)) text = `'${text}`
 		return `"${text}"`
 	}
 	const blob = new Blob(["\ufeff", [columns.join(","), ...rows.map((row) => columns.map((key) => protect(row[key])).join(","))].join("\r\n")], { type: "text/csv;charset=utf-8" })
-	const url = URL.createObjectURL(blob); const anchor = document.createElement("a")
-	anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url)
+	try {
+		const { protectGeneratedBlob } = await import("../services/protectedDownloadService")
+		await protectGeneratedBlob(blob)
+	} catch (error) { toast.error(error.message) }
 }
 
 function RootLogin({ onAuthenticated }) {

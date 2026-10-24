@@ -2,6 +2,7 @@ import { supabase } from "./supabaseClient"
 import { trackOperation } from "./operationTracker"
 import { requireBackendApiUrl } from "../config/backendApi"
 import { buildPortalRequestHeaders, PortalApiError } from "./portalApi"
+import { getStudentVerificationDocumentBlob } from "./studentProfileService"
 
 const DEFAULT_BUCKET = import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || "bulsuscholar"
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -75,6 +76,10 @@ export async function removeStorageObject(file = {}) {
 
 export async function getStorageObjectBlob(file = {}) {
 	const url = file.url || file.publicUrl || ""
+	const profileMatch = /^\/student\/profile\/documents\/([^/]+)\/content(?:\?[^#]*)?$/.exec(url)
+	if (file.submissionId || profileMatch) {
+		return getStudentVerificationDocumentBlob(file.submissionId || decodeURIComponent(profileMatch[1]))
+	}
 	if (/^\/scholarship-applications\/[^/]+\/requirements\/[^/]+\/files\/[^/]+$/.test(url)) {
 		const response = await fetch(`${requireBackendApiUrl("Scholarship documents")}${url}`, {
 			headers: await buildPortalRequestHeaders(),
@@ -126,8 +131,9 @@ export async function validatePdfBlob(blob) {
 	return blob
 }
 
-export function triggerBlobDownload(blob, fileName = "document.pdf") {
+export function triggerBlobDownload(blob, fileName = "document.pdf", { publicTemplate = false } = {}) {
 	if (!(blob instanceof Blob) || blob.size === 0) throw new Error("download_file_empty")
+	if (!publicTemplate) return import("./protectedDownloadService").then(({ protectGeneratedBlob }) => protectGeneratedBlob(blob))
 	const link = document.createElement("a")
 	const url = URL.createObjectURL(blob)
 	link.href = url
@@ -140,6 +146,10 @@ export function triggerBlobDownload(blob, fileName = "document.pdf") {
 
 export async function downloadStorageObject(file = {}, options = {}) {
 	return trackOperation(async () => {
+		if (file.submissionId || /^\/(student\/profile\/|signed-soe\/|scholarship-applications\/)/.test(file.url || "")) {
+			const { downloadStoredDocument } = await import("./protectedDownloadService")
+			return downloadStoredDocument(file)
+		}
 		const blob = await getStorageObjectBlob(file)
 		if (options.validatePdf === true) await validatePdfBlob(blob)
 		const fallbackName = options.validatePdf === true ? "document.pdf" : "document"
@@ -147,7 +157,7 @@ export async function downloadStorageObject(file = {}, options = {}) {
 			options.fileName || file.name || file.fileName || fallbackName,
 			fallbackName,
 		)
-		triggerBlobDownload(blob, fileName)
+		await triggerBlobDownload(blob, fileName)
 		return { blob, fileName }
 	}, "document.download")
 }

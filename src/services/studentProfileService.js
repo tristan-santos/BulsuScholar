@@ -1,6 +1,7 @@
 import { requireBackendApiUrl } from "../config/backendApi"
 import { buildPortalRequestHeaders, PortalApiError } from "./portalApi"
 import { trackedFetch } from "./operationTracker"
+import { fetchWithFilePasswords } from "./protectedDownloadService"
 
 export const STUDENT_PROFILE_PHOTO_UPDATED_EVENT = "bulsuscholar:student-profile-photo-updated"
 
@@ -83,11 +84,11 @@ export async function uploadStudentVerificationDocument(documentType, file, docu
 	const headers = await buildPortalRequestHeaders()
 	delete headers["Content-Type"]
 	const params = documentKind ? `?document_kind=${encodeURIComponent(documentKind)}` : ""
-	const response = await trackedFetch(`${baseUrl()}/student/profile/documents/${encodeURIComponent(documentType)}${params}`, {
+	const response = await fetchWithFilePasswords(`${baseUrl()}/student/profile/documents/${encodeURIComponent(documentType)}${params}`, {
 		method: "POST",
 		headers,
 		body: form,
-	}, "document.upload")
+	}, { fetcher: (url, options) => trackedFetch(url, options, "document.upload") })
 	return parseResponse(response, "Document upload failed")
 }
 

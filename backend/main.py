@@ -11,6 +11,11 @@ from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, R
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+try:
+    from .download_protection import PRIVATE_HEADERS, protected_response, protection_password
+except ImportError:  # pragma: no cover
+    from download_protection import PRIVATE_HEADERS, protected_response, protection_password
+
 if load_dotenv:
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(backend_dir)
@@ -77,6 +82,7 @@ try:
     )
     from .scope_announcement_waitlist_service import (
         build_applicant_export,
+        record_applicant_export,
         correct_student_number,
         expire_waitlist,
         get_grantor_scope,
@@ -200,6 +206,7 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
     )
     from scope_announcement_waitlist_service import (
         build_applicant_export,
+        record_applicant_export,
         correct_student_number,
         expire_waitlist,
         get_grantor_scope,
@@ -310,6 +317,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Report-Audit-Id"],
 )
 
 
@@ -351,6 +359,10 @@ async def ensure_deployed_cors_headers(request, call_next):
         response.headers["Access-Control-Allow-Headers"] = request.headers.get("access-control-request-headers", "*")
         response.headers["Vary"] = "Origin"
 
+    if request.url.path.startswith(("/student/", "/signed-soe/", "/scholarship-applications/", "/reports/", "/admin/reports/", "/root/reports/", "/root/files", "/downloads/")):
+        response.headers.update(PRIVATE_HEADERS)
+    if cors_origin_allowed:
+        response.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-Report-Audit-Id"
     metric_finished(request.url.path, response.status_code, metric_start)
 
     return response
@@ -380,6 +392,7 @@ REQUIRED_SUPABASE_TABLES = [
     "student_profile_drafts",
     "student_profile_revisions",
     "student_document_submissions",
+    "protected_download_events",
     "student_document_reviews",
     "student_document_exceptions",
     "student_profile_application_snapshots",
@@ -862,10 +875,11 @@ async def create_student_signup_document_batch_endpoint(
     identity: UploadFile = File(...),
     rog: UploadFile | None = File(None),
     declared_year: str = Form(""),
+    file_passwords: str = Form("{}"),
 ) -> dict[str, Any]:
     if public_config().get("portal", {}).get("allowStudentSignup") is False:
         raise HTTPException(status_code=403, detail="student_signup_disabled")
-    return await create_signup_document_batch(student_id, email, identity_kind, cor, identity, rog, declared_year)
+    return await create_signup_document_batch(student_id, email, identity_kind, cor, identity, rog, declared_year, file_passwords)
 
 
 @app.post("/workflows/student/signup/finalize")
@@ -933,8 +947,9 @@ async def upload_student_profile_document_endpoint(
     document_type: str,
     file: UploadFile = File(...),
     document_kind: str = "",
+    file_password: str = Form(""),
 ) -> dict[str, Any]:
-    return await upload_student_document(request, document_type, file, document_kind)
+    return await upload_student_document(request, document_type, file, document_kind, file_password)
 
 
 @app.get("/student/profile/documents/{submission_id}/content")
@@ -1009,8 +1024,8 @@ def scholarship_documents_endpoint(request: Request, payload: dict[str, Any] = B
 
 
 @app.post("/student/scholarships/{application_id}/requirements/{requirement_key}/files")
-async def scholarship_requirement_upload_endpoint(request: Request, application_id: str, requirement_key: str, files: list[UploadFile] = File(...)) -> dict[str, Any]:
-    return await upload_requirement_files(request, application_id, requirement_key, files)
+async def scholarship_requirement_upload_endpoint(request: Request, application_id: str, requirement_key: str, files: list[UploadFile] = File(...), file_passwords: str = Form("{}")) -> dict[str, Any]:
+    return await upload_requirement_files(request, application_id, requirement_key, files, file_passwords)
 
 
 @app.get("/scholarship-applications/{application_id}/requirements/{requirement_key}/files/{file_id}")
@@ -1190,8 +1205,17 @@ def list_filtered_applicants_endpoint(request: Request, payload: dict[str, Any] 
 
 @app.post("/workflows/applicants/export")
 def export_filtered_applicants_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
-    content, content_type, filename = build_applicant_export(request, payload)
-    return Response(content=content, media_type=content_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    protection_password(payload)
+    content, content_type, filename, metadata = build_applicant_export(request, payload)
+    response = protected_response(request, payload, content, content_type, "applicant-report")
+    record_applicant_export(request, metadata)
+    return response
+
+
+@app.post("/workflows/applicants/file-preview")
+def preview_filtered_applicants_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    content, content_type, _, _ = build_applicant_export(request, payload)
+    return Response(content, media_type=content_type, headers={**PRIVATE_HEADERS, "Content-Disposition": 'inline; filename="preview.pdf"'})
 
 
 @app.post("/workflows/admin/student-number/correct")
@@ -1308,8 +1332,8 @@ def student_history_endpoint(request: Request, page: int = 1, page_size: int = 2
 
 
 @app.post("/student/applications/{application_id}/signed-soe")
-async def signed_soe_upload_endpoint(application_id: str, request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
-    return await upload_signed_soe(request, application_id, file)
+async def signed_soe_upload_endpoint(application_id: str, request: Request, file: UploadFile = File(...), file_password: str = Form("")) -> dict[str, Any]:
+    return await upload_signed_soe(request, application_id, file, file_password)
 
 
 @app.get("/student/applications/{application_id}/signed-soe")
@@ -1322,6 +1346,34 @@ def signed_soe_content_endpoint(submission_id: str, request: Request) -> Respons
     return signed_soe_content(request, submission_id)
 
 
+@app.post("/student/profile/documents/{submission_id}/download")
+def protected_document_endpoint(submission_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    protection_password(payload)
+    original = document_content(request, submission_id, original=True)  # Never record a download as a preview.
+    return protected_response(request, payload, original.body, original.media_type, f"submission:{submission_id}")
+
+
+@app.post("/student/profile/snapshots/{snapshot_id}/download")
+def protected_snapshot_endpoint(snapshot_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    protection_password(payload)
+    original = profile_snapshot_content(request, snapshot_id)
+    return protected_response(request, payload, original.body, original.media_type, f"snapshot:{snapshot_id}")
+
+
+@app.post("/signed-soe/{submission_id}/download")
+def protected_signed_soe_endpoint(submission_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    protection_password(payload)
+    original = signed_soe_content(request, submission_id, original=True)
+    return protected_response(request, payload, original.body, original.media_type, f"signed-soe:{submission_id}", preserve_original=True)
+
+
+@app.post("/scholarship-applications/{application_id}/requirements/{requirement_key}/files/{file_id}/download")
+def protected_requirement_endpoint(application_id: str, requirement_key: str, file_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    protection_password(payload)
+    original = requirement_file_content(request, application_id, requirement_key, file_id, original=True)
+    return protected_response(request, payload, original.body, original.media_type, f"requirement:{application_id}:{requirement_key}:{file_id}")
+
+
 @app.post("/admin/signed-soe/{submission_id}/reopen")
 def signed_soe_reopen_endpoint(submission_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return reopen_signed_soe(request, submission_id, str(payload.get("reason") or ""))
@@ -1332,6 +1384,7 @@ def generate_pdf_report_endpoint(request: Request, payload: dict[str, Any] = Bod
     enforce_portal_scope(request, payload, {"admin"})
     if public_config().get("portal", {}).get("reportExportEnabled") is False:
         raise HTTPException(status_code=403, detail="report_exports_disabled")
+    protection_password(payload)
     try:
         validate_report_payload(payload)
         pdf_bytes = build_report_pdf_bytes(payload)
@@ -1340,11 +1393,38 @@ def generate_pdf_report_endpoint(request: Request, payload: dict[str, Any] = Bod
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     filename = sanitize_report_filename(payload.get("filename"))
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return protected_response(request, payload, pdf_bytes, "application/pdf", "canonical-report")
+
+
+@app.post("/reports/pdf/preview")
+def canonical_report_preview_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
+    enforce_portal_scope(request, payload, {"admin"})
+    try:
+        validate_report_payload(payload)
+        content = build_report_pdf_bytes(payload)
+    except ValueError:
+        raise HTTPException(422, "invalid_report_payload") from None
+    return Response(content, media_type="application/pdf", headers={**PRIVATE_HEADERS, "Content-Disposition": 'inline; filename="preview.pdf"'})
+
+
+@app.post("/downloads/generated-copy")
+async def protect_generated_copy_endpoint(request: Request, file: UploadFile = File(...), password: str = Form(...)) -> Response:
+    # Generated browser forms/exports only. No URL or Storage path is accepted.
+    # Stored documents use their identifier-specific endpoints above.
+    if request.headers.get("x-root-session"):
+        try:
+            from .root_service import require_root
+        except ImportError:
+            from root_service import require_root
+        identity = require_root(request)
+        request.state.download_actor = {"id": identity["root"]["id"], "type": "root"}
+    else:
+        enforce_portal_scope(request, {}, {"student", "grantor", "admin"})
+    body = await file.read(20 * 1024 * 1024 + 1)
+    if not body or len(body) > 20 * 1024 * 1024:
+        raise HTTPException(413, "generated_copy_size_limit")
+    return protected_response(request, {"downloadProtection": {"password": password}}, body,
+                              file.content_type or "application/octet-stream", "browser-generated-copy")
 
 
 @app.post("/admin/reports/preview")
@@ -1358,13 +1438,12 @@ def export_admin_report_endpoint(request: Request, payload: dict[str, Any] = Bod
     enforce_portal_scope(request, payload, {"admin"})
     if public_config().get("portal", {}).get("reportExportEnabled") is False:
         raise HTTPException(status_code=403, detail="report_exports_disabled")
+    protection_password(payload)
     content, media_type, filename, report = build_admin_report_export(payload)
+    response = protected_response(request, payload, content, media_type, f"admin-report:{report.get('reportType', 'report')}:{payload.get('dataset', 'all')}")
     audit_id = record_admin_report_export(request, report, str(payload.get("format") or "pdf").lower())
-    headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
-        "X-Report-Audit-Id": audit_id,
-    }
-    return Response(content=content, media_type=media_type, headers=headers)
+    response.headers["X-Report-Audit-Id"] = audit_id
+    return response
 
 
 @app.post("/admin/reports/file-preview")
@@ -1374,7 +1453,7 @@ def preview_admin_report_file_endpoint(request: Request, payload: dict[str, Any]
     return Response(
         content=content,
         media_type=media_type,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={**PRIVATE_HEADERS, "Content-Disposition": f'inline; filename="{filename}"'},
     )
 
 
@@ -1457,6 +1536,7 @@ def preview_top_students_report_endpoint(request: Request, payload: dict[str, An
 async def scan_document(
     document_type: str = "cor",
     file: UploadFile = File(...),
+    file_password: str = Form(""),
 ) -> dict[str, Any]:
     file_bytes = await file.read()
     content_type = (file.content_type or "").lower()
@@ -1482,6 +1562,11 @@ async def scan_document(
 
     try:
         if content_type == "application/pdf" or filename.endswith(".pdf"):
+            try:
+                from .download_protection import processing_pdf
+            except ImportError:
+                from download_protection import processing_pdf
+            file_bytes = processing_pdf(file_bytes, file_password)
             extracted = parse_pdf_document(file_bytes, document_type)
         else:
             text = extract_image_text(file_bytes)

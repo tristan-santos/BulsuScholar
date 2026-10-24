@@ -56,18 +56,18 @@ export function collectOtherRequirementDocuments(scholarship = {}) {
 			: uploadEntry.url
 				? [uploadEntry]
 				: []
+		const applicationId = scholarship.applicationId || (scholarship.lifecycleVersion === 2 ? scholarship.id : "")
 		return files
-			.filter((file) => file?.url)
-			.map((file, fileIndex) => ({
+			.map((file, fileIndex) => file && (file.url || file.path || file.submissionId) ? ({
 				...file,
 				requirementId: requirement.id,
 				requirementName: requirement.name,
 				label: requirement.name,
 				title: requirement.name,
 				name: file.name || `${requirement.name} ${fileIndex + 1}`,
-				url: file.url,
+				url: applicationId ? `/scholarship-applications/${encodeURIComponent(applicationId)}/requirements/${encodeURIComponent(requirement.id)}/files/${encodeURIComponent(file.id || `legacy-${fileIndex}`)}` : file.url,
 				type: file.type || requirement.fileType,
 				uploadedAt: file.uploadedAt || uploadEntry.uploadedAt || null,
-			}))
+			}) : null).filter(Boolean)
 	})
 }

@@ -3,6 +3,11 @@ from typing import Any
 from fastapi import APIRouter, Body, File, HTTPException, Query, Request, Response, UploadFile
 
 try:
+    from .download_protection import protected_response, protection_password
+except ImportError:  # pragma: no cover
+    from download_protection import protected_response, protection_password
+
+try:
     from .access_control import require_admin_bearer
     from .security_history_service import list_root_recovery_tickets, root_recovery_attachment_content, root_review_recovery
 except ImportError:  # pragma: no cover
@@ -274,8 +279,10 @@ def root_report_data(report_type: str, request: Request) -> dict[str, Any]:
 @router.post("/root/files/download")
 def root_file_download(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
     identity = require_root(request)
+    request.state.download_actor = {"id": identity["root"]["id"], "type": "root"}
+    protection_password(payload)
     content, content_type, filename = fetch_root_file(request, identity, payload)
-    return Response(content=content, media_type=content_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return protected_response(request, payload, content, content_type, f"root-file:{payload.get('studentId')}:{payload.get('document')}")
 
 
 @router.get("/root/integrations")
@@ -293,11 +300,14 @@ def root_integration_action(request: Request, payload: dict[str, Any] = Body(...
 @router.post("/root/reports/pdf")
 def root_pdf_report(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
     identity = require_root(request)
+    request.state.download_actor = {"id": identity["root"]["id"], "type": "root"}
+    protection_password(payload)
     try:
         validate_report_payload(payload)
         pdf_bytes = build_report_pdf_bytes(payload)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     filename = sanitize_report_filename(payload.get("filename"))
-    audit(request, identity["root"]["id"], "root_report_downloaded", str(payload.get("title") or "report"), {"rows": len(payload.get("rows") or [])})
-    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    response = protected_response(request, payload, pdf_bytes, "application/pdf", "root-report")
+    audit(request, identity["root"]["id"], "root_report_prepared", "protected-report", {"rows": len(payload.get("rows") or [])})
+    return response

@@ -1083,17 +1083,16 @@ export default function ProviderDashboard() {
 	const downloadPreviewDocument = async () => {
 		if (!previewDocument?.url && !previewDocument?.submissionId) return
 		try {
+			if (previewDocument.submissionId || /^\/(student\/profile\/|signed-soe\/|scholarship-applications\/)/.test(previewDocument.url || "")) {
+				const { downloadStoredDocument } = await import("../services/protectedDownloadService")
+				await downloadStoredDocument(previewDocument)
+				return
+			}
 			const blob = previewDocument.submissionId
 				? await getStudentVerificationDocumentBlob(previewDocument.submissionId)
 				: await getStorageObjectBlob(previewDocument)
-			const url = URL.createObjectURL(blob)
-			const link = document.createElement("a")
-			link.href = url
-			link.download = previewDocument.name || "document"
-			document.body.appendChild(link)
-			link.click()
-			document.body.removeChild(link)
-			URL.revokeObjectURL(url)
+			const { protectGeneratedBlob } = await import("../services/protectedDownloadService")
+			await protectGeneratedBlob(blob)
 		} catch (error) {
 			console.error("Failed to download grantor document:", error)
 			toast.error("Unable to download the document.")
@@ -1735,12 +1734,8 @@ export default function ProviderDashboard() {
 		if (applicationExportBusy || !applicantReportPreview?.blob) return
 		setApplicationExportBusy("download")
 		try {
-			const url = URL.createObjectURL(applicantReportPreview.blob)
-			const anchor = document.createElement("a")
-			anchor.href = url
-			anchor.download = applicantReportPreview.filename
-			anchor.click()
-			URL.revokeObjectURL(url)
+			const { downloadFilteredApplicantsWorkflow } = await import("../services/workflowService")
+			if (!await downloadFilteredApplicantsWorkflow({ ...applicantReportPayload, format: applicantReportPreview.format })) return
 			toast.success(`${applicantReportPreview.format.toUpperCase()} applicant report downloaded.`)
 		} catch (error) { toast.error(error?.message || "Unable to export applicants.") }
 		finally { setApplicationExportBusy("") }

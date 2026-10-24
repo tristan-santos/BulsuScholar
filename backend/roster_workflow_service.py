@@ -110,8 +110,8 @@ def _row_data_rows(table: str, filters: dict[str, Any] | None = None) -> list[di
 
 
 def _is_active_roster(data: dict[str, Any]) -> bool:
-    return data.get("archived") is not True and _key(data.get("status") or "active") not in {
-        "archived", "rejected", "declined", "withdrawn", "inactive",
+    return data.get("archived") is not True and data.get("rejected") is not True and _key(data.get("status") or "active") not in {
+        "archived", "rejected", "declined", "withdrawn", "inactive", "cancelled", "canceled", "terminated", "expired",
     }
 
 
@@ -120,17 +120,40 @@ def _is_open_application(data: dict[str, Any]) -> bool:
         return False
     status = _key(data.get("status"))
     return status in OPEN_APPLICATION_TERMS or not any(
-        term in status for term in ("reject", "denied", "declined", "cancel", "withdraw", "archived", "resolved", "expired")
+        term in status for term in ("reject", "denied", "declined", "cancel", "withdraw", "archived", "resolved", "expired", "terminated", "inactive")
     )
 
 
 def _application_matches(application: dict[str, Any], grantor_id: str, scholarship_id: str, title: str) -> bool:
     if _text(application.get("grantorId") or application.get("providerId")) != grantor_id:
         return False
-    application_scholarship_id = _text(application.get("scholarshipId") or application.get("announcementId"))
+    application_scholarship_id = _text(application.get("announcementId") or application.get("scholarshipId"))
     if scholarship_id and application_scholarship_id:
         return application_scholarship_id == scholarship_id
     return _key(application.get("scholarshipName") or application.get("scholarshipTitle") or application.get("name")) == _key(title)
+
+
+def _cycle(data: dict[str, Any]) -> str:
+    return _text(data.get("academicCycle") or data.get("semesterTag")).upper()
+
+
+def _current_cycle() -> str:
+    result = supabase_document_get("system_configuration", "academic_cycle")
+    data = result.get("data") or {}
+    cycle = _cycle(data)
+    if not cycle and data.get("academicYear") and data.get("semester"):
+        cycle = f"{data['academicYear']}-{data['semester']}".upper()
+    if not result.get("ok") or not re.fullmatch(r"\d{4}-\d{4}-(1ST|2ND|SUMMER)", cycle):
+        raise HTTPException(status_code=503, detail="academic_cycle_unavailable")
+    return cycle
+
+
+def _awarded(application: dict[str, Any]) -> bool:
+    return (application.get("rosterConfirmedAward") is True
+            or application.get("withdrawalLocked") is True
+            or application.get("isLocked") is True
+            or bool(application.get("requestedSoeAt"))
+            or _key(application.get("status")) in {"active", "accepted", "approved", "awarded", "finished", "completed", "finalized", "protected"})
 
 
 def _recognized_programs(grantor_id: str, cache: dict[str, dict[str, dict[str, Any]]]) -> dict[str, dict[str, Any]]:
@@ -141,6 +164,8 @@ def _recognized_programs(grantor_id: str, cache: dict[str, dict[str, dict[str, A
     for announcement in announcements:
         title = _text(announcement.get("scholarshipTitle") or announcement.get("scholarshipName") or announcement.get("title"))
         if not title:
+            continue
+        if announcement.get("archived") is True or _key(announcement.get("status")) in {"archived", "closed", "expired", "inactive"}:
             continue
         if announcement.get("applicationEnabled") is not True and not any(
             announcement.get(field) not in (None, "", [], {})
@@ -189,6 +214,7 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
     input_rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
     if not input_rows or len(input_rows) > 2000:
         raise HTTPException(status_code=422, detail="roster_import_rows_required")
+    current_cycle = _current_cycle()
 
     canonical_rows = []
     for index, source in enumerate(input_rows):
@@ -196,24 +222,29 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
         grantor_id = _text(row.get("grantorId") or payload.get("grantorId"))
         if actor_type == "grantor":
             grantor_id = actor_id
+        if _cycle(row) and _cycle(row) != current_cycle:
+            raise HTTPException(status_code=422, detail="roster_import_current_cycle_required")
         canonical_rows.append({
             **row,
             "rowNumber": int(row.get("rowNumber") or index + 1),
             "studentId": _student_id(row),
             "fullName": _full_name(row),
             "grantorId": grantor_id,
+            "academicCycle": current_cycle,
+            "semesterTag": current_cycle,
             "scholarshipTitle": _text(row.get("scholarshipTitle") or row.get("scholarshipName")),
         })
     fingerprint_source = json.dumps({"actorType": actor_type, "actorId": actor_id, "rows": canonical_rows}, sort_keys=True, separators=(",", ":"))
     fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
     batch_id = f"roster_preview_{fingerprint[:32]}"
     existing = _preview_response(batch_id)
-    if existing and existing.get("status") in {"ready", "blocked", "committed"}:
+    if existing and existing.get("status") == "committed":
         return {**existing, "idempotent": True}
 
     students = {str(row.get("id")): row for row in _row_data_rows("students")}
     rosters = [row for row in _row_data_rows("grantor_portal_scholars") if _is_active_roster(row)]
-    applications = [row for row in _row_data_rows("scholarship_applications") if _is_open_application(row)]
+    all_applications = _row_data_rows("scholarship_applications")
+    applications = [row for row in all_applications if _is_open_application(row)]
     providers = {
         str(row.get("id")): row for row in [*_row_data_rows("providers"), *_row_data_rows("grantor_portals")]
     }
@@ -259,23 +290,40 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
                 disposition = "identity_mismatch"
                 reason = "Student ID exists, but the roster name does not match the account name."
             else:
-                active_student_rosters = [existing_roster for existing_roster in rosters if _student_id(existing_roster) == student_id]
+                active_student_rosters = [existing_roster for existing_roster in rosters
+                    if _student_id(existing_roster) == student_id and _cycle(existing_roster) in {"", current_cycle}]
                 matching_roster = next((existing_roster for existing_roster in active_student_rosters
                     if _text(existing_roster.get("grantorId") or existing_roster.get("parentId")) == grantor_id
                     and (_text(existing_roster.get("scholarshipId")) == program["id"]
                          or _key(existing_roster.get("scholarshipTitle") or existing_roster.get("scholarshipName")) == title_key)), None)
                 conflicting_roster = next((existing_roster for existing_roster in active_student_rosters if existing_roster is not matching_roster), None)
-                student_apps = [application for application in applications if _text(application.get("studentId")) == student_id]
+                student_apps = [application for application in applications
+                    if _text(application.get("studentId")) == student_id and _cycle(application) in {"", current_cycle}]
                 matching_application = next((application for application in student_apps
-                    if _application_matches(application, grantor_id, program["id"], program["title"])), None)
+                    if _cycle(application) == current_cycle and _application_matches(application, grantor_id, program["id"], program["title"])), None)
                 commitment = student.get("scholarshipCommitment") if student and isinstance(student.get("scholarshipCommitment"), dict) else {}
                 commitment_id = _text(commitment.get("applicationId"))
+                committed_app = next((app for app in all_applications if app.get("id") == commitment_id), None)
+                if committed_app and not _is_open_application(committed_app):
+                    commitment_id = ""
+                # An explicitly historical commitment is not a current-cycle award.
+                if _cycle(commitment) and _cycle(commitment) != current_cycle:
+                    commitment_id = ""
+                elif commitment_id and not any(app.get("id") == commitment_id for app in student_apps):
+                    historical = next((app for app in all_applications if app.get("id") == commitment_id), {})
+                    if _cycle(historical) and _cycle(historical) != current_cycle:
+                        commitment_id = ""
+                competing_award = next((app for app in student_apps if _awarded(app)
+                    and (not matching_application or app.get("id") != matching_application.get("id"))), None)
                 if conflicting_roster:
                     disposition = "conflicting_active_roster"
                     reason = "Student already has a different active authoritative roster record."
-                elif commitment_id and (not matching_application or _text(matching_application.get("id")) != commitment_id):
+                elif competing_award or (commitment_id and (not matching_application or _text(matching_application.get("id")) != commitment_id)):
                     disposition = "existing_commitment_conflict"
                     reason = "Student is already committed to a different scholarship."
+                elif matching_roster and not _cycle(matching_roster):
+                    disposition = "conflicting_active_roster"
+                    reason = "The legacy roster has no academic cycle. A Full Admin must verify it before assignment."
                 elif matching_roster:
                     disposition = "already_imported"
                     reason = "This authoritative roster row already exists."
@@ -293,6 +341,8 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
         preview = {
             "rowNumber": row["rowNumber"], "rowId": f"{batch_id}_row_{index + 1}",
             "studentId": student_id, "fullName": row["fullName"], "grantorId": grantor_id,
+            "academicCycle": current_cycle,
+            "grantorType": providers.get(grantor_id, {}).get("grantorType") or "internal",
             "scholarshipId": program.get("id") or "", "scholarshipTitle": program.get("title") or row["scholarshipTitle"],
             "providerType": program.get("providerType") or _text(providers.get(grantor_id, {}).get("providerType")),
             "disposition": disposition, "reason": reason, "blocking": blocking,
@@ -322,12 +372,14 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
     }]
     for conflict in conflict_rows:
         conflict_id = f"roster_conflict_{hashlib.sha256((conflict['studentId'] + conflict['rowId']).encode('utf-8')).hexdigest()[:32]}"
-        supabase_document_upsert("roster_assignment_conflicts", conflict_id, {
+        saved = supabase_document_upsert("roster_assignment_conflicts", conflict_id, {
             "status": "open", "batchId": batch_id, "rowId": conflict["rowId"],
-            "studentId": conflict["studentId"], "fullName": conflict["fullName"],
+            "studentId": conflict["studentId"], "fullName": conflict["fullName"], "academicCycle": current_cycle,
             "reason": conflict["reason"], "disposition": conflict["disposition"],
             "candidate": conflict, "createdAt": now, "updatedAt": now,
         }, merge=False)
+        if not saved.get("ok"):
+            raise HTTPException(status_code=503, detail="roster_conflict_save_failed")
     return {"ok": True, "idempotent": False, "batchId": batch_id, "status": status, "counts": dict(counts), "rows": preview_rows}
 
 
@@ -352,9 +404,24 @@ def list_roster_conflicts(request: Request, payload: dict[str, Any]) -> dict[str
     _, record = require_admin_bearer(request, actor_id)
     if _text(record.get("role")) != "full_admin":
         raise HTTPException(status_code=403, detail="full_admin_required")
-    conflicts = _row_data_rows("roster_assignment_conflicts")
+    current_cycle = _current_cycle()
+    conflicts = [row for row in _row_data_rows("roster_assignment_conflicts") if _cycle(row) == current_cycle]
     active_rosters = [row for row in _row_data_rows("grantor_portal_scholars") if _is_active_roster(row)]
+    applications = _row_data_rows("scholarship_applications")
     for conflict in conflicts:
+        cycle = _cycle(conflict)
+        reason_code = _text(conflict.get("reason"))
+        conflict["reasonCode"] = reason_code
+        conflict["reason"] = {
+            "roster_identity_mismatch": "The roster name does not match the student's account. Verify their identity before assigning an award.",
+            "roster_cycle_requires_verification": "This older roster has no verified academic cycle. Check the provider's records.",
+            "roster_scholarship_not_recognized": "The roster does not identify an available scholarship program.",
+            "roster_match_not_found": "The grantor or roster is no longer active. Verify its current status.",
+            "scholarship_already_committed": "The student already has an award or commitment for this academic cycle. Keep the existing award.",
+            "conflicting_active_roster": "More than one official roster identifies this student in the current cycle. Verify which award is correct.",
+        }.get(reason_code, reason_code)
+        conflict["protectedAward"] = any(_text(app.get("studentId")) == _text(conflict.get("studentId"))
+            and _cycle(app) in {"", cycle} and _is_open_application(app) and _awarded(app) for app in applications)
         conflict["activeRosterOptions"] = [
             {
                 "rosterId": roster.get("id"),
@@ -362,7 +429,7 @@ def list_roster_conflicts(request: Request, payload: dict[str, Any]) -> dict[str
                 "grantorName": roster.get("grantorName") or roster.get("provider") or "Grantor",
                 "scholarshipTitle": roster.get("scholarshipTitle") or roster.get("scholarshipName") or "Scholarship",
             }
-            for roster in active_rosters if _student_id(roster) == _text(conflict.get("studentId"))
+            for roster in active_rosters if _student_id(roster) == _text(conflict.get("studentId")) and _cycle(roster) == cycle
         ]
     conflicts.sort(key=lambda row: _text(row.get("createdAt")), reverse=True)
     return {"ok": True, "conflicts": conflicts}
@@ -376,13 +443,17 @@ def resolve_roster_conflict(request: Request, payload: dict[str, Any]) -> dict[s
         raise HTTPException(status_code=403, detail="full_admin_required")
     conflict_id = _text(payload.get("conflictId"))
     resolution = _text(payload.get("resolution")).lower()
-    if not conflict_id or resolution not in {"candidate", "existing"}:
+    if not conflict_id or resolution not in {"candidate", "existing", "keep_current"}:
         raise HTTPException(status_code=422, detail="invalid_roster_conflict_resolution")
-    result = supabase_rpc("resolve_roster_assignment_conflict", {
+    reason = _text(payload.get("reason"))
+    if len(reason) < 10 or len(reason) > 2000:
+        raise HTTPException(status_code=422, detail="roster_resolution_reason_required")
+    result = supabase_rpc("resolve_roster_assignment_conflict_v2", {
         "p_conflict_id": conflict_id,
         "p_resolution": resolution,
         "p_selected_roster_id": _text(payload.get("selectedRosterId")),
         "p_actor_id": actor_id,
+        "p_reason": reason,
     })
     if not result.get("ok"):
         return {"ok": False, "reason": result.get("reason") or "roster_conflict_resolution_failed", "detail": result.get("detail")}

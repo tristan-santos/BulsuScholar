@@ -15,6 +15,11 @@ from uuid import uuid4
 from fastapi import HTTPException, Request, Response, UploadFile
 
 try:
+    from .download_protection import processing_pdf
+except ImportError:  # pragma: no cover
+    from download_protection import processing_pdf
+
+try:
     from .access_control import enforce_portal_scope, require_admin_bearer
     from .auth_service import _find_account
     from .email_service import send_email_notification
@@ -77,7 +82,7 @@ def _content_response(reference: dict[str, Any], name: str, content_type: str) -
     return Response(
         content=_read_storage(reference),
         media_type=content_type or "application/octet-stream",
-        headers={"Content-Disposition": f'inline; filename="{name.replace(chr(34), "")}"', "Cache-Control": "private, no-store"},
+        headers={"Content-Disposition": f'inline; filename="{name.replace(chr(34), "")}"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -102,7 +107,7 @@ def list_student_history(request: Request, page: int, page_size: int, cycle: str
     return {"ok": True, "events": rows, "cycles": cycles, "page": page, "pageSize": page_size, "hasMore": len(rows) == page_size}
 
 
-async def upload_signed_soe(request: Request, application_id: str, file: UploadFile) -> dict[str, Any]:
+async def upload_signed_soe(request: Request, application_id: str, file: UploadFile, file_password: str = "") -> dict[str, Any]:
     payload: dict[str, Any] = {}
     enforce_portal_scope(request, payload, {"student"})
     student_id = payload["actorId"]
@@ -118,18 +123,29 @@ async def upload_signed_soe(request: Request, application_id: str, file: UploadF
     data = application.get("data") or {}
     if not application.get("row") or str(data.get("studentId") or "") != student_id:
         raise HTTPException(status_code=404, detail="application_not_found")
+    processing = processing_pdf(body, file_password) if content_type == "application/pdf" else body
     cycle = str(data.get("academicCycle") or data.get("semesterTag") or "current-cycle").strip()
     submission_id = str(uuid4())
     extension = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg"}[content_type]
     path = f"private/signed-soe/{student_id}/{application_id}/{submission_id}.{extension}"
     stored = _store_bytes(path, body, content_type)
-    result = supabase_rpc("finalize_signed_soe_submission", {
+    derivative = None
+    if processing != body:
+        try:
+            derivative = _store_bytes(path + ".preview.pdf", processing, content_type)
+        except Exception:
+            _delete_storage(stored["bucket"], stored["path"])
+            raise
+    result = supabase_rpc("finalize_protected_signed_soe_submission", {
         "p_submission_id": submission_id, "p_student_id": student_id, "p_application_id": application_id,
         "p_cycle": cycle, "p_bucket": stored["bucket"], "p_path": stored["path"],
         "p_file_name": (file.filename or f"signed-soe.{extension}")[:240], "p_content_type": content_type, "p_size": len(body),
+        "p_processing_file": derivative,
     })
     if not result.get("ok"):
         _delete_storage(stored["bucket"], stored["path"])
+        if derivative:
+            _delete_storage(derivative["bucket"], derivative["path"])
         raise HTTPException(status_code=409, detail=result.get("reason") or "signed_soe_submission_failed")
     return {"ok": True, **(result.get("data") or {})}
 
@@ -147,7 +163,7 @@ def list_signed_soe(request: Request, application_id: str) -> dict[str, Any]:
     return {"ok": True, "submissions": rows}
 
 
-def signed_soe_content(request: Request, submission_id: str) -> Response:
+def signed_soe_content(request: Request, submission_id: str, *, original=False) -> Response:
     payload: dict[str, Any] = {}
     enforce_portal_scope(request, payload, {"student", "admin"})
     if payload["actorType"] == "admin":
@@ -160,7 +176,8 @@ def signed_soe_content(request: Request, submission_id: str) -> Response:
     row = rows[0]
     if payload["actorType"] == "student" and str(row.get("student_id") or "") != payload["actorId"]:
         raise HTTPException(status_code=403, detail="signed_soe_access_denied")
-    return _content_response({"bucket": row["storage_bucket"], "path": row["storage_path"]}, row["file_name"], row["content_type"])
+    ref = {"bucket": row["storage_bucket"], "path": row["storage_path"]}
+    return _content_response(ref if original else row.get("processing_file") or ref, row["file_name"], row["content_type"])
 
 
 def reopen_signed_soe(request: Request, submission_id: str, reason: str) -> dict[str, Any]:

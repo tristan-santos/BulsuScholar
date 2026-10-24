@@ -66,6 +66,7 @@ import ZoomableImagePreview from "../components/ZoomableImagePreview"
 import ThemeToggle from "../components/ThemeToggle"
 import CustomSelect from "../components/CustomSelect"
 import RegionLocationChecklist from "../components/RegionLocationChecklist"
+import RosterConflictReview from "../components/RosterConflictReview"
 import NotFoundPage from "./NotFoundPage"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
@@ -1230,11 +1231,12 @@ export default function AdminDashboard() {
 		email: "",
 		organization: "",
 		classification: "other",
+		grantorType: "internal",
 		scopeEnabled: false,
 		scopeName: "",
 		locations: [],
 	})
-	const [grantorScopeForm, setGrantorScopeForm] = useState({ classification: "other", enabled: false, name: "", locations: [] })
+	const [grantorScopeForm, setGrantorScopeForm] = useState({ classification: "other", grantorType: "internal", enabled: false, name: "", locations: [] })
 	const [grantorScopeBusy, setGrantorScopeBusy] = useState(false)
 	const [isCreatingGrantor, setIsCreatingGrantor] = useState(false)
 
@@ -1245,6 +1247,7 @@ export default function AdminDashboard() {
 			if (!active) return
 			setGrantorScopeForm({
 				classification: result.classification || "other",
+				grantorType: result.grantorType || "internal",
 				enabled: result.policy?.enabled === true,
 				name: result.policy?.name || "",
 				locations: result.policy?.locations || [],
@@ -1275,6 +1278,7 @@ export default function AdminDashboard() {
 	const [adminRosterPreview, setAdminRosterPreview] = useState(null)
 	const [adminRosterConflicts, setAdminRosterConflicts] = useState([])
 	const [adminRosterConflictBusy, setAdminRosterConflictBusy] = useState("")
+	const [rosterResolutionReasons, setRosterResolutionReasons] = useState({})
 	const [adminScholarFormErrors, setAdminScholarFormErrors] = useState({})
 	const [adminScholarBarangayOptions, setAdminScholarBarangayOptions] = useState([])
 	const [adminScholarBarangayLoading, setAdminScholarBarangayLoading] = useState(false)
@@ -1285,7 +1289,7 @@ export default function AdminDashboard() {
 	}, [adminScholarColumnMapping, adminScholarForm, adminScholarImportGrantorAssignments, adminScholarImportRows])
 
 	useEffect(() => {
-		if (!adminScholarModalOpen || adminIdentityRef.current?.role !== "full_admin") return undefined
+		if ((!adminScholarModalOpen && scholarshipTab !== "warning") || adminIdentityRef.current?.role !== "full_admin") return undefined
 		let active = true
 		listRosterConflictsWorkflow()
 			.then((result) => {
@@ -1293,7 +1297,7 @@ export default function AdminDashboard() {
 			})
 			.catch((error) => console.error("Unable to load roster conflicts.", error))
 		return () => { active = false }
-	}, [adminScholarModalOpen])
+	}, [adminScholarModalOpen, scholarshipTab])
 
 	const [applicantTrendRange, setApplicantTrendRange] = useState("monthly")
 	const [soeTrendRange, setSoeTrendRange] = useState("monthly")
@@ -3734,8 +3738,9 @@ export default function AdminDashboard() {
 		if (message.includes("object not found") || message.includes("not found") || message.includes("preview_failed_400")) {
 			return "This file is no longer available in Supabase Storage. Upload or update the document again."
 		}
-		if (message.includes("row-level security") || message.includes("permission")) {
-			return "Storage access is blocked by Supabase policies. Check the bucket policy before previewing this file."
+		if (error?.status === 401) return "Your session has expired. Sign in again to view this document."
+		if (error?.status === 403 || message.includes("row-level security") || message.includes("permission")) {
+			return "Your administrator account does not have permission to view this document."
 		}
 		return "Unable to preview the document right now."
 	}
@@ -3761,7 +3766,7 @@ export default function AdminDashboard() {
 		blobRequest
 			.then(async (blob) => {
 				if (cancelled) return
-				if (previewDocument.isPdf) {
+				if (blob.type === "application/pdf" || previewDocument.isPdf) {
 					const pdfFile = new File([blob], previewDocument.name || "document.pdf", {
 						type: "application/pdf",
 					})
@@ -3942,7 +3947,7 @@ export default function AdminDashboard() {
 			overview: scholarshipOverviewRows.length,
 			scholars: scholarshipStudentRows.length,
 			tracking: scholarshipTrackingRows.length,
-			warning: warningRows.length,
+			warning: warningRows.length + adminRosterConflicts.length,
 			serviced: administratorServicedScholarshipRows.length,
 			archived: archivedScholarshipRows.length,
 		}),
@@ -3954,6 +3959,7 @@ export default function AdminDashboard() {
 			scholarshipTrackingRows.length,
 			administratorServicedScholarshipRows.length,
 			warningRows.length,
+			adminRosterConflicts.length,
 		],
 	)
 
@@ -4928,6 +4934,7 @@ export default function AdminDashboard() {
 	const selectedSoeReviewOtherDocuments = useMemo(
 		() => collectOtherRequirementDocuments({
 			...(selectedSoeReviewScholarship || {}),
+			applicationId: selectedSoeReviewApplication?.id || selectedSoeReviewApplication?.applicationId || selectedSoeReviewScholarship?.applicationId,
 			otherRequirements:
 				selectedSoeReviewApplication?.otherRequirements ||
 				selectedSoeReviewScholarship?.otherRequirements ||
@@ -5251,14 +5258,14 @@ export default function AdminDashboard() {
 	}
 
 	const openDocumentPreview = (document) => {
-		if (!document?.url) {
+		if (!document?.url && !document?.submissionId) {
 			toast.info("No uploaded document is available for preview.")
 			return
 		}
 		setPreviewDocument({
 			...document,
 			title: document.title || document.label || "Document",
-			url: normalizeDocumentPreviewUrl(document.url),
+			url: normalizeDocumentPreviewUrl(document.url || ""),
 			name: document.name || document.title || document.label || "document",
 			isPdf: isPreviewPdf(document),
 		})
@@ -5530,17 +5537,22 @@ export default function AdminDashboard() {
 
 	const resolveAdminRosterConflict = async (conflict, resolution, selectedRosterId = "") => {
 		if (!conflict?.id || adminRosterConflictBusy) return
+		const reason = (rosterResolutionReasons[conflict.id] || "").trim()
+		if (reason.length < 10) {
+			toast.error("Record a verification reason of at least 10 characters.")
+			return
+		}
 		const confirmed = await requestAdminConfirmation({
 			title: "Resolve Roster Conflict",
 			message: resolution === "candidate"
-				? "Confirm that the student's identity was verified in person and select the imported scholarship. Other active roster alternatives will be archived without a cooldown."
-				: "Keep this existing roster scholarship and archive the imported alternative without a cooldown?",
+				? "Confirm the student's identity and imported award. Competing pending applications and same-cycle roster alternatives will be archived. An existing award cannot be replaced."
+				: "Keep the existing scholarship and archive conflicting same-cycle roster alternatives? Previous-cycle records will not change.",
 			confirmLabel: "Resolve Conflict",
 		})
 		if (!confirmed) return
 		setAdminRosterConflictBusy(conflict.id)
 		try {
-			await resolveRosterConflictWorkflow({ conflictId: conflict.id, resolution, selectedRosterId })
+			await resolveRosterConflictWorkflow({ conflictId: conflict.id, resolution, selectedRosterId, reason })
 			setAdminRosterConflicts((current) => current.filter((item) => item.id !== conflict.id && item.studentId !== conflict.studentId))
 			toast.success("Roster conflict resolved and recorded in the audit history.")
 		} catch (error) {
@@ -5579,17 +5591,16 @@ export default function AdminDashboard() {
 	const downloadPreviewDocument = async () => {
 		if (!previewDocument?.url && !previewDocument?.submissionId) return
 		try {
+			if (previewDocument.submissionId || /^\/(student\/profile\/|signed-soe\/|scholarship-applications\/)/.test(previewDocument.url || "")) {
+				const { downloadStoredDocument } = await import("../services/protectedDownloadService")
+				await downloadStoredDocument(previewDocument)
+				return
+			}
 			const blob = previewDocument.submissionId
 				? await getStudentVerificationDocumentBlob(previewDocument.submissionId)
 				: await getStorageObjectBlob(previewDocument)
-			const url = URL.createObjectURL(blob)
-			const link = document.createElement("a")
-			link.href = url
-			link.download = previewDocument.name || "document"
-			document.body.appendChild(link)
-			link.click()
-			document.body.removeChild(link)
-			URL.revokeObjectURL(url)
+			const { protectGeneratedBlob } = await import("../services/protectedDownloadService")
+			await protectGeneratedBlob(blob)
 		} catch (error) {
 			console.error("Failed to download admin student document:", error)
 			toast.error(getDocumentStorageErrorMessage(error).replace("preview", "download"))
@@ -7258,6 +7269,7 @@ export default function AdminDashboard() {
 			email: "",
 			organization: "",
 			classification: "other",
+			grantorType: "internal",
 			scopeEnabled: false,
 			scopeName: "",
 			locations: [],
@@ -7302,6 +7314,7 @@ export default function AdminDashboard() {
 				providerType: toProviderType(providerName),
 				organization: grantorForm.organization.trim(),
 				grantorClassification: grantorForm.classification,
+				grantorType: grantorForm.grantorType,
 				locationScope: {
 					enabled: grantorForm.scopeEnabled,
 					name: grantorForm.scopeName.trim(),
@@ -7348,6 +7361,7 @@ export default function AdminDashboard() {
 			const result = await saveGrantorScopeWorkflow({
 				grantorId: selectedGrantor.id,
 				classification: grantorScopeForm.classification,
+				grantorType: grantorScopeForm.grantorType,
 				enabled: grantorScopeForm.enabled,
 				name: grantorScopeForm.name,
 				locations: grantorScopeForm.locations,
@@ -9096,6 +9110,7 @@ export default function AdminDashboard() {
 								</div>
 							</div>
 							{scholarshipTab === "serviced" ? <div className="admin-managed-scholarship-note"><HiOutlineInformationCircle /><div><strong>Scholarship Office Managed</strong><p>The grantor account was archived, but the student's scholarship remains active. The scholarship office now manages the workflow, and the student cannot change or withdraw until the individual scholar record is archived.</p></div></div> : null}
+						{scholarshipTab === "warning" && adminIdentityRef.current?.role === "full_admin" ? <RosterConflictReview conflicts={adminRosterConflicts} busy={adminRosterConflictBusy} reasons={rosterResolutionReasons} onReasonChange={(id, reason) => setRosterResolutionReasons((current) => ({ ...current, [id]: reason }))} onResolve={resolveAdminRosterConflict} /> : null}
 							<div className="admin-table-wrap admin-table-wrap--scholarships">
 								<table className={`admin-management-table admin-management-table--roomy admin-scholarship-table ${scholarshipTab === "tracking" ? "admin-scholarship-table--tracking" : ""}`}>
 									<thead>
@@ -10522,6 +10537,10 @@ export default function AdminDashboard() {
 									<span>Classification</span>
 									<select value={grantorForm.classification} onChange={(event) => updateGrantorForm("classification", event.target.value)}><option value="government">Government</option><option value="private">Private</option><option value="other">Others</option></select>
 								</label>
+								<label className="admin-grantor-field">
+									<span>Grantor Type</span>
+									<select value={grantorForm.grantorType} onChange={(event) => updateGrantorForm("grantorType", event.target.value)}><option value="internal">Internal</option><option value="external">External</option></select>
+								</label>
 								<div className={`admin-grantor-field admin-grantor-scope-toggle ${grantorForm.scopeEnabled ? "is-on" : "is-off"}`}>
 									<div className="admin-grantor-scope-copy">
 										<strong>Enforce Location Scope</strong>
@@ -10595,6 +10614,7 @@ export default function AdminDashboard() {
 								<p className="admin-detail-meta"><span>Barangay</span><strong>{selectedGrantor.barangay || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Office Street / Subdivision</span><strong>{selectedGrantor.street || selectedGrantor.address || "-"}</strong></p>
 								<p className="admin-detail-meta"><span>Postal Code</span><strong>{selectedGrantor.postalCode || selectedGrantor.zipCode || "-"}</strong></p>
+								{adminIdentityRef.current?.role === "full_admin" ? <label className="admin-grantor-field"><span>Grantor Type</span><select value={grantorScopeForm.grantorType} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, grantorType: event.target.value }))}><option value="internal">Internal</option><option value="external">External</option></select></label> : <p className="admin-detail-meta"><span>Grantor Type</span><strong>{selectedGrantor.grantorType === "external" ? "External" : "Internal"}</strong></p>}
 							</div>
 							{adminIdentityRef.current?.role === "full_admin" ? <section className="admin-scope-editor"><h4>Grantor Classification and Location Scope</h4><p>Eligibility uses the student's self-declared permanent province and city or municipality. Barangays are not considered.</p><div className="admin-grantor-form-grid"><label className="admin-grantor-field"><span>Classification</span><select value={grantorScopeForm.classification} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, classification: event.target.value }))}><option value="government">Government</option><option value="private">Private</option><option value="other">Others</option></select></label><label className="admin-grantor-field"><span>Scope name</span><input value={grantorScopeForm.name} onChange={(event) => setGrantorScopeForm((current) => ({ ...current, name: event.target.value }))} placeholder="Example: District 2" /></label><div className={`admin-grantor-field admin-grantor-scope-toggle ${grantorScopeForm.enabled ? "is-on" : "is-off"}`}><div className="admin-grantor-scope-copy"><strong>Enforce Location Scope</strong><small>{grantorScopeForm.enabled ? "ON - Applications are limited to approved locations." : "OFF - Students from any location may apply."}</small></div><button type="button" className={`grantor-profile-switch ${grantorScopeForm.enabled ? "active" : ""}`} role="switch" aria-checked={grantorScopeForm.enabled} aria-label={`${grantorScopeForm.enabled ? "Disable" : "Enable"} location scope`} title={`${grantorScopeForm.enabled ? "Disable" : "Enable"} location scope`} onClick={() => setGrantorScopeForm((current) => ({ ...current, enabled: !current.enabled }))}><i /></button></div><div className="admin-grantor-field admin-grantor-field--wide"><RegionLocationChecklist idPrefix="edit-grantor-scope" value={grantorScopeForm.locations} disabled={!grantorScopeForm.enabled} onChange={(locations) => setGrantorScopeForm((current) => ({ ...current, locations }))} />{grantorScopeForm.enabled && grantorScopeForm.locations.length === 0 ? <small className="admin-region-scope-validation" role="alert">Select at least one city or municipality.</small> : null}</div></div><button type="button" data-button-variant="positive" disabled={grantorScopeBusy || (grantorScopeForm.enabled && grantorScopeForm.locations.length === 0)} onClick={saveSelectedGrantorScope}><HiOutlineSave /> {grantorScopeBusy ? "Saving..." : "Save Scope"}</button></section> : null}
 							<div className="admin-grantor-detail-stats">
@@ -10925,23 +10945,7 @@ export default function AdminDashboard() {
 								) : null}
 							</header>
 							<div className="admin-scholar-import-body">
-								{adminRosterConflicts.length > 0 ? (
-									<section className="admin-scholar-conflicts" aria-labelledby="admin-roster-conflicts-title">
-										<header>
-											<HiOutlineExclamation aria-hidden="true" />
-											<div><h4 id="admin-roster-conflicts-title">Roster conflicts requiring verification</h4><p>Verify the student's identity before selecting one authoritative scholarship.</p></div>
-										</header>
-										{adminRosterConflicts.map((conflict) => (
-											<article key={conflict.id} className="admin-scholar-conflict-row">
-												<div><strong>{conflict.fullName || conflict.studentId || "Student"}</strong><span>{conflict.reason}</span></div>
-												<div className="admin-scholar-conflict-actions">
-													{conflict.candidate?.scholarshipTitle ? <button type="button" data-button-variant="positive" disabled={Boolean(adminRosterConflictBusy)} onClick={() => resolveAdminRosterConflict(conflict, "candidate")}><HiOutlineCheckCircle /> Select {conflict.candidate.scholarshipTitle}</button> : null}
-													{(conflict.activeRosterOptions || []).map((option) => <button key={option.rosterId} type="button" data-button-variant="neutral" disabled={Boolean(adminRosterConflictBusy)} onClick={() => resolveAdminRosterConflict(conflict, "existing", option.rosterId)}><HiOutlineCheckCircle /> Keep {option.scholarshipTitle}</button>)}
-												</div>
-											</article>
-										))}
-									</section>
-								) : null}
+								<RosterConflictReview conflicts={adminRosterConflicts} busy={adminRosterConflictBusy} reasons={rosterResolutionReasons} onReasonChange={(id, reason) => setRosterResolutionReasons((current) => ({ ...current, [id]: reason }))} onResolve={resolveAdminRosterConflict} />
 								{adminScholarImportRows.length > 0 ? (
 									<>
 										<div className="admin-scholar-import-info">
@@ -11349,7 +11353,7 @@ export default function AdminDashboard() {
 								<p>{previewDocument.name}{previewDocument.status ? ` · ${previewDocument.status}` : ""}</p>
 							</div>
 							<div className="admin-document-preview-actions">
-								<button type="button" className="admin-document-preview-download" onClick={downloadPreviewDocument}>
+								<button type="button" className="admin-document-preview-download" disabled={isPreviewLoading} onClick={downloadPreviewDocument}>
 									<HiOutlineDownload /> Download
 								</button>
 								<button type="button" className="admin-document-preview-close" onClick={closeDocumentPreview} aria-label="Close document preview">
@@ -11368,6 +11372,7 @@ export default function AdminDashboard() {
 									<HiOutlineDocumentText />
 									<strong>Preview is unavailable.</strong>
 									<span>{previewError || "The selected file cannot be shown right now."}</span>
+									<button type="button" className="admin-document-preview-download" onClick={() => setPreviewDocument((current) => current ? { ...current } : current)}><HiOutlineRefresh /> Retry</button>
 								</div>
 							) : (
 								<ZoomableImagePreview

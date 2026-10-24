@@ -72,6 +72,7 @@ export function checkStudentSignupAvailability(field, value) {
 }
 
 export async function createStudentSignupDocumentBatch({ studentId, email, year, identityKind, corFile, rogFile, identityFile }) {
+	const { fetchWithFilePasswords } = await import("./protectedDownloadService")
 	const form = new FormData()
 	form.append("student_id", studentId)
 	form.append("email", email)
@@ -80,10 +81,10 @@ export async function createStudentSignupDocumentBatch({ studentId, email, year,
 	form.append("cor", corFile)
 	if (rogFile) form.append("rog", rogFile)
 	form.append("identity", identityFile)
-	const response = await trackedFetch(`${requireBackendApiUrl("Signup document backend")}/workflows/student/signup/document-batches`, {
+	const response = await fetchWithFilePasswords(`${requireBackendApiUrl("Signup document backend")}/workflows/student/signup/document-batches`, {
 		method: "POST",
 		body: form,
-	}, "document.upload")
+	}, { batch: true, fetcher: (url, options) => trackedFetch(url, options, "document.upload") })
 	const data = await response.json().catch(() => ({}))
 	if (!response.ok || data?.ok === false) {
 		const detail = data?.detail || data?.reason || "signup_document_batch_failed"
@@ -169,7 +170,7 @@ export function listFilteredApplicantsWorkflow(payload = {}) {
 }
 
 export async function fetchFilteredApplicantsReportWorkflow(payload = {}) {
-	const response = await fetch(`${requireBackendApiUrl("Applicant report backend")}/workflows/applicants/export`, {
+	const response = await fetch(`${requireBackendApiUrl("Applicant report backend")}/workflows/applicants/file-preview`, {
 		method: "POST",
 		headers: await buildPortalRequestHeaders({ actorId: payload.actorId, actorType: payload.actorType }),
 		body: JSON.stringify(payload),
@@ -186,13 +187,10 @@ export async function fetchFilteredApplicantsReportWorkflow(payload = {}) {
 }
 
 export async function downloadFilteredApplicantsWorkflow(payload = {}) {
-	const { blob, filename } = await fetchFilteredApplicantsReportWorkflow(payload)
-	const url = URL.createObjectURL(blob)
-	const anchor = document.createElement("a")
-	anchor.href = url
-	anchor.download = filename
-	anchor.click()
-	URL.revokeObjectURL(url)
+	const { protectedPost, saveProtectedFile } = await import("./protectedDownloadService")
+	const result = await protectedPost("/workflows/applicants/export", payload)
+	if (result) saveProtectedFile(result.blob, result.filename)
+	return Boolean(result)
 }
 
 export function correctStudentNumberWorkflow(payload = {}) {

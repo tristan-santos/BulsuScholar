@@ -30,7 +30,6 @@ import useThemeMode from "../hooks/useThemeMode"
 import useStudentProfilePhoto from "../hooks/useStudentProfilePhoto"
 import {
 	getStudentProfileWorkspace,
-	getStudentVerificationDocumentBlob,
 	previewStudentProfileDraft,
 	saveStudentProfileDraft,
 	submitStudentProfile,
@@ -369,13 +368,8 @@ export default function StudentProfilePage({ formMode = false }) {
 	const preview = (submission) => setPreviewTarget(submission)
 	const download = async (submission) => {
 		try {
-			const blob = await getStudentVerificationDocumentBlob(submission.id)
-			const url = URL.createObjectURL(blob)
-			const anchor = document.createElement("a")
-			anchor.href = url
-			anchor.download = submission.name || "Student_Application_Profile.pdf"
-			anchor.click()
-			setTimeout(() => URL.revokeObjectURL(url), 1000)
+			const { downloadStoredDocument } = await import("../services/protectedDownloadService")
+			await downloadStoredDocument(submission)
 		} catch (error) { toast.error(error.message || "Unable to download the document.") }
 	}
 	const uploadPhoto = async (file) => {

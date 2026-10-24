@@ -1,0 +1,21 @@
+.protected-download-backdrop { position: fixed; inset: 0; z-index: 10050; background: #132a2266; display: grid; place-items: center; padding: 16px; }
+html body .protected-download-backdrop { z-index: calc(var(--bulsu-layer-modal-nested, 110000) + 1) !important; }
+/* A tracked upload/download may be waiting for this user's password input. */
+body:has(.protected-download-backdrop) .operation-overlay { display: none; }
+.protected-download-dialog { box-sizing: border-box; width: min(100%, 520px); min-width: 0; max-height: 90dvh; overflow-y: auto; background: var(--surface-color, #fff); color: #173c30; border: 1px solid #b8d3c7; border-radius: 8px; padding: 24px; box-shadow: 0 16px 60px #0003; font-family: inherit; }
+.protected-download-dialog header, .protected-download-dialog footer, .protected-download-password { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.protected-download-dialog h2 { font-size: 20px; margin: 0; }
+.protected-download-dialog p { font-size: 14px; line-height: 1.6; }
+.protected-download-dialog button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 14px; border: 1px solid #08764b; background: white; color: #006744; border-radius: 6px; cursor: pointer; font: inherit; }
+.protected-download-dialog button:focus-visible, .protected-download-dialog input:focus-visible { outline: 3px solid #d89c22; outline-offset: 3px; }
+.protected-download-dialog footer { justify-content: flex-end; margin-top: 20px; }
+.protected-download-dialog footer button:last-child { background: #006744; color: white; }
+.protected-download-dialog button:disabled { opacity: .45; cursor: not-allowed; }
+.protected-download-dialog label { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+.protected-download-password { border: 1px solid #b8d3c7; padding: 12px; background: #f1faf5; border-radius: 6px; }
+.protected-download-password code { overflow-wrap: anywhere; min-width: 0; font-size: 14px; }
+.protected-download-note { color: #5f706a; }
+.protected-download-dialog input[type="password"] { box-sizing: border-box; width: 100%; min-width: 0; height: 44px; padding: 8px 10px; border: 1px solid #b8d3c7; border-radius: 6px; font: inherit; }
+[data-theme="dark"] .protected-download-dialog, .dark .protected-download-dialog { background: #182b24; color: #edf7f1; }
+[data-theme="dark"] .protected-download-password, .dark .protected-download-password { background: #10261d; }
+[data-theme="dark"] .protected-download-note, .dark .protected-download-note { color: #bfd1c7; }

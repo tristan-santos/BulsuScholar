@@ -3,6 +3,7 @@
  */
 
 import pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url"
+import { requestDownloadPassword } from "../services/protectedDownloadService"
 
 // Check if file is a PDF
 export function isPdf(file) {
@@ -25,10 +26,21 @@ export async function convertPdfToImage(pdfFile, pageNum = 1) {
 		const reader = new FileReader()
 
 		reader.onload = async (event) => {
+			let loadingTask
 			try {
-				const pdf = await pdfjsLib.getDocument({
+				loadingTask = pdfjsLib.getDocument({
 					data: new Uint8Array(event.target.result),
-				}).promise
+				})
+				let passwordAttempts = 0
+				loadingTask.onPassword = async (updatePassword, reason) => {
+					try {
+						if (++passwordAttempts > 10) { await loadingTask.destroy(); return }
+						const password = await requestDownloadPassword({ upload: true, incorrect: reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD, file: pdfFile.name || "PDF preview" })
+						if (!password) { await loadingTask.destroy(); return }
+						updatePassword(password)
+					} catch { await loadingTask.destroy() }
+				}
+				const pdf = await loadingTask.promise
 
 				const page = await pdf.getPage(Math.max(1, Math.min(pageNum, pdf.numPages)))
 
@@ -54,6 +66,8 @@ export async function convertPdfToImage(pdfFile, pageNum = 1) {
 				}, "image/png")
 			} catch (error) {
 				reject(error)
+			} finally {
+				await loadingTask?.destroy()
 			}
 		}
 

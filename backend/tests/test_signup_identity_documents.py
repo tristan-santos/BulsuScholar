@@ -4,6 +4,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from backend import signup_service
+from backend.tests.pdf_fixtures import valid_pdf
 from backend.signup_service import check_signup_availability, create_signup_document_batch
 
 
@@ -11,7 +12,7 @@ class MemoryUpload:
     def __init__(self, name, content_type, body=b"document"):
         self.filename = name
         self.content_type = content_type
-        self._body = body
+        self._body = valid_pdf() if body == b"document" and content_type == "application/pdf" else body
 
     async def read(self):
         return self._body

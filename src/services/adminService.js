@@ -78,15 +78,8 @@ export function mapScholarshipRows(rawStudents = [], rawApplications = []) {
 	return [...programMap.values()]
 }
 
-function downloadBackendFile(blob, filename) {
-	const url = URL.createObjectURL(blob)
-	const link = document.createElement("a")
-	link.href = url
-	link.download = filename
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-	setTimeout(() => URL.revokeObjectURL(url), 0)
+function downloadBackendFile(blob) {
+	return import("./protectedDownloadService").then(({ protectGeneratedBlob }) => protectGeneratedBlob(blob))
 }
 
 async function readBackendError(response) {
@@ -133,6 +126,10 @@ async function validateReportPdfBlob(blob) {
 }
 
 export async function fetchCanonicalReportPdf(report = {}, options = {}) {
+	if (options.downloadProtection) {
+		const { protectedPost } = await import("./protectedDownloadService")
+		return protectedPost("/reports/pdf", buildCanonicalReportPdfPayload(report))
+	}
 	const controller = new AbortController()
 	const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 45000)
 	const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -140,7 +137,7 @@ export async function fetchCanonicalReportPdf(report = {}, options = {}) {
 	options.signal?.addEventListener("abort", abortFromCaller, { once: true })
 	let response
 	try {
-		response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/pdf`, {
+		response = await fetch(`${requireBackendApiUrl("Report backend")}/reports/pdf/preview`, {
 			method: "POST",
 			headers: await buildPortalRequestHeaders({ actorType: "admin" }),
 			body: JSON.stringify(buildCanonicalReportPdfPayload(report)),
@@ -172,12 +169,12 @@ export async function fetchCanonicalReportPdf(report = {}, options = {}) {
 }
 
 export function downloadCanonicalReportPdfBlob(blob, filename = "bulsuscholar-report.pdf") {
-	downloadBackendFile(blob, sanitizeReportFilename(filename))
+	return downloadBackendFile(blob, sanitizeReportFilename(filename))
 }
 
 export async function exportCanonicalReportPdf(report = {}, options = {}) {
-	const result = await fetchCanonicalReportPdf(report, options)
-	downloadCanonicalReportPdfBlob(result.blob, result.filename)
+	const result = await fetchCanonicalReportPdf(report, { ...options, downloadProtection: true })
+	if (result) (await import("./protectedDownloadService")).saveProtectedFile(result.blob, result.filename)
 	return result
 }
 
@@ -202,6 +199,12 @@ export function fetchAdminReportPreview(reportType, filters = {}, { page = 1, pa
 }
 
 export async function fetchAdminReportExport(reportType, filters = {}, format = "pdf", { previewOnly = false, signal, dataset = "all" } = {}) {
+	if (!previewOnly) {
+		const { protectedPost } = await import("./protectedDownloadService")
+		const result = await protectedPost("/admin/reports/export", { actorType: "admin", reportType, filters, format, dataset })
+		if (!result) throw new DOMException("Download cancelled", "AbortError")
+		return { ...result, protected: true }
+	}
 	const path = previewOnly ? "/admin/reports/file-preview" : "/admin/reports/export"
 	const response = await fetch(`${requireBackendApiUrl("Report backend")}${path}`, {
 		method: "POST",
@@ -234,7 +237,7 @@ export async function getAdminReportHistory() {
 }
 
 export function downloadAdminReportFile(blob, filename = "bulsuscholar-report") {
-	downloadBackendFile(blob, filename)
+	return import("./protectedDownloadService").then(({ saveProtectedFile }) => saveProtectedFile(blob, filename))
 }
 
 function protectSpreadsheetCell(value) {
@@ -255,5 +258,5 @@ export function downloadCanonicalReportCsv(report = {}) {
 		...rows.map((row) => row.map(escapeCsvValue).join(",")),
 	].join("\r\n")
 	const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8;" })
-	downloadBackendFile(blob, `${sanitizeReportFilename(report.filename)}.csv`)
+	return downloadBackendFile(blob, `${sanitizeReportFilename(report.filename)}.csv`)
 }

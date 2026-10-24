@@ -17,7 +17,7 @@ async function downloadStaticPdfTemplate(url, fileName) {
 		const response = await fetch(url)
 		if (!response.ok) throw new Error(`template_load_failed_${response.status}`)
 		const blob = await validatePdfBlob(await response.blob())
-		triggerBlobDownload(blob, fileName)
+		triggerBlobDownload(blob, fileName, { publicTemplate: true })
 		return { blob, fileName, source: "template" }
 	}, "document.download")
 }

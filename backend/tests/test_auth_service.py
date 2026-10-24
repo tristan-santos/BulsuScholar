@@ -110,7 +110,8 @@ class PortalLoginTests(unittest.TestCase):
             "isPending": False, "mustChangePassword": False,
         })
         record.assert_called_once_with(ACCOUNT, True)
-        self.assertEqual(rpc.call_args.args[0], "complete_portal_verified_session")
+        self.assertEqual([call.args[0] for call in rpc.call_args_list], ["complete_portal_verified_session", "reconcile_student_roster"])
+        self.assertEqual(rpc.call_args.args[1], {"p_student_id": ACCOUNT["id"], "p_source": "verified_login"})
 
     def test_inactive_student_gets_email_challenge_without_tokens(self):
         auth_response = {"access_token": access_token(), "refresh_token": "refresh", "user": {"id": ACCOUNT["data"]["authUserId"]}}

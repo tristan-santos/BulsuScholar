@@ -12,6 +12,11 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile
 
 try:
+    from .download_protection import processing_pdf, parse_file_passwords
+except ImportError:  # pragma: no cover
+    from download_protection import processing_pdf, parse_file_passwords
+
+try:
     from .supabase_ops import (
         build_student_notification_payload,
         create_admin_notification,
@@ -160,6 +165,7 @@ def _signup_document_metadata(file: UploadFile, reference: dict[str, Any], conte
         "bucket": reference.get("bucket") or "",
         "path": reference.get("path") or "",
         "scan": scan or {},
+        **({"processingFile": reference["processingFile"]} if reference.get("processingFile") else {}),
     }
 
 
@@ -171,13 +177,28 @@ async def create_signup_document_batch(
     identity: UploadFile,
     rog: UploadFile | None = None,
     declared_year: str = "",
+    file_passwords=None,
 ) -> dict[str, Any]:
+    passwords = parse_file_passwords(file_passwords)
+    originals = {}
+
+    def processing(body, mime, key):
+        originals[key] = body
+        if body and mime == "application/pdf":
+            try:
+                return processing_pdf(body, passwords.get(key, ""))
+            except HTTPException as error:
+                if error.detail in {"file_password_required", "file_password_incorrect"}:
+                    raise HTTPException(422, {"code": error.detail, "fileKey": key}) from None
+                raise
+        return body
     normalized_student_id = normalize_student_id(student_id)
     normalized_email = normalize_email(email)
     if not normalized_student_id or not normalized_email:
         raise HTTPException(status_code=422, detail="signup_document_identity_required")
 
     cor_body, cor_type = await _read_signup_file(cor, pdf_only=True, required=True, label="cor")
+    cor_body = processing(cor_body, cor_type, "cor")
     cor_scan = parse_pdf_document(cor_body, "cor")
     if cor_scan.get("isValidCorDocument") is False:
         raise HTTPException(status_code=422, detail="invalid_cor_document_title")
@@ -205,6 +226,7 @@ async def create_signup_document_batch(
 
     rog_required = not (year == "1" and current_cycle.endswith("-1ST"))
     rog_body, rog_type = await _read_signup_file(rog, pdf_only=True, required=rog_required, label="rog")
+    rog_body = processing(rog_body, rog_type, "rog")
     rog_scan: dict[str, Any] = {}
     if rog_body:
         rog_scan = parse_pdf_document(rog_body, "cog")
@@ -219,24 +241,30 @@ async def create_signup_document_batch(
     if identity_kind not in allowed_identity_kinds:
         raise HTTPException(status_code=422, detail="identity_document_not_allowed")
     identity_body, identity_type = await _read_signup_file(identity, pdf_only=False, required=True, label="identity")
+    identity_body = processing(identity_body, identity_type, "identity")
 
     batch_id = f"signup_batch_{uuid4().hex}"
     secret = secrets.token_urlsafe(32)
     secret_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
     base_path = f"pending-signups/{batch_id}"
     stored_references: list[dict[str, Any]] = []
+    def store_original(key, file, body, mime):
+        ref = _store_bytes(f"{base_path}/{key}{_signup_file_extension(file, mime)}", originals[key], mime)
+        stored_references.append(ref)
+        if body != originals[key]:
+            derivative = _store_bytes(f"{base_path}/{key}.preview.pdf", body, mime)
+            stored_references.append(derivative)
+            ref["processingFile"] = derivative
+        return ref
     try:
-        cor_ref = _store_bytes(f"{base_path}/cor{_signup_file_extension(cor, cor_type)}", cor_body, cor_type)
-        stored_references.append(cor_ref)
-        identity_ref = _store_bytes(f"{base_path}/identity{_signup_file_extension(identity, identity_type)}", identity_body, identity_type)
-        stored_references.append(identity_ref)
+        cor_ref = store_original("cor", cor, cor_body, cor_type)
+        identity_ref = store_original("identity", identity, identity_body, identity_type)
         documents = {
             "cor": _signup_document_metadata(cor, cor_ref, cor_type, cor_scan),
             "identity": _signup_document_metadata(identity, identity_ref, identity_type),
         }
         if rog_body and rog is not None:
-            rog_ref = _store_bytes(f"{base_path}/rog{_signup_file_extension(rog, rog_type)}", rog_body, rog_type)
-            stored_references.append(rog_ref)
+            rog_ref = store_original("rog", rog, rog_body, rog_type)
             documents["rog"] = _signup_document_metadata(rog, rog_ref, rog_type, rog_scan)
 
         now = datetime.now(timezone.utc)
@@ -831,7 +859,7 @@ def _signup_submission_records(student_id: str, batch: dict[str, Any]) -> tuple[
             "version": 1,
             "status": status,
             "name": document.get("name") or f"{document_type}.pdf",
-            "file": {key: document.get(key) for key in ("bucket", "path", "type", "size")},
+            "file": {key: document.get(key) for key in ("bucket", "path", "type", "size", "processingFile")},
             "scan": document.get("scan") or {},
             "source": "student_signup",
             "signupBatchId": batch["id"],
