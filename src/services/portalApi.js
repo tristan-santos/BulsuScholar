@@ -3,6 +3,12 @@ import { trackedFetch } from "./operationTracker"
 import { getPortalIdentity } from "./portalSessionStorage"
 
 let pendingSessionRefresh = null
+const MPIN_ACTION_PATHS = new Set([
+	"/workflows/scholarship/apply", "/workflows/scholarship/withdraw", "/workflows/waitlist/offer",
+	"/workflows/grantor/announcements/create", "/workflows/grantor/announcements/republish",
+	"/workflows/grantor/applications/confirm-admin-decision", "/workflows/admin/review", "/portal/data/mutate",
+	"/workflows/grantor/scholars/create", "/workflows/grantor/scholars/update", "/workflows/grantor/scholars/update-many",
+])
 
 async function refreshReadSession() {
 	if (!pendingSessionRefresh) {
@@ -45,15 +51,29 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 	const abortFromCaller = () => controller?.abort()
 	if (options.signal?.aborted) abortFromCaller()
 	else options.signal?.addEventListener("abort", abortFromCaller, { once: true })
-	const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
+	let timeoutId = null
 	try {
+		let mpinHeaders = {}
+		if (MPIN_ACTION_PATHS.has(path)) {
+			const { authorizeMpin } = await import("./mpinService")
+			mpinHeaders = (await authorizeMpin(path, payload)).headers
+		}
+		if (controller) timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 		const send = async () => trackedFetch(`${baseUrl}${path}`, {
 			method: "POST",
-			headers: await buildPortalRequestHeaders(options.actor || {}),
+			headers: { ...await buildPortalRequestHeaders(options.actor || {}), ...mpinHeaders },
 			body: JSON.stringify(payload),
 			...(controller || options.signal ? { signal: controller?.signal || options.signal } : {}),
 		}, options.operation || null)
 		response = await send()
+		// A 428 MPIN challenge is returned before the backend performs any mutation.
+		if (response.status === 428 && (await response.clone().json().catch(() => ({}))).detail?.code === "mpin_required") {
+			if (timeoutId) clearTimeout(timeoutId)
+			const { authorizeMpin } = await import("./mpinService")
+			mpinHeaders = (await authorizeMpin(path, payload)).headers
+			if (controller) timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+			response = await send()
+		}
 		// Retry only an authorized read, never a mutation or an OTP/revocation denial.
 		if (path === "/portal/data/query" && response.status === 401) {
 			const denial = await response.clone().json().catch(() => ({}))
@@ -68,6 +88,7 @@ export async function postPortalJson(baseUrl, path, payload = {}, errorLabel = "
 			}
 		}
 	} catch (error) {
+		if (error?.name === "AbortError" && !controller?.signal.aborted) throw error
 		if (options.signal?.aborted) throw error
 		if (error?.name === "AbortError") {
 			throw new PortalApiError(`${errorLabel} timed out. Please try again.`, {

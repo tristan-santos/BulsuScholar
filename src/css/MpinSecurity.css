@@ -1,0 +1,35 @@
+.mpin-settings { box-sizing: border-box; grid-column: 1 / -1; width: 100%; min-width: 0; margin-bottom: 16px; padding: 20px; border: 1px solid #c9ded4; border-radius: 8px; background: #fff; color: #173c30; }
+.mpin-setting-heading { display: flex; align-items: center; gap: 16px; }
+.mpin-setting-heading > div { flex: 1; min-width: 0; }
+.mpin-settings h3 { margin: 0 0 6px; font-size: 17px; }
+.mpin-settings p, .mpin-dialog p { margin: 8px 0; font-size: 14px; line-height: 1.6; color: #566a63; overflow-wrap: anywhere; }
+.mpin-shield { display: inline-grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border-radius: 8px; background: #e9f6ef; color: #00784c; font-size: 24px; }
+.mpin-settings button, .mpin-dialog button { font: inherit; cursor: pointer; }
+.mpin-settings .mpin-switch { padding: 3px; width: 48px; height: 28px; min-height: 28px; flex: 0 0 48px; border: 0; border-radius: 20px; background: #718078; }
+.mpin-switch i { display: block; width: 22px; height: 22px; background: white; border-radius: 50%; transition: transform .15s; }
+.mpin-settings .mpin-switch[aria-checked="true"] { background: #00784c; }
+.mpin-switch[aria-checked="true"] i { transform: translateX(20px); }
+.mpin-setting-actions { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; }
+.mpin-setting-actions button, .mpin-show { border: 0; background: transparent; color: #00784c; padding: 8px 0; }
+.mpin-backdrop { position: fixed; inset: 0; z-index: 110010; display: grid; place-items: center; padding: 16px; background: #102a246b; }
+body:has(.mpin-backdrop) .operation-overlay { display: none; }
+.mpin-dialog { box-sizing: border-box; width: min(100%, 440px); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 24px; border: 1px solid #c9ded4; border-radius: 8px; box-shadow: 0 20px 70px #0003; background: #fff; color: #173c30; font-family: inherit; }
+.mpin-dialog header, .mpin-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mpin-dialog h2 { font-size: 22px; margin: 18px 0 8px; }
+.mpin-dialog .mpin-icon-button { display: grid; place-items: center; width: 40px; height: 40px; min-height: 40px; padding: 0; background: transparent; color: inherit; border: 0; font-size: 22px; }
+.mpin-field { display: grid; gap: 8px; margin-top: 16px; font-size: 14px; font-weight: 600; }
+.mpin-field input { box-sizing: border-box; width: 100%; min-width: 0; height: 48px; border: 1px solid #a9c5b8; border-radius: 6px; padding: 10px 14px; background: white; color: #173c30; font: inherit; font-size: 20px; letter-spacing: 0; }
+.mpin-show { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; }
+.mpin-dialog footer { justify-content: flex-end; margin-top: 24px; }
+.mpin-dialog footer button, .mpin-recovery > button { min-height: 44px; padding: 10px 18px; border: 1px solid #00784c; border-radius: 6px; color: #00784c; background: #fff; }
+.mpin-dialog footer button:last-child { background: #00784c; color: #fff; }
+.mpin-recovery > button { width: 100%; margin-top: 14px; }
+.mpin-dialog button:disabled, .mpin-settings button:disabled { cursor: not-allowed; opacity: .55; }
+.mpin-dialog :focus-visible, .mpin-settings :focus-visible { outline: 3px solid #c89622; outline-offset: 3px; }
+.mpin-dialog .mpin-error, .mpin-error { color: #a12e27; font-size: 14px; overflow-wrap: anywhere; }
+[data-theme="dark"] .mpin-settings, [data-theme="dark"] .mpin-dialog, .dark .mpin-settings, .student-dashboard--dark .mpin-settings { background: #182b24; color: #eef8f2; border-color: #466355; }
+[data-theme="dark"] .mpin-dialog p, [data-theme="dark"] .mpin-settings p, .student-dashboard--dark .mpin-settings p { color: #bfd1c7; }
+[data-theme="dark"] .mpin-field input { background: #10261d; color: #eef8f2; }
+[data-theme="dark"] .mpin-show, [data-theme="dark"] .mpin-setting-actions button { color: #a4e5c3; }
+[data-theme="dark"] .mpin-error { color: #ffb4ac; }
+@media (max-width: 480px) { .mpin-settings, .mpin-dialog { padding: 18px; } .mpin-setting-heading { gap: 12px; } .mpin-setting-heading .mpin-shield { display: none; } }

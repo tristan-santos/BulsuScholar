@@ -8108,6 +8108,7 @@ export default function AdminDashboard() {
 						</aside>
 
 						<div className="admin-profile-settings">
+							<MpinSettings />
 							<section className="admin-profile-section">
 								<div className="admin-profile-section-head">
 									<HiOutlineUserGroup />
@@ -12316,3 +12317,4 @@ export default function AdminDashboard() {
 		</div>
 	)
 }
+import { MpinSettings } from "../components/MpinSecurity"

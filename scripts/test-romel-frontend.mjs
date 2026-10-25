@@ -7,7 +7,7 @@ const source = await readFile("src/services/protectedDownloadService.js", "utf8"
 const context = vm.createContext({ crypto, Uint8Array, FormData, Blob, DOMException, AbortController, setTimeout, clearTimeout, URL, Response, fetch: () => { throw new Error("Unexpected external fetch") } })
 const module = new vm.SourceTextModule(source, { context })
 await module.link(async (specifier) => {
-	const values = specifier.includes("backendApi") ? { requireBackendApiUrl: () => "https://local.test" } : { buildPortalRequestHeaders: async () => ({ Authorization: "Bearer synthetic" }) }
+	const values = specifier.includes("backendApi") ? { requireBackendApiUrl: () => "https://local.test" } : specifier.includes("mpinService") ? { mpinRequest: async () => ({ encrypt: true, required: false }), authorizeMpin: async () => ({ policy: { encrypt: true }, headers: {} }) } : { buildPortalRequestHeaders: async () => ({ Authorization: "Bearer synthetic" }) }
 	return new vm.SyntheticModule(Object.keys(values), function () { Object.entries(values).forEach(([key, value]) => this.setExport(key, value)) }, { context })
 })
 await module.evaluate()
@@ -17,8 +17,8 @@ function pass(test) { results.push({ id: `RM-FE-${results.length + 1}`, test, st
 
 const passwords = new Set(Array.from({ length: 1000 }, () => service.generateDownloadPassword()))
 assert.equal(passwords.size, 1000)
-assert.ok([...passwords].every((password) => /^[A-Za-z0-9_-]{32}$/.test(password)))
-pass("1000 fresh 32-character passwords; cryptographic random source")
+assert.ok([...passwords].every((password) => /^[A-Za-z0-9_-]{24}$/.test(password)))
+pass("1000 fresh 24-character passwords; cryptographic random source")
 assert.ok(source.includes("crypto.getRandomValues"))
 assert.ok(!/localStorage|sessionStorage|indexedDB|console\./.test(source))
 pass("Download service contains no persistent password store or console logging")
@@ -30,7 +30,7 @@ assert.equal(await service.protectedPost("/document/download"), null)
 assert.equal(calls, 0)
 pass("Cancelled download sends no request")
 
-const password = "A".repeat(32)
+const password = "A".repeat(24)
 service.setDownloadPresenter((resolve) => resolve(password))
 context.fetch = async (url, init) => {
 	calls++
@@ -87,6 +87,7 @@ let resolvePrompt
 service.setDownloadPresenter((resolve) => { resolvePrompt = resolve })
 const waiting = service.protectedPost("/same/download")
 await assert.rejects(service.protectedPost("/same/download"), /already being prepared/)
+await new Promise((resolve) => setTimeout(resolve, 0))
 resolvePrompt(null)
 assert.equal(await waiting, null)
 pass("Repeated click on the same pending download cannot issue a duplicate request")

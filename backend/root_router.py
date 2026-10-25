@@ -3,9 +3,9 @@ from typing import Any
 from fastapi import APIRouter, Body, File, HTTPException, Query, Request, Response, UploadFile
 
 try:
-    from .download_protection import protected_response, protection_password
+    from .download_protection import protected_response
 except ImportError:  # pragma: no cover
-    from download_protection import protected_response, protection_password
+    from download_protection import protected_response
 
 try:
     from .access_control import require_admin_bearer
@@ -280,7 +280,6 @@ def root_report_data(report_type: str, request: Request) -> dict[str, Any]:
 def root_file_download(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
     identity = require_root(request)
     request.state.download_actor = {"id": identity["root"]["id"], "type": "root"}
-    protection_password(payload)
     content, content_type, filename = fetch_root_file(request, identity, payload)
     return protected_response(request, payload, content, content_type, f"root-file:{payload.get('studentId')}:{payload.get('document')}")
 
@@ -301,7 +300,6 @@ def root_integration_action(request: Request, payload: dict[str, Any] = Body(...
 def root_pdf_report(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
     identity = require_root(request)
     request.state.download_actor = {"id": identity["root"]["id"], "type": "root"}
-    protection_password(payload)
     try:
         validate_report_payload(payload)
         pdf_bytes = build_report_pdf_bytes(payload)

@@ -16,12 +16,15 @@ from backend import scholarship_requirement_service as requirements
 from backend import scope_announcement_waitlist_service as applicants
 from backend.tests.pdf_fixtures import valid_pdf
 
-PASSWORD = "AbCD_123" * 4
+PASSWORD = "AbCD_123" * 3
 
 
 def request(role="student", actor="s1"):
-    return Request({"type": "http", "method": "POST", "path": "/download", "headers": [
+    result = Request({"type": "http", "method": "POST", "path": "/download", "headers": [
         (b"x-portal-actor-type", role.encode()), (b"x-portal-actor-id", actor.encode())]})
+    # Unit fixture: resource authorization remains exercised inside document_content.
+    result.state.mpin_identity = {"id": actor, "type": role}
+    return result
 
 
 class RomelProtectionTests(unittest.TestCase):

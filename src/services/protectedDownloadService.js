@@ -1,5 +1,6 @@
 import { requireBackendApiUrl } from "../config/backendApi"
 import { buildPortalRequestHeaders } from "./portalApi"
+import { authorizeMpin, mpinRequest } from "./mpinService"
 
 let presenter
 let activePrompt = null
@@ -82,7 +83,7 @@ export async function fetchWithFilePasswords(url, options, { batch = false, fetc
 
 export function generateDownloadPassword() {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
-	return Array.from(crypto.getRandomValues(new Uint8Array(32)), (value) => alphabet[value & 63]).join("")
+	return Array.from(crypto.getRandomValues(new Uint8Array(24)), (value) => alphabet[value & 63]).join("")
 }
 
 export function saveProtectedFile(blob, filename) {
@@ -98,12 +99,16 @@ export async function protectedPost(path, payload = {}, headersOverride) {
 	pendingPaths.add(path)
 	let password
 	try {
-		password = await requestDownloadPassword()
-		if (!password) return null
+		const policy = await mpinRequest("/policy", { path, payload })
+		const authorization = await authorizeMpin(path, payload, policy)
+		if (policy.encrypt) {
+			password = await requestDownloadPassword()
+			if (!password) return null
+		}
 		return await withProtectedRequest(async (signal) => {
 			const response = await fetch(`${requireBackendApiUrl("Protected downloads")}${path}`, {
-				method: "POST", headers: headersOverride || await buildPortalRequestHeaders(),
-				body: JSON.stringify({ ...payload, downloadProtection: { password } }),
+				method: "POST", headers: { ...(headersOverride || await buildPortalRequestHeaders()), ...authorization.headers },
+				body: JSON.stringify({ ...payload, ...(password ? { downloadProtection: { password } } : {}) }),
 				signal,
 			})
 			if (!response.ok) throw new Error("Protected download could not be prepared. Check your access and try again.")
@@ -115,22 +120,28 @@ export async function protectedPost(path, payload = {}, headersOverride) {
 }
 
 export async function protectGeneratedBlob(blob) {
-	let password = await requestDownloadPassword()
-	if (!password) throw new DOMException("Download cancelled", "AbortError")
+	const contentHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer())), (value) => value.toString(16).padStart(2, "0")).join("")
+	const authorization = await authorizeMpin("/downloads/generated-copy", { contentHash, mediaType: blob.type || "application/octet-stream" })
+	let password
+	if (authorization.policy.encrypt) {
+		password = await requestDownloadPassword()
+		if (!password) throw new DOMException("Download cancelled", "AbortError")
+	}
 	const form = new FormData()
 	try {
 		return await withProtectedRequest(async (signal) => {
 			form.append("file", blob, "document")
-			form.append("password", password)
+			if (password) form.append("password", password)
 			const headers = await buildPortalRequestHeaders()
 			delete headers["Content-Type"]
 			// Root uses a separate session header; do not downgrade its authorization.
 			const { getRootProtectionHeaders } = await import("./rootService")
 			Object.assign(headers, await getRootProtectionHeaders())
+			Object.assign(headers, authorization.headers)
 			const response = await fetch(`${requireBackendApiUrl("Protected downloads")}/downloads/generated-copy`, { method: "POST", headers, body: form, signal })
 			if (!response.ok) throw new Error("Protected download failed. No unencrypted file was downloaded.")
 			const protectedBlob = await response.blob()
-			const filename = protectedBlob.type === "application/pdf" ? "protected-document.pdf" : "protected-document.zip"
+			const filename = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] || "document"
 			saveProtectedFile(protectedBlob, filename)
 			return { blob: protectedBlob, filename }
 		})

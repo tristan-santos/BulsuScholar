@@ -9,6 +9,7 @@ import { PageLoading } from "./components/PortalLoading"
 import ModalDiscardConfirmation from "./components/ModalDiscardConfirmation"
 import ModalAccessibilityManager from "./components/ModalAccessibilityManager"
 import ProtectedDownloadDialog from "./components/ProtectedDownloadDialog"
+import MpinDialog from "./components/MpinSecurity"
 import OperationStatusProvider from "./components/OperationStatusProvider"
 import { trackedFetch } from "./services/operationTracker"
 import { PublicConfigurationContext } from "./contexts/PublicConfigurationContext"
@@ -168,6 +169,7 @@ export default function App() {
 			/>
 			<ModalAccessibilityManager />
 			<ProtectedDownloadDialog />
+			<MpinDialog />
 			<ModalDiscardConfirmation />
 			</OperationStatusProvider>
 		</BrowserRouter>

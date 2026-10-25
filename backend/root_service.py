@@ -286,7 +286,7 @@ def login_root(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "stage": "code", "accessToken": access_token, "refreshToken": refresh_token}
 
 
-def verify_root_code(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+def verify_root_code(request: Request, payload: dict[str, Any], *, issue_session: bool = True) -> dict[str, Any]:
     authorization = request.headers.get("authorization", "")
     access_token = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
     user = _auth_user(access_token) if access_token else {}
@@ -316,7 +316,7 @@ def verify_root_code(request: Request, payload: dict[str, Any]) -> dict[str, Any
     _rest("root_admins", method="PATCH", query=f"id=eq.{urllib.parse.quote(root['id'])}", payload={
         "failed_code_attempts": 0, "code_locked_until": None, "updated_at": now_iso(),
     }, prefer="return=minimal")
-    root_session = _new_session(request, root["id"])
+    root_session = _new_session(request, root["id"]) if issue_session else None
     audit(request, root["id"], "root_login_code_verified")
     return {"ok": True, "rootSession": root_session, "root": {"id": root["id"], "displayName": root.get("display_name")}}
 
@@ -1083,6 +1083,8 @@ def list_logs() -> dict[str, Any]:
     system = _rest("systemLogs", query="select=*&order=created_at.desc&limit=500") or []
     audit_rows = _rest("root_audit_logs", query="select=*&order=created_at.desc&limit=500") or []
     downloads = _rest("protected_download_events", query="select=*&order=created_at.desc&limit=500") or []
+    mpin_events = _rest("mpin_security_events", query="select=*&order=created_at.desc&limit=500") or []
+    audit_rows.extend({"id": f'mpin:{row["id"]}', "actor_id": row["principal"], "action": "mpin_" + row["event"], "created_at": row["created_at"]} for row in mpin_events)
     audit_rows.extend({
         "id": row["id"], "actor_id": row["actor_id"], "actor_type": row["actor_type"],
         "action": "protected_download_" + row["outcome"], "target": row["resource"],

@@ -134,6 +134,7 @@ class AdminReportDatasetTests(unittest.TestCase):
     def test_file_preview_does_not_audit_but_export_does(self):
         from backend import main
         request = Request({"type": "http", "method": "POST", "path": "/admin/reports/file-preview", "headers": []})
+        request.state.mpin_identity = {"id": "fixture-admin", "type": "admin"}
         report = {"reportType": "students", "dataset": "archived", "filters": {}, "total": 1, "generatedAt": "2026-10-20"}
         with patch.object(main, "enforce_portal_scope"), \
                 patch.object(main, "public_config", return_value={}), \
@@ -145,7 +146,6 @@ class AdminReportDatasetTests(unittest.TestCase):
             audit.assert_not_called()
             self.assertEqual("archived", builder.call_args.args[0]["dataset"])
             from backend.tests.pdf_fixtures import valid_pdf
-            payload["downloadProtection"] = {"password": "A" * 32}
             builder.return_value = (valid_pdf(), "application/pdf", "report.pdf", report)
             with patch("backend.download_protection.supabase_rest_insert", return_value={"ok": True}):
                 response = main.export_admin_report_endpoint(request, payload)

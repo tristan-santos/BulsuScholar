@@ -23,7 +23,7 @@ foreach ($width in @(1440, 1366, 1280, 1024, 768, 390)) {
    clickable: !!document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest('.protected-download-dialog')};
 })()
 '@
-        if (!$state.fits -or !$state.disabled -or !$state.focused -or !$state.noOverflow -or !$state.clickable -or $state.passwordLength -ne 32) { throw "Invalid modal at $width/$theme" }
+        if (!$state.fits -or !$state.disabled -or !$state.focused -or !$state.noOverflow -or !$state.clickable -or $state.passwordLength -ne 24) { throw "Invalid modal at $width/$theme" }
         Evaluate "document.querySelector('.protected-download-dialog input').click(); true" | Out-Null
         $enabled = Evaluate "!document.querySelector('.protected-download-dialog footer button:last-child').disabled"
         if (!$enabled) { throw "Acknowledgment does not enable download" }

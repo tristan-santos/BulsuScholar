@@ -24,7 +24,7 @@ SAFE_MEDIA_TYPES = {"application/pdf", "text/csv", "image/png", "image/jpeg", "i
 def protection_password(payload):
     protection = payload.get("downloadProtection")
     password = protection.get("password") if isinstance(protection, dict) else None
-    if not isinstance(password, str) or not re.fullmatch(r"[A-Za-z0-9_-]{32}", password):
+    if not isinstance(password, str) or not re.fullmatch(r"[A-Za-z0-9_-]{24}", password):
         raise HTTPException(422, {"code": "download_protection_required", "message": "Generate and save a new download password before exporting."})
     return password
 
@@ -68,6 +68,17 @@ def encrypt_download(content, media_type, password, *, preserve_original=False):
 
 
 def protected_response(request, payload, content, media_type, resource, *, preserve_original=False):
+    try:
+        from .mpin_service import identity
+    except ImportError:
+        from mpin_service import identity
+    actor = identity(request)
+    request.state.download_actor = actor
+    version = hashlib.sha256(content).hexdigest()
+    if actor["type"] != "student":
+        audit_download(request, resource, "authorized-original", "prepared", media_type=media_type, version=version)
+        extension = {"application/pdf": "pdf", "text/csv": "csv", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx"}.get(media_type.split(";")[0], "bin")
+        return Response(content, media_type=media_type, headers={**PRIVATE_HEADERS, "Content-Disposition": f'attachment; filename="document.{extension}"'})
     password = protection_password(payload)
     version = hashlib.sha256(content).hexdigest()
     try:

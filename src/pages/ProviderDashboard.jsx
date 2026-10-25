@@ -4355,6 +4355,7 @@ export default function ProviderDashboard() {
 			<main className={`grantor-workspace ${activeSection === "scholars" ? "grantor-workspace--scholars" : ""} ${activeSection === "profile" ? "grantor-workspace--profile" : ""}`}>
 				{activeSection === "profile" ? (
 					<section className="grantor-profile-page">
+						<MpinSettings />
 						<header className="grantor-profile-page-head">
 							<div><span>Account Settings</span><h2>Grantor Profile</h2><p>Manage your public details, contact information, and account security.</p></div>
 						</header>
@@ -6255,3 +6256,4 @@ export default function ProviderDashboard() {
 		</div>
 	)
 }
+import { MpinSettings } from "../components/MpinSecurity"

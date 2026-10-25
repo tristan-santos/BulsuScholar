@@ -15,7 +15,7 @@ async function open(upload = false) {
 	window.__romelResult = {
 		completed: window.__romelResult.completed + (password ? 1 : 0),
 		cancelled: window.__romelResult.cancelled + (password ? 0 : 1),
-		validLength: password?.length === 32,
+		validLength: password?.length === 24,
 	}
 }
 async function encryptedPreview() {

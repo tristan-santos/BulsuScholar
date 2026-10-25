@@ -12,9 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 try:
-    from .download_protection import PRIVATE_HEADERS, protected_response, protection_password
+    from .download_protection import PRIVATE_HEADERS, protected_response
 except ImportError:  # pragma: no cover
-    from download_protection import PRIVATE_HEADERS, protected_response, protection_password
+    from download_protection import PRIVATE_HEADERS, protected_response
 
 if load_dotenv:
     backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -274,6 +274,11 @@ except ImportError:  # pragma: no cover - supports `uvicorn main:app` from backe
 
 app = FastAPI(title="BulsuScholar Backend Services")
 app.include_router(root_router)
+try:
+    from .mpin_service import router as mpin_router, enforce_action as enforce_mpin_action, ACTION_PATHS as MPIN_ACTION_PATHS
+except ImportError:
+    from mpin_service import router as mpin_router, enforce_action as enforce_mpin_action, ACTION_PATHS as MPIN_ACTION_PATHS
+app.include_router(mpin_router)
 
 
 def build_allowed_origins() -> list[str]:
@@ -339,6 +344,24 @@ async def ensure_deployed_cors_headers(request, call_next):
         response = JSONResponse(status_code=503, content={"detail": "portal_under_maintenance"})
     else:
         try:
+            if request.method == "POST" and (request.url.path in MPIN_ACTION_PATHS or request.url.path.endswith("/download")):
+                from starlette.concurrency import run_in_threadpool
+                try:
+                    try:
+                        body = await request.json()
+                    except ValueError:
+                        raise HTTPException(422, "invalid_action_payload") from None
+                    if not isinstance(body, dict):
+                        raise HTTPException(422, "invalid_action_payload")
+                    await run_in_threadpool(enforce_mpin_action, request, body)
+                except HTTPException as denial:
+                    response = JSONResponse(status_code=denial.status_code, content={"detail": denial.detail})
+                    response.headers.update(PRIVATE_HEADERS)
+                    if cors_origin_allowed:
+                        response.headers["Access-Control-Allow-Origin"] = origin
+                        response.headers["Access-Control-Allow-Credentials"] = "true"
+                    metric_finished(request.url.path, response.status_code, metric_start)
+                    return response
             response = await call_next(request)
         except Exception as error:
             if request.url.path == "/scan-document":
@@ -359,7 +382,7 @@ async def ensure_deployed_cors_headers(request, call_next):
         response.headers["Access-Control-Allow-Headers"] = request.headers.get("access-control-request-headers", "*")
         response.headers["Vary"] = "Origin"
 
-    if request.url.path.startswith(("/student/", "/signed-soe/", "/scholarship-applications/", "/reports/", "/admin/reports/", "/root/reports/", "/root/files", "/downloads/")):
+    if request.url.path.startswith(("/security/mpin", "/student/", "/signed-soe/", "/scholarship-applications/", "/reports/", "/admin/reports/", "/root/reports/", "/root/files", "/downloads/")):
         response.headers.update(PRIVATE_HEADERS)
     if cors_origin_allowed:
         response.headers["Access-Control-Expose-Headers"] = "Content-Disposition, X-Report-Audit-Id"
@@ -1205,7 +1228,6 @@ def list_filtered_applicants_endpoint(request: Request, payload: dict[str, Any] 
 
 @app.post("/workflows/applicants/export")
 def export_filtered_applicants_endpoint(request: Request, payload: dict[str, Any] = Body(...)) -> Response:
-    protection_password(payload)
     content, content_type, filename, metadata = build_applicant_export(request, payload)
     response = protected_response(request, payload, content, content_type, "applicant-report")
     record_applicant_export(request, metadata)
@@ -1348,28 +1370,24 @@ def signed_soe_content_endpoint(submission_id: str, request: Request) -> Respons
 
 @app.post("/student/profile/documents/{submission_id}/download")
 def protected_document_endpoint(submission_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Response:
-    protection_password(payload)
     original = document_content(request, submission_id, original=True)  # Never record a download as a preview.
     return protected_response(request, payload, original.body, original.media_type, f"submission:{submission_id}")
 
 
 @app.post("/student/profile/snapshots/{snapshot_id}/download")
 def protected_snapshot_endpoint(snapshot_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Response:
-    protection_password(payload)
     original = profile_snapshot_content(request, snapshot_id)
     return protected_response(request, payload, original.body, original.media_type, f"snapshot:{snapshot_id}")
 
 
 @app.post("/signed-soe/{submission_id}/download")
 def protected_signed_soe_endpoint(submission_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Response:
-    protection_password(payload)
     original = signed_soe_content(request, submission_id, original=True)
     return protected_response(request, payload, original.body, original.media_type, f"signed-soe:{submission_id}", preserve_original=True)
 
 
 @app.post("/scholarship-applications/{application_id}/requirements/{requirement_key}/files/{file_id}/download")
 def protected_requirement_endpoint(application_id: str, requirement_key: str, file_id: str, request: Request, payload: dict[str, Any] = Body(...)) -> Response:
-    protection_password(payload)
     original = requirement_file_content(request, application_id, requirement_key, file_id, original=True)
     return protected_response(request, payload, original.body, original.media_type, f"requirement:{application_id}:{requirement_key}:{file_id}")
 
@@ -1384,7 +1402,6 @@ def generate_pdf_report_endpoint(request: Request, payload: dict[str, Any] = Bod
     enforce_portal_scope(request, payload, {"admin"})
     if public_config().get("portal", {}).get("reportExportEnabled") is False:
         raise HTTPException(status_code=403, detail="report_exports_disabled")
-    protection_password(payload)
     try:
         validate_report_payload(payload)
         pdf_bytes = build_report_pdf_bytes(payload)
@@ -1408,7 +1425,7 @@ def canonical_report_preview_endpoint(request: Request, payload: dict[str, Any] 
 
 
 @app.post("/downloads/generated-copy")
-async def protect_generated_copy_endpoint(request: Request, file: UploadFile = File(...), password: str = Form(...)) -> Response:
+async def protect_generated_copy_endpoint(request: Request, file: UploadFile = File(...), password: str = Form("")) -> Response:
     # Generated browser forms/exports only. No URL or Storage path is accepted.
     # Stored documents use their identifier-specific endpoints above.
     if request.headers.get("x-root-session"):
@@ -1423,6 +1440,8 @@ async def protect_generated_copy_endpoint(request: Request, file: UploadFile = F
     body = await file.read(20 * 1024 * 1024 + 1)
     if not body or len(body) > 20 * 1024 * 1024:
         raise HTTPException(413, "generated_copy_size_limit")
+    import hashlib
+    enforce_mpin_action(request, {"contentHash": hashlib.sha256(body).hexdigest(), "mediaType": file.content_type or "application/octet-stream"})
     return protected_response(request, {"downloadProtection": {"password": password}}, body,
                               file.content_type or "application/octet-stream", "browser-generated-copy")
 
@@ -1438,7 +1457,6 @@ def export_admin_report_endpoint(request: Request, payload: dict[str, Any] = Bod
     enforce_portal_scope(request, payload, {"admin"})
     if public_config().get("portal", {}).get("reportExportEnabled") is False:
         raise HTTPException(status_code=403, detail="report_exports_disabled")
-    protection_password(payload)
     content, media_type, filename, report = build_admin_report_export(payload)
     response = protected_response(request, payload, content, media_type, f"admin-report:{report.get('reportType', 'report')}:{payload.get('dataset', 'all')}")
     audit_id = record_admin_report_export(request, report, str(payload.get("format") or "pdf").lower())

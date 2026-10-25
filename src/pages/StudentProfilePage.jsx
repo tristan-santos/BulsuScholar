@@ -478,6 +478,7 @@ export default function StudentProfilePage({ formMode = false }) {
 							<div className="student-profile-editor-actions"><button type="button" className="student-profile-action student-profile-action--primary" disabled={Boolean(busy)} onClick={saveDraft}><HiOutlineSave aria-hidden /> {busy === "save" ? "Saving..." : "Save"}</button></div>
 						</section>
 
+						<MpinSettings />
 						<section id="document-vault" tabIndex="-1" className="student-profile-section-card student-profile-section-card--full student-document-vault">
 							<h2>Document Vault</h2>
 							<p className="student-profile-vault-sub">COR and ROG are validated automatically. Only the Student Application Profile waits for administrator review.</p>
@@ -564,3 +565,4 @@ export default function StudentProfilePage({ formMode = false }) {
 		</div>
 	)
 }
+import { MpinSettings } from "../components/MpinSecurity"
