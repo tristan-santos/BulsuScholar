@@ -107,6 +107,24 @@ def _import_identity(data: dict[str, Any]) -> str:
     ))
 
 
+def _roster_profile_key(data: dict[str, Any]) -> tuple[str, str, str] | None:
+    name = _key(_full_name(data))
+    course = re.sub(r"[^a-z0-9]", "", _text(data.get("course")).lower())
+    year = _key(data.get("yearLevel") or data.get("year") or data.get("yearLevelLabel"))
+    year_match = re.fullmatch(r"(?:year )?([1-6])(?:(?:st|nd|rd|th))?(?: year)?", year)
+    if year_match:
+        year = year_match.group(1)
+    return (name, course, year) if name and course and year else None
+
+
+def _same_roster_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_id, right_id = _student_id(left), _student_id(right)
+    if left_id and right_id:
+        return left_id == right_id
+    profile = _roster_profile_key(left)
+    return profile is not None and profile == _roster_profile_key(right)
+
+
 def _row_data_rows(table: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     result = supabase_select(table, filters, limit=0)
     if not result.get("ok"):
@@ -243,7 +261,8 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
             "semesterTag": current_cycle,
             "scholarshipTitle": _text(row.get("scholarshipTitle") or row.get("scholarshipName")),
         })
-    fingerprint_source = json.dumps({"actorType": actor_type, "actorId": actor_id, "rows": canonical_rows}, sort_keys=True, separators=(",", ":"))
+    # Do not reuse previews committed before cross-grantor profile matching existed.
+    fingerprint_source = json.dumps({"validationVersion": 2, "actorType": actor_type, "actorId": actor_id, "rows": canonical_rows}, sort_keys=True, separators=(",", ":"))
     fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
     batch_id = f"roster_preview_{fingerprint[:32]}"
     existing = _preview_response(batch_id)
@@ -276,6 +295,10 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
         student = students.get(student_id)
         matching_application: dict[str, Any] | None = None
         matching_roster: dict[str, Any] | None = None
+        conflicting_roster = next((existing for existing in rosters
+            if _cycle(existing) in {"", current_cycle}
+            and _text(existing.get("grantorId") or existing.get("parentId")) != grantor_id
+            and _same_roster_identity(row, existing)), None)
 
         if not grantor_id or grantor_id not in providers or providers[grantor_id].get("archived") is True:
             reason = "Grantor not found or inactive."
@@ -296,6 +319,11 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
             elif not program:
                 disposition = "scholarship_not_recognized"
                 reason = "Scholarship does not exactly match a recognized program for this grantor."
+            elif conflicting_roster:
+                disposition = "conflicting_active_roster"
+                owner_id = _text(conflicting_roster.get("grantorId") or conflicting_roster.get("parentId"))
+                owner = _text(conflicting_roster.get("grantorName")) or owner_id
+                reason = f"Duplicate prevented: {row['fullName']} already has an active roster under {owner} (matched by student number or name, course, and year level)."
             elif tuple_counts[(grantor_id, _import_identity(row), title_key)] > 1:
                 disposition = "duplicate_import_row"
                 reason = "The same student and scholarship appears more than once in this import."
@@ -303,12 +331,19 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
                 matching_roster = next((existing for existing in rosters
                     if _text(existing.get("grantorId") or existing.get("parentId")) == grantor_id
                     and _cycle(existing) == current_cycle
-                    and _import_identity(existing) == _import_identity(row)
+                    and _same_roster_identity(existing, row)
                     and (_text(existing.get("scholarshipId")) == program["id"]
                          or _key(existing.get("scholarshipTitle") or existing.get("scholarshipName")) == title_key)), None)
-                disposition = "already_imported" if matching_roster else "ready_unlinked"
-                reason = ("This name, course, and year level already exists in this scholarship roster."
-                          if matching_roster else "Ready to import using name, course, and year level. Student number is optional; account linking requires verification.")
+                other_roster = next((existing for existing in rosters
+                    if _cycle(existing) in {"", current_cycle}
+                    and _same_roster_identity(existing, row) and existing is not matching_roster), None)
+                if other_roster:
+                    disposition = "conflicting_active_roster"
+                    reason = "Duplicate prevented: this name, course, and year level already has a different active scholarship roster."
+                else:
+                    disposition = "already_imported" if matching_roster else "ready_unlinked"
+                    reason = ("This name, course, and year level already exists in this scholarship roster."
+                              if matching_roster else "Ready to import using name, course, and year level. Student number is optional; account linking requires verification.")
             elif len(student_targets[student_id]) > 1:
                 disposition = "conflicting_active_roster"
                 reason = "This import assigns the student to more than one active scholarship."
@@ -317,7 +352,7 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
                 reason = "Student ID exists, but the roster name does not match the account name."
             else:
                 active_student_rosters = [existing_roster for existing_roster in rosters
-                    if _student_id(existing_roster) == student_id and _cycle(existing_roster) in {"", current_cycle}]
+                    if _same_roster_identity(existing_roster, row) and _cycle(existing_roster) in {"", current_cycle}]
                 matching_roster = next((existing_roster for existing_roster in active_student_rosters
                     if _text(existing_roster.get("grantorId") or existing_roster.get("parentId")) == grantor_id
                     and (_text(existing_roster.get("scholarshipId")) == program["id"]
@@ -393,7 +428,7 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
         result = supabase_document_upsert("roster_import_rows", preview["rowId"], preview, merge=False, parent_id=batch_id)
         if not result.get("ok"):
             raise HTTPException(status_code=503, detail="roster_import_preview_rows_save_failed")
-    conflict_rows = [row for row in preview_rows if row["disposition"] in {
+    conflict_rows = [row for row in preview_rows if row["studentId"] and row["disposition"] in {
         "identity_mismatch", "conflicting_active_roster", "existing_commitment_conflict",
     }]
     for conflict in conflict_rows:

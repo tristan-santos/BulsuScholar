@@ -83,7 +83,7 @@ import { supabase } from "../services/supabaseClient"
 import CustomSelect from "../components/CustomSelect"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
-import { getRosterImportMappingIssues, summarizeRosterImportPreview } from "../utils/rosterImportPreview"
+import { getRosterImportMappingIssues } from "../utils/rosterImportPreview"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import useThemeMode from "../hooks/useThemeMode"
 import {
@@ -420,6 +420,9 @@ function getGrantorWorkflowErrorMessage(error, fallback = "Unable to complete th
 	const message = String(error?.message || error || "")
 	if (message.includes("portal_actor_id_mismatch")) {
 		return "Session does not match this grantor account. Please log out and log in again."
+	}
+	if (error?.reason === "scholarship_already_committed" || message.includes("scholarship_already_committed")) {
+		return "Duplicate prevented. A student already has an active scholarship roster. Check the student number or matching name, course, and year level."
 	}
 	return fallback
 }
@@ -2973,12 +2976,12 @@ export default function ProviderDashboard() {
 				}])))
 				if (serverPreview.status !== "ready") {
 					setServerRosterPreview(serverPreview)
-					toast.warning("Import blocked. Review the highlighted row messages.")
+					toast.warning(serverPreview.rows?.find((row) => row.blocking)?.reason || "Import blocked. Check the highlighted rows.")
 					return
 				}
 				if (serverRosterPreview?.batchId !== serverPreview.batchId) {
 					setServerRosterPreview(serverPreview)
-					toast.info("Preview complete. Review the row results, then click Commit Import.")
+					toast.info("Duplicate checks complete. Click Commit Import to save.")
 					return
 				}
 				const serverCommit = await commitRosterImportWorkflow({ batchId: serverPreview.batchId })
@@ -6017,7 +6020,7 @@ export default function ProviderDashboard() {
 										)}
 										<div className={`grantor-duplicate-policy-note ${importHasBlockedRows || importMappingIssues.length > 0 ? "is-warning" : ""}`} role="status">
 											<HiOutlineExclamationCircle aria-hidden="true" />
-											<span>{importMappingIssues.length > 0 ? importMappingIssues.join(" ") : serverRosterPreview ? summarizeRosterImportPreview(serverRosterPreview.rows) : "Preview checks required fields, identity, recognized scholarships, and existing awards before import."}</span>
+											<span>{importMappingIssues.length > 0 ? importMappingIssues.join(" ") : importHasBlockedRows ? serverRosterPreview.rows.find((row) => row.blocking)?.reason : "Duplicate prevention checks student numbers and matching names, courses, and year levels across grantors."}</span>
 										</div>
 										<div className="grantor-import-table-wrap">
 											<table className="grantor-import-table">
@@ -6026,7 +6029,6 @@ export default function ProviderDashboard() {
 														<th className="grantor-import-checkbox-col">
 															<input type="checkbox" aria-label="Select all visible import rows" checked={allVisibleImportRowsSelected} onChange={() => setSelectedImportRowIndexes((prev) => allVisibleImportRowsSelected ? prev.filter((rowIndex) => !visibleImportRowIndexes.includes(rowIndex)) : Array.from(new Set([...prev, ...visibleImportRowIndexes])))} />
 														</th>
-														<th>Validation result</th>
 														{importData[0].map((_, colIndex) => (
 															<th key={colIndex}>
 																{customImportEditColumn === colIndex ? (
@@ -6091,7 +6093,6 @@ export default function ProviderDashboard() {
 														const duplicate = importDuplicateMatches[absoluteRowIndex]
 											return <tr key={absoluteRowIndex} className={duplicate?.blocking ? "grantor-import-row--warning" : duplicate?.disposition === "already_imported" ? "grantor-import-row--duplicate" : ""} title={duplicate?.reason}>
 															<td className="grantor-import-checkbox-col"><input type="checkbox" aria-label={`Select import row ${absoluteRowIndex + 1}`} checked={selectedImportRowIndexes.includes(absoluteRowIndex)} onChange={() => setSelectedImportRowIndexes((prev) => prev.includes(absoluteRowIndex) ? prev.filter((item) => item !== absoluteRowIndex) : [...prev, absoluteRowIndex])} /></td>
-															<td className="grantor-import-result">{duplicate?.reason || "Awaiting preview"}</td>
 															{row.map((cell, cellIndex) => (
 																<td key={cellIndex}>{cell}</td>
 															))}
@@ -6099,7 +6100,7 @@ export default function ProviderDashboard() {
 													})}
 													{importData.length > TABLE_PAGE_SIZE && (
 														<tr>
-															<td colSpan={importData[0].length + 2} className="grantor-import-more">
+															<td colSpan={importData[0].length + 1} className="grantor-import-more">
 																Showing {importPreviewPage.startIndex}-{importPreviewPage.endIndex} of {importData.length} rows.
 															</td>
 														</tr>

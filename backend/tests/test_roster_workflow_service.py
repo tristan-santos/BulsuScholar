@@ -107,6 +107,56 @@ class RosterImportPreviewTests(unittest.TestCase):
         result = self._preview({**self.payload, "rows": [row]}, rows=rows)
         self.assertEqual("already_imported", result["rows"][0]["disposition"])
 
+    def test_cross_grantor_profile_match_blocks_when_either_number_is_missing(self):
+        for incoming_id, existing_id in (("", ""), ("20260001", ""), ("", "20260001")):
+            with self.subTest(incoming_id=incoming_id, existing_id=existing_id):
+                row = {"studentId": incoming_id, "fullName": "Ana Santos", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+                def rows(table, filters=None):
+                    if table == "grantor_portal_scholars":
+                        return [{**row, "studentId": existing_id, "id": "other", "parentId": "grantor-2", "grantorName": "San Martin", "academicCycle": "2026-2027-1ST"}]
+                    return self._rows(table, filters)
+                result = self._preview({**self.payload, "rows": [row]}, rows=rows)
+                self.assertEqual("blocked", result["status"])
+                self.assertIn("San Martin", result["rows"][0]["reason"])
+                self.assertEqual("conflicting_active_roster", result["rows"][0]["disposition"])
+
+    def test_cross_grantor_conflict_is_not_hidden_by_same_list_duplicate(self):
+        row = {"fullName": "Ana Santos", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+        def rows(table, filters=None):
+            if table == "grantor_portal_scholars":
+                return [{**row, "id": owner, "parentId": owner, "academicCycle": "2026-2027-1ST"} for owner in ("grantor-1", "grantor-2")]
+            return self._rows(table, filters)
+        result = self._preview({**self.payload, "rows": [row]}, rows=rows)
+        self.assertEqual("blocked", result["status"])
+
+    def test_profile_normalization_and_distinct_students(self):
+        base = {"fullName": "Santos, Ana M.", "course": "B.S.I.T.", "yearLevel": "4th Year"}
+        self.assertTrue(service._same_roster_identity(base, {"fullName": " santos ana m ", "course": "BSIT", "yearLevel": "Year 4"}))
+        for different in ({"course": "BSBA"}, {"yearLevel": "3"}, {"fullName": "Santos, Bea M."}, {"course": ""}):
+            self.assertFalse(service._same_roster_identity(base, {**base, **different}))
+        self.assertFalse(service._same_roster_identity({**base, "studentId": "one"}, {**base, "studentId": "two"}))
+        self.assertTrue(service._same_roster_identity({**base, "studentId": "one"}, {"studentId": "one"}))
+
+    def test_historical_and_archived_cross_grantor_rows_do_not_block(self):
+        row = {"fullName": "Ana Santos", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+        for override in ({"archived": True}, {"status": "Inactive"}, {"academicCycle": "2025-2026-2ND"}):
+            with self.subTest(override=override):
+                def rows(table, filters=None):
+                    if table == "grantor_portal_scholars":
+                        return [{**row, "id": "other", "parentId": "grantor-2", "academicCycle": "2026-2027-1ST", **override}]
+                    return self._rows(table, filters)
+                result = self._preview({**self.payload, "rows": [row]}, rows=rows)
+                self.assertEqual("ready", result["status"])
+
+    def test_legacy_cross_grantor_row_without_cycle_blocks(self):
+        row = {"fullName": "Ana Santos", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+        def rows(table, filters=None):
+            if table == "grantor_portal_scholars":
+                return [{**row, "id": "other", "parentId": "grantor-2"}]
+            return self._rows(table, filters)
+        result = self._preview({**self.payload, "rows": [row]}, rows=rows)
+        self.assertEqual("blocked", result["status"])
+
     def test_ambiguous_exact_title_blocks_batch(self):
         def rows(table, filters=None):
             values = self._rows(table, filters)

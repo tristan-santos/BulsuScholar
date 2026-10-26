@@ -8,10 +8,3 @@ export function getRosterImportMappingIssues(mapping = [], scholarshipTitle = ""
 	if (!mapping.includes("scholarshipTitle") && !scholarshipTitle.trim()) issues.push("Map Scholarship Title or select a scholarship for this import.")
 	return issues
 }
-
-export function summarizeRosterImportPreview(rows = []) {
-	const blocked = rows.filter((row) => row.blocking === true).length
-	const existing = rows.filter((row) => row.disposition === "already_imported").length
-	const ready = rows.length - blocked - existing
-	return `${ready} ready, ${existing} already imported, ${blocked} blocked. ${blocked ? "Review the validation result beside each row." : "Review the results before committing."}`
-}
