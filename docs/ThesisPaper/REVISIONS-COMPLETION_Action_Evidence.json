@@ -1,0 +1,458 @@
+{
+  "preparedAtUTC": "2026-10-25T11:06:39.668197+00:00",
+  "originalFileHashes": {
+    "docs\\ThesisPaper\\REVISIONS-COMPLETION_FinalDefense.docx": "3248d69c190a533bc95480f3d0bbab84d56275cfeadd0e0fada7539d432db6ba",
+    "docs\\ThesisPaper\\CENTRALIZED-SCHOLARSHIP-MANAGEMENT-AND-TRACKING-SYSTEM-FOR-BULACAN-STATE-UNIVERSITY.docx": "e2615db3714e853e1decffa1a9af11593d1a94cc1ad658d6f4a7b0712c7f905d",
+    "docs\\ThesisPaper\\CENTRALIZED-SCHOLARSHIP-MANAGEMENT-AND-TRACKING-SYSTEM-FOR-BULACAN-STATE-UNIVERSITY.pdf": "596a3405741d9b022c0bc7abeafdd5d8ec65d6bc5d80019a29a1e750ace2a8e7"
+  },
+  "output": "docs\\ThesisPaper\\REVISIONS-COMPLETION_FinalDefense_ActionsTaken.docx",
+  "basis": "Current manuscript DOCX/PDF and code; recorded test artifacts inspected, not re-run.",
+  "pdfPages": 172,
+  "pageReferenceConvention": "Printed thesis page; PDF viewer page = printed page + 3 for this supplied export.",
+  "actions": [
+    {
+      "panel": "Dr. Jennifer P. Solis",
+      "items": [
+        {
+          "id": "S1",
+          "topic": "Implement Objective No. 2 validation and matching",
+          "status": "Partially addressed",
+          "action": "Implemented record normalization, exact identity checks, weighted duplicate matching, and academic-cycle-aware scholarship conflict guards. Separated account activation from award assignment. Added manuscript explanations of these mechanisms. Four academic-document validation limitations remain disclosed; therefore, comprehensive validation is not claimed complete.",
+          "paper": "Ch. III, Validation, Duplication Prevention and Monitoring Modules, pp. 74-97; Ch. IV, pp. 152-153.",
+          "manuscriptAnchors": [
+            "5. Validation Module",
+            "6. Duplication Prevention Algorithm",
+            "Observed Document Validation Limitations"
+          ],
+          "systemEvidence": [
+            "backend/grantor_algorithms.py:10-148",
+            "backend/roster_workflow_service.py:210-398",
+            "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:69-194",
+            "docs/ThesisPaper/Figures/item 5/Evaluation_Results.json"
+          ],
+          "remaining": "Resolve and re-test the four disclosed academic-document validation gaps before claiming complete validation. No system change or re-test was performed in this form-filling task.",
+          "anchorVerification": [
+            {
+              "anchor": "5. Validation Module",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "6. Duplication Prevention Algorithm",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Observed Document Validation Limitations",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "S2",
+          "topic": "Provide validation, duplicate and multiple-scholarship test cases",
+          "status": "Addressed in recorded local evidence",
+          "action": "Prepared automated matching regressions and 27 recorded isolated database cases covering exact identity, conflicting current-cycle awards, historical awards, pending applications, external rosters, authorization and rollback. Preserved expected results, actual results and case identifiers. These are controlled synthetic/local tests, not evidence of production-wide accuracy.",
+          "paper": "Ch. III, Testing and Table 1, pp. 37-48; Ch. IV, Duplicate Scholarship Validation, pp. 140-141.",
+          "manuscriptAnchors": [
+            "Testing",
+            "Summary of Core Automated Backend Test Cases",
+            "Figure 4.11. Duplicate Scholarship Validation"
+          ],
+          "systemEvidence": [
+            "test-results/solis-system-cases.json",
+            "backend/tests/test_solis_system_revision.py",
+            "scripts/test-solis-roster-workflow.mjs"
+          ],
+          "remaining": "Attach or cross-reference the individual SOL-SYS case records in the final thesis evidence package. These recorded results were inspected, not re-executed in this task.",
+          "anchorVerification": [
+            {
+              "anchor": "Testing",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Summary of Core Automated Backend Test Cases",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Figure 4.11. Duplicate Scholarship Validation",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "S3",
+          "topic": "Provide test-case tables and discussion",
+          "status": "Partially addressed",
+          "action": "Added the core test-case table, document-processing test table, synthetic extraction results and discussion of observed limitations. Distinguished test-pass counts from field accuracy. The 27 scholarship-conflict cases remain separate evidence; map them and the TC-16-TC-35 claims to execution records before marking every thesis case verified.",
+          "paper": "Ch. III, Table 1 and discussion, pp. 41-48; Ch. IV, COR/ROG tests and results, pp. 146-153.",
+          "manuscriptAnchors": [
+            "Summary of Core Automated Backend Test Cases",
+            "COR and ROG Functional Test Case Results",
+            "Supplementary COR and ROG Extraction Accuracy Evaluation"
+          ],
+          "systemEvidence": [
+            "test-results/solis-system-cases.json",
+            "docs/ThesisPaper/Figures/item 5/Existing_Test_Execution.txt",
+            "docs/ThesisPaper/Figures/item 5/Evaluation_Results.json"
+          ],
+          "remaining": "Add a traceable table for record matching/current-cycle conflict cases. Establish actual execution support for each stated passing TC-16-TC-35 case; do not infer manual/browser outcomes from unit tests.",
+          "anchorVerification": [
+            {
+              "anchor": "Summary of Core Automated Backend Test Cases",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "COR and ROG Functional Test Case Results",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Supplementary COR and ROG Extraction Accuracy Evaluation",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "S4",
+          "topic": "Explain how and why matching is used",
+          "status": "Addressed in manuscript and source",
+          "action": "Explained normalization, Levenshtein edit distance, available-field weighted scoring, the eight field weights, and the 72%, 82% and 84% decision thresholds. Added the rationale for interpretable matching with spelling/format variations. Distinguished potential identity matches from exact-identity official assignment and explained why similarity alone cannot prove an award.",
+          "paper": "Ch. II, Record Linkage discussion, pp. 21-24; Ch. III, Duplication Prevention Algorithm, pp. 79-91.",
+          "manuscriptAnchors": [
+            "The weighted duplicate checker compares available student information",
+            "6. Duplication Prevention Algorithm"
+          ],
+          "systemEvidence": [
+            "backend/grantor_algorithms.py:10-123",
+            "backend/grantor_algorithms.py:206-262",
+            "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:89-138"
+          ],
+          "remaining": "Retain the documented admin-grouping distinction: its score-only threshold can flag records without the pairwise name floor. Thresholds are configured rules, not measured accuracy.",
+          "anchorVerification": [
+            {
+              "anchor": "The weighted duplicate checker compares available student information",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "6. Duplication Prevention Algorithm",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "S5",
+          "topic": "Show an existing scholar applying elsewhere",
+          "status": "Addressed in source and recorded local evidence",
+          "action": "Implemented and described rejection of a conflicting current-cycle application or assignment. Preserved completed awards in the same cycle, distinguished historical/inactive records and ordinary pending applications, and retained authorized conflict review. Recorded the existing-scholar-applies-elsewhere scenario as SOL-SYS-17, with related historical and inactive cases.",
+          "paper": "Ch. III, Monitoring and Academic-Cycle/Commitment Validation, pp. 93-97; Ch. IV, pp. 140-141.",
+          "manuscriptAnchors": [
+            "Academic-Cycle and Scholarship Status Validation",
+            "Figure 4.11. Duplicate Scholarship Validation"
+          ],
+          "systemEvidence": [
+            "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:447-582",
+            "test-results/solis-system-cases.json:SOL-SYS-05-07,17-21"
+          ],
+          "remaining": "This verifies recorded isolated scenarios, not an independently repeated production workflow. Other eligibility and unresolved legacy-cycle checks still apply.",
+          "anchorVerification": [
+            {
+              "anchor": "Academic-Cycle and Scholarship Status Validation",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Figure 4.11. Duplicate Scholarship Validation",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "S6",
+          "topic": "Upload and compare outside-provider scholarship records",
+          "status": "Addressed in system and manuscript",
+          "action": "Added Internal/External grantor classification and an authorized official-roster import/preview/commit workflow. Imported records participate in exact identity, recognized-program, academic-cycle and existing-award checks. Documented import reconciliation and conflict review. Clarified that external scholarships are detectable only when their records have been entered; no automatic external-provider integration is claimed.",
+          "paper": "Ch. I, Limitations, pp. 12-14; Ch. III, Roster Import and Assignment Flowchart, pp. 114-116.",
+          "manuscriptAnchors": [
+            "The system does not provide full real-time system-to-system integration",
+            "Figure 3.5: Scholarship Roster Import and Assignment Flowchart"
+          ],
+          "systemEvidence": [
+            "backend/roster_workflow_service.py:159-398",
+            "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:44-67",
+            "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:257-324",
+            "test-results/solis-system-cases.json:SOL-SYS-02,15,27"
+          ],
+          "remaining": "Keep the availability/completeness limitation. A provider classification is not an extra authorization role or a live connection to an LGU system.",
+          "anchorVerification": [
+            {
+              "anchor": "The system does not provide full real-time system-to-system integration",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Figure 3.5: Scholarship Roster Import and Assignment Flowchart",
+              "foundInDocx": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "panel": "Dr. Romel S. Pabustan",
+      "items": [
+        {
+          "id": "R1",
+          "topic": "Simplify flowcharts, connectors and endings",
+          "status": "Partially addressed",
+          "action": "Added separate registration, profile, application, roster, grantor, administrator and completion flowcharts with connector labels and explicit ending paths. Simplified the presentation into workflow-specific diagrams. Final alignment remains needed: the registration diagram must show automatic activation, and the document diagram must reflect profile-only manual review and the current download policy.",
+          "paper": "Ch. III, System Process, Figures 3.1-3.8, pp. 106-121.",
+          "manuscriptAnchors": [
+            "System Process",
+            "Figure 3.1: Student Account Registration and Authentication Flowchart",
+            "Figure 3.2: Student Profile and Document Verification Flowchart"
+          ],
+          "systemEvidence": [
+            "docs/SystemFlowchart.md",
+            "backend/signup_service.py:823-896",
+            "backend/student_profile_service.py:885-1025",
+            "docs/MpinSecurity.md"
+          ],
+          "remaining": "Finish source-to-figure alignment; connector presence alone does not establish that every diagram matches the current system.",
+          "anchorVerification": [
+            {
+              "anchor": "System Process",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Figure 3.1: Student Account Registration and Authentication Flowchart",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Figure 3.2: Student Profile and Document Verification Flowchart",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "R2",
+          "topic": "Explain sensitive-data and document security",
+          "status": "Partially addressed",
+          "action": "Expanded the security discussion to cover authentication, authorization, private document access, sensitive-data categories, session controls, audit records and protected downloads. Separated application/provider controls from malware, retention and backup/recovery limitations. Update the remaining proposed/universal MPIN wording to the implemented optional, role-specific policy; no security certification is claimed.",
+          "paper": "Ch. III, Data Privacy and Ethical Considerations, pp. 52-58; Ch. I, Limitations, pp. 12-14.",
+          "manuscriptAnchors": [
+            "Data Privacy and Ethical Considerations",
+            "Under this proposed mechanism"
+          ],
+          "systemEvidence": [
+            "backend/access_control.py:68-214",
+            "backend/download_protection.py:1-113",
+            "backend/mpin_service.py:105-161",
+            "docs/MpinSecurity.md"
+          ],
+          "remaining": "Revise pp. 55-56 and pp. 12-14: MPIN is optional and role-specific. Do not treat historical provider/live-check statements as a fresh production security assessment.",
+          "anchorVerification": [
+            {
+              "anchor": "Data Privacy and Ethical Considerations",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Under this proposed mechanism",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "R3",
+          "topic": "Protect downloadable scholarship documents",
+          "status": "Partially addressed: implementation present; wording pending",
+          "action": "Implemented student download copies protected by AES-256 PDF encryption or AES-256 ZIP packaging, using fresh 24-character file passwords while preserving originals. Added optional six-digit MPIN confirmation. Authorized staff document downloads follow the separate role policy without added file encryption. The manuscript introduces this protection but still describes it as proposed and universally MPIN-gated.",
+          "paper": "Ch. III, Data Privacy and Ethical Considerations, pp. 55-57; Ch. I, pp. 12-14.",
+          "manuscriptAnchors": [
+            "a fresh, cryptographically secure, random 24-character password",
+            "AES-256"
+          ],
+          "systemEvidence": [
+            "backend/download_protection.py:18-113",
+            "backend/mpin_service.py:105-161",
+            "docs/MpinSecurity.md",
+            "test-results/romel-backend.json"
+          ],
+          "remaining": "Replace proposed/future and universal-user claims with actual student/staff behavior. Confirm deployment separately; local source and recorded tests do not establish current production activation.",
+          "anchorVerification": [
+            {
+              "anchor": "a fresh, cryptographically secure, random 24-character password",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "AES-256",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "R4",
+          "topic": "Explain actual algorithms, purposes and processes",
+          "status": "Partially addressed",
+          "action": "Added source-code figures, formulas and explanations for weighted recommendation scoring, duplicate-record matching, official conflict validation and COR/ROG parsing. Distinguished deterministic ranking from trained prediction and similarity flags from award authorization. Remaining developed-system passages still incorrectly call the recommender a Decision Tree and must be reconciled.",
+          "paper": "Ch. III, recommendation and validation modules, pp. 59-91. Remaining inconsistent wording: pp. 18, 98, 105, 122 and 127.",
+          "manuscriptAnchors": [
+            "4. Rule-Based Eligibility Filtering and Weighted Recommendation Scoring Mechanism",
+            "Implementation of COR and ROG Document Extraction",
+            "6. Duplication Prevention Algorithm"
+          ],
+          "systemEvidence": [
+            "backend/scholarship_rules.py:137-216",
+            "backend/grantor_algorithms.py:68-123",
+            "backend/document_scanner.py:887-970"
+          ],
+          "remaining": "Replace only claims about this system using a Decision Tree; retain legitimate descriptions/citations of other researchers' Decision Tree methods.",
+          "anchorVerification": [
+            {
+              "anchor": "4. Rule-Based Eligibility Filtering and Weighted Recommendation Scoring Mechanism",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Implementation of COR and ROG Document Extraction",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "6. Duplication Prevention Algorithm",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "R5",
+          "topic": "Use measurable algorithm evaluation metrics",
+          "status": "Partially addressed; broader performance evidence pending",
+          "action": "Added the field-accuracy formula and measured synthetic COR/ROG results: 16/16 COR fields and 9/9 ROG fields across three text PDFs. Disclosed four validation limitations and blocked OCR tests. A separate ten-pair synthetic matching record reports 90% accuracy, 83.33% precision and 100% recall, including one false positive; it is not population accuracy.",
+          "paper": "Ch. III, Testing, p. 39; Ch. IV, Supplementary Extraction Evaluation and Limitations, pp. 151-153.",
+          "manuscriptAnchors": [
+            "A supplementary local evaluation was conducted on October 25, 2026",
+            "Supplementary COR and ROG Extraction Accuracy Evaluation",
+            "Observed Document Validation Limitations"
+          ],
+          "systemEvidence": [
+            "docs/ThesisPaper/Figures/item 5/Evaluation_Results.json",
+            "test-results/solis-matching-evaluation.json"
+          ],
+          "remaining": "Add the matching confusion matrix/sample limits to the paper if using its metrics. Representative OCR/real-document accuracy and latency/load benchmarks remain unestablished; do not equate configured thresholds, acceptability ratings or pass counts with algorithm accuracy.",
+          "anchorVerification": [
+            {
+              "anchor": "A supplementary local evaluation was conducted on October 25, 2026",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Supplementary COR and ROG Extraction Accuracy Evaluation",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Observed Document Validation Limitations",
+              "foundInDocx": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "panel": "Dr. Anthony U. Concepcion",
+      "items": [
+        {
+          "id": "C1",
+          "topic": "Organize Chapter IV by specific objectives",
+          "status": "Not yet completed",
+          "action": "Expanded Chapter IV with system interfaces, validation discussion and test/evaluation results, and aligned Chapter V findings with the objectives. However, Chapter IV still uses preliminary-study, system-description and evaluation sections rather than separate results for all five specific objectives. Reorganization remains pending and must not be marked completed.",
+          "paper": "Ch. I, Specific Objectives, pp. 5-6; Ch. IV, pp. 125-158; Ch. V, pp. 159-161.",
+          "manuscriptAnchors": [
+            "Specific Objectives",
+            "The chapter is divided into three major sections",
+            "Summary of Findings"
+          ],
+          "systemEvidence": [
+            "Manuscript DOCX: Chapter IV opening and section headings; Chapter V Summary of Findings"
+          ],
+          "remaining": "Use five explicit objective-result sections: centralized workflows; validation/duplication prevention; recommendation/lifecycle; TAM; ISO/IEC 25010. Include findings, supporting tables/figures, discussion and limitations within each.",
+          "anchorVerification": [
+            {
+              "anchor": "Specific Objectives",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "The chapter is divided into three major sections",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Summary of Findings",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "C2",
+          "topic": "Explain future grantors, requirements, features and processes",
+          "status": "Partially addressed",
+          "action": "Implemented configurable grantor/scholarship records, documentary requirements and academic-cycle controls, and described the client-server architecture and future expansion. These provide an extensible starting point. A dedicated explanation of how new grantors, requirements and process changes are configured, coded, migrated and regression-tested is still missing from the manuscript.",
+          "paper": "Ch. III, System Modules and Architecture, pp. 58-101; Ch. V, Recommendations, pp. 164-165.",
+          "manuscriptAnchors": [
+            "System Architecture",
+            "This architecture supports scalability",
+            "Recommendations"
+          ],
+          "systemEvidence": [
+            "backend/scope_announcement_waitlist_service.py",
+            "backend/academic_cycle_service.py",
+            "backend/scholarship_requirement_service.py",
+            "src/pages/AdminDashboard.jsx"
+          ],
+          "remaining": "Add an adaptability/maintenance subsection explaining configuration versus development changes, schema/version compatibility, migration and regression tests. Do not claim measured scaling capacity or zero-code support for arbitrary future workflows.",
+          "anchorVerification": [
+            {
+              "anchor": "System Architecture",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "This architecture supports scalability",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Recommendations",
+              "foundInDocx": true
+            }
+          ]
+        },
+        {
+          "id": "C3",
+          "topic": "Explain client operation and continuity after turnover",
+          "status": "Partially documented; turnover not demonstrated",
+          "action": "Prepared repository/deployment guidance, workflow documentation and a manual Storage-backup utility, and identified security/recovery work for future maintenance. A completed client handover, assigned institutional maintainer, training, ownership transfer and tested recovery procedure were not established in the reviewed manuscript or evidence. These actions remain required before claiming operational turnover.",
+          "paper": "Ch. III, Implementation Plan/Post-Deployment Evaluation, pp. 121-124; Ch. V, Recommendations, pp. 164-165.",
+          "manuscriptAnchors": [
+            "Implementation Plan",
+            "Post-Deployment Evaluation",
+            "Recommendations"
+          ],
+          "systemEvidence": [
+            "docs/README.md",
+            "docs/deployment/DeploymentChecklist.md",
+            "scripts/backup-supabase-storage.mjs",
+            "docs/MpinSecurity.md"
+          ],
+          "remaining": "Document who maintains the system; controlled repository/domain/hosting/Supabase/Brevo ownership; secret transfer/rotation without publishing values; client training; routine updates/support; and an authorized backup/restore drill. The deployment checklist contains an old snapshot and must be refreshed before operational use.",
+          "anchorVerification": [
+            {
+              "anchor": "Implementation Plan",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Post-Deployment Evaluation",
+              "foundInDocx": true
+            },
+            {
+              "anchor": "Recommendations",
+              "foundInDocx": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "originalsUnchanged": true,
+  "signaturesUnchanged": true,
+  "otherDocxZipMembersPreserved": true
+}

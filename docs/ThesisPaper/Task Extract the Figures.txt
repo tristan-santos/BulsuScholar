@@ -1,0 +1,176 @@
+# TASK: Verify and Evaluate Actual COR/ROG Document Extraction for BulSUScholar Thesis
+
+I am preparing the final technical revision of our capstone thesis:
+
+**“A Centralized Scholarship Management and Tracking System for Bulacan State University – Bustos Campus.”**
+
+I need an evidence-based evaluation of the existing Certificate of Registration (COR) and Report of Grades (ROG) extraction and validation features.
+
+## OBJECTIVE
+
+Inspect the actual BulSUScholar source code and determine:
+
+1. How COR documents are processed.
+2. How ROG documents are processed.
+3. Which academic fields are extracted.
+4. Which validation rules are applied.
+5. Which document formats are supported.
+6. Whether actual extraction-accuracy measurements exist.
+7. What verified test evidence can be included in our thesis.
+
+## PART A — SOURCE-CODE INSPECTION
+
+Search the entire project for functions responsible for:
+
+- COR document extraction.
+- ROG document extraction.
+- PDF text extraction.
+- Image-based document processing, if implemented.
+- OCR, if implemented.
+- Student identity and academic-information validation.
+- Document rejection and error handling.
+
+For each relevant function, provide:
+
+- Source filename.
+- Function name.
+- Original line numbers.
+- Purpose.
+- Supported document formats.
+- Extracted fields.
+- Actual validation conditions.
+
+Do not assume OCR or scanned-document support exists unless the code demonstrates it.
+
+## PART B — EXISTING TEST EVIDENCE
+
+Search the project for existing automated tests, fixtures, manual test reports, and documented COR/ROG extraction results.
+
+Identify any evidence demonstrating:
+
+- Successful field extraction.
+- Incorrect field extraction.
+- Missing-field detection.
+- Student identity mismatches.
+- Incorrect academic periods.
+- Unsupported document formats.
+- Malformed or unreadable submissions.
+
+Distinguish actual executed test records from test definitions that have merely been written.
+
+Do not treat a test's existence as proof that it passed.
+
+## PART C — ACCURACY EVALUATION
+
+Determine whether the project contains actual documents with verified reference values suitable for measuring extraction accuracy.
+
+If appropriately authorized, non-sensitive test fixtures exist:
+
+1. Identify the expected fields.
+2. Execute the existing document parser using isolated test data.
+3. Record the actual extracted output.
+4. Compare every applicable field with its verified expected value.
+5. Calculate field-level accuracy.
+6. Record document-validation outcomes separately.
+
+Use this formula:
+
+Field Accuracy (%) = (Correctly Extracted Fields / Total Evaluated Fields) × 100
+
+Report both the numerator and denominator.
+
+If tests are executed, include the exact command, environment, execution date, actual console results, and test outcomes.
+
+### Safety requirements
+
+- Do not use private production student documents without explicit authorization.
+- Do not modify production database records.
+- Do not upload student documents to external services.
+- Do not change the current extraction implementation.
+- Do not install new OCR or document-processing components merely to improve the reported accuracy.
+- Prefer existing synthetic or properly anonymized fixtures.
+- Never generate artificial test results or invent accuracy percentages.
+
+If no suitable verified test documents exist, report:
+
+**“Quantitative document extraction accuracy could not be established from the available evidence.”**
+
+Then provide an executable testing plan instead of fabricated results.
+
+## PART D — TEST SCENARIOS
+
+Evaluate these conditions only when the corresponding formats or capabilities are supported.
+
+1. Valid text-based COR.
+2. Valid text-based ROG.
+3. Incorrect Student ID.
+4. Missing required academic fields.
+5. Incorrect academic cycle.
+6. Unreadable or malformed document.
+7. Scanned PDF, only if supported.
+8. Image-based document, only if supported.
+
+Report unsupported scenarios separately.
+
+## PART E — REQUIRED OUTPUT
+
+### 1. Actual extraction implementation
+
+Provide a short technical explanation and the important source-code functions.
+
+### 2. Document extraction test results
+
+Create a table with:
+
+- Test ID
+- Document Type
+- Test Condition
+- Expected Result
+- Actual Result
+- Status
+
+### 3. Field accuracy results
+
+If measurable, create a table with:
+
+- Document Type
+- Number of Test Documents
+- Total Evaluated Fields
+- Correctly Extracted Fields
+- Field Accuracy (%)
+- Validation Result
+
+Do not insert percentages without actual measurements.
+
+### 4. Screenshots
+
+Generate a maximum of three white-background screenshots:
+
+**Screenshot 1 — COR/ROG Extraction Implementation**
+
+Show the important original source-code lines.
+
+**Screenshot 2 — Document Validation**
+
+Show the important validation logic.
+
+**Screenshot 3 — Verified Test Results**
+
+Show the actual test execution or output, if tests were performed.
+
+Keep screenshots readable, concise, and source-faithful. Label omitted source ranges.
+
+### 5. Thesis-ready explanations
+
+Prepare short academic descriptions for:
+
+- Chapter III — Document Extraction and Validation Testing.
+- Chapter IV — Document Extraction and Validation Results.
+
+Use past tense only for activities actually performed.
+
+## PART F — DELIVERABLES
+
+Save the generated outputs in:
+
+`docs/ThesisPaper/figure/item 5`

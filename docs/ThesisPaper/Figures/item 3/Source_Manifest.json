@@ -1,0 +1,295 @@
+{
+  "generatedAt": "2026-10-25T07:25:23.197307+00:00",
+  "task": "docs/ThesisPaper/Task Extract the Figures.txt",
+  "outputDirectory": "ThesisPapers\\Duplication_Prevention_Algorithm",
+  "method": "Exact source slices; static inspection only; original indentation preserved. No runtime/database tests performed.",
+  "trackedFilesVerifiedUnchanged": 390,
+  "reviewedSourceSha256": {
+    "backend/grantor_algorithms.py": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc",
+    "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql": "499bec8246244dc6b60f4e1a74e45ba896062bd9786b4660039874e53a059ab9",
+    "backend/roster_workflow_service.py": "3b88e870b267fc85e2cd7d736c9e76086bcb5be0459256f5e690f423d4bc95c4",
+    "backend/signup_service.py": "d3dcf641b5279754873a8187a32a3dffec995db8864f3cd99b3a3d73230da421",
+    "backend/backend_utils.py": "5db7ddcc649c77026eecfb62145d19ff9a2dab9fdac34093e33e78f86de72425",
+    "backend/main.py": "15432fe1eb27a40f9b91d305a3e22d923aea9bd853d32159d79413a4c94a6f82",
+    "src/services/grantorService.js": "1851fcde0b156e140e8bee31f579c952838427266c5d5e0f6a3bc68a436c2051",
+    "src/services/adminMatchingService.js": "a0e950f596ae85f57ada539f4eca570852ae1cc9ef8b4a82c3073b93d5fbf15f",
+    "src/pages/ProviderDashboard.jsx": "3536778788f3930022f0a40e5b72b45a8b5f7acbd829cb01cdae9f3c595cc873",
+    "backend/tests/test_solis_system_revision.py": "0b4bf2a5f7468b114e254da1387bbad6514dc963a48a0e385ab0543005791733",
+    "docs/ThesisPaper/Task Extract the Figures.txt": "797ecd3d70c0903081b53f0e21a7aa46eca9231b0ef5e2c6cea82e65f1b6d0aa"
+  },
+  "figures": [
+    {
+      "id": 1,
+      "title": "Student Record Normalization",
+      "filename": "Figure_1_Student_Record_Normalization.png",
+      "blocks": [
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "normalize_match_value",
+          "start": 10,
+          "end": 13,
+          "text": "def normalize_match_value(value: Any = \"\") -> str:\n    normalized = normalize_space(str(value or \"\")).lower()\n    normalized = re.sub(r\"[^a-z0-9]+\", \" \", normalized)\n    return normalize_space(normalized)"
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "normalize_identifier",
+          "start": 16,
+          "end": 17,
+          "text": "def normalize_identifier(value: Any = \"\") -> str:\n    return re.sub(r\"\\s+\", \"\", normalize_match_value(value))"
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "scholar_full_name",
+          "start": 20,
+          "end": 25,
+          "text": "def scholar_full_name(raw: dict[str, Any] | None = None) -> str:\n    raw = raw or {}\n    return normalize_space(\n        raw.get(\"fullName\")\n        or \" \".join(str(raw.get(key) or \"\") for key in [\"fname\", \"mname\", \"lname\"])\n    )"
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "token_sorted_value",
+          "start": 28,
+          "end": 29,
+          "text": "def token_sorted_value(value: Any = \"\") -> str:\n    return \" \".join(sorted(token for token in normalize_match_value(value).split() if token))"
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "evaluate_scholar_duplicate",
+          "start": 85,
+          "end": 88,
+          "text": "    candidate_email = normalize_identifier(candidate.get(\"email\"))\n    existing_email = normalize_identifier(existing.get(\"email\"))\n    candidate_phone = re.sub(r\"\\D\", \"\", str(candidate.get(\"cpNumber\") or candidate.get(\"contactNumber\") or \"\"))\n    existing_phone = re.sub(r\"\\D\", \"\", str(existing.get(\"cpNumber\") or existing.get(\"contactNumber\") or \"\"))"
+        }
+      ],
+      "purpose": "Standardizes available identity text before comparison. Inputs are names, identifier strings, email addresses and contact numbers.",
+      "calculation": "normalize_match_value collapses spaces, lowercases text and replaces runs outside ASCII a-z/0-9 with a space. normalize_identifier removes the remaining whitespace. scholar_full_name prefers fullName, otherwise joins fname/mname/lname. token_sorted_value sorts name tokens. Email uses identifier normalization; phone matching strips every non-digit character.",
+      "decision": "Produces normalized strings, a constructed full name and a token-sorted name. These values feed the matching functions; normalization alone does not approve an identity.",
+      "limitation": "Email punctuation is removed, so distinct email addresses can collapse to the same key. Accented and non-Latin characters are removed/replaced, not transliterated. This phone comparison does not itself equate local 09 numbers with +63 numbers. Different workflows have different normalizers.",
+      "caption": "Figure 3.X. Source-code normalization of student identity fields before duplicate comparison.",
+      "originalLineCount": 18,
+      "imageSize": [
+        1500,
+        1037
+      ],
+      "omittedRanges": [
+        {
+          "file": "backend/grantor_algorithms.py",
+          "start": 14,
+          "end": 15
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "start": 18,
+          "end": 19
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "start": 26,
+          "end": 27
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "start": 30,
+          "end": 84
+        }
+      ],
+      "outsideExtractContext": "Function setup before the first range and remaining logic after the final range are not shown; see referenced complete functions."
+    },
+    {
+      "id": 2,
+      "title": "Levenshtein Similarity Calculation",
+      "filename": "Figure_2_Levenshtein_Similarity.png",
+      "blocks": [
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "levenshtein_similarity",
+          "start": 42,
+          "end": 56,
+          "text": "    distances = list(range(len(right) + 1))\n    for left_index, left_char in enumerate(left, start=1):\n        diagonal = distances[0]\n        distances[0] = left_index\n        for right_index, right_char in enumerate(right, start=1):\n            above = distances[right_index]\n            substitution_cost = 0 if left_char == right_char else 1\n            distances[right_index] = min(\n                distances[right_index] + 1,\n                distances[right_index - 1] + 1,\n                diagonal + substitution_cost,\n            )\n            diagonal = above\n\n    return 1 - distances[len(right)] / max(len(left), len(right))"
+        }
+      ],
+      "purpose": "Measures character-level similarity after text normalization. Inputs are two normalized strings named left and right.",
+      "calculation": "A dynamic-programming row calculates minimum insertions, deletions and substitutions, each costing one. The last edit distance is divided by the longer normalized string length; similarity is one minus that ratio.",
+      "decision": "Returns a similarity value from 0 to 1. The caller compares direct name similarity and token-sorted name similarity and takes the larger value (lines 73-78).",
+      "limitation": "Lines 32-40, outside this compact extract, normalize inputs and handle empty/equal strings: both empty returns 1, only one empty returns 0, equal returns 1. comparable_similarity (59-65) excludes absent field pairs before this function is used by the weighted matcher. This is text similarity, not proof of identity or measured accuracy.",
+      "caption": "Figure 3.Y. Dynamic-programming edit distance and normalized Levenshtein similarity.",
+      "originalLineCount": 15,
+      "imageSize": [
+        1500,
+        696
+      ],
+      "omittedRanges": [],
+      "outsideExtractContext": "Function setup before the first range and remaining logic after the final range are not shown; see referenced complete functions."
+    },
+    {
+      "id": 3,
+      "title": "Weighted Record Linkage",
+      "filename": "Figure_3_Weighted_Record_Linkage.png",
+      "blocks": [
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "evaluate_scholar_duplicate",
+          "start": 92,
+          "end": 108,
+          "text": "    fields = [\n        {\"label\": \"student ID\", \"weight\": 0.32, \"value\": comparable_similarity(candidate_student_id, existing_student_id, True)},\n        {\"label\": \"name\", \"weight\": 0.30, \"value\": name_similarity or None},\n        {\"label\": \"email\", \"weight\": 0.10, \"value\": comparable_similarity(candidate_email, existing_email, True)},\n        {\"label\": \"contact number\", \"weight\": 0.08, \"value\": comparable_similarity(candidate_phone, existing_phone, True)},\n        {\"label\": \"course\", \"weight\": 0.08, \"value\": comparable_similarity(candidate.get(\"course\"), existing.get(\"course\"))},\n        {\"label\": \"year level\", \"weight\": 0.04, \"value\": comparable_similarity(candidate.get(\"yearLevel\") or candidate.get(\"year\"), existing.get(\"yearLevel\") or existing.get(\"year\"))},\n        {\"label\": \"city\", \"weight\": 0.04, \"value\": comparable_similarity(candidate.get(\"city\"), existing.get(\"city\"))},\n        {\"label\": \"province\", \"weight\": 0.04, \"value\": comparable_similarity(candidate.get(\"province\"), existing.get(\"province\"))},\n    ]\n    compared_fields = [field for field in fields if field[\"value\"] is not None]\n    compared_weight = sum(field[\"weight\"] for field in compared_fields)\n    weighted_score = (\n        sum(float(field[\"value\"]) * field[\"weight\"] for field in compared_fields) / compared_weight\n        if compared_weight > 0\n        else 0\n    )"
+        }
+      ],
+      "purpose": "Combines available comparisons of Student ID, name, email, contact number, course, year level, city and province.",
+      "calculation": "Each field receives the shown weight. Missing comparison values are excluded, then the weighted similarity sum is divided by the sum of included weights. Name similarity is the maximum of direct-order and token-sorted similarity.",
+      "decision": "Produces weighted_score, normally between 0 and 1. No comparable fields produces 0. The result is a matching score, not an award decision or probability.",
+      "limitation": "The expression name_similarity or None excludes a name comparison of exactly zero, as well as absent names. The raw weight total is 1.00 only when all fields are included; missing fields redistribute the effective weights. Name-only identical records can therefore score 1.00. Birthdate and school are not fields in this weighted calculation.",
+      "caption": "Figure 3.Z. Attribute weights and available-field normalization in weighted record linkage.",
+      "originalLineCount": 17,
+      "imageSize": [
+        2199,
+        758
+      ],
+      "omittedRanges": [],
+      "outsideExtractContext": "Function setup before the first range and remaining logic after the final range are not shown; see referenced complete functions."
+    },
+    {
+      "id": 4,
+      "title": "Duplicate Detection Rules",
+      "filename": "Figure_4_Duplicate_Detection_Rules.png",
+      "blocks": [
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "evaluate_scholar_duplicate",
+          "start": 73,
+          "end": 78,
+          "text": "    direct_name_similarity = comparable_similarity(candidate_name, existing_name) or 0\n    sorted_name_similarity = comparable_similarity(\n        token_sorted_value(candidate_name),\n        token_sorted_value(existing_name),\n    ) or 0\n    name_similarity = max(direct_name_similarity, sorted_name_similarity)"
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "evaluate_scholar_duplicate",
+          "start": 89,
+          "end": 91,
+          "text": "    exact_student_id = bool(candidate_student_id and candidate_student_id == existing_student_id)\n    exact_email = bool(candidate_email and candidate_email == existing_email)\n    exact_phone = bool(candidate_phone and candidate_phone == existing_phone)"
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "evaluate_scholar_duplicate",
+          "start": 109,
+          "end": 110,
+          "text": "    strong_identifier_match = exact_student_id or ((exact_email or exact_phone) and name_similarity >= 0.72)\n    is_duplicate = strong_identifier_match or (name_similarity >= 0.82 and weighted_score >= 0.84)"
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "check_student_table_duplicates",
+          "start": 209,
+          "end": 209,
+          "text": "    threshold = float(options.get(\"threshold\") or 0.84)"
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "function": "check_student_table_duplicates",
+          "start": 215,
+          "end": 215,
+          "text": "            if any(evaluate_scholar_duplicate(candidate, records[member])[\"isDuplicate\"] or evaluate_scholar_duplicate(candidate, records[member])[\"score\"] >= threshold for member in group):"
+        }
+      ],
+      "purpose": "Classifies candidate identity pairs and, separately, groups records in the administrator duplicate-table check.",
+      "calculation": "The pair evaluator flags exact nonempty normalized Student IDs; or exact email/phone with name similarity at least 0.72; or name similarity at least 0.82 AND weighted score at least 0.84. The table checker additionally accepts weighted score alone at or above its configurable threshold (default 0.84).",
+      "decision": "evaluate_scholar_duplicate returns isDuplicate plus the score and match metadata (113-123). check_student_table_duplicates creates potential-duplicate groups; its extra score-only rule is broader than the pair rule.",
+      "limitation": "These are configured rules, not experimentally demonstrated 72%, 82% or 84% accuracy. The final two source ranges belong to a different function, explicitly identified in the figure. An exact ID can flag even when names disagree. A duplicate flag does not establish an existing scholarship award.",
+      "caption": "Figure 3.AA. Pairwise duplicate thresholds and the distinct administrator grouping condition.",
+      "originalLineCount": 13,
+      "imageSize": [
+        2265,
+        882
+      ],
+      "omittedRanges": [
+        {
+          "file": "backend/grantor_algorithms.py",
+          "start": 79,
+          "end": 88
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "start": 92,
+          "end": 108
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "start": 111,
+          "end": 208
+        },
+        {
+          "file": "backend/grantor_algorithms.py",
+          "start": 210,
+          "end": 214
+        }
+      ],
+      "outsideExtractContext": "Function setup before the first range and remaining logic after the final range are not shown; see referenced complete functions."
+    },
+    {
+      "id": 5,
+      "title": "Official Scholarship Conflict Validation",
+      "filename": "Figure_5_Official_Scholarship_Conflict_Validation.png",
+      "blocks": [
+        {
+          "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+          "function": "assign_authoritative_roster_scholarship",
+          "start": 89,
+          "end": 97,
+          "text": "  if not found or coalesce(roster_data->>'studentId', roster_data->>'studentnumber', roster_data->>'studentNumber', '') <> p_student_id\n    or not public.roster_record_active(roster_data) then raise exception 'roster_match_not_found'; end if;\n  -- Untagged legacy rows require staff verification; never guess their semester.\n  if public.roster_cycle(roster_data) <> cycle then raise exception 'roster_cycle_requires_verification'; end if;\n  if public.roster_name_key(coalesce(roster_data->>'fullName', concat_ws(' ', roster_data->>'fname', roster_data->>'mname', roster_data->>'lname'))) = ''\n    or public.roster_name_key(coalesce(roster_data->>'fullName', concat_ws(' ', roster_data->>'fname', roster_data->>'mname', roster_data->>'lname')))\n      <> public.roster_name_key(coalesce(student_data->>'fullName', concat_ws(' ', student_data->>'fname', student_data->>'mname', student_data->>'lname'))) then\n    raise exception 'roster_identity_mismatch';\n  end if;"
+        },
+        {
+          "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+          "function": "assign_authoritative_roster_scholarship",
+          "start": 100,
+          "end": 104,
+          "text": "  if exists(select 1 from public.grantor_portal_scholars where id <> p_roster_id\n    and coalesce(data->>'studentId', data->>'studentnumber', data->>'studentNumber') = p_student_id\n    and public.roster_record_active(data) and public.roster_cycle(data) in ('', cycle)) then\n    raise exception 'scholarship_already_committed';\n  end if;"
+        },
+        {
+          "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+          "function": "assign_authoritative_roster_scholarship",
+          "start": 122,
+          "end": 125,
+          "text": "  if exists(select 1 from public.scholarship_applications where data->>'studentId' = p_student_id and id <> application_id\n    and public.roster_cycle(data) in ('', cycle) and public.roster_application_awarded(data)) then\n    raise exception 'scholarship_already_committed';\n  end if;"
+        },
+        {
+          "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+          "function": "assign_authoritative_roster_scholarship",
+          "start": 133,
+          "end": 135,
+          "text": "  if not exists(select 1 from public.grantor_portal_announcements where parent_id = p_grantor_id\n    and (id = target_scholarship_id or data->>'programId' = target_scholarship_id or data->>'scholarshipId' = target_scholarship_id)\n    and public.roster_record_active(data)) then raise exception 'roster_scholarship_not_recognized'; end if;"
+        }
+      ],
+      "purpose": "Blocks an official roster assignment when identity, semester, recognized scholarship or current-cycle award checks fail. Inputs are the target student, grantor and roster identifiers and their stored records.",
+      "calculation": "The selected roster must have the exact stored Student ID, be active, belong to the current cycle and have the same nonempty normalized full name as the account. Other active rosters or awarded applications in the current or unknown cycle cause a conflict. A recognized active scholarship record is required for a new assignment.",
+      "decision": "Raises a named exception instead of assigning on failure. Successful assignment occurs later in the same transaction. No Levenshtein score or 72/82/84 threshold is used in these official assignment checks.",
+      "limitation": "This is a deliberately partial extract: account state, transaction locks, normalized commitment-pointer checks (112-121), existing-assignment idempotency (126-130), active provider check (136-138) and the mutation/history logic are documented in the report, not all shown. Twenty-one original lines are retained to keep each selected SQL condition complete.",
+      "caption": "Figure 3.AB. Exact identity, academic-cycle, recognized-program and current-award guards for official roster assignment.",
+      "originalLineCount": 21,
+      "imageSize": [
+        1946,
+        1068
+      ],
+      "omittedRanges": [
+        {
+          "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+          "start": 98,
+          "end": 99
+        },
+        {
+          "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+          "start": 105,
+          "end": 121
+        },
+        {
+          "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+          "start": 126,
+          "end": 132
+        }
+      ],
+      "outsideExtractContext": "Function setup before the first range and remaining logic after the final range are not shown; see referenced complete functions."
+    }
+  ],
+  "pdfPageCount": 8,
+  "pdfPageSize": "Landscape A3 for readable unwrapped original code",
+  "knownLimits": [
+    "No production/deployment verification",
+    "No measured accuracy or runtime test results",
+    "Configured thresholds are not performance metrics",
+    "Five images only; code outside slices referenced in report"
+  ]
+}

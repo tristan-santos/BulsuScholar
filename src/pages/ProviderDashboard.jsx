@@ -83,6 +83,7 @@ import { supabase } from "../services/supabaseClient"
 import CustomSelect from "../components/CustomSelect"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
+import { getRosterImportMappingIssues, summarizeRosterImportPreview } from "../utils/rosterImportPreview"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import useThemeMode from "../hooks/useThemeMode"
 import {
@@ -999,7 +1000,6 @@ export default function ProviderDashboard() {
 	useEffect(() => {
 		setServerRosterPreview(null)
 	}, [createForm, importData, columnMapping, customImportFields])
-	const [checkingImportDuplicates, setCheckingImportDuplicates] = useState(false)
 	const [profileMenuOpen, setProfileMenuOpen] = useState(false)
 	const [profileSaving, setProfileSaving] = useState(false)
 	const [profilePhotoUploading, setProfilePhotoUploading] = useState(false)
@@ -1814,9 +1814,8 @@ export default function ProviderDashboard() {
 		[importPreviewPage.currentPage, importPreviewPage.rows],
 	)
 	const allVisibleImportRowsSelected = visibleImportRowIndexes.length > 0 && visibleImportRowIndexes.every((rowIndex) => selectedImportRowIndexes.includes(rowIndex))
-	const importDuplicateCount = Object.keys(importDuplicateMatches).length
-	const importBlockedDuplicateCount = Object.values(importDuplicateMatches).filter((duplicate) => duplicate?.sameGrantor).length
-	const importWarningDuplicateCount = importDuplicateCount - importBlockedDuplicateCount
+	const importMappingIssues = getRosterImportMappingIssues(columnMapping, createForm.scholarshipTitle)
+	const importHasBlockedRows = (serverRosterPreview?.rows || []).some((row) => row.blocking)
 	const availableScholarshipOptions = useMemo(() => {
 		const seen = new Set()
 		return [...announcements]
@@ -1971,7 +1970,6 @@ export default function ProviderDashboard() {
 		if (!serverRosterPreview) {
 			setImportDuplicateMatches({})
 		}
-		setCheckingImportDuplicates(false)
 	}, [serverRosterPreview])
 
 	const selectableVisibleScholars = useMemo(
@@ -2938,8 +2936,8 @@ export default function ProviderDashboard() {
 
 		// Import Logic
 		if (importData && importData.length > 0) {
-			if (!columnMapping.some(field => field !== "")) {
-				toast.error("Map at least one column before importing.")
+			if (importMappingIssues.length > 0) {
+				toast.error(importMappingIssues.join(" "))
 				return
 			}
 			setBusy("create")
@@ -2957,6 +2955,7 @@ export default function ProviderDashboard() {
 						rowNumber: rowIndex + 1,
 					}
 					scholar.fullName = scholar.fullName || [scholar.fname, scholar.mname, scholar.lname].filter(Boolean).join(" ").trim()
+					if (!columnMapping.includes("scholarshipTitle")) scholar.scholarshipTitle = createForm.scholarshipTitle.trim()
 					scholar.cpNumber = normalizeContactNumber(scholar.cpNumber)
 					return scholar
 				})
@@ -2967,6 +2966,7 @@ export default function ProviderDashboard() {
 				})
 				setImportDuplicateMatches(Object.fromEntries((serverPreview.rows || []).map((row, index) => [index, {
 					blocking: row.blocking,
+					disposition: row.disposition,
 					sameGrantor: row.disposition === "already_imported",
 					reason: row.reason,
 					record: { fullName: row.fullName, grantorId: row.grantorId },
@@ -6005,16 +6005,19 @@ export default function ProviderDashboard() {
 										<div className="grantor-import-info">
 											<div>
 												<strong>{importData.length}</strong> rows detected from <em>{uploadFile?.name}</em>
-												<p className="grantor-import-sub">Select the corresponding system field for each column below.</p>
+												<p className="grantor-import-sub">Map Full Name, Course, and Year Level. Student number is optional.</p>
 											</div>
 											<div className="grantor-import-actions">
 												<button type="button" className="grantor-action-btn grantor-action-btn--danger" onClick={removeSelectedImportRows} disabled={selectedImportRowIndexes.length === 0}><HiOutlineTrash /> Remove Selected</button>
 												<button type="button" className="grantor-action-btn grantor-action-btn--primary" onClick={clearGrantorScholarImport}><HiOutlineRefresh /> Clear & Restart</button>
 											</div>
 										</div>
-										<div className={`grantor-duplicate-policy-note ${importDuplicateCount > 0 ? "is-warning" : ""}`} role="note">
+										{!columnMapping.includes("scholarshipTitle") && (
+											<label className="grantor-create-field"><span>Scholarship for this import</span><CustomSelect value={createForm.scholarshipTitle} onChange={(scholarshipTitle) => setCreateForm((prev) => ({ ...prev, scholarshipTitle }))} options={availableScholarshipOptions} placeholder="Select scholarship title" disabled={availableScholarshipOptions.length === 0} buttonClassName="grantor-create-select" /><small>Used for every row when no Scholarship Title column is mapped.</small></label>
+										)}
+										<div className={`grantor-duplicate-policy-note ${importHasBlockedRows || importMappingIssues.length > 0 ? "is-warning" : ""}`} role="status">
 											<HiOutlineExclamationCircle aria-hidden="true" />
-											<span>{checkingImportDuplicates ? "Checking mapped rows for duplicates..." : importDuplicateCount > 0 ? `${importBlockedDuplicateCount} same-list duplicate${importBlockedDuplicateCount === 1 ? "" : "s"} and ${importWarningDuplicateCount} cross-grantor match${importWarningDuplicateCount === 1 ? "" : "es"} will not be imported.` : "Duplicate prevention is active. Same-list and cross-grantor duplicate scholarships are blocked."}</span>
+											<span>{importMappingIssues.length > 0 ? importMappingIssues.join(" ") : serverRosterPreview ? summarizeRosterImportPreview(serverRosterPreview.rows) : "Preview checks required fields, identity, recognized scholarships, and existing awards before import."}</span>
 										</div>
 										<div className="grantor-import-table-wrap">
 											<table className="grantor-import-table">
@@ -6023,6 +6026,7 @@ export default function ProviderDashboard() {
 														<th className="grantor-import-checkbox-col">
 															<input type="checkbox" aria-label="Select all visible import rows" checked={allVisibleImportRowsSelected} onChange={() => setSelectedImportRowIndexes((prev) => allVisibleImportRowsSelected ? prev.filter((rowIndex) => !visibleImportRowIndexes.includes(rowIndex)) : Array.from(new Set([...prev, ...visibleImportRowIndexes])))} />
 														</th>
+														<th>Validation result</th>
 														{importData[0].map((_, colIndex) => (
 															<th key={colIndex}>
 																{customImportEditColumn === colIndex ? (
@@ -6085,13 +6089,9 @@ export default function ProviderDashboard() {
 													{importPreviewPage.rows.map((row, rowIndex) => {
 														const absoluteRowIndex = (importPreviewPage.currentPage - 1) * TABLE_PAGE_SIZE + rowIndex
 														const duplicate = importDuplicateMatches[absoluteRowIndex]
-											const duplicateTitle = duplicate?.reason || (duplicate
-												? duplicate.sameGrantor
-													? `Already in this grantor scholar list as ${duplicate.record.fullName || "an existing student"}`
-													: `Cross-grantor match: ${duplicate.record.fullName || "an existing student"} under ${duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"}`
-												: undefined)
-											return <tr key={absoluteRowIndex} className={duplicate ? duplicate.blocking ? "grantor-import-row--warning" : "grantor-import-row--duplicate" : ""} title={duplicateTitle}>
+											return <tr key={absoluteRowIndex} className={duplicate?.blocking ? "grantor-import-row--warning" : duplicate?.disposition === "already_imported" ? "grantor-import-row--duplicate" : ""} title={duplicate?.reason}>
 															<td className="grantor-import-checkbox-col"><input type="checkbox" aria-label={`Select import row ${absoluteRowIndex + 1}`} checked={selectedImportRowIndexes.includes(absoluteRowIndex)} onChange={() => setSelectedImportRowIndexes((prev) => prev.includes(absoluteRowIndex) ? prev.filter((item) => item !== absoluteRowIndex) : [...prev, absoluteRowIndex])} /></td>
+															<td className="grantor-import-result">{duplicate?.reason || "Awaiting preview"}</td>
 															{row.map((cell, cellIndex) => (
 																<td key={cellIndex}>{cell}</td>
 															))}
@@ -6099,7 +6099,7 @@ export default function ProviderDashboard() {
 													})}
 													{importData.length > TABLE_PAGE_SIZE && (
 														<tr>
-															<td colSpan={importData[0].length + 1} className="grantor-import-more">
+															<td colSpan={importData[0].length + 2} className="grantor-import-more">
 																Showing {importPreviewPage.startIndex}-{importPreviewPage.endIndex} of {importData.length} rows.
 															</td>
 														</tr>

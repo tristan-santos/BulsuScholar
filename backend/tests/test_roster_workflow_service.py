@@ -59,6 +59,54 @@ class RosterImportPreviewTests(unittest.TestCase):
         self.assertEqual("blocked", result["status"])
         self.assertEqual("scholarship_not_recognized", result["rows"][0]["disposition"])
 
+    def test_missing_ids_and_titles_are_validation_errors_not_duplicates(self):
+        payload = {**self.payload, "rows": [
+            {"fullName": f"Scholar {index}", "rowNumber": index + 1}
+            for index in range(43)
+        ]}
+        result = self._preview(payload)
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual({"invalid_data": 43}, result["counts"])
+        for row in result["rows"]:
+            self.assertTrue(row["blocking"])
+            self.assertIn("scholarship title, course, year level", row["reason"])
+
+    def test_missing_student_id_requires_course_and_year(self):
+        payload = {**self.payload, "rows": [{**self.payload["rows"][0], "studentId": ""}]}
+        result = self._preview(payload)
+        self.assertEqual("invalid_data", result["rows"][0]["disposition"])
+        self.assertIn("Missing required fields: course, year level.", result["rows"][0]["reason"])
+
+    def test_name_course_year_import_without_student_number(self):
+        payload = {**self.payload, "rows": [
+            {"fullName": f"Scholar {index}", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+            for index in range(43)
+        ]}
+        result = self._preview(payload)
+        self.assertEqual("ready", result["status"])
+        self.assertEqual({"ready_unlinked": 43}, result["counts"])
+        self.assertTrue(all(not row["matchedAccount"] and not row["studentId"] for row in result["rows"]))
+
+    def test_identical_name_course_year_rows_are_duplicates(self):
+        row = {"fullName": "Ana Santos", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+        result = self._preview({**self.payload, "rows": [row, row]})
+        self.assertEqual({"duplicate_import_row": 2}, result["counts"])
+
+    def test_name_only_rows_do_not_assign_an_existing_account(self):
+        row = {"fullName": "Ana Santos", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+        result = self._preview({**self.payload, "rows": [row]})
+        self.assertEqual("ready_unlinked", result["rows"][0]["disposition"])
+        self.assertFalse(result["rows"][0]["matchedAccount"])
+
+    def test_name_course_year_duplicate_in_same_roster_is_already_imported(self):
+        row = {"fullName": "Ana Santos", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+        def rows(table, filters=None):
+            if table == "grantor_portal_scholars":
+                return [{**row, "id": "unlinked", "parentId": "grantor-1", "academicCycle": "2026-2027-1ST"}]
+            return self._rows(table, filters)
+        result = self._preview({**self.payload, "rows": [row]}, rows=rows)
+        self.assertEqual("already_imported", result["rows"][0]["disposition"])
+
     def test_ambiguous_exact_title_blocks_batch(self):
         def rows(table, filters=None):
             values = self._rows(table, filters)

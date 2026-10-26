@@ -1,0 +1,25 @@
+Command: py -3.12 "docs/ThesisPaper/figure/item 5/run_document_evaluation.py"
+UTC: 2026-10-25T08:06:54.751225+00:00
+Python 3.12.2 | Windows
+Existing tests: 33 run; 0 failures; 0 errors; 0 skipped
+Existing fixtures: 2 COR, 1 ROG; synthetic text PDFs only
+COR: 16/16 fields = 100.00% (synthetic only)
+ROG: 9/9 fields = 100.00% (synthetic only)
+DOC-01 PASS: Accepted/completed
+DOC-02 PASS: Accepted/completed
+DOC-03 PASS: HTTP 422: cor_student_id_mismatch
+DOC-04 PASS: HTTP 422: cor_year_level_not_detected
+DOC-05 PASS: HTTP 422: cor_cycle_mismatch
+DOC-06 PASS: HTTP 422: rog_cycle_mismatch
+DOC-07 PASS: HTTP 422: invalid_pdf_document
+DOC-08 PASS: HTTP 415: pdf_required
+DOC-09 LIMITATION: Accepted/completed
+DOC-10 LIMITATION: Accepted/completed
+DOC-11 LIMITATION: Accepted/completed
+DOC-12 LIMITATION: Accepted/completed
+DOC-13 DEPENDENCY BLOCKED: Parser returned blank fields / invalid title; PDF-to-image fallback could not run (Poppler absent).
+DOC-14 DEPENDENCY BLOCKED: RuntimeError: tesseract_not_installed: Tesseract OCR is required for image-based PDFs and image uploads. Redeploy the backend using the repository Dockerfile so tesseract-ocr and poppler-utils a
+DOC-15 PASS: studentId=''; course=''; year=''; titleValid=True
+OCR: Poppler absent; configured Tesseract path does not exist.
+No real-student/OCR accuracy established. Validation gaps are not counted as extraction failures.
+Tracked project files unchanged: 390. Network blocked; storage mocked.

@@ -98,6 +98,15 @@ def _full_name(data: dict[str, Any]) -> str:
     ))
 
 
+def _import_identity(data: dict[str, Any]) -> str:
+    student_id = _student_id(data)
+    if student_id:
+        return f"id:{student_id}"
+    return "name:" + "|".join(_key(value) for value in (
+        _full_name(data), data.get("course"), data.get("yearLevel"),
+    ))
+
+
 def _row_data_rows(table: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     result = supabase_select(table, filters, limit=0)
     if not result.get("ok"):
@@ -249,7 +258,7 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
         str(row.get("id")): row for row in [*_row_data_rows("providers"), *_row_data_rows("grantor_portals")]
     }
     program_cache: dict[str, dict[str, dict[str, Any]]] = {}
-    tuple_counts = Counter((_text(row.get("grantorId")), _text(row.get("studentId")), _key(row.get("scholarshipTitle"))) for row in canonical_rows)
+    tuple_counts = Counter((_text(row.get("grantorId")), _import_identity(row), _key(row.get("scholarshipTitle"))) for row in canonical_rows)
     student_targets: dict[str, set[tuple[str, str]]] = defaultdict(set)
     for row in canonical_rows:
         if row["studentId"]:
@@ -270,8 +279,15 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
 
         if not grantor_id or grantor_id not in providers or providers[grantor_id].get("archived") is True:
             reason = "Grantor not found or inactive."
-        elif not student_id or not row["fullName"] or not title_key:
-            reason = "Student ID, full name, and scholarship are required."
+        elif not row["fullName"] or not title_key or (not student_id and (not _key(row.get("course")) or not _key(row.get("yearLevel")))):
+            required = [
+                ("full name", row["fullName"]),
+                ("scholarship title", title_key),
+            ]
+            if not student_id:
+                required.extend((("course", _key(row.get("course"))), ("year level", _key(row.get("yearLevel")))))
+            missing = [label for label, value in required if not value]
+            reason = f"Missing required fields: {', '.join(missing)}. Map these columns or supply the missing values."
         else:
             program = _recognized_programs(grantor_id, program_cache).get(title_key) or {}
             if program.get("ambiguous"):
@@ -280,9 +296,19 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
             elif not program:
                 disposition = "scholarship_not_recognized"
                 reason = "Scholarship does not exactly match a recognized program for this grantor."
-            elif tuple_counts[(grantor_id, student_id, title_key)] > 1:
+            elif tuple_counts[(grantor_id, _import_identity(row), title_key)] > 1:
                 disposition = "duplicate_import_row"
                 reason = "The same student and scholarship appears more than once in this import."
+            elif not student_id:
+                matching_roster = next((existing for existing in rosters
+                    if _text(existing.get("grantorId") or existing.get("parentId")) == grantor_id
+                    and _cycle(existing) == current_cycle
+                    and _import_identity(existing) == _import_identity(row)
+                    and (_text(existing.get("scholarshipId")) == program["id"]
+                         or _key(existing.get("scholarshipTitle") or existing.get("scholarshipName")) == title_key)), None)
+                disposition = "already_imported" if matching_roster else "ready_unlinked"
+                reason = ("This name, course, and year level already exists in this scholarship roster."
+                          if matching_roster else "Ready to import using name, course, and year level. Student number is optional; account linking requires verification.")
             elif len(student_targets[student_id]) > 1:
                 disposition = "conflicting_active_roster"
                 reason = "This import assigns the student to more than one active scholarship."

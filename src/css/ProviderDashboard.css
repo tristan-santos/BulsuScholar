@@ -3535,6 +3535,12 @@
 	cursor: pointer;
 }
 
+.grantor-import-table .grantor-import-result {
+	min-width: 250px;
+	max-width: 340px;
+	white-space: normal;
+}
+
 .grantor-import-table td {
 	padding: 0.65rem 0.5rem;
 	border-bottom: 1px solid #f1f5f9;

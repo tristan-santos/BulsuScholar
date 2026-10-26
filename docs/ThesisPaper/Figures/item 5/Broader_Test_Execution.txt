@@ -1,0 +1,102 @@
+Actual invocation: py -3.12 "docs/ThesisPaper/figure/item 5/run_document_evaluation.py"
+Unit-test runner: unittest.TextTestRunner(verbosity=2), inside offline socket guard
+Equivalent unittest selection: py -3.12 -m unittest -v backend.tests.test_document_scanner backend.tests.test_signup_identity_documents backend.tests.test_student_document_upload_regression backend.tests.test_student_profile_service.StudentProfileRequirementTests backend.tests.test_student_profile_service.StudentDocumentSubmissionPolicyTests backend.tests.test_romel_download_protection.RomelProtectionTests.test_malformed_pdf_rejected backend.tests.test_romel_download_protection.RomelProtectionTests.test_password_assisted_processing_rejects_wrong_and_missing
+UTC started: 2026-10-25T08:04:36.328611+00:00
+
+test_academic_year_alone_is_not_a_year_level (backend.tests.test_document_scanner.DocumentScannerYearLevelTests.test_academic_year_alone_is_not_a_year_level) ... ok
+test_explicit_year_level_wins_over_academic_year (backend.tests.test_document_scanner.DocumentScannerYearLevelTests.test_explicit_year_level_wins_over_academic_year) ... ok
+test_numeric_year_section_remains_supported (backend.tests.test_document_scanner.DocumentScannerYearLevelTests.test_numeric_year_section_remains_supported) ... ok
+test_positioned_pdf_words_read_value_to_right_of_label (backend.tests.test_document_scanner.DocumentScannerYearLevelTests.test_positioned_pdf_words_read_value_to_right_of_label) ... ok
+test_year_level_value_may_follow_label_on_next_line (backend.tests.test_document_scanner.DocumentScannerYearLevelTests.test_year_level_value_may_follow_label_on_next_line) ... ok
+test_declared_year_allows_signup_when_cor_year_is_not_detected (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_declared_year_allows_signup_when_cor_year_is_not_detected) ... ok
+test_declared_year_mismatch_is_saved_for_admin_review (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_declared_year_mismatch_is_saved_for_admin_review) ... ok
+test_email_availability_uses_cross_portal_email_registry (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_email_availability_uses_cross_portal_email_registry) ... ok
+test_failed_batch_save_removes_uploaded_private_files (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_failed_batch_save_removes_uploaded_private_files) ... ok
+test_first_year_first_semester_skips_rog_and_accepts_government_id (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_first_year_first_semester_skips_rog_and_accepts_government_id) ... ok
+test_first_year_later_semester_requires_rog (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_first_year_later_semester_requires_rog) ... ok
+test_phone_availability_normalizes_local_mobile_number (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_phone_availability_normalizes_local_mobile_number) ... ok
+test_signup_year_accepts_only_years_one_through_four (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_signup_year_accepts_only_years_one_through_four) ... ok
+test_student_id_availability_checks_every_portal_id_table (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_student_id_availability_checks_every_portal_id_table) ... ok
+test_upper_year_rejects_non_student_id (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_upper_year_rejects_non_student_id) ... ok
+test_upper_year_requires_rog_before_identity_batch (backend.tests.test_signup_identity_documents.SignupIdentityDocumentTests.test_upper_year_requires_rog_before_identity_batch) ... ok
+test_approval_changes_only_fields_allowed_by_existing_immutable_guard (backend.tests.test_student_document_upload_regression.AutomaticDocumentReviewRegressionTests.test_approval_changes_only_fields_allowed_by_existing_immutable_guard) ... ok
+test_student_can_preview_their_own_pending_upload (backend.tests.test_student_document_upload_regression.AutomaticDocumentReviewRegressionTests.test_student_can_preview_their_own_pending_upload) ... ok
+test_student_cannot_preview_another_students_document (backend.tests.test_student_document_upload_regression.AutomaticDocumentReviewRegressionTests.test_student_cannot_preview_another_students_document) ... ok
+test_failed_approval_preserves_previous_document_pointer (backend.tests.test_student_document_upload_regression.StudentUploadPersistenceRegressionTests.test_failed_approval_preserves_previous_document_pointer) ... ok
+test_failed_submission_save_preserves_previous_document_pointer (backend.tests.test_student_document_upload_regression.StudentUploadPersistenceRegressionTests.test_failed_submission_save_preserves_previous_document_pointer) ... ok
+test_replacements_store_completion_metadata_before_immutable_review (backend.tests.test_student_document_upload_regression.StudentUploadPersistenceRegressionTests.test_replacements_store_completion_metadata_before_immutable_review) ... ok
+test_first_year_first_semester_rog_is_automatically_exempt (backend.tests.test_student_profile_service.StudentProfileRequirementTests.test_first_year_first_semester_rog_is_automatically_exempt) ... ok
+test_first_year_second_semester_requires_rog (backend.tests.test_student_profile_service.StudentProfileRequirementTests.test_first_year_second_semester_requires_rog) ... ok
+test_new_student_without_older_cycle_documents_has_no_renewal_banner (backend.tests.test_student_profile_service.StudentProfileRequirementTests.test_new_student_without_older_cycle_documents_has_no_renewal_banner) ... ok
+test_renewal_banner_clears_after_applicable_documents_are_approved (backend.tests.test_student_profile_service.StudentProfileRequirementTests.test_renewal_banner_clears_after_applicable_documents_are_approved) ... ok
+test_semester_change_requires_current_cycle_document_renewal (backend.tests.test_student_profile_service.StudentProfileRequirementTests.test_semester_change_requires_current_cycle_document_renewal) ... ok
+test_submitted_renewal_documents_are_reported_as_waiting_for_review (backend.tests.test_student_profile_service.StudentProfileRequirementTests.test_submitted_renewal_documents_are_reported_as_waiting_for_review) ... ok
+test_upper_year_first_semester_requires_rog (backend.tests.test_student_profile_service.StudentProfileRequirementTests.test_upper_year_first_semester_requires_rog) ... ok
+test_verification_summary_does_not_create_fake_rog_submission (backend.tests.test_student_profile_service.StudentProfileRequirementTests.test_verification_summary_does_not_create_fake_rog_submission) ... ok
+test_profile_submission_never_uses_automatic_document_policy (backend.tests.test_student_profile_service.StudentDocumentSubmissionPolicyTests.test_profile_submission_never_uses_automatic_document_policy) ... ERROR
+test_valid_cor_is_system_approved_even_when_manual_account_review_is_enabled (backend.tests.test_student_profile_service.StudentDocumentSubmissionPolicyTests.test_valid_cor_is_system_approved_even_when_manual_account_review_is_enabled) ... ok
+test_malformed_pdf_rejected (backend.tests.test_romel_download_protection.RomelProtectionTests.test_malformed_pdf_rejected) ... ok
+test_password_assisted_processing_rejects_wrong_and_missing (backend.tests.test_romel_download_protection.RomelProtectionTests.test_password_assisted_processing_rejects_wrong_and_missing) ... ok
+
+======================================================================
+ERROR: test_profile_submission_never_uses_automatic_document_policy (backend.tests.test_student_profile_service.StudentDocumentSubmissionPolicyTests.test_profile_submission_never_uses_automatic_document_policy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\unittest\async_case.py", line 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\unittest\async_case.py", line 117, in _callMaybeAsync
+    return self._asyncioTestContext.run(func, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\Downloads\CapstoneSystem\BulsuScholar\backend\tests\test_student_profile_service.py", line 437, in test_profile_submission_never_uses_automatic_document_policy
+    result = service.submit_student_profile(object(), {"signatureDataUrl": "signature"})
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\Downloads\CapstoneSystem\BulsuScholar\backend\student_profile_service.py", line 850, in submit_student_profile
+    draft = _merge_profile_input(student, supabase_document_get("student_profile_drafts", student_id).get("data") or {})
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\Downloads\CapstoneSystem\BulsuScholar\backend\supabase_ops.py", line 640, in supabase_document_get
+    result = _raw_select(table, {"id": record_id, **({"parent_id": parent_id} if parent_id else {})}, limit=1)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\Downloads\CapstoneSystem\BulsuScholar\backend\supabase_ops.py", line 437, in _raw_select
+    with urllib.request.urlopen(request, timeout=20) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 515, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 532, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 1392, in https_open
+    return self.do_open(http.client.HTTPSConnection, req,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\urllib\request.py", line 1344, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\http\client.py", line 1331, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\http\client.py", line 1377, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\http\client.py", line 1326, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\http\client.py", line 1085, in _send_output
+    self.send(msg)
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\http\client.py", line 1029, in send
+    self.connect()
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\http\client.py", line 1465, in connect
+    super().connect()
+  File "C:\Users\santo\AppData\Local\Programs\Python\Python312\Lib\http\client.py", line 995, in connect
+    self.sock = self._create_connection(
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\santo\Downloads\CapstoneSystem\BulsuScholar\docs\ThesisPaper\figure\item 5\run_document_evaluation.py", line 28, in deny_network
+    raise RuntimeError('Network is disabled for this offline evaluation')
+RuntimeError: Network is disabled for this offline evaluation
+
+----------------------------------------------------------------------
+Ran 34 tests in 0.511s
+
+FAILED (errors=1)

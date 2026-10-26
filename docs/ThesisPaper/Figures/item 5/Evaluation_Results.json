@@ -1,0 +1,822 @@
+{
+  "startedAtUTC": "2026-10-25T08:06:54.751225+00:00",
+  "finishedAtUTC": "2026-10-25T08:07:00.335985+00:00",
+  "command": "py -3.12 \"docs/ThesisPaper/figure/item 5/run_document_evaluation.py\"",
+  "environment": {
+    "python": "3.12.2 (tags/v3.12.2:6abddd9, Feb  6 2024, 21:26:36) [MSC v.1937 64 bit (AMD64)]",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "packages": {
+      "pdfplumber": "0.11.5",
+      "pytesseract": "0.3.13",
+      "pdf2image": "1.17.0",
+      "pillow": "11.0.0",
+      "fastapi": "0.115.6",
+      "pypdf": "6.1.1",
+      "reportlab": "4.5.1"
+    },
+    "scannerHealthReported": {
+      "tesseractInstalled": true,
+      "tesseractCommand": "/usr/bin/tesseract",
+      "popplerAvailable": false,
+      "pdfImageFallbackAvailable": true
+    },
+    "tesseractConfiguredPathExists": false,
+    "network": "Application socket connections denied; native internal asyncio socketpair creation allowed",
+    "storage": "Mocked in-memory dictionaries; no database/storage operations",
+    "implementation": "Existing parser/validators unchanged; no dependencies installed"
+  },
+  "referenceDocuments": [
+    {
+      "file": "docs\\qa\\first-year-cor.pdf",
+      "sha256": "614d73eb59b09f71188c449fc50c38f6d3d79d62f42b0e4e3d8b1a9df81fd537",
+      "referenceBasis": "Transcribed from visible TEST-labelled source PDF text; course/name/semester use documented canonical representation",
+      "documentType": "cor",
+      "expected": {
+        "studentId": "20260001",
+        "firstName": "Student",
+        "lastName": "Test",
+        "fullName": "Student Test",
+        "course": "Bachelor of Science in Information Technology",
+        "year": "1",
+        "academicYear": "2026-2027",
+        "semester": "1st"
+      },
+      "actual": {
+        "documentType": "cor",
+        "studentId": "20260001",
+        "firstName": "Student",
+        "middleName": "",
+        "lastName": "Test",
+        "fullName": "Student Test",
+        "course": "Bachelor of Science in Information Technology",
+        "year": "1",
+        "section": "",
+        "gwa": "",
+        "academicYear": "2026-2027",
+        "semester": "1st",
+        "hasAcademicConcern": false,
+        "academicConcernTerms": [],
+        "isValidCorDocument": true,
+        "documentTitle": "Certificate of Registration",
+        "acceptedCorTitles": [
+          "Advising Slip",
+          "Certificate of Registration"
+        ],
+        "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+        "yearDetectionSource": "year_level_pdf_row"
+      },
+      "correctFields": 8,
+      "evaluatedFields": 8,
+      "exclusions": "Absent section, middleName and COR GWA not scored. Title/flags are validation metadata, not field accuracy.",
+      "titleRecognized": true
+    },
+    {
+      "file": "docs\\qa\\upper-year-cor.pdf",
+      "sha256": "92fba1984c1cb3158850566f61f4ec9532f8abc3244b1a860fd732fc6e09479e",
+      "referenceBasis": "Transcribed from visible TEST-labelled source PDF text; course/name/semester use documented canonical representation",
+      "documentType": "cor",
+      "expected": {
+        "studentId": "20260002",
+        "firstName": "Upper",
+        "lastName": "Test",
+        "fullName": "Upper Test",
+        "course": "Bachelor of Science in Information Technology",
+        "year": "2",
+        "academicYear": "2026-2027",
+        "semester": "1st"
+      },
+      "actual": {
+        "documentType": "cor",
+        "studentId": "20260002",
+        "firstName": "Upper",
+        "middleName": "",
+        "lastName": "Test",
+        "fullName": "Upper Test",
+        "course": "Bachelor of Science in Information Technology",
+        "year": "2",
+        "section": "",
+        "gwa": "",
+        "academicYear": "2026-2027",
+        "semester": "1st",
+        "hasAcademicConcern": false,
+        "academicConcernTerms": [],
+        "isValidCorDocument": true,
+        "documentTitle": "Certificate of Registration",
+        "acceptedCorTitles": [
+          "Advising Slip",
+          "Certificate of Registration"
+        ],
+        "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+        "yearDetectionSource": "year_level_pdf_row"
+      },
+      "correctFields": 8,
+      "evaluatedFields": 8,
+      "exclusions": "Absent section, middleName and COR GWA not scored. Title/flags are validation metadata, not field accuracy.",
+      "titleRecognized": true
+    },
+    {
+      "file": "docs\\qa\\upper-year-rog.pdf",
+      "sha256": "bf2c54cd51f86062022465dcdf19330d5c5e81769ba9552097908d9f3525878c",
+      "referenceBasis": "Transcribed from visible TEST-labelled source PDF text; course/name/semester use documented canonical representation",
+      "documentType": "rog",
+      "expected": {
+        "studentId": "20260002",
+        "firstName": "Upper",
+        "lastName": "Test",
+        "fullName": "Upper Test",
+        "course": "Bachelor of Science in Information Technology",
+        "year": "1",
+        "academicYear": "2025-2026",
+        "semester": "2nd",
+        "gwa": "1.50"
+      },
+      "actual": {
+        "documentType": "rog",
+        "studentId": "20260002",
+        "firstName": "Upper",
+        "middleName": "",
+        "lastName": "Test",
+        "fullName": "Upper Test",
+        "course": "Bachelor of Science in Information Technology",
+        "year": "1",
+        "section": "",
+        "gwa": "1.50",
+        "academicYear": "2025-2026",
+        "semester": "2nd",
+        "hasAcademicConcern": false,
+        "academicConcernTerms": [],
+        "isValidCogDocument": true,
+        "documentTitle": "Report of Grades",
+        "acceptedCogTitles": [
+          "Report of Grades"
+        ],
+        "documentTitleRule": "ROG must contain Report of Grades in the document title.",
+        "yearDetectionSource": "year_level_pdf_row"
+      },
+      "correctFields": 9,
+      "evaluatedFields": 9,
+      "exclusions": "Absent section, middleName and COR GWA not scored. Title/flags are validation metadata, not field accuracy.",
+      "titleRecognized": true
+    }
+  ],
+  "fieldComparisons": [
+    {
+      "document": "first-year-cor.pdf",
+      "documentType": "cor",
+      "field": "studentId",
+      "expected": "20260001",
+      "actual": "20260001",
+      "correct": true
+    },
+    {
+      "document": "first-year-cor.pdf",
+      "documentType": "cor",
+      "field": "firstName",
+      "expected": "Student",
+      "actual": "Student",
+      "correct": true
+    },
+    {
+      "document": "first-year-cor.pdf",
+      "documentType": "cor",
+      "field": "lastName",
+      "expected": "Test",
+      "actual": "Test",
+      "correct": true
+    },
+    {
+      "document": "first-year-cor.pdf",
+      "documentType": "cor",
+      "field": "fullName",
+      "expected": "Student Test",
+      "actual": "Student Test",
+      "correct": true
+    },
+    {
+      "document": "first-year-cor.pdf",
+      "documentType": "cor",
+      "field": "course",
+      "expected": "Bachelor of Science in Information Technology",
+      "actual": "Bachelor of Science in Information Technology",
+      "correct": true
+    },
+    {
+      "document": "first-year-cor.pdf",
+      "documentType": "cor",
+      "field": "year",
+      "expected": "1",
+      "actual": "1",
+      "correct": true
+    },
+    {
+      "document": "first-year-cor.pdf",
+      "documentType": "cor",
+      "field": "academicYear",
+      "expected": "2026-2027",
+      "actual": "2026-2027",
+      "correct": true
+    },
+    {
+      "document": "first-year-cor.pdf",
+      "documentType": "cor",
+      "field": "semester",
+      "expected": "1st",
+      "actual": "1st",
+      "correct": true
+    },
+    {
+      "document": "upper-year-cor.pdf",
+      "documentType": "cor",
+      "field": "studentId",
+      "expected": "20260002",
+      "actual": "20260002",
+      "correct": true
+    },
+    {
+      "document": "upper-year-cor.pdf",
+      "documentType": "cor",
+      "field": "firstName",
+      "expected": "Upper",
+      "actual": "Upper",
+      "correct": true
+    },
+    {
+      "document": "upper-year-cor.pdf",
+      "documentType": "cor",
+      "field": "lastName",
+      "expected": "Test",
+      "actual": "Test",
+      "correct": true
+    },
+    {
+      "document": "upper-year-cor.pdf",
+      "documentType": "cor",
+      "field": "fullName",
+      "expected": "Upper Test",
+      "actual": "Upper Test",
+      "correct": true
+    },
+    {
+      "document": "upper-year-cor.pdf",
+      "documentType": "cor",
+      "field": "course",
+      "expected": "Bachelor of Science in Information Technology",
+      "actual": "Bachelor of Science in Information Technology",
+      "correct": true
+    },
+    {
+      "document": "upper-year-cor.pdf",
+      "documentType": "cor",
+      "field": "year",
+      "expected": "2",
+      "actual": "2",
+      "correct": true
+    },
+    {
+      "document": "upper-year-cor.pdf",
+      "documentType": "cor",
+      "field": "academicYear",
+      "expected": "2026-2027",
+      "actual": "2026-2027",
+      "correct": true
+    },
+    {
+      "document": "upper-year-cor.pdf",
+      "documentType": "cor",
+      "field": "semester",
+      "expected": "1st",
+      "actual": "1st",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "studentId",
+      "expected": "20260002",
+      "actual": "20260002",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "firstName",
+      "expected": "Upper",
+      "actual": "Upper",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "lastName",
+      "expected": "Test",
+      "actual": "Test",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "fullName",
+      "expected": "Upper Test",
+      "actual": "Upper Test",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "course",
+      "expected": "Bachelor of Science in Information Technology",
+      "actual": "Bachelor of Science in Information Technology",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "year",
+      "expected": "1",
+      "actual": "1",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "academicYear",
+      "expected": "2025-2026",
+      "actual": "2025-2026",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "semester",
+      "expected": "2nd",
+      "actual": "2nd",
+      "correct": true
+    },
+    {
+      "document": "upper-year-rog.pdf",
+      "documentType": "rog",
+      "field": "gwa",
+      "expected": "1.50",
+      "actual": "1.50",
+      "correct": true
+    }
+  ],
+  "accuracy": [
+    {
+      "documentType": "cor",
+      "testDocuments": 2,
+      "evaluatedFields": 16,
+      "correctFields": 16,
+      "accuracyPercent": 100.0,
+      "validationResult": "Title recognized; isolated signup baseline accepted. Other validation scenarios reported separately.",
+      "scope": "Three existing synthetic text-based fixtures only; no real-student/OCR generalization"
+    },
+    {
+      "documentType": "rog",
+      "testDocuments": 1,
+      "evaluatedFields": 9,
+      "correctFields": 9,
+      "accuracyPercent": 100.0,
+      "validationResult": "Title recognized; isolated signup baseline accepted. Other validation scenarios reported separately.",
+      "scope": "Three existing synthetic text-based fixtures only; no real-student/OCR generalization"
+    }
+  ],
+  "existingTests": {
+    "testSelection": [
+      "backend.tests.test_document_scanner",
+      "backend.tests.test_signup_identity_documents",
+      "backend.tests.test_student_document_upload_regression",
+      "backend.tests.test_student_profile_service.StudentProfileRequirementTests",
+      "backend.tests.test_student_profile_service.StudentDocumentSubmissionPolicyTests.test_valid_cor_is_system_approved_even_when_manual_account_review_is_enabled",
+      "backend.tests.test_romel_download_protection.RomelProtectionTests.test_malformed_pdf_rejected",
+      "backend.tests.test_romel_download_protection.RomelProtectionTests.test_password_assisted_processing_rejects_wrong_and_missing"
+    ],
+    "equivalentUnittestCommand": "py -3.12 -m unittest -v backend.tests.test_document_scanner backend.tests.test_signup_identity_documents backend.tests.test_student_document_upload_regression backend.tests.test_student_profile_service.StudentProfileRequirementTests backend.tests.test_student_profile_service.StudentDocumentSubmissionPolicyTests.test_valid_cor_is_system_approved_even_when_manual_account_review_is_enabled backend.tests.test_romel_download_protection.RomelProtectionTests.test_malformed_pdf_rejected backend.tests.test_romel_download_protection.RomelProtectionTests.test_password_assisted_processing_rejects_wrong_and_missing",
+    "count": 33,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "successful": true,
+    "elapsedSeconds": 1.156,
+    "interpretation": "Scanner text/layout tests exercise real helpers; signup/upload workflow tests largely mock parser/storage. Test pass count is not field accuracy."
+  },
+  "scenarios": [
+    {
+      "testId": "DOC-01",
+      "documentType": "COR",
+      "condition": "Existing first-year text PDF; real parser + isolated signup",
+      "expected": "Accept COR; first-year first-semester ROG exemption",
+      "actual": "Accepted/completed",
+      "status": "PASS",
+      "scope": "Validation",
+      "observed": {
+        "ok": true,
+        "year": "1",
+        "rogRequired": false,
+        "identityKind": "student_id"
+      },
+      "mockStorageWrites": 2
+    },
+    {
+      "testId": "DOC-02",
+      "documentType": "COR + ROG",
+      "condition": "Existing upper-year text PDFs; real parser + isolated signup",
+      "expected": "Accept current COR and previous-cycle ROG",
+      "actual": "Accepted/completed",
+      "status": "PASS",
+      "scope": "Validation",
+      "observed": {
+        "ok": true,
+        "year": "2",
+        "rogRequired": true,
+        "identityKind": "student_id"
+      },
+      "mockStorageWrites": 3
+    },
+    {
+      "testId": "DOC-03",
+      "documentType": "COR",
+      "condition": "Signup Student ID differs from COR",
+      "expected": "Reject cor_student_id_mismatch",
+      "actual": "HTTP 422: cor_student_id_mismatch",
+      "status": "PASS",
+      "scope": "Validation",
+      "observed": {
+        "httpStatus": 422,
+        "reason": "cor_student_id_mismatch"
+      },
+      "mockStorageWrites": 0
+    },
+    {
+      "testId": "DOC-04",
+      "documentType": "COR",
+      "condition": "Synthetic variant missing year; no declared year",
+      "expected": "Reject cor_year_level_not_detected",
+      "actual": "HTTP 422: cor_year_level_not_detected",
+      "status": "PASS",
+      "scope": "Validation",
+      "observed": {
+        "httpStatus": 422,
+        "reason": "cor_year_level_not_detected"
+      },
+      "mockStorageWrites": 0
+    },
+    {
+      "testId": "DOC-05",
+      "documentType": "COR",
+      "condition": "Synthetic variant with previous academic year",
+      "expected": "Reject cor_cycle_mismatch",
+      "actual": "HTTP 422: cor_cycle_mismatch",
+      "status": "PASS",
+      "scope": "Validation",
+      "observed": {
+        "httpStatus": 422,
+        "reason": "cor_cycle_mismatch"
+      },
+      "mockStorageWrites": 0
+    },
+    {
+      "testId": "DOC-06",
+      "documentType": "ROG",
+      "condition": "Synthetic variant not in required previous cycle",
+      "expected": "Reject rog_cycle_mismatch",
+      "actual": "HTTP 422: rog_cycle_mismatch",
+      "status": "PASS",
+      "scope": "Validation",
+      "observed": {
+        "httpStatus": 422,
+        "reason": "rog_cycle_mismatch"
+      },
+      "mockStorageWrites": 0
+    },
+    {
+      "testId": "DOC-07",
+      "documentType": "COR",
+      "condition": "Malformed PDF bytes through upload processing",
+      "expected": "Reject invalid_pdf_document",
+      "actual": "HTTP 422: invalid_pdf_document",
+      "status": "PASS",
+      "scope": "Validation",
+      "observed": {
+        "httpStatus": 422,
+        "reason": "invalid_pdf_document"
+      },
+      "mockStorageWrites": 0
+    },
+    {
+      "testId": "DOC-08",
+      "documentType": "COR",
+      "condition": "Standalone image upload to profile COR route",
+      "expected": "Reject pdf_required",
+      "actual": "HTTP 415: pdf_required",
+      "status": "PASS",
+      "scope": "Validation",
+      "observed": {
+        "httpStatus": 415,
+        "reason": "pdf_required"
+      },
+      "mockStorageWrites": 0
+    },
+    {
+      "testId": "DOC-09",
+      "documentType": "COR",
+      "condition": "Existing COR uploaded under another synthetic profile owner",
+      "expected": "Should not approve a different Student ID (exploratory safeguard expectation)",
+      "actual": "Accepted/completed",
+      "status": "LIMITATION",
+      "scope": "Validation",
+      "observed": {
+        "accepted": true,
+        "status": "approved",
+        "scan": {
+          "documentType": "cor",
+          "studentId": "20260002",
+          "firstName": "Upper",
+          "middleName": "",
+          "lastName": "Test",
+          "fullName": "Upper Test",
+          "course": "Bachelor of Science in Information Technology",
+          "year": "2",
+          "section": "",
+          "gwa": "",
+          "academicYear": "2026-2027",
+          "semester": "1st",
+          "hasAcademicConcern": false,
+          "academicConcernTerms": [],
+          "isValidCorDocument": true,
+          "documentTitle": "Certificate of Registration",
+          "acceptedCorTitles": [
+            "Advising Slip",
+            "Certificate of Registration"
+          ],
+          "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+          "yearDetectionSource": "year_level_pdf_row"
+        }
+      },
+      "mockStorageWrites": 1
+    },
+    {
+      "testId": "DOC-10",
+      "documentType": "ROG",
+      "condition": "Wrong-cycle ROG uploaded through profile replacement",
+      "expected": "Should not approve wrong academic period (exploratory safeguard expectation)",
+      "actual": "Accepted/completed",
+      "status": "LIMITATION",
+      "scope": "Validation",
+      "observed": {
+        "accepted": true,
+        "status": "approved",
+        "scan": {
+          "documentType": "rog",
+          "studentId": "20260002",
+          "firstName": "Upper",
+          "middleName": "",
+          "lastName": "Test",
+          "fullName": "Upper Test",
+          "course": "Bachelor of Science in Information Technology",
+          "year": "1",
+          "section": "",
+          "gwa": "1.50",
+          "academicYear": "2026-2027",
+          "semester": "2nd",
+          "hasAcademicConcern": false,
+          "academicConcernTerms": [],
+          "isValidCogDocument": true,
+          "documentTitle": "Report of Grades",
+          "acceptedCogTitles": [
+            "Report of Grades"
+          ],
+          "documentTitleRule": "ROG must contain Report of Grades in the document title.",
+          "yearDetectionSource": "year_level_pdf_row"
+        }
+      },
+      "mockStorageWrites": 1
+    },
+    {
+      "testId": "DOC-11",
+      "documentType": "COR",
+      "condition": "Synthetic variant missing course",
+      "expected": "Observe parser output and whether signup requires the missing field",
+      "actual": "Accepted/completed",
+      "status": "LIMITATION",
+      "scope": "Validation",
+      "observed": {
+        "ok": true,
+        "year": "2",
+        "rogRequired": true,
+        "identityKind": "student_id"
+      },
+      "mockStorageWrites": 3
+    },
+    {
+      "testId": "DOC-12",
+      "documentType": "ROG",
+      "condition": "ROG Student ID differs from signup/COR Student ID",
+      "expected": "Should reject a wrong-owner ROG (exploratory safeguard expectation)",
+      "actual": "Accepted/completed",
+      "status": "LIMITATION",
+      "scope": "Validation",
+      "observed": {
+        "ok": true,
+        "year": "2",
+        "rogRequired": true,
+        "identityKind": "student_id"
+      },
+      "mockStorageWrites": 3
+    },
+    {
+      "testId": "DOC-13",
+      "documentType": "COR",
+      "condition": "Image-only synthetic PDF through real parser",
+      "expected": "Use configured OCR fallback if runtime dependencies exist",
+      "actual": "Parser returned blank fields / invalid title; PDF-to-image fallback could not run (Poppler absent).",
+      "status": "DEPENDENCY BLOCKED",
+      "scope": "OCR capability",
+      "observed": {
+        "year": "",
+        "isValidCorDocument": false,
+        "studentId": "",
+        "course": "",
+        "yearDetectionSource": "year_level_text"
+      },
+      "mockStorageWrites": 0
+    },
+    {
+      "testId": "DOC-14",
+      "documentType": "Generic image",
+      "condition": "Direct image OCR helper on synthetic PNG",
+      "expected": "OCR if Tesseract executable exists; COR/ROG image upload remains unsupported",
+      "actual": "RuntimeError: tesseract_not_installed: Tesseract OCR is required for image-based PDFs and image uploads. Redeploy the backend using the repository Dockerfile so tesseract-ocr and poppler-utils a",
+      "status": "DEPENDENCY BLOCKED",
+      "scope": "OCR capability",
+      "observed": {
+        "exceptionType": "RuntimeError",
+        "message": "tesseract_not_installed: Tesseract OCR is required for image-based PDFs and image uploads. Redeploy the backend using the repository Dockerfile so tesseract-ocr and poppler-utils are installed."
+      },
+      "mockStorageWrites": 0
+    },
+    {
+      "testId": "DOC-15",
+      "documentType": "COR",
+      "condition": "Title/period only: no identity, course, or year level",
+      "expected": "Expose absent fields; title recognition is not full validation",
+      "actual": "studentId=''; course=''; year=''; titleValid=True",
+      "status": "PASS",
+      "scope": "Missing-field observation",
+      "observed": {
+        "documentType": "cor",
+        "studentId": "",
+        "firstName": "",
+        "middleName": "",
+        "lastName": "",
+        "fullName": "",
+        "course": "",
+        "year": "",
+        "section": "",
+        "gwa": "",
+        "academicYear": "2026-2027",
+        "semester": "1st",
+        "hasAcademicConcern": false,
+        "academicConcernTerms": [],
+        "isValidCorDocument": true,
+        "documentTitle": "Certificate of Registration",
+        "acceptedCorTitles": [
+          "Advising Slip",
+          "Certificate of Registration"
+        ],
+        "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title."
+      },
+      "mockStorageWrites": 0
+    }
+  ],
+  "syntheticVariantParserOutputs": {
+    "DOC-04": {
+      "documentType": "cor",
+      "studentId": "20260002",
+      "firstName": "Upper",
+      "middleName": "",
+      "lastName": "Test",
+      "fullName": "Upper Test",
+      "course": "Bachelor of Science in Information Technology",
+      "year": "",
+      "section": "",
+      "gwa": "",
+      "academicYear": "2026-2027",
+      "semester": "1st",
+      "hasAcademicConcern": false,
+      "academicConcernTerms": [],
+      "isValidCorDocument": true,
+      "documentTitle": "Certificate of Registration",
+      "acceptedCorTitles": [
+        "Advising Slip",
+        "Certificate of Registration"
+      ],
+      "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+      "yearDetectionSource": "year_level_text"
+    },
+    "DOC-05": {
+      "documentType": "cor",
+      "studentId": "20260002",
+      "firstName": "Upper",
+      "middleName": "",
+      "lastName": "Test",
+      "fullName": "Upper Test",
+      "course": "Bachelor of Science in Information Technology",
+      "year": "2",
+      "section": "",
+      "gwa": "",
+      "academicYear": "2025-2026",
+      "semester": "1st",
+      "hasAcademicConcern": false,
+      "academicConcernTerms": [],
+      "isValidCorDocument": true,
+      "documentTitle": "Certificate of Registration",
+      "acceptedCorTitles": [
+        "Advising Slip",
+        "Certificate of Registration"
+      ],
+      "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+      "yearDetectionSource": "year_level_pdf_row"
+    },
+    "DOC-06": {
+      "documentType": "rog",
+      "studentId": "20260002",
+      "firstName": "Upper",
+      "middleName": "",
+      "lastName": "Test",
+      "fullName": "Upper Test",
+      "course": "Bachelor of Science in Information Technology",
+      "year": "1",
+      "section": "",
+      "gwa": "1.50",
+      "academicYear": "2026-2027",
+      "semester": "2nd",
+      "hasAcademicConcern": false,
+      "academicConcernTerms": [],
+      "isValidCogDocument": true,
+      "documentTitle": "Report of Grades",
+      "acceptedCogTitles": [
+        "Report of Grades"
+      ],
+      "documentTitleRule": "ROG must contain Report of Grades in the document title.",
+      "yearDetectionSource": "year_level_pdf_row"
+    },
+    "DOC-11": {
+      "documentType": "cor",
+      "studentId": "20260002",
+      "firstName": "Upper",
+      "middleName": "",
+      "lastName": "Test",
+      "fullName": "Upper Test",
+      "course": "",
+      "year": "2",
+      "section": "",
+      "gwa": "",
+      "academicYear": "2026-2027",
+      "semester": "1st",
+      "hasAcademicConcern": false,
+      "academicConcernTerms": [],
+      "isValidCorDocument": true,
+      "documentTitle": "Certificate of Registration",
+      "acceptedCorTitles": [
+        "Advising Slip",
+        "Certificate of Registration"
+      ],
+      "documentTitleRule": "COR must contain Advising Slip or Certificate of Registration in the document title.",
+      "yearDetectionSource": "year_level_pdf_row"
+    },
+    "DOC-12": {
+      "documentType": "rog",
+      "studentId": "20260099",
+      "firstName": "Upper",
+      "middleName": "",
+      "lastName": "Test",
+      "fullName": "Upper Test",
+      "course": "Bachelor of Science in Information Technology",
+      "year": "1",
+      "section": "",
+      "gwa": "1.50",
+      "academicYear": "2025-2026",
+      "semester": "2nd",
+      "hasAcademicConcern": false,
+      "academicConcernTerms": [],
+      "isValidCogDocument": true,
+      "documentTitle": "Report of Grades",
+      "acceptedCogTitles": [
+        "Report of Grades"
+      ],
+      "documentTitleRule": "ROG must contain Report of Grades in the document title.",
+      "yearDetectionSource": "year_level_pdf_row"
+    }
+  },
+  "trackedFilesUnchanged": 390,
+  "safety": "No network, production documents, production writes or dependency installation",
+  "broaderSelectionNote": "A prior 34-test selection included an unrelated profile-submission test with an unmocked draft lookup; external connection was blocked. See Broader_Test_Execution.txt. Final 33-test selection retains the COR upload policy test, not that profile-form test.",
+  "limitations": [
+    "Only 3 simple synthetic text PDFs; 25 correlated field comparisons, not independent trials",
+    "No representative real-document extraction accuracy established",
+    "OCR dependencies unavailable locally despite misleading health flag",
+    "Workflow dependencies mocked; not an authenticated HTTP/browser or database acceptance test",
+    "No historical executed COR/ROG field-accuracy dataset located; current run is new evidence"
+  ]
+}

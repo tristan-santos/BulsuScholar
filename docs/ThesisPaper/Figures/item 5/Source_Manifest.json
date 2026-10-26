@@ -1,0 +1,589 @@
+{
+  "task": "docs/ThesisPaper/Task Extract the Figures.txt",
+  "executionDateUTC": "2026-10-25T08:06:54.751225+00:00",
+  "method": "Exact source slices and actual captured local output; omitted ranges marked. Synthetic field references independently transcribed.",
+  "reviewedSourceSha256": {
+    "backend/document_scanner.py": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa",
+    "backend/signup_service.py": "d3dcf641b5279754873a8187a32a3dffec995db8864f3cd99b3a3d73230da421",
+    "backend/student_profile_service.py": "4c2c3d6080cd8901adc21e1a6d943cb5880c1dd4345eef66a072c8431c5f6f67",
+    "backend/main.py": "15432fe1eb27a40f9b91d305a3e22d923aea9bd853d32159d79413a4c94a6f82",
+    "backend/download_protection.py": "b8cb1b93ccc88c4e846ef2c5a49c9b692d760ceaedb1533a517b6952e75de5b4",
+    "backend/requirements.txt": "e98a61b6f909cfa567bfbcb70dc8a318149fea972036b6ef6605e2648be15cc6",
+    "Dockerfile": "2038001a485594aef387400e0822d529fb635409203ef06c741b363fc87ee20a",
+    "backend/tests/test_document_scanner.py": "17a56c28ac05879f71aed397f8773e77500e77b1f0adcee1627c43223220f069",
+    "backend/tests/test_signup_identity_documents.py": "a1294ed6d9d279683aabdfb9fe531679d522842b61b475562a09a0b4a0630efb",
+    "backend/tests/test_student_document_upload_regression.py": "9ed7de361ebe147290317d407df2b436b8041bd87b305c2dd649328550e2ddae",
+    "backend/tests/test_student_profile_service.py": "a024ef9c746987c5adac15d567ba2fe462dc690ea7a6dbcf8fee82a04beb93a8",
+    "backend/tests/pdf_fixtures.py": "214ae6a86cf92023c40cd7e4b001c29afcc24e9d3d4c9bfd78989f64c848130d",
+    "src/services/documentScanService.js": "adc2a873a2aedcb4b40c6ccfe24920fcbd69b93b99e3e4d60e7e26bbfa93d6a4",
+    "src/pages/SignupPage.jsx": "34bf7fbb23ab9a940713eba7b793be9010f4139b85e24cc906e2541359dcb798",
+    "docs/ThesisPaper/Task Extract the Figures.txt": "b45291072a40ebb48246918bf852322194c29b3d9652d4061858c1a0b6688ca5"
+  },
+  "functionInventory": [
+    {
+      "file": "backend/document_scanner.py",
+      "function": "configure_tesseract_command",
+      "start": 39,
+      "end": 52,
+      "purpose": "Selects OCR executable",
+      "formats": "Runtime dependency",
+      "fields": "Executable path",
+      "validation": "Accepts the first nonempty candidate string; does not verify path existence."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "get_scanner_dependency_status",
+      "start": 58,
+      "end": 64,
+      "purpose": "Reports scanner prerequisites",
+      "formats": "Runtime dependency",
+      "fields": "Tesseract/Poppler/pdf2image availability",
+      "validation": "Reported Tesseract availability can be true for a nonexistent configured path."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "ocr_image",
+      "start": 111,
+      "end": 120,
+      "purpose": "OCR pre-processing and recognition",
+      "formats": "Pillow-readable image object",
+      "fields": "Text",
+      "validation": "Grayscale + autocontrast; missing executable raises tesseract_not_installed."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_pdf_text",
+      "start": 123,
+      "end": 137,
+      "purpose": "Reads PDF page text, then optional OCR",
+      "formats": "PDF bytes",
+      "fields": "Text",
+      "validation": "OCR only if combined embedded text is empty; conversion errors return empty string."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_image_text",
+      "start": 140,
+      "end": 142,
+      "purpose": "Loads an image and calls OCR",
+      "formats": "Generic image bytes; not COR/ROG upload permission",
+      "fields": "Text",
+      "validation": "Uses Pillow and OCR helper; errors propagate."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "find_first",
+      "start": 145,
+      "end": 150,
+      "purpose": "Regex field utility",
+      "formats": "Already extracted text",
+      "fields": "First capture value",
+      "validation": "First matching expression wins; no authenticity verification."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "detect_cor_document_title",
+      "start": 153,
+      "end": 180,
+      "purpose": "Recognizes COR/advising title text",
+      "formats": "Extracted text from PDF",
+      "fields": "Title and isValidCorDocument",
+      "validation": "Finds Advising Slip or Certificate of Registration anywhere in normalized text, not verified issuer/title position."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "detect_cog_document_title",
+      "start": 183,
+      "end": 205,
+      "purpose": "Recognizes Report of Grades text",
+      "formats": "Extracted text from PDF",
+      "fields": "Title and isValidCogDocument",
+      "validation": "Requires Report of Grades text; COG/ROG is an internal alias, not support for arbitrary transcript titles."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_course",
+      "start": 208,
+      "end": 234,
+      "purpose": "Canonical course identification",
+      "formats": "Extracted text",
+      "fields": "Course",
+      "validation": "Known course names, abbreviation map, then Bachelor regex fallback."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "parse_year_level_value",
+      "start": 245,
+      "end": 261,
+      "purpose": "Normalizes year-level values",
+      "formats": "Text",
+      "fields": "Year level",
+      "validation": "Recognizes numeric/ordinal/word years one through four."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_year",
+      "start": 264,
+      "end": 292,
+      "purpose": "Finds labelled year level",
+      "formats": "Extracted text",
+      "fields": "Year level",
+      "validation": "Uses year-level context rather than treating an academic year as student year."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_year_from_positioned_words",
+      "start": 295,
+      "end": 315,
+      "purpose": "Reads year label row",
+      "formats": "PDF positioned-word dictionaries",
+      "fields": "Year level",
+      "validation": "Finds value by coordinate proximity; regression fixtures are synthetic dictionaries."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_year_from_pdf_layout",
+      "start": 318,
+      "end": 327,
+      "purpose": "PDF layout year fallback",
+      "formats": "PDF bytes",
+      "fields": "Year level",
+      "validation": "Attempts pdfplumber word layout; failures return empty string."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_section",
+      "start": 330,
+      "end": 341,
+      "purpose": "Section matching",
+      "formats": "Extracted text",
+      "fields": "Section",
+      "validation": "Regex extraction; returns blank when absent."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_gwa_result",
+      "start": 344,
+      "end": 407,
+      "purpose": "Finds printed GWA using labels/context",
+      "formats": "Extracted text",
+      "fields": "GWA and debug rules",
+      "validation": "Heuristics match 1-5 grade-like values; does not recompute GWA from subject units."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_gwa",
+      "start": 410,
+      "end": 411,
+      "purpose": "Returns printed GWA",
+      "formats": "Extracted text",
+      "fields": "GWA",
+      "validation": "Returns extract_gwa_result value."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "normalize_grade_token",
+      "start": 417,
+      "end": 428,
+      "purpose": "Normalizes grade tokens",
+      "formats": "Text",
+      "fields": "Grade token",
+      "validation": "Uppercases text, normalizes comma decimals and whitespace."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "is_grade_token",
+      "start": 431,
+      "end": 432,
+      "purpose": "Checks supported final-grade token",
+      "formats": "Text",
+      "fields": "Boolean",
+      "validation": "Recognizes numeric grade/concern token patterns."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "grade_debug_from_grades",
+      "start": 435,
+      "end": 455,
+      "purpose": "Builds final-grade concern result",
+      "formats": "Parsed grade lists",
+      "fields": "Grades, concernMatches, debug",
+      "validation": "Concern set: 4/5 variants, INC, UD, OD; includes Failed remarks matches."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_final_grades_from_pdf_tables",
+      "start": 458,
+      "end": 531,
+      "purpose": "First ROG grade path",
+      "formats": "PDF bytes",
+      "fields": "Final grades/remarks/debug",
+      "validation": "Reads table Final column; avoids unit/average rows through heuristics."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_final_grades_from_pdf_words",
+      "start": 534,
+      "end": 658,
+      "purpose": "Second ROG grade path",
+      "formats": "PDF bytes",
+      "fields": "Final grades/remarks/debug",
+      "validation": "Uses Final/Remarks column coordinates when table cells fail."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_final_grades_from_text",
+      "start": 661,
+      "end": 731,
+      "purpose": "ROG text fallback",
+      "formats": "Extracted text",
+      "fields": "Final grades/remarks/debug",
+      "validation": "Header-anchored heuristics; skips URL/footer/average lines; not a full transcript authenticity check."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "clean_name_candidate",
+      "start": 73,
+      "end": 83,
+      "purpose": "Removes label noise from name text",
+      "formats": "Text",
+      "fields": "Name candidate",
+      "validation": "Cuts selected academic labels; retains selected name punctuation/letters."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "is_likely_name_candidate",
+      "start": 86,
+      "end": 93,
+      "purpose": "Filters name candidates",
+      "formats": "Text",
+      "fields": "Boolean",
+      "validation": "Checks token count/blocked words and letter pattern; later extraction has additional fallback paths."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "collect_labeled_name",
+      "start": 96,
+      "end": 108,
+      "purpose": "Collects split labelled names",
+      "formats": "Text lines",
+      "fields": "Name candidate",
+      "validation": "Looks at limited following lines; stops at academic labels."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_name",
+      "start": 733,
+      "end": 816,
+      "purpose": "Selects a name and parses parts",
+      "formats": "Extracted text",
+      "fields": "Full/first/last name; middleName blank",
+      "validation": "Handles comma/space forms; middleName output is always blank, not a complete multi-part-name parser."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_semester",
+      "start": 819,
+      "end": 873,
+      "purpose": "Reads academic year and term",
+      "formats": "Extracted text",
+      "fields": "academicYear, semester",
+      "validation": "Supports first/second semester patterns; no explicit Summer term extraction branch."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_flags",
+      "start": 876,
+      "end": 884,
+      "purpose": "Converts grade concerns to flags",
+      "formats": "Text/grade debug",
+      "fields": "hasAcademicConcern, academicConcernTerms",
+      "validation": "Only called for ROG/COG by parse_document."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "parse_document",
+      "start": 887,
+      "end": 923,
+      "purpose": "Builds common extraction dictionary",
+      "formats": "Already extracted text",
+      "fields": "studentId, names, course, year, section, gwa, academicYear, semester, flags/title",
+      "validation": "Student ID regex removes hyphens; title flags are classification, not overall acceptance."
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "parse_pdf_document",
+      "start": 926,
+      "end": 970,
+      "purpose": "Main document parser",
+      "formats": "PDF bytes",
+      "fields": "Common fields plus yearDetectionSource",
+      "validation": "ROG table -> positioned-word -> text fallback; layout year overrides text year."
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "_read_signup_file",
+      "start": 142,
+      "end": 157,
+      "purpose": "Signup type/size checks",
+      "formats": "COR/ROG PDF; identity PDF/PNG/JPEG/WebP",
+      "fields": "File bytes/MIME",
+      "validation": "Required/nonempty; max 10 MiB; allowed MIME; PDF MIME or .pdf filename check for academic files."
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "create_signup_document_batch",
+      "start": 172,
+      "end": 306,
+      "purpose": "Pre-signup document validation/storage",
+      "formats": "COR/ROG PDF; supported identity files",
+      "fields": "Scan metadata and signup batch",
+      "validation": "COR ID/year/cycle/title/policy; ROG title/previous-cycle/concerns. ROG ID not compared."
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "build_semester_tag",
+      "start": 333,
+      "end": 338,
+      "purpose": "Canonical academic-cycle string",
+      "formats": "Parsed scan dictionary",
+      "fields": "Cycle tag",
+      "validation": "Combines year and normalized semester; returns blank if required components absent."
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "expected_previous_rog_year_level",
+      "start": 399,
+      "end": 406,
+      "purpose": "Expected previous ROG year",
+      "formats": "Current year/cycle",
+      "fields": "Expected ROG year",
+      "validation": "Encodes semester-dependent progression policy."
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "validate_student_signup",
+      "start": 633,
+      "end": 820,
+      "purpose": "Final signup revalidation",
+      "formats": "Saved batch and signup payload",
+      "fields": "Accepted/rejected result",
+      "validation": "Rechecks identity/batch/current COR/prior ROG period and year rules; not a universal required-field checker."
+    },
+    {
+      "file": "backend/student_profile_service.py",
+      "function": "upload_student_document",
+      "start": 885,
+      "end": 967,
+      "purpose": "Profile replacement upload",
+      "formats": "COR/ROG PDF only; identity PDF/PNG/JPEG/WebP",
+      "fields": "Saved scan/submission",
+      "validation": "10 MiB, supported MIME, COR policy/title or ROG title. Does not recheck scanned owner/cycle/ROG concerns."
+    },
+    {
+      "file": "backend/student_profile_service.py",
+      "function": "_system_approve_submission",
+      "start": 802,
+      "end": 843,
+      "purpose": "Automatic review metadata",
+      "formats": "Already parsed submission",
+      "fields": "Approved status/review/audit/compatibility",
+      "validation": "Marks accepted academic replacements approved; it is not an additional identity/period parser validator."
+    },
+    {
+      "file": "backend/main.py",
+      "function": "scan_document",
+      "start": 1554,
+      "end": 1610,
+      "purpose": "Public extraction endpoint",
+      "formats": "COR/ROG PDF; generic other-kind images",
+      "fields": "Extracted dictionary",
+      "validation": "Rejects empty/oversize/unsupported upload types; handles OCR RuntimeError. Does not enforce student ownership/cycle."
+    },
+    {
+      "file": "backend/download_protection.py",
+      "function": "processing_pdf",
+      "start": 93,
+      "end": 112,
+      "purpose": "PDF structural/password processing",
+      "formats": "PDF bytes",
+      "fields": "Plain processing copy; original retained by caller",
+      "validation": "Malformed PDF -> 422 invalid_pdf_document; encrypted PDF needs correct password; derivative size check."
+    }
+  ],
+  "figures": [
+    {
+      "id": 1,
+      "title": "COR/ROG Extraction Implementation",
+      "filename": "Figure_1_COR_ROG_Extraction_Implementation.png",
+      "blocks": [
+        {
+          "file": "backend/document_scanner.py",
+          "function": "parse_pdf_document",
+          "start": 926,
+          "end": 936,
+          "functionStart": 926,
+          "functionEnd": 970,
+          "text": "def parse_pdf_document(file_bytes: bytes, document_type: str) -> dict[str, Any]:\n    text = extract_pdf_text(file_bytes)\n    layout_year = extract_year_from_pdf_layout(file_bytes)\n    final_grade_debug = None\n    if document_type.lower() in {\"cog\", \"rog\"}:\n        table_grade_debug = extract_final_grades_from_pdf_tables(file_bytes)\n        if table_grade_debug.get(\"grades\"):\n            final_grade_debug = table_grade_debug\n        else:\n            word_grade_debug = extract_final_grades_from_pdf_words(file_bytes)\n            if word_grade_debug.get(\"grades\") or word_grade_debug.get(\"concernMatches\"):"
+        },
+        {
+          "file": "backend/document_scanner.py",
+          "function": "parse_pdf_document",
+          "start": 949,
+          "end": 950,
+          "functionStart": 926,
+          "functionEnd": 970,
+          "text": "            else:\n                fallback_debug = extract_final_grades_from_text(text)"
+        },
+        {
+          "file": "backend/document_scanner.py",
+          "function": "parse_pdf_document",
+          "start": 964,
+          "end": 970,
+          "functionStart": 926,
+          "functionEnd": 970,
+          "text": "    parsed = parse_document(text, document_type, final_grade_debug)\n    if layout_year:\n        parsed[\"year\"] = layout_year\n        parsed[\"yearDetectionSource\"] = \"year_level_pdf_row\"\n    else:\n        parsed[\"yearDetectionSource\"] = \"year_level_text\"\n    return parsed"
+        }
+      ],
+      "explanation": "Original entry point and ROG table/word/text fallback decisions. extract_pdf_text handles embedded text and, only when no text is returned, PDF-image OCR. The result dictionary is built by parse_document. Middle ranges are explicitly omitted; complete function ranges appear in the inventory.",
+      "caption": "Figure 3.X. Actual COR/ROG PDF parsing and fallback selection in BulSUScholar.",
+      "originalLineCount": 20,
+      "omittedRanges": [
+        {
+          "file": "backend/document_scanner.py",
+          "start": 937,
+          "end": 948
+        },
+        {
+          "file": "backend/document_scanner.py",
+          "start": 951,
+          "end": 963
+        }
+      ],
+      "imageSize": [
+        1450,
+        905
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Document Validation",
+      "filename": "Figure_2_Document_Validation.png",
+      "blocks": [
+        {
+          "file": "backend/signup_service.py",
+          "function": "create_signup_document_batch",
+          "start": 205,
+          "end": 207,
+          "functionStart": 172,
+          "functionEnd": 306,
+          "text": "    scanned_student_id = normalize_student_id(cor_scan.get(\"studentId\"))\n    if not scanned_student_id or scanned_student_id != normalized_student_id:\n        raise HTTPException(status_code=422, detail=\"cor_student_id_mismatch\")"
+        },
+        {
+          "file": "backend/signup_service.py",
+          "function": "create_signup_document_batch",
+          "start": 212,
+          "end": 220,
+          "functionStart": 172,
+          "functionEnd": 306,
+          "text": "    if not detected_cor_year and not submitted_year:\n        raise HTTPException(status_code=422, detail=\"cor_year_level_not_detected\")\n    year = submitted_year or detected_cor_year\n    year_level_mismatch = bool(submitted_year and detected_cor_year and submitted_year != detected_cor_year)\n\n    current_cycle = get_current_semester_tag()\n    cor_cycle = build_semester_tag(cor_scan)\n    if not cor_cycle or cor_cycle != current_cycle:\n        raise HTTPException(status_code=422, detail=\"cor_cycle_mismatch\")"
+        },
+        {
+          "file": "backend/signup_service.py",
+          "function": "create_signup_document_batch",
+          "start": 232,
+          "end": 238,
+          "functionStart": 172,
+          "functionEnd": 306,
+          "text": "        rog_scan = parse_pdf_document(rog_body, \"cog\")\n        if rog_scan.get(\"isValidCogDocument\") is False:\n            raise HTTPException(status_code=422, detail=\"invalid_rog_document\")\n        if build_semester_tag(rog_scan) != previous_semester_tag(current_cycle):\n            raise HTTPException(status_code=422, detail=\"rog_cycle_mismatch\")\n        if rog_scan.get(\"hasAcademicConcern\"):\n            raise HTTPException(status_code=422, detail=\"rog_academic_concern\")"
+        }
+      ],
+      "explanation": "Original signup rules for COR identity, usable year level, current COR cycle, recognized ROG title, previous ROG cycle and detected academic concerns. This is signup validation, not a claim that profile replacements execute the same checks. Setup, policy and other omitted lines remain outside this slice.",
+      "caption": "Figure 3.Y. Signup validation of COR identity and academic period, with ROG period and concern checks.",
+      "originalLineCount": 19,
+      "omittedRanges": [
+        {
+          "file": "backend/signup_service.py",
+          "start": 208,
+          "end": 211
+        },
+        {
+          "file": "backend/signup_service.py",
+          "start": 221,
+          "end": 231
+        }
+      ],
+      "imageSize": [
+        1450,
+        876
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Verified Local Test Results",
+      "filename": "Figure_3_Verified_Test_Results.png",
+      "logFile": "Evaluation_Console.txt",
+      "logLineRanges": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        10,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        23,
+        24,
+        25
+      ],
+      "explanation": "An exact selection from the captured evaluation console, not a simulated terminal. Omitted log lines are marked. Full console output and full unittest output are provided separately. Results are local and synthetic; no production, real-student or OCR accuracy is claimed.",
+      "caption": "Figure 4.X. Captured local synthetic extraction measurements and isolated validation outcomes.",
+      "imageSize": [
+        1450,
+        847
+      ]
+    }
+  ],
+  "referenceFixtures": [
+    {
+      "file": "docs\\qa\\first-year-cor.pdf",
+      "sha256": "614d73eb59b09f71188c449fc50c38f6d3d79d62f42b0e4e3d8b1a9df81fd537",
+      "referenceBasis": "Transcribed from visible TEST-labelled source PDF text; course/name/semester use documented canonical representation"
+    },
+    {
+      "file": "docs\\qa\\upper-year-cor.pdf",
+      "sha256": "92fba1984c1cb3158850566f61f4ec9532f8abc3244b1a860fd732fc6e09479e",
+      "referenceBasis": "Transcribed from visible TEST-labelled source PDF text; course/name/semester use documented canonical representation"
+    },
+    {
+      "file": "docs\\qa\\upper-year-rog.pdf",
+      "sha256": "bf2c54cd51f86062022465dcdf19330d5c5e81769ba9552097908d9f3525878c",
+      "referenceBasis": "Transcribed from visible TEST-labelled source PDF text; course/name/semester use documented canonical representation"
+    }
+  ],
+  "runnerSha256": "08faa22ba926f26b6abc99db74174c727c6674e42122b47662233d5b0d8f19a0",
+  "recordedResultsSha256": "56256cc84b090b209575b08a3dac889c36979410c6dbd35f657681a7bd8ab611",
+  "trackedFilesVerifiedUnchanged": 390,
+  "pdfPageCount": 15,
+  "limitations": [
+    "Only 3 simple synthetic text PDFs; 25 correlated field comparisons, not independent trials",
+    "No representative real-document extraction accuracy established",
+    "OCR dependencies unavailable locally despite misleading health flag",
+    "Workflow dependencies mocked; not an authenticated HTTP/browser or database acceptance test",
+    "No historical executed COR/ROG field-accuracy dataset located; current run is new evidence"
+  ],
+  "scenarioStatusCounts": {
+    "PASS": 9,
+    "LIMITATION": 4,
+    "DEPENDENCY BLOCKED": 2
+  }
+}

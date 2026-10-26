@@ -1,0 +1,210 @@
+{
+  "snapshot": "2026-10-25T14:23:04+08:00",
+  "method": "Exact source slicing; read-only inspection; no live data or external services",
+  "sourceFile": "backend/scholarship_rules.py",
+  "sourceHashes": {
+    "backend/scholarship_rules.py": "d20ee3c363fa833acda17439f330db155eacbf9257712d8283ad40a3c319c4a6",
+    "src/services/recommendedScholarshipService.js": "9c4f7e188435abaae4f61656a52ae407d1c5a30b6af8a0f91cf17333e62b24fb",
+    "src/pages/StudentRecommendedScholarshipsPage.jsx": "a9b836763f34bea3dac6ca2a438912a207e4a8ddcbf2107391d809682d5008e7",
+    "src/services/scholarshipChoiceService.js": "a4c7c57006c578a5d89e3d403a9e79937a6d99bb74f8c707e92bfd99a3ee2e0e",
+    "src/services/workflowService.js": "b4933bb06352e21117d67810581024d09134f830f3027def563d295d7dbd210e",
+    "backend/main.py": "15432fe1eb27a40f9b91d305a3e22d923aea9bd853d32159d79413a4c94a6f82",
+    "backend/workflow_service.py": "f3b8da3b682a002efe076b3ba1f9009b2fa59360b935d4629a74799b8a315fb2",
+    "backend/scholarship_choice_service.py": "8d7e62b4e54b912cdfda5dd8f793cd8af83a87729c5aef8c5650bac84933492d",
+    "docs/ThesisPaper/Task Extract the Figures.txt": "6bf59f948afefe848ec1d42279cfc7de40be271bb6a1ed0d266f0e190274e718"
+  },
+  "functionBoundaries": {
+    "to_provider_type": {
+      "start": 14,
+      "end": 22
+    },
+    "get_scholarship_policy": {
+      "start": 25,
+      "end": 27
+    },
+    "get_current_academic_year": {
+      "start": 30,
+      "end": 32
+    },
+    "get_current_semester_tag": {
+      "start": 35,
+      "end": 45
+    },
+    "get_document_urls_for_student": {
+      "start": 48,
+      "end": 63
+    },
+    "validate_scholarship_documents": {
+      "start": 66,
+      "end": 104
+    },
+    "is_gwa_eligible": {
+      "start": 107,
+      "end": 113
+    },
+    "check_scholarship_eligibility": {
+      "start": 116,
+      "end": 134
+    },
+    "recommend_scholarships": {
+      "start": 137,
+      "end": 216
+    },
+    "_to_float": {
+      "start": 219,
+      "end": 225
+    },
+    "_to_int": {
+      "start": 228,
+      "end": 232
+    },
+    "_normalize_text": {
+      "start": 235,
+      "end": 236
+    },
+    "_location_score": {
+      "start": 239,
+      "end": 262
+    },
+    "_recommendation_label": {
+      "start": 265,
+      "end": 274
+    }
+  },
+  "references": {
+    "core": "backend/scholarship_rules.py:137-216",
+    "setup": "backend/scholarship_rules.py:141-143",
+    "location": "backend/scholarship_rules.py:239-262",
+    "normalization": "backend/scholarship_rules.py:235-236",
+    "policy": "backend/scholarship_rules.py:6-11; backend/scholarship_rules.py:15-28",
+    "labels": "backend/scholarship_rules.py:265-274",
+    "api": "backend/main.py:797",
+    "workflow": "src/services/workflowService.js:100",
+    "loader": "src/services/recommendedScholarshipService.js:195",
+    "call": "src/services/recommendedScholarshipService.js:280",
+    "fallback": "src/services/recommendedScholarshipService.js:76",
+    "fallback_trigger": "src/services/recommendedScholarshipService.js:285",
+    "display": "src/pages/StudentRecommendedScholarshipsPage.jsx:150",
+    "display_sort": "src/pages/StudentRecommendedScholarshipsPage.jsx:217",
+    "choice": "src/services/scholarshipChoiceService.js:3",
+    "block": "src/services/scholarshipChoiceService.js:70",
+    "application": "backend/workflow_service.py:476",
+    "reservation": "backend/scholarship_choice_service.py:72"
+  },
+  "figures": [
+    {
+      "id": 1,
+      "title": "Scholarship Eligibility Filtering",
+      "ranges": [
+        [
+          146,
+          157
+        ]
+      ],
+      "file": "Figure_1_Scholarship_Eligibility_Filtering.png",
+      "explanation": "This loop skips scholarships when applications are blocked, when the enabled/open flags fail the shown condition, or when the student's GWA is missing or exceeds the required minimum. A missing scholarship GWA requirement is resolved using the provider policy; these are recommendation-stage filters, not the complete application-approval checks.",
+      "caption": "Figure 3.X. Recommendation-stage filtering using application availability and minimum-GWA conditions.",
+      "omissions": "This is one continuous extract. Input preparation on lines 137-145 and the following scoring and result construction are outside this extract.",
+      "blocks": [
+        {
+          "start": 146,
+          "end": 157,
+          "text": "    for item in scholarships:\n        if item.get(\"applicationsBlocked\") is True:\n            continue\n        if item.get(\"applicationEnabled\") is False and item.get(\"applyOpen\") is not True:\n            continue\n\n        minimum_gwa = _to_float(item.get(\"minimumGwa\") or item.get(\"minGwa\") or item.get(\"minimumGrade\"))\n        provider = item.get(\"providerLabel\") or item.get(\"grantorName\") or item.get(\"title\") or item.get(\"name\") or \"\"\n        if minimum_gwa is None:\n            minimum_gwa = _to_float(get_scholarship_policy(provider)[\"minGwa\"]) or 2.25\n        if student_gwa is None or student_gwa > minimum_gwa:\n            continue"
+        }
+      ],
+      "sourceLineCount": 12
+    },
+    {
+      "id": 2,
+      "title": "Weighted Recommendation Scoring",
+      "ranges": [
+        [
+          160,
+          161
+        ],
+        [
+          167,
+          169
+        ],
+        [
+          173,
+          173
+        ],
+        [
+          181,
+          185
+        ]
+      ],
+      "file": "Figure_2_Weighted_Recommendation_Scoring.png",
+      "explanation": "The code adds GWA fit, roster popularity, location fit and a fixed completeness component with an image bonus to obtain one ranking score. The location calculation is delegated to _location_score; the high-grade flag and maximum roster denominator are prepared earlier on lines 141-143 and are explained in Section C.",
+      "caption": "Figure 3.Y. Weighted recommendation-score calculation using GWA fit, roster popularity, location fit and image availability.",
+      "omissions": "Four separate original ranges are shown. Lines 162-166, 170-172 and 174-180 are omitted and explicitly marked; no replacement code or pseudocode is inserted.",
+      "blocks": [
+        {
+          "start": 160,
+          "end": 161,
+          "text": "        grade_margin = max(0.0, minimum_gwa - student_gwa)\n        grade_score = min(40.0, 24.0 + (grade_margin * 12.0))"
+        },
+        {
+          "start": 167,
+          "end": 169,
+          "text": "        roster_count = _to_int(item.get(\"rosterCount\"))\n        popularity_weight = 30.0 if is_high_grade_student else 22.0\n        popularity_score = (roster_count / max_roster * popularity_weight) if max_roster > 0 else 0.0"
+        },
+        {
+          "start": 173,
+          "end": 173,
+          "text": "        location_score = _location_score(student, item)"
+        },
+        {
+          "start": 181,
+          "end": 185,
+          "text": "        completeness_score = 8.0\n        if item.get(\"profileImageUrl\") or item.get(\"authorImageUrl\") or item.get(\"imageUrl\"):\n            completeness_score += 2.0\n\n        score = grade_score + popularity_score + location_score + completeness_score"
+        }
+      ],
+      "sourceLineCount": 11
+    },
+    {
+      "id": 3,
+      "title": "Scholarship Ranking",
+      "ranges": [
+        [
+          187,
+          204
+        ]
+      ],
+      "file": "Figure_3_Scholarship_Ranking.png",
+      "explanation": "Each eligible scholarship is stored with its score rounded to four decimal places and with explanatory metadata. The final sort places higher stored scores first; equal stored scores retain their incoming order because Python's list sort is stable.",
+      "caption": "Figure 3.Z. Construction of recommendation results and descending ranking by the computed score.",
+      "omissions": "This is one continuous extract. Earlier score calculation and the later API response wrapper are outside this extract.",
+      "blocks": [
+        {
+          "start": 187,
+          "end": 204,
+          "text": "        recommendations.append(\n            {\n                \"item\": item,\n                \"score\": round(score, 4),\n                \"label\": label,\n                \"reasons\": reasons[:4],\n                \"criteria\": {\n                    \"gwa\": student_gwa,\n                    \"minimumGwa\": minimum_gwa,\n                    \"rosterCount\": roster_count,\n                    \"gradeScore\": round(grade_score, 2),\n                    \"popularityScore\": round(popularity_score, 2),\n                    \"locationScore\": round(location_score, 2),\n                },\n            }\n        )\n\n    recommendations.sort(key=lambda row: row[\"score\"], reverse=True)"
+        }
+      ],
+      "sourceLineCount": 18
+    }
+  ],
+  "pngMetadata": [
+    {
+      "path": "Figure_1_Scholarship_Eligibility_Filtering.png",
+      "width": 1817,
+      "height": 692,
+      "dpi": 300
+    },
+    {
+      "path": "Figure_2_Weighted_Recommendation_Scoring.png",
+      "width": 1579,
+      "height": 768,
+      "dpi": 300
+    },
+    {
+      "path": "Figure_3_Scholarship_Ranking.png",
+      "width": 1500,
+      "height": 920,
+      "dpi": 300
+    }
+  ],
+  "pdfPages": 9
+}
