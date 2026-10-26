@@ -107,9 +107,30 @@ def _import_identity(data: dict[str, Any]) -> str:
     ))
 
 
+def _roster_name_key(data: dict[str, Any]) -> str:
+    name = _full_name(data)
+    if "," in name:
+        surname, given_names = name.split(",", 1)
+        name = f"{given_names} {surname}"
+    return _key(name)
+
+
 def _roster_profile_key(data: dict[str, Any]) -> tuple[str, str, str] | None:
-    name = _key(_full_name(data))
+    name = _roster_name_key(data)
     course = re.sub(r"[^a-z0-9]", "", _text(data.get("course")).lower())
+    course = {
+        "bachelorofelementaryeducation": "beed",
+        "bachelorofearlychildhoodeducation": "beced",
+        "bachelorofsecondaryeducation": "bsed",
+        "bacheloroftechnologyandlivelihoodeducationhomeeconomics": "btledhe",
+        "bachelorofphysicaleducation": "bped",
+        "bachelorofscienceinbusinessadministration": "bsba",
+        "bachelorofscienceinentrepreneurship": "bsentrep",
+        "bachelorofscienceininformationtechnology": "bsit",
+        "bachelorofscienceincomputerengineering": "bscpe",
+        "bachelorofscienceinindustrialengineering": "bsie",
+        "bachelorinindustrialtechnology": "bit",
+    }.get(course, course)
     year = _key(data.get("yearLevel") or data.get("year") or data.get("yearLevelLabel"))
     year_match = re.fullmatch(r"(?:year )?([1-6])(?:(?:st|nd|rd|th))?(?: year)?", year)
     if year_match:
@@ -347,7 +368,7 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
             elif len(student_targets[student_id]) > 1:
                 disposition = "conflicting_active_roster"
                 reason = "This import assigns the student to more than one active scholarship."
-            elif student and _key(_full_name(student)) != _key(row["fullName"]):
+            elif student and _roster_name_key(student) != _roster_name_key(row):
                 disposition = "identity_mismatch"
                 reason = "Student ID exists, but the roster name does not match the account name."
             else:

@@ -83,7 +83,7 @@ import { supabase } from "../services/supabaseClient"
 import CustomSelect from "../components/CustomSelect"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
-import { getRosterImportMappingIssues } from "../utils/rosterImportPreview"
+import { getManualScholarIssues, getRosterImportMappingIssues } from "../utils/rosterImportPreview"
 import { CONTACT_NUMBER_RULE_MESSAGE, isValidContactNumber, normalizeContactNumber, sanitizeContactNumber } from "../utils/contactNumber"
 import useThemeMode from "../hooks/useThemeMode"
 import {
@@ -227,6 +227,7 @@ const COURSE_OPTIONS = [
 	"Bachelor of Science in Computer Engineering",
 	"Bachelor of Science in Industrial Engineering",
 	"Bachelor in Industrial Technology",
+	"COED",
 ]
 const SCHOLAR_TABS = ["active", "warning", "archived"]
 const GRANTOR_COMPLETABLE_STEP_LABELS = {
@@ -3127,26 +3128,24 @@ export default function ProviderDashboard() {
 		}
 
 		// Manual Entry Logic
-		if (!validScholar(createForm)) {
-			toast.error("Complete the scholar form before saving.")
-			return
-		}
-		if (availableScholarshipOptions.length > 0 && !createForm.scholarshipTitle.trim()) {
-			toast.error("Select the scholarship title for this scholar.")
-			return
-		}
-		if (!isValidContactNumber(createForm.cpNumber)) {
-			toast.error(CONTACT_NUMBER_RULE_MESSAGE)
+		const manualIssues = getManualScholarIssues(createForm)
+		if (manualIssues.length > 0) {
+			toast.error(manualIssues.join(" "))
 			return
 		}
 		setBusy("create")
 		try {
-			let payload = scholarPayload(createForm, grantorId, grantorName, grantorProviderType, uploadFile)
+			const payload = scholarPayload(createForm, grantorId, grantorName, grantorProviderType, uploadFile)
 			const serverPreview = await previewRosterImportWorkflow({
 				grantorId,
 				rows: [{ ...payload, rowNumber: 1 }],
 				sourceFileName: "Manual grantor entry",
 			})
+			if (serverPreview.rows?.[0]?.disposition === "already_imported") {
+				setServerRosterPreview(null)
+				toast.warning("Duplicate student not added. This student already exists in this scholarship roster.")
+				return
+			}
 			if (serverPreview.status !== "ready") {
 				setServerRosterPreview(serverPreview)
 				toast.warning(serverPreview.rows?.[0]?.reason || "Student was not added.")
@@ -3163,90 +3162,7 @@ export default function ProviderDashboard() {
 				toast.success("Scholar added to the grantor scholar list.")
 				return
 			}
-			if (!serverCommit.ok) throw new Error(serverCommit.reason || "Roster scholar commit failed.")
-			const existingScholars = await getAllGrantorScholars(db)
-			const studentsSnapshot = await getDocs(collection(db, "students"))
-			const existingStudents = studentsSnapshot.docs.map((row) => ({ id: row.id, ...(row.data() || {}) }))
-			const existingStudentDuplicate = await findScholarDuplicate(payload, existingStudents)
-			if (existingStudentDuplicate?.record) {
-				payload = buildScholarPayloadFromStudentAccount(existingStudentDuplicate.record, payload)
-			}
-			const archivedBlock = findArchivedRosterBlock(payload, existingScholars, grantorId, grantorProviderType)
-			if (archivedBlock) {
-				const matchedName = archivedBlock.fullName || archivedBlock.studentName || "this student"
-				const owner = archivedBlock.grantorName || archivedBlock.grantorId || "another grantor"
-				toast.warning(`Student not added. ${matchedName} is in the archive of ${owner}, so this student cannot be added to your scholar list.`)
-				await createAdminNotification({
-					type: "archived_scholar_add_blocked",
-					title: "Archived Scholar Add Blocked",
-					message: `${grantorName} attempted to add ${payload.fullName || matchedName}, but the student is archived under ${owner}. The add was blocked.`,
-					grantorId,
-					grantorName,
-					studentId: payload.studentId,
-					studentName: payload.fullName || matchedName,
-					matchedGrantorName: owner,
-					source: "grantor_manual_archive_prevention",
-					read: false,
-					createdAt: serverTimestamp(),
-				}).catch((error) => console.error("Admin archived roster prevention notification failed.", error))
-				return
-			}
-			const exactConflict = findCurrentGrantorStudentIdConflict(
-				payload,
-				existingScholars,
-				applications,
-				grantorId,
-				grantorProviderType,
-			)
-			if (exactConflict) {
-				const matchedName = exactConflict.record.fullName || exactConflict.record.studentName || "an existing student"
-					const source = exactConflict.kind === "application" ? "application list" : "grantor scholar list"
-				toast.warning(`Student not added. Student ID ${payload.studentId} already exists in this grantor's ${source} as ${matchedName}.`)
-				return
-			}
-			const duplicate = await findScholarDuplicate(payload, existingScholars)
-			if (duplicate) {
-				if (!isDuplicateOwnedByGrantor(duplicate, grantorId, grantorProviderType)) {
-					const matchedName = duplicate.record.fullName || "an existing student"
-					const owner = duplicate.record.grantorName || duplicate.record.grantorId || "another grantor"
-					toast.warning(`Student not added. This student already appears under ${owner} as ${matchedName}.`)
-					await createAdminNotification({
-						type: "duplicate_scholarship_prevented",
-						title: "Duplicate Scholarship Prevented",
-						message: `${grantorName} attempted to add ${payload.fullName || "a student"} who already appears under ${owner}. The add was blocked.`,
-						grantorId,
-						grantorName,
-						studentId: payload.studentId,
-						studentName: payload.fullName,
-						matchedGrantorName: owner,
-						source: "grantor_manual_add_prevention",
-						read: false,
-						createdAt: serverTimestamp(),
-					}).catch((error) => console.error("Admin duplicate prevention notification failed.", error))
-					return
-				} else {
-					const matchedName = duplicate.record.fullName || "an existing student"
-					const reason = duplicate.reasons.length > 0 ? ` Matching fields: ${duplicate.reasons.join(", ")}.` : ""
-					toast.warning(`Duplicate student not added. This student is already in this grantor scholar list as ${matchedName}.${reason}`)
-					return
-				}
-			}
-			const workflowResult = await createGrantorScholarsWorkflow({
-				grantorId,
-				actorType: "grantor",
-				actorId: grantorId,
-				scholars: [{
-					...payload,
-					createdAt: serverTimestamp(),
-					updatedAt: serverTimestamp(),
-				}],
-			})
-			if (!workflowResult?.createdCount) {
-				toast.warning(workflowResult?.blocked?.[0]?.reason || workflowResult?.skipped?.[0]?.reason || "Student was not added.")
-				return
-			}
-			closeCreateModal()
-			toast.success("Scholar added to the grantor scholar list.")
+			throw new Error(serverCommit.reason || "Roster scholar commit failed.")
 		} catch (error) {
 			console.error(error)
 			toast.error(getGrantorWorkflowErrorMessage(error, "Unable to add scholar right now."))
@@ -6125,9 +6041,9 @@ export default function ProviderDashboard() {
 											{uploadFile ? <div className="grantor-upload-zone__file"><strong>{uploadFile.name}</strong><span>{Math.max(1, Math.round(uploadFile.size / 1024))} KB</span></div> : null}
 										</div>
 										<div className="grantor-form-grid">
-											<label className="grantor-create-field"><span>Student ID</span><input type="text" placeholder="Student ID" value={createForm.studentId} onChange={(event) => setCreateForm((prev) => ({ ...prev, studentId: event.target.value }))} /></label>
+											<label className="grantor-create-field"><span>Student ID (optional)</span><input type="text" placeholder="Student ID (optional)" value={createForm.studentId} onChange={(event) => setCreateForm((prev) => ({ ...prev, studentId: event.target.value }))} /></label>
 											<label className="grantor-create-field"><span>Email</span><input type="text" placeholder="Email" value={createForm.email} onChange={(event) => setCreateForm((prev) => ({ ...prev, email: event.target.value }))} /></label>
-											<label className="grantor-create-field"><span>Contact Number</span><input type="text" placeholder="e.g. 09171234567" value={createForm.cpNumber} onChange={(event) => setCreateForm((prev) => ({ ...prev, cpNumber: sanitizeContactNumber(event.target.value) }))} inputMode="numeric" maxLength={11} /></label>
+											<label className="grantor-create-field"><span>Contact Number (optional)</span><input type="text" placeholder="e.g. 09171234567" value={createForm.cpNumber} onChange={(event) => setCreateForm((prev) => ({ ...prev, cpNumber: sanitizeContactNumber(event.target.value) }))} inputMode="numeric" maxLength={11} /></label>
 											<label className="grantor-create-field"><span>First Name</span><input type="text" placeholder="First Name" value={createForm.fname} onChange={(event) => setCreateForm((prev) => ({ ...prev, fname: event.target.value }))} /></label>
 											<label className="grantor-create-field"><span>Middle Name</span><input type="text" placeholder="Middle Name" value={createForm.mname} onChange={(event) => setCreateForm((prev) => ({ ...prev, mname: event.target.value }))} /></label>
 											<label className="grantor-create-field"><span>Last Name</span><input type="text" placeholder="Last Name" value={createForm.lname} onChange={(event) => setCreateForm((prev) => ({ ...prev, lname: event.target.value }))} /></label>

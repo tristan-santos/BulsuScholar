@@ -131,11 +131,38 @@ class RosterImportPreviewTests(unittest.TestCase):
 
     def test_profile_normalization_and_distinct_students(self):
         base = {"fullName": "Santos, Ana M.", "course": "B.S.I.T.", "yearLevel": "4th Year"}
-        self.assertTrue(service._same_roster_identity(base, {"fullName": " santos ana m ", "course": "BSIT", "yearLevel": "Year 4"}))
+        self.assertTrue(service._same_roster_identity(base, {"fullName": " ana m santos ", "course": "BSIT", "yearLevel": "Year 4"}))
         for different in ({"course": "BSBA"}, {"yearLevel": "3"}, {"fullName": "Santos, Bea M."}, {"course": ""}):
             self.assertFalse(service._same_roster_identity(base, {**base, **different}))
         self.assertFalse(service._same_roster_identity({**base, "studentId": "one"}, {**base, "studentId": "two"}))
         self.assertTrue(service._same_roster_identity({**base, "studentId": "one"}, {"studentId": "one"}))
+
+    def test_manual_names_and_course_labels_match_excel_records(self):
+        source = {"fullName": "Besinal, Dan Nicole S.", "course": "BIT", "yearLevel": "4"}
+        manual = {"fname": "Dan Nicole", "mname": "S.", "lname": "Besinal", "course": "Bachelor in Industrial Technology", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+        self.assertTrue(service._same_roster_identity(source, manual))
+        def rows(table, filters=None):
+            if table == "grantor_portal_scholars":
+                return [{**source, "id": "san-roster", "parentId": "grantor-2", "academicCycle": "2026-2027-1ST"}]
+            return self._rows(table, filters)
+        result = self._preview({**self.payload, "rows": [manual], "sourceFileName": "Manual grantor entry"}, rows=rows)
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual("conflicting_active_roster", result["rows"][0]["disposition"])
+
+    def test_manual_same_grantor_duplicate_is_already_imported(self):
+        source = {"fullName": "Santos, Ana M.", "course": "BSED", "yearLevel": "3", "scholarshipTitle": "Future Leaders"}
+        manual = {"fname": "Ana", "mname": "M.", "lname": "Santos", "course": "Bachelor of Secondary Education", "yearLevel": "3", "scholarshipTitle": "Future Leaders"}
+        def rows(table, filters=None):
+            if table == "grantor_portal_scholars":
+                return [{**source, "id": "same-roster", "parentId": "grantor-1", "academicCycle": "2026-2027-1ST"}]
+            return self._rows(table, filters)
+        result = self._preview({**self.payload, "rows": [manual]}, rows=rows)
+        self.assertEqual("already_imported", result["rows"][0]["disposition"])
+
+    def test_new_manual_student_without_number_is_ready_unlinked(self):
+        manual = {"fname": "New", "lname": "Scholar", "course": "Bachelor in Industrial Technology", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}
+        result = self._preview({**self.payload, "rows": [manual]})
+        self.assertEqual("ready_unlinked", result["rows"][0]["disposition"])
 
     def test_historical_and_archived_cross_grantor_rows_do_not_block(self):
         row = {"fullName": "Ana Santos", "course": "BIT", "yearLevel": "4", "scholarshipTitle": "Future Leaders"}

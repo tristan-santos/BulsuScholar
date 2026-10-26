@@ -6,7 +6,7 @@ declare fixture record; batch text; candidate jsonb; before_count integer; i int
 begin
   if not public.roster_import_matches(
       '{"fullName":"Santos, Ana M.","course":"B.S.I.T.","yearLevel":"4th Year"}',
-      '{"fullName":" santos ana m ","course":"BSIT","yearLevel":"Year 4"}') then
+      '{"fullName":" ana m santos ","course":"BSIT","yearLevel":"Year 4"}') then
     raise exception 'Normalization failed'; end if;
   if public.roster_import_matches('{"fullName":"Ana","course":"BIT","yearLevel":"4"}',
       '{"fullName":"Ana","course":"BSBA","yearLevel":"4"}')
@@ -28,12 +28,22 @@ begin
   loop
     i := i + 1;
     -- Test each actual record individually, also with an input number when the source lacks one.
-    for n in 1..2 loop
+    for n in 1..3 loop
       batch := 'verify_cross_grantor_' || i || '_' || n;
       insert into public.roster_import_batches(id,data) values(batch,
         jsonb_build_object('actorType','grantor','actorId',fixture.parent_id,'status','ready'));
-      candidate := fixture.data || jsonb_build_object('studentId',case when n=1 then '' else 'verify-number-' || i end,
+      candidate := fixture.data || jsonb_build_object('studentId',case when n=2 then 'verify-number-' || i else '' end,
         'blocking',false,'rosterData',fixture.data);
+      if n=3 then
+        candidate := candidate || jsonb_build_object(
+          'fullName',trim(substring(fixture.data->>'fullName' from position(',' in fixture.data->>'fullName')+1)) || ' ' || split_part(fixture.data->>'fullName',',',1),
+          'course',case fixture.data->>'course'
+            when 'BIT' then 'Bachelor in Industrial Technology'
+            when 'BSBA' then 'Bachelor of Science in Business Administration'
+            when 'BSED' then 'Bachelor of Secondary Education'
+            else fixture.data->>'course' end);
+        candidate := jsonb_set(candidate,'{rosterData}',candidate - 'rosterData');
+      end if;
       insert into public.roster_import_rows(id,parent_id,data) values(batch || '_row',batch,candidate);
       begin
         perform public.commit_roster_import_batch(batch,'grantor',fixture.parent_id);
@@ -63,4 +73,4 @@ begin
 end;
 $$;
 reset role;
-select 'Passed: all five live Johnvher/San Martin rows blocked without IDs and with mixed ID presence; normalization; distinct profiles; stale mixed-batch rollback; no scholar changes' as verification;
+select 'Passed: all five live Johnvher/San Martin rows blocked as Excel, mixed-ID and manual entries; name-order/course-label normalization; distinct profiles; stale mixed-batch rollback; no scholar changes' as verification;
