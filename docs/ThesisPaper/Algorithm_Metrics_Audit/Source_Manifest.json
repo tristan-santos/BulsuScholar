@@ -1,0 +1,433 @@
+{
+  "executionUTC": "2026-10-28T04:28:01.667642+00:00",
+  "findingLegend": {
+    "S": "Verified in source code",
+    "T": "Verified through test execution",
+    "P": "Proposed evaluation methodology",
+    "N": "Not implemented",
+    "U": "Not verifiable from available evidence"
+  },
+  "sourceReferences": [
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "normalize_match_value",
+      "start": 10,
+      "end": 13,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "normalize_identifier",
+      "start": 16,
+      "end": 17,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "levenshtein_similarity",
+      "start": 32,
+      "end": 56,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "comparable_similarity",
+      "start": 59,
+      "end": 65,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "evaluate_scholar_duplicate",
+      "start": 68,
+      "end": 123,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "find_scholar_duplicate",
+      "start": 126,
+      "end": 148,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "check_student_table_duplicates",
+      "start": 206,
+      "end": 262,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "match_name_parts",
+      "start": 274,
+      "end": 294,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "match_address",
+      "start": 297,
+      "end": 323,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "matches_grantor_scholar_to_student",
+      "start": 326,
+      "end": 333,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/grantor_algorithms.py",
+      "function": "match_admin_grantor_students",
+      "start": 366,
+      "end": 396,
+      "sha256": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc"
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "levenshtein_similarity",
+      "start": 485,
+      "end": 508,
+      "sha256": "d3dcf641b5279754873a8187a32a3dffec995db8864f3cd99b3a3d73230da421"
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "is_similar_roster_name",
+      "start": 549,
+      "end": 562,
+      "sha256": "d3dcf641b5279754873a8187a32a3dffec995db8864f3cd99b3a3d73230da421"
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "find_roster_identity_conflicts",
+      "start": 575,
+      "end": 612,
+      "sha256": "d3dcf641b5279754873a8187a32a3dffec995db8864f3cd99b3a3d73230da421"
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "create_signup_document_batch",
+      "start": 172,
+      "end": 306,
+      "sha256": "d3dcf641b5279754873a8187a32a3dffec995db8864f3cd99b3a3d73230da421"
+    },
+    {
+      "file": "backend/signup_service.py",
+      "function": "validate_student_signup",
+      "start": 633,
+      "end": 820,
+      "sha256": "d3dcf641b5279754873a8187a32a3dffec995db8864f3cd99b3a3d73230da421"
+    },
+    {
+      "file": "src/pages/SignupPage.jsx",
+      "function": "normalizeIdentityText",
+      "start": 367,
+      "end": 374,
+      "sha256": "34bf7fbb23ab9a940713eba7b793be9010f4139b85e24cc906e2541359dcb798"
+    },
+    {
+      "file": "src/pages/SignupPage.jsx",
+      "function": "getLevenshteinDistance",
+      "start": 486,
+      "end": 510,
+      "sha256": "34bf7fbb23ab9a940713eba7b793be9010f4139b85e24cc906e2541359dcb798"
+    },
+    {
+      "file": "src/pages/SignupPage.jsx",
+      "function": "getLevenshteinSimilarity",
+      "start": 512,
+      "end": 518,
+      "sha256": "34bf7fbb23ab9a940713eba7b793be9010f4139b85e24cc906e2541359dcb798"
+    },
+    {
+      "file": "src/pages/SignupPage.jsx",
+      "function": "validateCogIdentity",
+      "start": 585,
+      "end": 697,
+      "sha256": "34bf7fbb23ab9a940713eba7b793be9010f4139b85e24cc906e2541359dcb798"
+    },
+    {
+      "file": "src/pages/SignupPage.jsx",
+      "function": "scanUploadedDocument",
+      "start": 981,
+      "end": 1093,
+      "sha256": "34bf7fbb23ab9a940713eba7b793be9010f4139b85e24cc906e2541359dcb798"
+    },
+    {
+      "file": "src/services/grantorService.js",
+      "function": "levenshteinSimilarity",
+      "start": 362,
+      "end": 386,
+      "sha256": "1851fcde0b156e140e8bee31f579c952838427266c5d5e0f6a3bc68a436c2051"
+    },
+    {
+      "file": "src/services/grantorService.js",
+      "function": "normalizeMatchValue",
+      "start": 349,
+      "end": 356,
+      "sha256": "1851fcde0b156e140e8bee31f579c952838427266c5d5e0f6a3bc68a436c2051"
+    },
+    {
+      "file": "src/services/grantorService.js",
+      "function": "evaluateScholarDuplicate",
+      "start": 417,
+      "end": 422,
+      "sha256": "1851fcde0b156e140e8bee31f579c952838427266c5d5e0f6a3bc68a436c2051"
+    },
+    {
+      "file": "src/services/grantorService.js",
+      "function": "findScholarDuplicate",
+      "start": 424,
+      "end": 431,
+      "sha256": "1851fcde0b156e140e8bee31f579c952838427266c5d5e0f6a3bc68a436c2051"
+    },
+    {
+      "file": "backend/roster_workflow_service.py",
+      "function": "_roster_profile_key",
+      "start": 118,
+      "end": 138,
+      "sha256": "3507361591d2cd066e0e6834e1f4d58973cfe8059396cdedb605e936187d4cce"
+    },
+    {
+      "file": "backend/roster_workflow_service.py",
+      "function": "_same_roster_identity",
+      "start": 141,
+      "end": 146,
+      "sha256": "3507361591d2cd066e0e6834e1f4d58973cfe8059396cdedb605e936187d4cce"
+    },
+    {
+      "file": "backend/roster_workflow_service.py",
+      "function": "preview_roster_import",
+      "start": 258,
+      "end": 465,
+      "sha256": "3507361591d2cd066e0e6834e1f4d58973cfe8059396cdedb605e936187d4cce"
+    },
+    {
+      "file": "backend/roster_workflow_service.py",
+      "function": "resolve_roster_conflict",
+      "start": 520,
+      "end": 542,
+      "sha256": "3507361591d2cd066e0e6834e1f4d58973cfe8059396cdedb605e936187d4cce"
+    },
+    {
+      "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+      "function": "assign_authoritative_roster_scholarship",
+      "start": 69,
+      "end": 194,
+      "sha256": "499bec8246244dc6b60f4e1a74e45ba896062bd9786b4660039874e53a059ab9"
+    },
+    {
+      "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+      "function": "roster_application_blocker",
+      "start": 447,
+      "end": 474,
+      "sha256": "499bec8246244dc6b60f4e1a74e45ba896062bd9786b4660039874e53a059ab9"
+    },
+    {
+      "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+      "function": "roster_record_active",
+      "start": 26,
+      "end": 32,
+      "sha256": "499bec8246244dc6b60f4e1a74e45ba896062bd9786b4660039874e53a059ab9"
+    },
+    {
+      "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+      "function": "roster_application_awarded",
+      "start": 34,
+      "end": 42,
+      "sha256": "499bec8246244dc6b60f4e1a74e45ba896062bd9786b4660039874e53a059ab9"
+    },
+    {
+      "file": "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql",
+      "function": "reconcile_student_roster",
+      "start": 196,
+      "end": 255,
+      "sha256": "499bec8246244dc6b60f4e1a74e45ba896062bd9786b4660039874e53a059ab9"
+    },
+    {
+      "file": "supabase/migrations/20261026043502_manual_roster_name_and_course_matching.sql",
+      "function": "roster_import_profile_key",
+      "start": 3,
+      "end": 32,
+      "sha256": "67e8f65758412df05bbcd86a54d8378c78aba4c939e8b797400da1f57d33d9e2"
+    },
+    {
+      "file": "supabase/migrations/20261026034945_cross_grantor_roster_identity_guard.sql",
+      "function": "roster_import_matches",
+      "start": 16,
+      "end": 24,
+      "sha256": "ec24b945943a2123f13e8de97f08dd287de98351b6d838a10e4d96af90c2fe70"
+    },
+    {
+      "file": "supabase/migrations/20261026034945_cross_grantor_roster_identity_guard.sql",
+      "function": "commit_roster_import_batch",
+      "start": 29,
+      "end": 110,
+      "sha256": "ec24b945943a2123f13e8de97f08dd287de98351b6d838a10e4d96af90c2fe70"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "ocr_image",
+      "start": 111,
+      "end": 120,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_pdf_text",
+      "start": 123,
+      "end": 137,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_image_text",
+      "start": 140,
+      "end": 142,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "parse_document",
+      "start": 887,
+      "end": 923,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "parse_pdf_document",
+      "start": 926,
+      "end": 970,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_year",
+      "start": 264,
+      "end": 292,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_year_from_pdf_layout",
+      "start": 318,
+      "end": 327,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_name",
+      "start": 733,
+      "end": 816,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_gwa_result",
+      "start": 344,
+      "end": 407,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_semester",
+      "start": 819,
+      "end": 873,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_final_grades_from_pdf_tables",
+      "start": 458,
+      "end": 531,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_final_grades_from_pdf_words",
+      "start": 534,
+      "end": 658,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/document_scanner.py",
+      "function": "extract_final_grades_from_text",
+      "start": 661,
+      "end": 731,
+      "sha256": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa"
+    },
+    {
+      "file": "backend/student_profile_service.py",
+      "function": "upload_student_document",
+      "start": 885,
+      "end": 967,
+      "sha256": "4c2c3d6080cd8901adc21e1a6d943cb5880c1dd4345eef66a072c8431c5f6f67"
+    },
+    {
+      "file": "backend/student_profile_service.py",
+      "function": "_system_approve_submission",
+      "start": 802,
+      "end": 843,
+      "sha256": "4c2c3d6080cd8901adc21e1a6d943cb5880c1dd4345eef66a072c8431c5f6f67"
+    },
+    {
+      "file": "scripts/evaluate-solis-matching.py",
+      "function": "evaluate",
+      "start": 14,
+      "end": 36,
+      "sha256": "bdc894edbe242845f4620b7c1594e07ca7d4c177acd1627dca725589599c1100"
+    },
+    {
+      "file": "backend/main.py",
+      "function": "scan_document",
+      "start": 1554,
+      "end": 1610,
+      "sha256": "15432fe1eb27a40f9b91d305a3e22d923aea9bd853d32159d79413a4c94a6f82"
+    },
+    {
+      "file": "backend/download_protection.py",
+      "function": "processing_pdf",
+      "start": 93,
+      "end": 112,
+      "sha256": "b8cb1b93ccc88c4e846ef2c5a49c9b692d760ceaedb1533a517b6952e75de5b4"
+    }
+  ],
+  "recordedExecutionFiles": [
+    "Execution_Environment.json",
+    "Execution_Console.txt",
+    "Weighted_Matching_Execution.json",
+    "Matching_Regression_Results.json",
+    "Current_Roster_SQL_Execution.json",
+    "Document_Reexecution/Evaluation_Results.json"
+  ],
+  "evidenceSha256": {
+    "Attribute_Weights.csv": "e16fde1f7a8d311623bd6a5c79fd2f14cbe155ef56f30adf89cd9bdb771008ef",
+    "Current_Roster_SQL_Execution.json": "fd49310b6b81460109e0db1cc6258db464b37f07bb908ef6577445bf49bcfeb0",
+    "Document_Execution_Console.txt": "15ff739257a042a61c8cd34a78488f2968017e4161d82d5e6bee0e83886d454b",
+    "Execution_Console.txt": "e0f45d1a52a4c7475e31efabf96c0aa78a1009b3fa931056577fe25a264e17a2",
+    "Execution_Environment.json": "735c4a1206a794bf9fd9b08ba12e3907e0914a3cb0ad8626c3a4c41411571e15",
+    "Execution_Summary.csv": "c7086d6895a44541af1c2c3ad57a88bfa0c9ad7e961567acf87482a6e5d89258",
+    "Matching_Regression_Execution.txt": "47a347f2b84e2475b5f15f7bcb01d6e899ec1de2d1ea987c5334328a58ab99b2",
+    "Matching_Regression_Results.json": "6962801496cc6037bbaaca271bacc6bab15f993df8a029e6071f5de260b48cc3",
+    "Research_Traceability.csv": "f8d72c7719cf8ab8e34e5d8f96d40633d91be0cca86180f3d49968b4e9f6033b",
+    "run_metrics_audit.py": "01df6eaae91bedf705f6f8faec1300e298dc7919943807f66a922e79fcaf85f4",
+    "Table_A_Verified_Formulas.csv": "ec759dae5a5da0328e9dfb789c9999c7bfa8073668d8a9d42ffe9e8c33cfd59e",
+    "Table_B_Performance.csv": "f7a456c07d74d08de71e23b79b566cf9e1c27e9bb170e96db5649a0544a63da7",
+    "Table_C_Actual_Matching.csv": "0365c437a92b0140298c7c939cd116752d63538b9fcbe634b190acf0d851fc8e",
+    "Table_C_Matching_Decisions.csv": "3bd79c75f6c94403dbe7fbeb6f6968b1141a844270e3d683cb27efccc9c86562",
+    "Table_D_Extraction.csv": "b1126173c49587da8bccedd1a34593a34af2cd6cf1a0d2d91005cb2dc328b17e",
+    "Verified_Tables.json": "f5d92bcee9a882bce646ca60f1e442746589222e51eecfab931eecf86ebe2af9",
+    "verify_current_roster_sql.mjs": "28a2af132ae17a6134766684f38d02aae2893e5af645815ece22d64e98edf52c",
+    "Weighted_Matching_Execution.json": "b8184fae9ab8be02d66c9701183d1ad56dc37bef411d4f3f7c52c6b72a280655",
+    "Worked_Example.json": "467f477e02b3058ac63a8971ac1aefcf19138f9621bc2154cfef3983ce5d94ab",
+    "Document_Reexecution\\Evaluation_Console.txt": "15ff739257a042a61c8cd34a78488f2968017e4161d82d5e6bee0e83886d454b",
+    "Document_Reexecution\\Evaluation_Results.json": "5303fc45d452fd932978d2b83240e42ca7e9d08dddb6f64c40f4d29cbbf5af4d",
+    "Document_Reexecution\\Existing_Test_Execution.txt": "f6954a0f448845f5bd9d9d6c4ee0219b6faaa833b490170ba85af6edd6fa139f",
+    "Document_Reexecution\\Field_Comparisons.csv": "ca75c7094c9c48dc1cdc93c0ca71001d83770a53be736b38a98cc937781c05f4"
+  },
+  "trackedFilesUnchanged": 437,
+  "pdfPages": 17,
+  "scope": "Synthetic contract/fixture metrics only; no independent real-student or scholarship-conflict dataset; production unchanged"
+}

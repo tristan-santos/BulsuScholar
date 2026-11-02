@@ -241,8 +241,48 @@ def _recognized_programs(grantor_id: str, cache: dict[str, dict[str, dict[str, A
             "title": _text(latest.get("scholarshipTitle") or latest.get("scholarshipName") or latest.get("title")),
             "providerType": _text(latest.get("providerType")),
         }
+    for program in _row_data_rows("roster_programs", {"parent_id": grantor_id}):
+        title = _text(program.get("title"))
+        if title and _is_active_roster(program):
+            key = _key(title)
+            if key in programs and programs[key].get("id") != program.get("id"):
+                programs[key] = {"ambiguous": True}
+            else:
+                programs[key] = {"id": program["id"], "title": title, "providerType": "private"}
     cache[grantor_id] = programs
     return programs
+
+
+def _grantor_names(provider: dict[str, Any]) -> set[str]:
+    return {_key(value) for value in (
+        provider.get("providerName"), provider.get("grantorName"), provider.get("name"),
+        provider.get("displayName"), provider.get("organization"),
+        " ".join(_text(provider.get(part)) for part in ("fname", "mname", "lname")),
+    ) if _text(value)}
+
+
+def _admin_grantor_selection(payload: dict[str, Any], providers: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    selection = payload.get("grantorSelection")
+    if selection is None:
+        return None
+    if _text(payload.get("actorType")).lower() != "admin":
+        raise HTTPException(status_code=403, detail="admin_grantor_selection_required")
+    if not isinstance(selection, dict):
+        raise HTTPException(status_code=422, detail="invalid_grantor_selection")
+    mode = selection.get("mode")
+    if mode == "existing":
+        grantor_id = _text(selection.get("grantorId"))
+        provider = providers.get(grantor_id)
+        if not provider or not _is_active_roster(provider) or _key(provider.get("status")) == "disabled":
+            raise HTTPException(status_code=422, detail="grantor_not_found_or_inactive")
+        return {"mode": mode, "grantorId": grantor_id}
+    raw_name = _text(selection.get("name"))
+    name = " ".join(raw_name.split())
+    if mode != "new" or not 2 <= len(name) <= 160 or not _key(name) or any(ord(c) < 32 for c in raw_name):
+        raise HTTPException(status_code=422, detail="invalid_grantor_name")
+    # A stable namespace supports retries; it is an identifier, not a security hash.
+    grantor_id = "roster_grantor_" + hashlib.md5(_key(name).encode()).hexdigest()
+    return {"mode": mode, "grantorId": grantor_id, "name": name, "nameKey": _key(name)}
 
 
 def _preview_response(batch_id: str) -> dict[str, Any] | None:
@@ -263,11 +303,26 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
     if not input_rows or len(input_rows) > 2000:
         raise HTTPException(status_code=422, detail="roster_import_rows_required")
     current_cycle = _current_cycle()
+    providers = {
+        str(row.get("id")): row for row in [*_row_data_rows("grantor_portals"), *_row_data_rows("providers")]
+    } if payload.get("grantorSelection") is not None else {}
+    selection = _admin_grantor_selection(payload, providers)
+    name_conflict = bool(selection and selection["mode"] == "new" and any(
+        selection["nameKey"] in _grantor_names(provider) for provider in providers.values()))
+    if selection and selection["mode"] == "new":
+        providers[selection["grantorId"]] = {
+            "id": selection["grantorId"], "providerName": selection["name"],
+            "grantorType": "external", "providerType": "private", "nonLogin": True,
+        }
 
     canonical_rows = []
     for index, source in enumerate(input_rows):
         row = dict(source) if isinstance(source, dict) else {}
         grantor_id = _text(row.get("grantorId") or payload.get("grantorId"))
+        if selection:
+            if grantor_id and grantor_id != selection["grantorId"]:
+                raise HTTPException(status_code=422, detail="roster_single_grantor_required")
+            grantor_id = selection["grantorId"]
         if actor_type == "grantor":
             grantor_id = actor_id
         if _cycle(row) and _cycle(row) != current_cycle:
@@ -283,21 +338,23 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
             "scholarshipTitle": _text(row.get("scholarshipTitle") or row.get("scholarshipName")),
         })
     # Do not reuse previews committed before cross-grantor profile matching existed.
-    fingerprint_source = json.dumps({"validationVersion": 2, "actorType": actor_type, "actorId": actor_id, "rows": canonical_rows}, sort_keys=True, separators=(",", ":"))
+    fingerprint_source = json.dumps({"validationVersion": 3, "actorType": actor_type, "actorId": actor_id, "rows": canonical_rows, "grantorSelection": selection}, sort_keys=True, separators=(",", ":"))
     fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
     batch_id = f"roster_preview_{fingerprint[:32]}"
     existing = _preview_response(batch_id)
     if existing and existing.get("status") == "committed":
         return {**existing, "idempotent": True}
+    if name_conflict:
+        raise HTTPException(status_code=409, detail="grantor_name_exists_select_existing")
+    if not selection:
+        providers = {str(row.get("id")): row for row in [*_row_data_rows("grantor_portals"), *_row_data_rows("providers")]}
 
     students = {str(row.get("id")): row for row in _row_data_rows("students")}
     rosters = [row for row in _row_data_rows("grantor_portal_scholars") if _is_active_roster(row)]
     all_applications = _row_data_rows("scholarship_applications")
     applications = [row for row in all_applications if _is_open_application(row)]
-    providers = {
-        str(row.get("id")): row for row in [*_row_data_rows("providers"), *_row_data_rows("grantor_portals")]
-    }
     program_cache: dict[str, dict[str, dict[str, Any]]] = {}
+    pending_programs: dict[str, dict[str, str]] = {}
     tuple_counts = Counter((_text(row.get("grantorId")), _import_identity(row), _key(row.get("scholarshipTitle"))) for row in canonical_rows)
     student_targets: dict[str, set[tuple[str, str]]] = defaultdict(set)
     for row in canonical_rows:
@@ -334,6 +391,10 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
             reason = f"Missing required fields: {', '.join(missing)}. Map these columns or supply the missing values."
         else:
             program = _recognized_programs(grantor_id, program_cache).get(title_key) or {}
+            if not program and selection and providers[grantor_id].get("nonLogin") is True:
+                program_id = "roster_program_" + hashlib.md5(f"{grantor_id}:{title_key}".encode()).hexdigest()
+                program = {"id": program_id, "title": row["scholarshipTitle"], "providerType": "private"}
+                pending_programs[program_id] = program
             if program.get("ambiguous"):
                 disposition = "scholarship_ambiguous"
                 reason = "Scholarship title matches more than one recognized program. Select a unique program title before importing."
@@ -430,7 +491,9 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
             "disposition": disposition, "reason": reason, "blocking": blocking,
             "matchedAccount": bool(student), "existingApplicationId": _text((matching_application or {}).get("id")),
             "existingRosterId": _text((matching_roster or {}).get("id")),
-            "rosterData": {**row, "scholarshipId": program.get("id") or "", "scholarshipTitle": program.get("title") or row["scholarshipTitle"]},
+            "rosterData": {**row,
+                "grantorName": next((providers.get(grantor_id, {}).get(k) for k in ("providerName", "grantorName", "name") if providers.get(grantor_id, {}).get(k)), ""),
+                "scholarshipId": program.get("id") or "", "scholarshipTitle": program.get("title") or row["scholarshipTitle"]},
         }
         preview_rows.append(preview)
         counts[disposition] += 1
@@ -441,6 +504,7 @@ def preview_roster_import(request: Request, payload: dict[str, Any]) -> dict[str
         "actorType": actor_type, "actorId": actor_id, "fingerprint": fingerprint,
         "sourceFileName": _text(payload.get("sourceFileName")), "status": status,
         "rowCount": len(preview_rows), "counts": dict(counts), "createdAt": now, "updatedAt": now,
+        **({"grantorSelection": selection, "pendingPrograms": list(pending_programs.values())} if selection else {}),
     }
     saved = supabase_document_upsert("roster_import_batches", batch_id, batch_data, merge=False)
     if not saved.get("ok"):

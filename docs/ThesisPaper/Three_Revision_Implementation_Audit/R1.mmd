@@ -1,0 +1,33 @@
+flowchart TD
+  R1S(["Start recommendation"])
+  R1S --> R1I
+  R1I[/"Receive authorized stored student and supplied candidates"/]
+  R1I --> R1P
+  R1P["Parse GWA; compute input maximum roster and high-grade flag"]
+  R1P --> R1N
+  R1N{"Another candidate?"}
+  R1N -->|"YES"| R1B
+  R1N -->|"NO"| R1O
+  R1B{"applicationsBlocked is True?"}
+  R1B -->|"YES"| R1X
+  R1B -->|"NO"| R1D
+  R1D{"Disabled and applyOpen is not True?"}
+  R1D -->|"YES"| R1X
+  R1D -->|"NO"| R1M
+  R1M{"Parsed minimum GWA missing?"}
+  R1M -->|"YES"| R1F
+  R1M -->|"NO"| R1G
+  R1F["Resolve provider minimum; default 2.25"]
+  R1F --> R1G
+  R1G{"Student GWA missing or greater than minimum?"}
+  R1G -->|"YES"| R1X
+  R1G -->|"NO"| R1V
+  R1X["Exclude this candidate; advance iterator"]
+  R1X --> R1N
+  R1V["Calculate factors and ordered reasons using C7-C13"]
+  R1V --> R1L
+  R1L["Apply label precedence C14-C15; append rounded score and criteria"]
+  R1L --> R1N
+  R1O[/"Sort score descending and return recommendations, algorithm and weights"/]
+  R1O --> R1E
+  R1E(["End recommendation"])

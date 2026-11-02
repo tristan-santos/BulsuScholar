@@ -1,176 +1,439 @@
-# TASK: Verify and Evaluate Actual COR/ROG Document Extraction for BulSUScholar Thesis
+# BulSUScholar — System Implementation Audit for Three Thesis Revisions
 
-I am preparing the final technical revision of our capstone thesis:
+## Your Role
 
-**“A Centralized Scholarship Management and Tracking System for Bulacan State University – Bustos Campus.”**
+You are a Senior Software Engineer, System Analyst, and Technical Research Assistant assigned to analyze the actual implementation of **BulSUScholar: A Centralized Scholarship Management and Tracking System for Bulacan State University – Bustos Campus**.
 
-I need an evidence-based evaluation of the existing Certificate of Registration (COR) and Report of Grades (ROG) extraction and validation features.
+Your task is to investigate the existing codebase and answer the technical questions required to complete three thesis revisions requested by our research panel, particularly Dr. Jennifer P. Solis.
 
-## OBJECTIVE
+**IMPORTANT: This is an investigation and documentation task, NOT a development task.**
 
-Inspect the actual BulSUScholar source code and determine:
+Do not modify, refactor, delete, or create application source files. Do not change the database or production configuration.
 
-1. How COR documents are processed.
-2. How ROG documents are processed.
-3. Which academic fields are extracted.
-4. Which validation rules are applied.
-5. Which document formats are supported.
-6. Whether actual extraction-accuracy measurements exist.
-7. What verified test evidence can be included in our thesis.
+Your primary source of truth is the actual system implementation. The thesis manuscript and existing documentation may provide context, but they must not override what the current code actually does.
 
-## PART A — SOURCE-CODE INSPECTION
+## General Instructions
 
-Search the entire project for functions responsible for:
+1. Inspect the repository, including relevant frontend components, backend routes, services, algorithms, database schemas, SQL queries, validation functions, and relevant tests.
+2. Trace the complete implementation of each feature from frontend interaction to backend processing and database operations, when applicable.
+3. Identify the exact file paths, functions, classes, API routes, and line numbers supporting your findings.
+4. Never assume that a feature exists merely because it is mentioned in the thesis.
+5. Distinguish between implemented functionality, intended functionality, partially implemented functionality, and functionality that cannot be verified.
+6. If multiple workflows use different rules, document them separately rather than combining them into an artificial universal sequence.
+7. Do not invent algorithm thresholds, conditional branches, statuses, eligibility requirements, outputs, database relationships, or approval rules.
+8. If a feature cannot be verified, explicitly state **NOT VERIFIED** and explain what is missing.
+9. If the thesis contradicts the implementation, report the difference.
+10. Do not include sensitive credentials, personal information, or real student records in your report.
+11. Do not execute production-changing operations or upload actual student documents.
+12. Answer the questions below in detail, using evidence from the repository.
 
-- COR document extraction.
-- ROG document extraction.
-- PDF text extraction.
-- Image-based document processing, if implemented.
-- OCR, if implemented.
-- Student identity and academic-information validation.
-- Document rejection and error handling.
+The goal is to provide all verified information necessary for another research assistant to create academically accurate thesis revisions.
 
-For each relevant function, provide:
+---
 
-- Source filename.
-- Function name.
-- Original line numbers.
-- Purpose.
-- Supported document formats.
-- Extracted fields.
-- Actual validation conditions.
+# REVISION 1 — RULE-BASED DECISION TREE FLOWCHART
 
-Do not assume OCR or scanned-document support exists unless the code demonstrates it.
+## Objective
 
-## PART B — EXISTING TEST EVIDENCE
+Determine precisely how the BulSUScholar scholarship recommendation algorithm works so that we can create a **Decision Tree Flowchart** representing the actual system logic.
 
-Search the project for existing automated tests, fixtures, manual test reports, and documented COR/ROG extraction results.
+Do not create a generic Decision Tree.
 
-Identify any evidence demonstrating:
+### Questions to investigate
 
-- Successful field extraction.
-- Incorrect field extraction.
-- Missing-field detection.
-- Student identity mismatches.
-- Incorrect academic periods.
-- Unsupported document formats.
-- Malformed or unreadable submissions.
+**A. Implementation and inputs**
 
-Distinguish actual executed test records from test definitions that have merely been written.
+1. Where is the scholarship recommendation algorithm implemented? Identify its exact functions, files, and entry points.
+2. Is the algorithm genuinely a rule-based decision process, a machine-learning Decision Tree, a combination of filtering and weighted ranking, or something else?
+3. What student attributes are retrieved and used?
+4. What scholarship attributes, eligibility requirements, and restrictions are evaluated?
+5. Where do the inputs originate: student profiles, scholarship records, grantor policies, academic records, or other sources?
 
-Do not treat a test's existence as proof that it passed.
+**B. Actual decision sequence**
 
-## PART C — ACCURACY EVALUATION
+6. What is the first decision performed by the recommendation function?
+7. What is the complete order of conditional checks?
+8. For every decision, provide the exact condition evaluated.
+9. What happens when each condition evaluates to TRUE?
+10. What happens when each condition evaluates to FALSE?
+11. Which conditions exclude a scholarship from recommendation?
+12. Which conditions allow a scholarship to proceed?
+13. How does the algorithm handle missing, incomplete, invalid, or unavailable student information?
+14. How are scholarship-specific requirements and fallback values determined?
+15. Are scholarship availability, application status, academic grades, existing scholarship commitments, and other restrictions evaluated? Specify which ones are actually checked at recommendation time and which belong to separate workflows.
 
-Determine whether the project contains actual documents with verified reference values suitable for measuring extraction accuracy.
+**C. Recommendation output**
 
-If appropriately authorized, non-sensitive test fixtures exist:
+16. What happens after a scholarship passes all relevant eligibility checks?
+17. Is weighted scoring executed after eligibility filtering? If so, what fields and calculations does it use?
+18. How are qualifying scholarships ranked?
+19. Are there special cases that affect the final displayed ordering?
+20. What information is returned to the frontend?
+21. Does the recommendation process automatically approve applications, or is approval handled separately?
 
-1. Identify the expected fields.
-2. Execute the existing document parser using isolated test data.
-3. Record the actual extracted output.
-4. Compare every applicable field with its verified expected value.
-5. Calculate field-level accuracy.
-6. Record document-validation outcomes separately.
+### Required output for Revision 1
 
-Use this formula:
+Provide:
 
-Field Accuracy (%) = (Correctly Extracted Fields / Total Evaluated Fields) × 100
+**1. Verified algorithm description**
 
-Report both the numerator and denominator.
+Explain the algorithm in sequential, research-appropriate language.
 
-If tests are executed, include the exact command, environment, execution date, actual console results, and test outcomes.
+**2. Actual Decision Tree mapping**
 
-### Safety requirements
+Provide a table with these columns:
 
-- Do not use private production student documents without explicit authorization.
-- Do not modify production database records.
-- Do not upload student documents to external services.
-- Do not change the current extraction implementation.
-- Do not install new OCR or document-processing components merely to improve the reported accuracy.
-- Prefer existing synthetic or properly anonymized fixtures.
-- Never generate artificial test results or invent accuracy percentages.
+| Step | Decision Point | Exact Condition | YES Path | NO Path | Source Code Reference |
+|---|---|---|---|---|---|
 
-If no suitable verified test documents exist, report:
+Use the real order of execution.
 
-**“Quantitative document extraction accuracy could not be established from the available evidence.”**
+**3. Flowchart-ready node sequence**
 
-Then provide an executable testing plan instead of fabricated results.
+Provide the exact text that should appear inside every flowchart symbol, including:
 
-## PART D — TEST SCENARIOS
+- Start and End
+- Input/Output
+- Process
+- Decision (diamond)
+- YES/NO paths
+- Return or exclusion paths
+- Any loops or repeated evaluations
 
-Evaluate these conditions only when the corresponding formats or capabilities are supported.
+Include all necessary branches but avoid internal implementation details unrelated to the main decision process.
 
-1. Valid text-based COR.
-2. Valid text-based ROG.
-3. Incorrect Student ID.
-4. Missing required academic fields.
-5. Incorrect academic cycle.
-6. Unreadable or malformed document.
-7. Scanned PDF, only if supported.
-8. Image-based document, only if supported.
+**4. Algorithm evidence**
 
-Report unsupported scenarios separately.
+Identify the relevant source-code snippets, including exact file paths and line ranges. Explain which portion of the Decision Tree each snippet demonstrates.
 
-## PART E — REQUIRED OUTPUT
+**5. Important clarifications**
 
-### 1. Actual extraction implementation
+Identify any inaccurate or misleading assumptions that should be avoided when documenting this algorithm.
 
-Provide a short technical explanation and the important source-code functions.
+---
 
-### 2. Document extraction test results
+# REVISION 2 — STUDENT-RECORD VALIDATION, DUPLICATE DETECTION, AND DUPLICATION PREVENTION
 
-Create a table with:
+## Objective
 
-- Test ID
-- Document Type
-- Test Condition
-- Expected Result
-- Actual Result
-- Status
+Identify the actual system processes for student-record validation, duplicate-record detection, and prevention of conflicting scholarship assignments.
 
-### 3. Field accuracy results
+We will create a **Process Flowchart**, not an algorithm flowchart.
 
-If measurable, create a table with:
+### Critical flowchart requirement
 
-- Document Type
-- Number of Test Documents
-- Total Evaluated Fields
-- Correctly Extracted Fields
-- Field Accuracy (%)
-- Validation Result
+**Do not place detailed algorithm calculations inside the main process flowchart.**
 
-Do not insert percentages without actual measurements.
+Instead, show the business process as the main flow and connect each relevant process to a separate algorithm-reference box.
 
-### 4. Screenshots
+For example:
 
-Generate a maximum of three white-background screenshots:
+Main process: "Compare Student Records"
 
-**Screenshot 1 — COR/ROG Extraction Implementation**
+Separate connected reference: "Weighted Record Linkage / Levenshtein Similarity"
 
-Show the important original source-code lines.
+The connection should indicate that the process uses the algorithm, without displaying its internal calculation.
 
-**Screenshot 2 — Document Validation**
+Only use this example if it matches the implementation.
 
-Show the important validation logic.
+### Questions to investigate
 
-**Screenshot 3 — Verified Test Results**
+**A. Student-record validation**
 
-Show the actual test execution or output, if tests were performed.
+1. What system actions initiate student-record validation?
+2. How are Certificates of Registration (COR) and Reports of Grades (ROG) uploaded and processed?
+3. Which functions extract information from these documents?
+4. What student and academic fields are extracted?
+5. What information is checked against the student's existing profile?
+6. What exact validation rules apply to COR documents?
+7. What exact validation rules apply to ROG documents?
+8. What happens when a document passes validation?
+9. What happens when it fails?
+10. Are validation rules different for registration, document replacement, application submission, renewal, or other workflows?
 
-Keep screenshots readable, concise, and source-faithful. Label omitted source ranges.
+**B. Duplicate detection**
 
-### 5. Thesis-ready explanations
+11. Which actions initiate duplicate-record checking?
+12. What records are compared?
+13. Which student attributes are checked for exact matches?
+14. Which fields are compared using similarity matching?
+15. Which algorithms are actually implemented?
+16. Does the system use Levenshtein Distance, Record Linkage, weighted comparison, or other techniques? Identify the exact role of each.
+17. What are the actual thresholds and weights, where configured?
+18. How are possible duplicate matches classified?
+19. What happens when a potential duplicate is identified?
+20. Is the student automatically rejected, blocked, flagged, grouped, or forwarded for review? Specify by workflow.
+21. What happens when no potential duplicate is identified?
+22. Which records can authorized administrators review or resolve?
 
-Prepare short academic descriptions for:
+**C. Scholarship duplication prevention**
 
-- Chapter III — Document Extraction and Validation Testing.
-- Chapter IV — Document Extraction and Validation Results.
+23. How does the system check for existing scholarship assignments or commitments?
+24. Does it distinguish between pending applications, approved awards, active scholarships, inactive records, completed scholarships, and previous academic cycles?
+25. Which conditions constitute an actual scholarship conflict?
+26. What actions are prevented when a confirmed conflict is found?
+27. Can authorized personnel override, review, or resolve conflicts? Under which exact conditions?
+28. How are imported scholarship rosters included in checking?
+29. Are external records obtained through manual entry, uploaded rosters, or live integrations?
+30. What happens when an external scholarship provider's information has not been recorded in the system?
 
-Use past tense only for activities actually performed.
+**D. Workflow and algorithm separation**
 
-## PART F — DELIVERABLES
+31. Identify every distinct validation workflow relevant to this revision.
+32. For each workflow, where does it begin and end?
+33. Which steps are user interactions, backend processes, or database operations?
+34. Which processes invoke specific algorithms?
+35. What are the actual decision branches and error paths?
+36. Which validation outcomes are returned to the frontend?
+37. Which processes must remain separate to avoid inaccurately representing the implementation?
 
-Save the generated outputs in:
+### Required output for Revision 2
 
-`docs/ThesisPaper/figure/item 5`
+**1. Verified workflow inventory**
+
+Provide a table:
+
+| Workflow | Trigger | Main Process | Algorithms Used | Result | Source Reference |
+|---|---|---|---|---|---|
+
+**2. Process flowchart mapping**
+
+For each necessary workflow, provide:
+
+- Flowchart node number
+- Exact label for the node
+- Flowchart symbol type
+- Previous node
+- Next node
+- Decision YES/NO branches, if applicable
+
+Do not merge workflows unless the source code supports doing so.
+
+**3. Algorithm-reference mapping**
+
+Provide a separate table:
+
+| Main Process Node | Algorithm or Validation Mechanism | Source File and Function | Purpose |
+|---|---|---|---|
+
+This will allow us to fork each algorithm reference away from the main process flowchart using dashed connectors.
+
+**4. Verified source-code evidence**
+
+Provide the functions and relevant source-code excerpts demonstrating document validation, identity comparison, duplicate handling, and scholarship-conflict prevention.
+
+**5. Flowchart limitations**
+
+Explain any areas that cannot accurately be represented as a single continuous workflow and recommend how they should be separated.
+
+---
+
+# REVISION 3 — CHAPTER IV RESULTS AND DISCUSSION RESTRUCTURING
+
+## Objective
+
+Provide the implementation evidence necessary to reorganize **Chapter IV — Results and Discussion** according to the study's specific objectives.
+
+The required structure for each system-development objective is:
+
+**First: System Screenshot → Explanation**
+
+**Second: System Process Flowchart → Explanation**
+
+**Third: Source Code Snippet → Explanation**
+
+The final thesis will use actual application screenshots, actual system processes, and authentic code snippets.
+
+Do not create fictional screenshots or source code.
+
+### Part A — Identify the specific objectives
+
+Locate the thesis manuscript if it is available in the repository.
+
+Extract the exact wording of the specific objectives.
+
+If the manuscript is unavailable, clearly state this instead of inventing the wording.
+
+The intended scope for this investigation is:
+
+- Specific Objective 1: Centralized scholarship management, application submission, evaluation, and approval.
+- Specific Objective 2: Student-record validation, duplicate detection, and prevention of conflicting scholarship assignments.
+- Specific Objective 3: Scholarship recommendations and scholarship lifecycle monitoring.
+
+Verify these descriptions against the manuscript if available.
+
+Objectives covering TAM and ISO/IEC 25010 evaluation are outside the source-code investigation unless their implementation is directly relevant.
+
+### Part B — Analyze each objective
+
+For EACH of the three objectives, answer the following.
+
+**1. System screenshots**
+
+1. Which implemented features demonstrate that the objective has been addressed?
+2. Which actual frontend pages or components provide visual evidence?
+3. What are the routes or navigation paths used to access those pages?
+4. What user role can access each interface?
+5. What action should be performed to obtain a meaningful screenshot?
+6. What information should be visible in the screenshot?
+7. What functionality does the screenshot demonstrate?
+8. Are any features only partially implemented or inaccessible?
+
+Do not fabricate screenshots. Provide instructions for capturing them from the actual system.
+
+**2. Process flowchart**
+
+9. What user action begins the process?
+10. What is the actual sequence of frontend and backend operations?
+11. What data is submitted or retrieved?
+12. Which conditions affect the process?
+13. What are the possible outcomes?
+14. What happens when an operation fails?
+15. What is the final output or stored record?
+16. Which processes interact with other modules?
+17. What are the exact flowchart nodes and connections needed to represent this feature?
+
+Trace the implementation rather than describing how a typical scholarship system should work.
+
+**3. Code snippets**
+
+18. Which specific functions demonstrate the implementation?
+19. What are their actual source file paths and line numbers?
+20. Which short, self-contained section of code best demonstrates the feature?
+21. What inputs does that code receive?
+22. What processing does it perform?
+23. What conditions or business rules does it enforce?
+24. What result does it return or store?
+25. How does it support the corresponding specific objective?
+
+Provide authentic code excerpts copied from the repository, not rewritten or simplified pseudocode presented as actual source.
+
+### Part C — Map the manuscript revisions
+
+If the thesis file is accessible, inspect Chapter IV and identify the precise insertion points.
+
+For every proposed change, provide the following:
+
+**WHAT TO FIND?**
+
+Give an exact heading, figure caption, or searchable phrase appearing in the existing manuscript.
+
+**WHAT TO DO?**
+
+State the precise editing instruction, such as:
+
+- Insert after the specified paragraph.
+- Insert before the specified figure.
+- Move an existing figure to the corresponding objective subsection.
+- Replace an outdated explanation.
+- Preserve the existing content.
+
+Do not propose deleting existing material unless it is demonstrably redundant or incorrect.
+
+**WHAT TO PUT?**
+
+Provide the proposed content based only on verified system behavior.
+
+This should include:
+
+1. Figure title for the system screenshot.
+2. Short screenshot explanation referencing the figure number.
+3. Figure title for the process flowchart.
+4. Flowchart-ready process mapping and concise explanation.
+5. The literal placeholder **"code snippet"** where the final manuscript code image will be inserted.
+6. Short code snippet explanation based on the actual function identified.
+
+Use formal, concise, research-appropriate language.
+
+If the thesis is not accessible, provide the verified technical content but mark exact manuscript search phrases and figure numbering as **PENDING THESIS VERIFICATION**.
+
+### Part D — Objective-by-objective evidence summary
+
+Provide a table:
+
+| Specific Objective | Implemented Feature | Screenshot Location | Process/Flowchart Reference | Code Snippet Source | Verification Status |
+|---|---|---|---|---|---|
+
+For each objective, explicitly explain how the actual implementation supports the stated objective.
+
+Avoid claiming that a feature was successful or effective based only on the presence of source code. Distinguish implemented behavior from test-verified behavior.
+
+---
+
+# FINAL RESPONSE FORMAT
+
+Organize your final response in the following order.
+
+## SECTION 1 — System Audit Summary
+
+Identify the repository structure, technologies, relevant modules, available tests, and evidence inspected.
+
+## SECTION 2 — Revision 1 Findings
+
+Include the verified Decision Tree conditions, exact decision order, branches, scoring relationship, flowchart-ready mapping, and source references.
+
+## SECTION 3 — Revision 2 Findings
+
+Include the distinct validation workflows, duplicate-detection procedures, scholarship-conflict checks, process-flowchart node mappings, and separately connected algorithm references.
+
+## SECTION 4 — Revision 3 Findings
+
+Organize findings under:
+
+- Specific Objective 1
+- Specific Objective 2
+- Specific Objective 3
+
+For each, provide screenshot evidence locations, actual process sequence, code snippets, explanations, and manuscript editing instructions where the thesis is available.
+
+## SECTION 5 — Source Code Evidence Index
+
+Use this format:
+
+| Revision | Feature | File Path | Function or Class | Line Range | Verified Behavior |
+|---|---|---|---|---|---|
+
+Use precise repository-relative paths and line numbers where possible.
+
+## SECTION 6 — Thesis and Implementation Discrepancies
+
+List any differences between what the thesis claims and what the code actually implements.
+
+Clearly explain which claims can be supported, which require modification, and which remain unverified.
+
+## SECTION 7 — Unresolved Questions
+
+Identify only genuine gaps that prevent accurate documentation.
+
+For each gap, state exactly what additional source file, test result, configuration, or user confirmation is necessary.
+
+---
+
+# CRITICAL FINAL INSTRUCTIONS
+
+- Do not assume system functionality.
+- Do not invent algorithms, data, decision rules, or thresholds.
+- Do not produce generic scholarship-system workflows.
+- Do not mistake proposed functionality for implemented functionality.
+- Do not change any source code, UI, database, or configuration.
+- Do not include the Excel grantor-roster upload modification as a development task; Revision 4 is on hold.
+- You may inspect the existing roster-import functionality only where it is necessary to explain duplicate checking or external-record validation.
+- If an existing function is not used by the current application, do not present it as active functionality without evidence.
+- When code, comments, tests, and documentation conflict, identify the discrepancy.
+- Cite exact source locations for all important technical claims.
+- Use existing evidence and avoid asking questions that the codebase itself can answer.
+- If a process has multiple paths, document all material paths instead of inventing a simplified linear sequence.
+- Write explanations in formal research language, suitable for a BSIT capstone thesis.
+- Provide enough technical detail for another assistant to construct the final flowcharts and prepare precise manuscript revisions without needing to guess.
+
+**YOUR FINAL GOAL:**
+
+Produce one complete, evidence-based technical report covering all three revisions.
+
+The report must enable the researchers to:
+
+1. Draw an accurate Rule-Based Decision Tree flowchart.
+2. Draw an accurate student-record validation and duplicate-prevention process flowchart with separate algorithm references.
+3. Reorganize Chapter IV using real system screenshots, verified process flowcharts, and authentic source-code snippets.
+
+**Begin by examining the actual repository. Do not rely on assumptions or begin by writing hypothetical flowcharts.**

@@ -1,0 +1,9 @@
+Field,Raw weight,Rule
+Student ID,.32,Hardcoded in evaluate_scholar_duplicate
+Full name,.30,Hardcoded in evaluate_scholar_duplicate
+Email,.10,Hardcoded in evaluate_scholar_duplicate
+Contact number,.08,Hardcoded in evaluate_scholar_duplicate
+Course,.08,Hardcoded in evaluate_scholar_duplicate
+Year level,.04,Hardcoded in evaluate_scholar_duplicate
+City,.04,Hardcoded in evaluate_scholar_duplicate
+Province,.04,Hardcoded in evaluate_scholar_duplicate

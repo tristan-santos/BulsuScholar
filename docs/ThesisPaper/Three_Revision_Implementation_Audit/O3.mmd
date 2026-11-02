@@ -1,0 +1,27 @@
+flowchart TD
+  O3S(["Start student recommendation/lifecycle view"])
+  O3S --> O3R
+  O3R["Load candidates; rank using R1; merge page priorities"]
+  O3R --> O3A
+  O3A["Submit separate application W7 and complete applicable review stages"]
+  O3A --> O3M
+  O3M["Request and approve/download materials through W8 and materials workflow"]
+  O3M --> O3I
+  O3I[/"Sign and upload authorized signed SOE original"/]
+  O3I --> O3D
+  O3D{"Owner, commitment, signing stage and file guards pass?"}
+  O3D -->|"YES"| O3F
+  O3D -->|"NO"| O3X
+  O3F["Store signed-SOE version; mark upload and finish; allow later admin reopening"]
+  O3F --> O3C
+  O3C{"Authorized academic-cycle transition requested?"}
+  O3C -->|"YES"| O3V
+  O3C -->|"NO"| O3E
+  O3V["Snapshot departing cycle; restore target snapshot or reconstruct/start renewal"]
+  O3V -->|"success"| O3O
+  O3V -->|"stale/error"| O3X
+  O3O[/"Show current-cycle documents, tracking and renewal banner when incomplete"/]
+  O3O --> O3E
+  O3X[/"Return current operation error; do not claim transition or finish"/]
+  O3X --> O3E
+  O3E(["End lifecycle operation"])

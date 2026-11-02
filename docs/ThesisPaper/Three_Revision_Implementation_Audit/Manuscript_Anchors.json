@@ -1,0 +1,65 @@
+{
+  "objectives": [
+    "To develop a centralized scholarship management system that enables students to apply and submit required documents, while allowing grantors and administrators to manage scholarship postings, evaluate applicants, and process approvals efficiently within a unified platform.",
+    "To develop a system that validates student records, helps prevent multiple active scholarships, and supports duplication prevention using internal scholarship records and externally sourced scholarship records encoded into the system.",
+    "To develop a system that provides scholarship recommendations, manages the scholarship lifecycle (application, approval, active status, renewal, and completion), and monitors student compliance and academic performance."
+  ],
+  "anchors": [
+    {
+      "change": "Chapter IV opening",
+      "find": "The chapter is divided into three major sections.",
+      "paragraphIndices": [
+        625
+      ],
+      "instruction": "Replace only this organizational paragraph (direct-body paragraph625; printed125-126). Preserve the preliminary-study discussion as context."
+    },
+    {
+      "change": "Objective 1 organization",
+      "find": "II. Designing and Developing a Centralized Scholarship Management and Tracking System",
+      "paragraphIndices": [
+        632
+      ],
+      "instruction": "Use this exact heading as the start of the objective-based development portion (paragraph632). Preserve its valid introductory module text. Add the Objective1 subsection; move Figures4.1-4.4,4.6,4.8-4.10 and relevant approval Figure4.12 beside its discussion."
+    },
+    {
+      "change": "Objective 2 organization",
+      "find": "Figure 4.11. Duplicate Scholarship Validation",
+      "paragraphIndices": [
+        677
+      ],
+      "instruction": "Move the figure and its valid explanation (paragraph677; printed140-141) under a new Objective2 subsection. Add actual registration/profile/conflict screenshots from the capture matrix. Preserve test tables after implementation evidence; distinguish parser gaps."
+    },
+    {
+      "change": "Objective 3 organization",
+      "find": "Figure 4.5. Scholarship Recommendation",
+      "paragraphIndices": [
+        659
+      ],
+      "instruction": "Move recommendation Figure4.5 (paragraph659), tracking Figure4.7 and monitoring/renewal/notification Figures4.13-4.15 into Objective3; retain relevant report Figure4.16 where the monitoring discussion refers to it."
+    },
+    {
+      "change": "Recommendation terminology",
+      "find": "The system uses a rule-based Decision Tree algorithm based on predefined eligibility filtering and deterministic weighted recommendation scoring.",
+      "paragraphIndices": [
+        636
+      ],
+      "instruction": "Replace this sentence within the Scholarship Recommendation Module paragraph636 (printed127). Search other Decision Tree implementation claims individually; preserve correct ChapterIII formulas."
+    },
+    {
+      "change": "Evaluation organization",
+      "find": "Results and Discussion of the System's Evaluation",
+      "paragraphIndices": [
+        704
+      ],
+      "instruction": "Preserve this heading and all verified evaluation results (paragraph704 onward). Place COR/ROG functional evidence under Objective2 or explicitly cross-reference it; retain its limitations. Organize TAM and ISO results as Objectives4 and5 without inventing data."
+    },
+    {
+      "change": "Signed-SOE clarification",
+      "find": "The signed SOE is uploaded and verified before the scholarship cycle can be marked as completed.",
+      "paragraphIndices": [
+        592
+      ],
+      "instruction": "Clarify only this sentence in the Figure3.8 explanation (direct-body paragraph592; printed120-121). The word verified is ambiguous: the text does not explicitly state that a separate administrator must approve the upload. Preserve the administrator material-request review described earlier in the paragraph. Use finalize_signed_soe_submission as authority."
+    }
+  ]
+}

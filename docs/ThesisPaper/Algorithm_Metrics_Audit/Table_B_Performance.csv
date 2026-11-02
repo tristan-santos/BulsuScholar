@@ -1,0 +1,5 @@
+Evaluation Component,TP,FP,FN,TN,Precision (%),Recall (%),F1-Score (%),Accuracy (%)
+Levenshtein-based name classifier alone [U],-,-,-,-,-,-,-,-
+Backend weighted linkage + exact/contact rules [T]; ten synthetic fixture labels only,5,1,0,4,83.33,100.00,90.91,90.00
+Duplicate scholarship conflict detection [U],-,-,-,-,-,-,-,-
+Frontend ROG identity comparator [U]; advisory result,-,-,-,-,-,-,-,-

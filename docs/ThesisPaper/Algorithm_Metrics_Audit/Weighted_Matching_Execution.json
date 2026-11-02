@@ -1,0 +1,452 @@
+{
+  "executionUTC": "2026-10-28T04:28:01.667642+00:00",
+  "actualInvocation": "py -3.12 \"docs/ThesisPaper/Algorithm_Metrics_Audit/run_metrics_audit.py\"",
+  "function": "scripts/evaluate-solis-matching.py:evaluate",
+  "equivalentCLI": "py -3.12 scripts/evaluate-solis-matching.py --output docs/ThesisPaper/Algorithm_Metrics_Audit/Weighted_Matching_CLI.json",
+  "datasetKind": "synthetic",
+  "fixtureSha256": "58e156b6bd16e88e41f60d9c1b747784418dcfcc68ce087370f174e8c7b0f704",
+  "positiveClass": "Same synthetic identity according to the pre-existing fixture label",
+  "existingEvaluatorOutput": {
+    "algorithm": "Weighted Record Linkage with Levenshtein Similarity",
+    "sampleCount": 10,
+    "counts": {
+      "truePositive": 5,
+      "falsePositive": 1,
+      "trueNegative": 4,
+      "falseNegative": 0
+    },
+    "accuracy": 0.9,
+    "precision": 0.8333333333333334,
+    "recall": 1.0,
+    "cases": [
+      {
+        "caseId": "MATCH-001",
+        "expectedDuplicate": true,
+        "actualDuplicate": true,
+        "weightedScore": 1.0,
+        "nameSimilarity": 1.0,
+        "classification": "truePositive"
+      },
+      {
+        "caseId": "MATCH-002",
+        "expectedDuplicate": true,
+        "actualDuplicate": true,
+        "weightedScore": 0.6423562412342216,
+        "nameSimilarity": 0.26086956521739135,
+        "classification": "truePositive"
+      },
+      {
+        "caseId": "MATCH-003",
+        "expectedDuplicate": true,
+        "actualDuplicate": true,
+        "weightedScore": 1.0,
+        "nameSimilarity": 1.0,
+        "classification": "truePositive"
+      },
+      {
+        "caseId": "MATCH-004",
+        "expectedDuplicate": true,
+        "actualDuplicate": true,
+        "weightedScore": 0.9625,
+        "nameSimilarity": 0.95,
+        "classification": "truePositive"
+      },
+      {
+        "caseId": "MATCH-005",
+        "expectedDuplicate": true,
+        "actualDuplicate": true,
+        "weightedScore": 0.9605263157894737,
+        "nameSimilarity": 0.95,
+        "classification": "truePositive"
+      },
+      {
+        "caseId": "MATCH-006",
+        "expectedDuplicate": false,
+        "actualDuplicate": false,
+        "weightedScore": 0.3181818181818182,
+        "nameSimilarity": 0.09090909090909094,
+        "classification": "trueNegative"
+      },
+      {
+        "caseId": "MATCH-007",
+        "expectedDuplicate": false,
+        "actualDuplicate": false,
+        "weightedScore": 0.2822966507177034,
+        "nameSimilarity": 0.09090909090909094,
+        "classification": "trueNegative"
+      },
+      {
+        "caseId": "MATCH-008",
+        "expectedDuplicate": false,
+        "actualDuplicate": false,
+        "weightedScore": 0.043988269794721424,
+        "nameSimilarity": 0.09090909090909094,
+        "classification": "trueNegative"
+      },
+      {
+        "caseId": "MATCH-009",
+        "expectedDuplicate": false,
+        "actualDuplicate": false,
+        "weightedScore": 0,
+        "nameSimilarity": 0,
+        "classification": "trueNegative"
+      },
+      {
+        "caseId": "MATCH-010",
+        "expectedDuplicate": false,
+        "actualDuplicate": true,
+        "weightedScore": 0.9349593495934959,
+        "nameSimilarity": 1.0,
+        "classification": "falsePositive"
+      }
+    ]
+  },
+  "auditDerivedMetrics": {
+    "precision": 0.8333333333333334,
+    "recall": 1.0,
+    "f1": 0.9090909090909091,
+    "accuracy": 0.9
+  },
+  "zeroDenominatorChecks": [
+    {
+      "case": "empty",
+      "counts": {
+        "truePositive": 0,
+        "falsePositive": 0,
+        "trueNegative": 0,
+        "falseNegative": 0
+      },
+      "precision": null,
+      "recall": null,
+      "accuracy": null
+    },
+    {
+      "case": "no predicted/actual positives",
+      "counts": {
+        "truePositive": 0,
+        "falsePositive": 0,
+        "trueNegative": 1,
+        "falseNegative": 0
+      },
+      "precision": null,
+      "recall": null,
+      "accuracy": 1.0
+    }
+  ],
+  "decisions": [
+    {
+      "caseId": "MATCH-001",
+      "expectedDuplicate": true,
+      "actualDuplicate": true,
+      "weightedScore": 1.0,
+      "nameSimilarity": 1.0,
+      "classification": "truePositive",
+      "recordA": {
+        "studentId": "SYN-001",
+        "fullName": "Fixture Scholar One"
+      },
+      "recordB": {
+        "studentId": "SYN001",
+        "fullName": "Fixture Scholar One"
+      },
+      "appliedRule": "Exact normalized Student ID",
+      "fields": [
+        {
+          "label": "student ID",
+          "weight": 0.32,
+          "value": 1.0
+        },
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 1.0
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-002",
+      "expectedDuplicate": true,
+      "actualDuplicate": true,
+      "weightedScore": 0.6423562412342216,
+      "nameSimilarity": 0.26086956521739135,
+      "classification": "truePositive",
+      "recordA": {
+        "studentId": "SYN-002",
+        "fullName": "Fixture Scholar Two"
+      },
+      "recordB": {
+        "studentId": "SYN002",
+        "fullName": "Different Recorded Name"
+      },
+      "appliedRule": "Exact normalized Student ID",
+      "fields": [
+        {
+          "label": "student ID",
+          "weight": 0.32,
+          "value": 1.0
+        },
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 0.26086956521739135
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-003",
+      "expectedDuplicate": true,
+      "actualDuplicate": true,
+      "weightedScore": 1.0,
+      "nameSimilarity": 1.0,
+      "classification": "truePositive",
+      "recordA": {
+        "fullName": "Sample Student Three"
+      },
+      "recordB": {
+        "fullName": "Three Sample Student"
+      },
+      "appliedRule": "Name >= .82 AND weighted score >= .84",
+      "fields": [
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 1.0
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-004",
+      "expectedDuplicate": true,
+      "actualDuplicate": true,
+      "weightedScore": 0.9625,
+      "nameSimilarity": 0.95,
+      "classification": "truePositive",
+      "recordA": {
+        "fullName": "Example Student Four",
+        "email": "four@example.test"
+      },
+      "recordB": {
+        "fullName": "Example Studen Four",
+        "email": "four@example.test"
+      },
+      "appliedRule": "Exact contact + name >= .72",
+      "fields": [
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 0.95
+        },
+        {
+          "label": "email",
+          "weight": 0.1,
+          "value": 1.0
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-005",
+      "expectedDuplicate": true,
+      "actualDuplicate": true,
+      "weightedScore": 0.9605263157894737,
+      "nameSimilarity": 0.95,
+      "classification": "truePositive",
+      "recordA": {
+        "fullName": "Fixture Scholar Five",
+        "contactNumber": "09170000005"
+      },
+      "recordB": {
+        "fullName": "Fixture Scholar Fiv",
+        "contactNumber": "09170000005"
+      },
+      "appliedRule": "Exact contact + name >= .72",
+      "fields": [
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 0.95
+        },
+        {
+          "label": "contact number",
+          "weight": 0.08,
+          "value": 1.0
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-006",
+      "expectedDuplicate": false,
+      "actualDuplicate": false,
+      "weightedScore": 0.3181818181818182,
+      "nameSimilarity": 0.09090909090909094,
+      "classification": "trueNegative",
+      "recordA": {
+        "fullName": "Ana Santos",
+        "email": "household@example.test"
+      },
+      "recordB": {
+        "fullName": "Robert Cruz",
+        "email": "household@example.test"
+      },
+      "appliedRule": "No duplicate rule met",
+      "fields": [
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 0.09090909090909094
+        },
+        {
+          "label": "email",
+          "weight": 0.1,
+          "value": 1.0
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-007",
+      "expectedDuplicate": false,
+      "actualDuplicate": false,
+      "weightedScore": 0.2822966507177034,
+      "nameSimilarity": 0.09090909090909094,
+      "classification": "trueNegative",
+      "recordA": {
+        "fullName": "Ana Santos",
+        "contactNumber": "09170000000"
+      },
+      "recordB": {
+        "fullName": "Robert Cruz",
+        "contactNumber": "09170000000"
+      },
+      "appliedRule": "No duplicate rule met",
+      "fields": [
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 0.09090909090909094
+        },
+        {
+          "label": "contact number",
+          "weight": 0.08,
+          "value": 1.0
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-008",
+      "expectedDuplicate": false,
+      "actualDuplicate": false,
+      "weightedScore": 0.043988269794721424,
+      "nameSimilarity": 0.09090909090909094,
+      "classification": "trueNegative",
+      "recordA": {
+        "studentId": "SYN-101",
+        "fullName": "Ana Santos"
+      },
+      "recordB": {
+        "studentId": "OTHER-999",
+        "fullName": "Robert Cruz"
+      },
+      "appliedRule": "No duplicate rule met",
+      "fields": [
+        {
+          "label": "student ID",
+          "weight": 0.32,
+          "value": 0.0
+        },
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 0.09090909090909094
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-009",
+      "expectedDuplicate": false,
+      "actualDuplicate": false,
+      "weightedScore": 0,
+      "nameSimilarity": 0,
+      "classification": "trueNegative",
+      "recordA": {},
+      "recordB": {},
+      "appliedRule": "No duplicate rule met",
+      "fields": [],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    },
+    {
+      "caseId": "MATCH-010",
+      "expectedDuplicate": false,
+      "actualDuplicate": true,
+      "weightedScore": 0.9349593495934959,
+      "nameSimilarity": 1.0,
+      "classification": "falsePositive",
+      "recordA": {
+        "studentId": "SYN-201",
+        "fullName": "Shared Common Name",
+        "course": "BSIT",
+        "year": "4",
+        "city": "Baliwag",
+        "province": "Bulacan"
+      },
+      "recordB": {
+        "studentId": "SYN-202",
+        "fullName": "Shared Common Name",
+        "course": "BSIT",
+        "year": "4",
+        "city": "Baliwag",
+        "province": "Bulacan"
+      },
+      "appliedRule": "Name >= .82 AND weighted score >= .84",
+      "fields": [
+        {
+          "label": "student ID",
+          "weight": 0.32,
+          "value": 0.8333333333333334
+        },
+        {
+          "label": "name",
+          "weight": 0.3,
+          "value": 1.0
+        },
+        {
+          "label": "course",
+          "weight": 0.08,
+          "value": 1.0
+        },
+        {
+          "label": "year level",
+          "weight": 0.04,
+          "value": 1.0
+        },
+        {
+          "label": "city",
+          "weight": 0.04,
+          "value": 1.0
+        },
+        {
+          "label": "province",
+          "weight": 0.04,
+          "value": 1.0
+        }
+      ],
+      "groundTruthBasis": "Pre-existing synthetic fixture expectedDuplicate label; author-assigned intent, not independently adjudicated real identity",
+      "scope": "Combined backend pair decision; not standalone Levenshtein or award/conflict classification"
+    }
+  ]
+}

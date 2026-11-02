@@ -1,0 +1,29 @@
+flowchart TD
+  W6S(["Start verified account reconciliation"])
+  W6S --> W6P
+  W6P["Find applicable active roster candidates and normalized current state"]
+  W6P --> W6N
+  W6N{"Applicable roster exists?"}
+  W6N -->|"YES"| W6D
+  W6N -->|"NO"| W6O
+  W6D{"One candidate and official assignment guards pass?"}
+  W6D -->|"YES"| W6A
+  W6D -->|"NO"| W6C
+  W6A["Assign guarded official award or retain resolved existing award; synchronize affected state"]
+  W6A --> W6O
+  W6C["Record unresolved conflict; restrict affected application/waitlist actions"]
+  W6C --> W6I
+  W6I[/"Full administrator reviews conflict and supplies reasoned resolution"/]
+  W6I --> W6R
+  W6R{"Authorized resolution and current guards pass?"}
+  W6R -->|"YES"| W6A
+  W6R -->|"NO"| W6X
+  W6X[/"Return error; preserve unresolved conflict"/]
+  W6X --> W6E
+  W6O[/"Return no assignment, assigned or unchanged state"/]
+  W6O --> W6E
+  W6E(["End reconciliation/resolution"])
+  W6A1["Reference: Exact official identity, cycle and commitment guards"]
+  W6D -. "uses" .-> W6A1
+  W6A2["Reference: Protected conflict-resolution RPC"]
+  W6R -. "uses" .-> W6A2

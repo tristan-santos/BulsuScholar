@@ -1,0 +1,1251 @@
+[
+  {
+    "id": "R1",
+    "title": "Backend recommendation decision flow",
+    "nodes": [
+      [
+        "R1",
+        "R1S",
+        "Start recommendation",
+        "Start/End",
+        "none",
+        "next: R1I",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1I",
+        "Receive authorized stored student and supplied candidates",
+        "Input/Output",
+        "R1S",
+        "next: R1P",
+        "API"
+      ],
+      [
+        "R1",
+        "R1P",
+        "Parse GWA; compute input maximum roster and high-grade flag",
+        "Process",
+        "R1I",
+        "next: R1N",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1N",
+        "Another candidate?",
+        "Decision",
+        "R1P; R1X; R1L",
+        "YES: R1B; NO: R1O",
+        "Backend loop"
+      ],
+      [
+        "R1",
+        "R1B",
+        "applicationsBlocked is True?",
+        "Decision",
+        "R1N [YES]",
+        "YES: R1X; NO: R1D",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1D",
+        "Disabled and applyOpen is not True?",
+        "Decision",
+        "R1B [NO]",
+        "YES: R1X; NO: R1M",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1M",
+        "Parsed minimum GWA missing?",
+        "Decision",
+        "R1D [NO]",
+        "YES: R1F; NO: R1G",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1F",
+        "Resolve provider minimum; default 2.25",
+        "Process",
+        "R1M [YES]",
+        "next: R1G",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1G",
+        "Student GWA missing or greater than minimum?",
+        "Decision",
+        "R1M [NO]; R1F",
+        "YES: R1X; NO: R1V",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1X",
+        "Exclude this candidate; advance iterator",
+        "Process",
+        "R1B [YES]; R1D [YES]; R1G [YES]",
+        "next: R1N",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1V",
+        "Calculate factors and ordered reasons using C7-C13",
+        "Process",
+        "R1G [NO]",
+        "next: R1L",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1L",
+        "Apply label precedence C14-C15; append rounded score and criteria",
+        "Process",
+        "R1V",
+        "next: R1N",
+        "Backend"
+      ],
+      [
+        "R1",
+        "R1O",
+        "Sort score descending and return recommendations, algorithm and weights",
+        "Input/Output",
+        "R1N [NO]",
+        "next: R1E",
+        "API"
+      ],
+      [
+        "R1",
+        "R1E",
+        "End recommendation",
+        "Start/End",
+        "R1O",
+        "end",
+        "Backend"
+      ]
+    ],
+    "references": []
+  },
+  {
+    "id": "W1",
+    "title": "Signup academic validation and pending-account creation",
+    "nodes": [
+      [
+        "W1",
+        "W1S",
+        "Start registration",
+        "Start/End",
+        "none",
+        "next: W1I",
+        "Student"
+      ],
+      [
+        "W1",
+        "W1I",
+        "Submit profile, COR, applicable ROG and identity",
+        "Input/Output",
+        "W1S",
+        "next: W1P",
+        "Frontend/API"
+      ],
+      [
+        "W1",
+        "W1P",
+        "Read and parse private signup file batch",
+        "Process",
+        "W1I",
+        "next: W1D",
+        "Backend"
+      ],
+      [
+        "W1",
+        "W1D",
+        "Batch file and signup document rules pass?",
+        "Decision",
+        "W1P",
+        "YES: W1V; NO: W1X",
+        "Backend"
+      ],
+      [
+        "W1",
+        "W1V",
+        "Validate required signup data, availability and roster identity",
+        "Process",
+        "W1D [YES]",
+        "next: W1A",
+        "Backend"
+      ],
+      [
+        "W1",
+        "W1A",
+        "Final signup validation passes?",
+        "Decision",
+        "W1V",
+        "YES: W1C; NO: W1X",
+        "Backend"
+      ],
+      [
+        "W1",
+        "W1C",
+        "Create Auth registration and finalize pending signup records",
+        "Process",
+        "W1A [YES]",
+        "next: W1O",
+        "Auth/frontend/backend"
+      ],
+      [
+        "W1",
+        "W1O",
+        "Return pending account; send confirmation; activation continues in W2",
+        "Input/Output",
+        "W1C",
+        "next: W1E",
+        "API"
+      ],
+      [
+        "W1",
+        "W1X",
+        "Return specific correction or service failure; do not claim successful signup",
+        "Input/Output",
+        "W1D [NO]; W1A [NO]",
+        "next: W1E",
+        "API"
+      ],
+      [
+        "W1",
+        "W1E",
+        "End registration attempt",
+        "Start/End",
+        "W1O; W1X",
+        "end",
+        "System"
+      ]
+    ],
+    "references": [
+      [
+        "W1P",
+        "PDF text/layout and Final-column extraction",
+        "backend/document_scanner.py:926 onward",
+        "Extract document metadata; no authenticity guarantee"
+      ],
+      [
+        "W1V",
+        "Exact signup identity and roster-name comparison",
+        "backend/signup_service.py:575-612",
+        "Separate roster-ID lookup and name-consistency validation"
+      ]
+    ]
+  },
+  {
+    "id": "W2",
+    "title": "Email confirmation and account activation",
+    "nodes": [
+      [
+        "W2",
+        "W2S",
+        "Start confirmed-email callback",
+        "Start/End",
+        "none",
+        "next: W2P",
+        "Student/Auth"
+      ],
+      [
+        "W2",
+        "W2P",
+        "Verify confirmed identity and promote pending email state",
+        "Process",
+        "W2S",
+        "valid: W2D; invalid/error: W2X",
+        "Backend/RPC"
+      ],
+      [
+        "W2",
+        "W2D",
+        "Already active?",
+        "Decision",
+        "W2P [valid]",
+        "YES: W2O; NO: W2M",
+        "Backend"
+      ],
+      [
+        "W2",
+        "W2M",
+        "Manual account review enabled?",
+        "Decision",
+        "W2D [NO]",
+        "YES: W2I; NO: W2R",
+        "Backend"
+      ],
+      [
+        "W2",
+        "W2I",
+        "Administrator previews required signup documents and submits one approval",
+        "Input/Output",
+        "W2M [YES]",
+        "next: W2V",
+        "Full administrator"
+      ],
+      [
+        "W2",
+        "W2V",
+        "Confirmed email, required copies, acceptable reviews and admin preview gate pass?",
+        "Decision",
+        "W2I",
+        "YES: W2A; NO: W2B",
+        "Backend"
+      ],
+      [
+        "W2",
+        "W2R",
+        "All applicable required signup documents approved?",
+        "Decision",
+        "W2M [NO]",
+        "YES: W2A; NO: W2B",
+        "Backend"
+      ],
+      [
+        "W2",
+        "W2A",
+        "Activate account using approval RPC; attempt roster reconciliation W6",
+        "Process",
+        "W2V [YES]; W2R [YES]",
+        "success: W2W; failure: W2X",
+        "Database"
+      ],
+      [
+        "W2",
+        "W2W",
+        "For newly active account only, attempt welcome email; retain activation on mail failure",
+        "Process",
+        "W2A [success]",
+        "next: W2O",
+        "Backend"
+      ],
+      [
+        "W2",
+        "W2B",
+        "Keep pending; return missing review or readiness reason",
+        "Input/Output",
+        "W2V [NO]; W2R [NO]",
+        "next: W2E",
+        "API"
+      ],
+      [
+        "W2",
+        "W2X",
+        "Return structured activation failure",
+        "Input/Output",
+        "W2P [invalid/error]; W2A [failure]",
+        "next: W2E",
+        "API"
+      ],
+      [
+        "W2",
+        "W2O",
+        "Return active/already-active and separate delivery status",
+        "Input/Output",
+        "W2D [YES]; W2W",
+        "next: W2E",
+        "API"
+      ],
+      [
+        "W2",
+        "W2E",
+        "End activation attempt",
+        "Start/End",
+        "W2B; W2X; W2O",
+        "end",
+        "System"
+      ]
+    ],
+    "references": [
+      [
+        "W2V",
+        "Latest required document selection and preview audit",
+        "backend/student_account_review_service.py:147-223",
+        "Preview belongs to this administrator; download is not preview"
+      ]
+    ]
+  },
+  {
+    "id": "W3",
+    "title": "Document replacement versus profile review",
+    "nodes": [
+      [
+        "W3",
+        "W3S",
+        "Start document submission",
+        "Start/End",
+        "none",
+        "next: W3D",
+        "Student"
+      ],
+      [
+        "W3",
+        "W3D",
+        "Student Application Profile?",
+        "Decision",
+        "W3S",
+        "YES: W3F; NO: W3U",
+        "Frontend"
+      ],
+      [
+        "W3",
+        "W3F",
+        "Validate profile and signature; create pending private PDF revision",
+        "Process",
+        "W3D [YES]",
+        "success: W3I; failure: W3X",
+        "Backend"
+      ],
+      [
+        "W3",
+        "W3I",
+        "Administrator previews newest profile; chooses approve or reject",
+        "Input/Output",
+        "W3F [success]",
+        "next: W3R",
+        "Administrator"
+      ],
+      [
+        "W3",
+        "W3R",
+        "Newest pending version and valid decision/reason?",
+        "Decision",
+        "W3I",
+        "YES: W3V; NO: W3X",
+        "Backend"
+      ],
+      [
+        "W3",
+        "W3V",
+        "Record profile decision and review; synchronize application snapshot on approval",
+        "Process",
+        "W3R [YES]",
+        "next: W3O",
+        "Backend/database"
+      ],
+      [
+        "W3",
+        "W3U",
+        "Validate owner, type, size and document-specific parser/policy",
+        "Process",
+        "W3D [NO]",
+        "pass: W3A; failure: W3X",
+        "Backend"
+      ],
+      [
+        "W3",
+        "W3A",
+        "Store immutable replacement; record system approval; synchronize current pointers",
+        "Process",
+        "W3U [pass]",
+        "success: W3O; failure: W3X",
+        "Backend/database"
+      ],
+      [
+        "W3",
+        "W3O",
+        "Return version and its automatic or manual review status",
+        "Input/Output",
+        "W3V; W3A [success]",
+        "next: W3E",
+        "API"
+      ],
+      [
+        "W3",
+        "W3X",
+        "Return validation, stale-version or service error",
+        "Input/Output",
+        "W3F [failure]; W3R [NO]; W3U [failure]; W3A [failure]",
+        "next: W3E",
+        "API"
+      ],
+      [
+        "W3",
+        "W3E",
+        "End submission/review attempt",
+        "Start/End",
+        "W3O; W3X",
+        "end",
+        "System"
+      ]
+    ],
+    "references": [
+      [
+        "W3U",
+        "Document-specific parser and configured policy",
+        "backend/student_profile_service.py:885-967",
+        "Do not substitute stronger signup rules"
+      ],
+      [
+        "W3R",
+        "Latest-version and pending-state guards",
+        "backend/student_profile_service.py:999-1063",
+        "Avoid stale profile decisions"
+      ]
+    ]
+  },
+  {
+    "id": "W4",
+    "title": "Suspected duplicate handling: two independent consumers",
+    "nodes": [
+      [
+        "W4",
+        "W4S",
+        "Start student-list check or scholar edit",
+        "Start/End",
+        "none",
+        "next: W4I",
+        "Administrator/grantor"
+      ],
+      [
+        "W4",
+        "W4I",
+        "Supply permitted record set and candidate if editing",
+        "Input/Output",
+        "W4S",
+        "next: W4P",
+        "Frontend/API"
+      ],
+      [
+        "W4",
+        "W4P",
+        "Compare normalized records using this consumer matching rule",
+        "Process",
+        "W4I",
+        "next: W4D",
+        "Backend"
+      ],
+      [
+        "W4",
+        "W4D",
+        "Consumer duplicate rule matches?",
+        "Decision",
+        "W4P",
+        "YES: W4T; NO: W4N",
+        "Backend"
+      ],
+      [
+        "W4",
+        "W4T",
+        "Student-table grouping consumer?",
+        "Decision",
+        "W4D [YES]",
+        "YES: W4G; NO: W4B",
+        "Backend"
+      ],
+      [
+        "W4",
+        "W4G",
+        "Return canonical groups and duplicate IDs; UI hides repeated display rows",
+        "Process",
+        "W4T [YES]",
+        "next: W4E",
+        "Backend/frontend"
+      ],
+      [
+        "W4",
+        "W4B",
+        "Block scholar edit and show duplicate message",
+        "Input/Output",
+        "W4T [NO]",
+        "next: W4E",
+        "Frontend"
+      ],
+      [
+        "W4",
+        "W4N",
+        "Keep ordinary list display or allow edit to continue",
+        "Input/Output",
+        "W4D [NO]",
+        "next: W4E",
+        "Frontend"
+      ],
+      [
+        "W4",
+        "W4E",
+        "End duplicate check; no historical-row deletion",
+        "Start/End",
+        "W4G; W4B; W4N",
+        "end",
+        "System"
+      ]
+    ],
+    "references": [
+      [
+        "W4P",
+        "Weighted Record Linkage / Levenshtein",
+        "backend/grantor_algorithms.py:68-123",
+        "Pair result; consumer grouping adds score-only threshold"
+      ],
+      [
+        "W4G",
+        "Canonical record preference",
+        "backend/grantor_algorithms.py:194-203",
+        "Prefer real account, nonarchived and complete records"
+      ]
+    ]
+  },
+  {
+    "id": "W5",
+    "title": "Existing roster comparison and authoritative commit",
+    "nodes": [
+      [
+        "W5",
+        "W5S",
+        "Start existing manual or roster-entry workflow",
+        "Start/End",
+        "none",
+        "next: W5P",
+        "Grantor/admin"
+      ],
+      [
+        "W5",
+        "W5P",
+        "Authorize owner; validate cycle/program and compare proposed records",
+        "Process",
+        "W5S",
+        "next: W5D",
+        "Backend preview"
+      ],
+      [
+        "W5",
+        "W5D",
+        "Any invalid, ambiguous or conflicting row?",
+        "Decision",
+        "W5P",
+        "YES: W5B; NO: W5I",
+        "Backend"
+      ],
+      [
+        "W5",
+        "W5B",
+        "Return blocked preview with per-row reasons",
+        "Input/Output",
+        "W5D [YES]",
+        "next: W5E",
+        "API"
+      ],
+      [
+        "W5",
+        "W5I",
+        "Confirm ready batch",
+        "Input/Output",
+        "W5D [NO]",
+        "next: W5C",
+        "Grantor/admin"
+      ],
+      [
+        "W5",
+        "W5C",
+        "Commit RPC locks and rechecks current records and cycle",
+        "Process",
+        "W5I",
+        "pass: W5O; failure: W5X",
+        "Database"
+      ],
+      [
+        "W5",
+        "W5O",
+        "Return existing import, linked assignment or unlinked preserved row",
+        "Input/Output",
+        "W5C [pass]",
+        "next: W5E",
+        "API"
+      ],
+      [
+        "W5",
+        "W5X",
+        "Return conflict; transaction does not accept stale preview",
+        "Input/Output",
+        "W5C [failure]",
+        "next: W5E",
+        "API"
+      ],
+      [
+        "W5",
+        "W5E",
+        "End roster attempt",
+        "Start/End",
+        "W5B; W5O; W5X",
+        "end",
+        "System"
+      ]
+    ],
+    "references": [
+      [
+        "W5P",
+        "Exact ID / complete normalized profile key",
+        "backend/roster_workflow_service.py:141-146",
+        "Current-cycle cross-provider duplicate comparison"
+      ],
+      [
+        "W5C",
+        "Transactional roster guard",
+        "supabase/migrations/20261026034945_cross_grantor_roster_identity_guard.sql",
+        "Authoritative commit, not merely frontend warning"
+      ]
+    ]
+  },
+  {
+    "id": "W6",
+    "title": "Official award reconciliation and authorized resolution",
+    "nodes": [
+      [
+        "W6",
+        "W6S",
+        "Start verified account reconciliation",
+        "Start/End",
+        "none",
+        "next: W6P",
+        "Backend"
+      ],
+      [
+        "W6",
+        "W6P",
+        "Find applicable active roster candidates and normalized current state",
+        "Process",
+        "W6S",
+        "next: W6N",
+        "Database"
+      ],
+      [
+        "W6",
+        "W6N",
+        "Applicable roster exists?",
+        "Decision",
+        "W6P",
+        "YES: W6D; NO: W6O",
+        "Database"
+      ],
+      [
+        "W6",
+        "W6D",
+        "One candidate and official assignment guards pass?",
+        "Decision",
+        "W6N [YES]",
+        "YES: W6A; NO: W6C",
+        "Database"
+      ],
+      [
+        "W6",
+        "W6A",
+        "Assign guarded official award or retain resolved existing award; synchronize affected state",
+        "Process",
+        "W6D [YES]; W6R [YES]",
+        "next: W6O",
+        "Database"
+      ],
+      [
+        "W6",
+        "W6C",
+        "Record unresolved conflict; restrict affected application/waitlist actions",
+        "Process",
+        "W6D [NO]",
+        "next: W6I",
+        "Database"
+      ],
+      [
+        "W6",
+        "W6I",
+        "Full administrator reviews conflict and supplies reasoned resolution",
+        "Input/Output",
+        "W6C",
+        "next: W6R",
+        "Full administrator"
+      ],
+      [
+        "W6",
+        "W6R",
+        "Authorized resolution and current guards pass?",
+        "Decision",
+        "W6I",
+        "YES: W6A; NO: W6X",
+        "Backend/database"
+      ],
+      [
+        "W6",
+        "W6X",
+        "Return error; preserve unresolved conflict",
+        "Input/Output",
+        "W6R [NO]",
+        "next: W6E",
+        "API"
+      ],
+      [
+        "W6",
+        "W6O",
+        "Return no assignment, assigned or unchanged state",
+        "Input/Output",
+        "W6N [NO]; W6A",
+        "next: W6E",
+        "API"
+      ],
+      [
+        "W6",
+        "W6E",
+        "End reconciliation/resolution",
+        "Start/End",
+        "W6X; W6O",
+        "end",
+        "System"
+      ]
+    ],
+    "references": [
+      [
+        "W6D",
+        "Exact official identity, cycle and commitment guards",
+        "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:69-194",
+        "No fuzzy automatic award"
+      ],
+      [
+        "W6R",
+        "Protected conflict-resolution RPC",
+        "backend/roster_workflow_service.py:520-542",
+        "Candidate/existing/keep-current choices; reason required"
+      ]
+    ]
+  },
+  {
+    "id": "W7",
+    "title": "Application and waitlist submission",
+    "nodes": [
+      [
+        "W7",
+        "W7S",
+        "Start Apply action",
+        "Start/End",
+        "none",
+        "next: W7I",
+        "Student"
+      ],
+      [
+        "W7",
+        "W7I",
+        "Submit normalized scholarship, announcement and grantor identifiers",
+        "Input/Output",
+        "W7S",
+        "next: W7P",
+        "Frontend/API"
+      ],
+      [
+        "W7",
+        "W7P",
+        "Authorize owner and run current application, location and conflict guards",
+        "Process",
+        "W7I",
+        "next: W7D",
+        "Backend/database"
+      ],
+      [
+        "W7",
+        "W7D",
+        "Current eligibility permits application or waitlist?",
+        "Decision",
+        "W7P",
+        "YES: W7C; NO: W7X",
+        "Database"
+      ],
+      [
+        "W7",
+        "W7C",
+        "Application slot available?",
+        "Decision",
+        "W7D [YES]",
+        "YES: W7A; NO: W7W",
+        "Database"
+      ],
+      [
+        "W7",
+        "W7A",
+        "Reserve application and slot; attach profile snapshot where available",
+        "Process",
+        "W7C [YES]",
+        "next: W7O",
+        "Database/backend"
+      ],
+      [
+        "W7",
+        "W7W",
+        "Use existing waitlist policy and create eligible waitlist entry or return closure",
+        "Process",
+        "W7C [NO]",
+        "next: W7O",
+        "Database"
+      ],
+      [
+        "W7",
+        "W7O",
+        "Return application/waitlist result and refresh affected state",
+        "Input/Output",
+        "W7A; W7W",
+        "next: W7E",
+        "API"
+      ],
+      [
+        "W7",
+        "W7X",
+        "Return structured eligibility, access or conflict reason",
+        "Input/Output",
+        "W7D [NO]",
+        "next: W7E",
+        "API"
+      ],
+      [
+        "W7",
+        "W7E",
+        "End application attempt",
+        "Start/End",
+        "W7O; W7X",
+        "end",
+        "System"
+      ]
+    ],
+    "references": [
+      [
+        "W7P",
+        "Cycle-aware commitment and scope guards",
+        "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:447-582",
+        "Same authoritative blocker also applies to waitlist eligibility; ranking is not approval"
+      ]
+    ]
+  },
+  {
+    "id": "W8",
+    "title": "Stable Materials Request and transaction",
+    "nodes": [
+      [
+        "W8",
+        "W8S",
+        "Start Request Materials stage",
+        "Start/End",
+        "none",
+        "next: W8P",
+        "Student"
+      ],
+      [
+        "W8",
+        "W8P",
+        "Load and cache authoritative preflight for application",
+        "Process",
+        "W8S",
+        "next: W8D",
+        "Frontend/backend"
+      ],
+      [
+        "W8",
+        "W8D",
+        "Preflight eligible?",
+        "Decision",
+        "W8P",
+        "YES: W8I; NO: W8B",
+        "Frontend"
+      ],
+      [
+        "W8",
+        "W8I",
+        "Show stable confirmation; confirm request once",
+        "Input/Output",
+        "W8D [YES]",
+        "confirm: W8C; cancel: W8E",
+        "Student"
+      ],
+      [
+        "W8",
+        "W8C",
+        "Set Requesting; transaction locks and repeats shared readiness check",
+        "Process",
+        "W8I [confirm]",
+        "next: W8R",
+        "Frontend/database"
+      ],
+      [
+        "W8",
+        "W8R",
+        "Commit-time readiness still passes?",
+        "Decision",
+        "W8C",
+        "YES: W8A; NO: W8X",
+        "Database"
+      ],
+      [
+        "W8",
+        "W8A",
+        "Return existing request or create commitment and request; close competing pending applications",
+        "Process",
+        "W8R [YES]",
+        "next: W8O",
+        "Database"
+      ],
+      [
+        "W8",
+        "W8O",
+        "Return success; refresh materials, tracking, slots and inbox",
+        "Input/Output",
+        "W8A",
+        "next: W8E",
+        "Frontend/API"
+      ],
+      [
+        "W8",
+        "W8B",
+        "Keep request disabled; show blocker without repeated checking",
+        "Input/Output",
+        "W8D [NO]",
+        "next: W8E",
+        "Frontend"
+      ],
+      [
+        "W8",
+        "W8X",
+        "Return one structured conflict or service failure; no automatic request retry",
+        "Input/Output",
+        "W8R [NO]",
+        "next: W8E",
+        "API"
+      ],
+      [
+        "W8",
+        "W8E",
+        "End request attempt",
+        "Start/End",
+        "W8I [cancel]; W8O; W8B; W8X",
+        "end",
+        "System"
+      ]
+    ],
+    "references": [
+      [
+        "W8P",
+        "Normalized materials readiness",
+        "supabase/migrations/20261018090000_stable_materials_and_automatic_documents.sql:170 onward",
+        "Current COR/ROG or exemption, signup identity, approved profile revision and application/state requirements"
+      ],
+      [
+        "W8C",
+        "Idempotent locked transaction and shared preflight",
+        "supabase/migrations/20261012100000_repair_normalized_materials_workflow.sql:256 onward",
+        "Prevent stale client eligibility from authorizing conflicting commit"
+      ]
+    ]
+  },
+  {
+    "id": "O1",
+    "title": "Posting, application and evaluation overview",
+    "nodes": [
+      [
+        "O1",
+        "O1S",
+        "Start grantor posting",
+        "Start/End",
+        "none",
+        "next: O1I",
+        "Grantor"
+      ],
+      [
+        "O1",
+        "O1I",
+        "Enter announcement, image, requirements and application settings",
+        "Input/Output",
+        "O1S",
+        "next: O1D",
+        "Frontend/API"
+      ],
+      [
+        "O1",
+        "O1D",
+        "Owner, active grantor and posting fields valid?",
+        "Decision",
+        "O1I",
+        "YES: O1P; NO: O1X",
+        "Backend"
+      ],
+      [
+        "O1",
+        "O1P",
+        "Persist announcement; attempt/defer audience notification",
+        "Process",
+        "O1D [YES]",
+        "next: O1A",
+        "Backend/database"
+      ],
+      [
+        "O1",
+        "O1A",
+        "Student application or waitlist follows W7",
+        "Process",
+        "O1P",
+        "eligible application: O1R; blocked/waitlisted: O1E",
+        "Student/backend"
+      ],
+      [
+        "O1",
+        "O1R",
+        "Authorized evaluator reviews permitted application stage",
+        "Input/Output",
+        "O1A [eligible application]",
+        "next: O1V",
+        "Admin/grantor"
+      ],
+      [
+        "O1",
+        "O1V",
+        "Authorized current-stage decision valid?",
+        "Decision",
+        "O1R",
+        "YES: O1U; NO: O1X",
+        "Backend"
+      ],
+      [
+        "O1",
+        "O1U",
+        "Persist decision, release slot where applicable, update tracking/notifications",
+        "Process",
+        "O1V [YES]",
+        "next: O1E",
+        "Backend/database"
+      ],
+      [
+        "O1",
+        "O1X",
+        "Return validation/access/stage error",
+        "Input/Output",
+        "O1D [NO]; O1V [NO]",
+        "next: O1E",
+        "API"
+      ],
+      [
+        "O1",
+        "O1E",
+        "End posting/application/evaluation stage",
+        "Start/End",
+        "O1A [blocked/waitlisted]; O1U; O1X",
+        "end",
+        "System"
+      ]
+    ],
+    "references": []
+  },
+  {
+    "id": "O3",
+    "title": "Recommendation, materials, signed SOE and cycle renewal overview",
+    "nodes": [
+      [
+        "O3",
+        "O3S",
+        "Start student recommendation/lifecycle view",
+        "Start/End",
+        "none",
+        "next: O3R",
+        "Student"
+      ],
+      [
+        "O3",
+        "O3R",
+        "Load candidates; rank using R1; merge page priorities",
+        "Process",
+        "O3S",
+        "next: O3A",
+        "Frontend/backend"
+      ],
+      [
+        "O3",
+        "O3A",
+        "Submit separate application W7 and complete applicable review stages",
+        "Process",
+        "O3R",
+        "next: O3M",
+        "Student/admin/grantor"
+      ],
+      [
+        "O3",
+        "O3M",
+        "Request and approve/download materials through W8 and materials workflow",
+        "Process",
+        "O3A",
+        "next: O3I",
+        "Student/admin"
+      ],
+      [
+        "O3",
+        "O3I",
+        "Sign and upload authorized signed SOE original",
+        "Input/Output",
+        "O3M",
+        "next: O3D",
+        "Student"
+      ],
+      [
+        "O3",
+        "O3D",
+        "Owner, commitment, signing stage and file guards pass?",
+        "Decision",
+        "O3I",
+        "YES: O3F; NO: O3X",
+        "Backend/database"
+      ],
+      [
+        "O3",
+        "O3F",
+        "Store signed-SOE version; mark upload and finish; allow later admin reopening",
+        "Process",
+        "O3D [YES]",
+        "next: O3C",
+        "Database"
+      ],
+      [
+        "O3",
+        "O3C",
+        "Authorized academic-cycle transition requested?",
+        "Decision",
+        "O3F",
+        "YES: O3V; NO: O3E",
+        "Root/full admin"
+      ],
+      [
+        "O3",
+        "O3V",
+        "Snapshot departing cycle; restore target snapshot or reconstruct/start renewal",
+        "Process",
+        "O3C [YES]",
+        "success: O3O; stale/error: O3X",
+        "Database"
+      ],
+      [
+        "O3",
+        "O3O",
+        "Show current-cycle documents, tracking and renewal banner when incomplete",
+        "Input/Output",
+        "O3V [success]",
+        "next: O3E",
+        "Student frontend"
+      ],
+      [
+        "O3",
+        "O3X",
+        "Return current operation error; do not claim transition or finish",
+        "Input/Output",
+        "O3D [NO]; O3V [stale/error]",
+        "next: O3E",
+        "API"
+      ],
+      [
+        "O3",
+        "O3E",
+        "End lifecycle operation",
+        "Start/End",
+        "O3C [NO]; O3O; O3X",
+        "end",
+        "System"
+      ]
+    ],
+    "references": []
+  }
+]

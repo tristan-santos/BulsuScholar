@@ -1,0 +1,31 @@
+flowchart TD
+  W3S(["Start document submission"])
+  W3S --> W3D
+  W3D{"Student Application Profile?"}
+  W3D -->|"YES"| W3F
+  W3D -->|"NO"| W3U
+  W3F["Validate profile and signature; create pending private PDF revision"]
+  W3F -->|"success"| W3I
+  W3F -->|"failure"| W3X
+  W3I[/"Administrator previews newest profile; chooses approve or reject"/]
+  W3I --> W3R
+  W3R{"Newest pending version and valid decision/reason?"}
+  W3R -->|"YES"| W3V
+  W3R -->|"NO"| W3X
+  W3V["Record profile decision and review; synchronize application snapshot on approval"]
+  W3V --> W3O
+  W3U["Validate owner, type, size and document-specific parser/policy"]
+  W3U -->|"pass"| W3A
+  W3U -->|"failure"| W3X
+  W3A["Store immutable replacement; record system approval; synchronize current pointers"]
+  W3A -->|"success"| W3O
+  W3A -->|"failure"| W3X
+  W3O[/"Return version and its automatic or manual review status"/]
+  W3O --> W3E
+  W3X[/"Return validation, stale-version or service error"/]
+  W3X --> W3E
+  W3E(["End submission/review attempt"])
+  W3A1["Reference: Document-specific parser and configured policy"]
+  W3U -. "uses" .-> W3A1
+  W3A2["Reference: Latest-version and pending-state guards"]
+  W3R -. "uses" .-> W3A2

@@ -1,0 +1,34 @@
+flowchart TD
+  W2S(["Start confirmed-email callback"])
+  W2S --> W2P
+  W2P["Verify confirmed identity and promote pending email state"]
+  W2P -->|"valid"| W2D
+  W2P -->|"invalid/error"| W2X
+  W2D{"Already active?"}
+  W2D -->|"YES"| W2O
+  W2D -->|"NO"| W2M
+  W2M{"Manual account review enabled?"}
+  W2M -->|"YES"| W2I
+  W2M -->|"NO"| W2R
+  W2I[/"Administrator previews required signup documents and submits one approval"/]
+  W2I --> W2V
+  W2V{"Confirmed email, required copies, acceptable reviews and admin preview gate pass?"}
+  W2V -->|"YES"| W2A
+  W2V -->|"NO"| W2B
+  W2R{"All applicable required signup documents approved?"}
+  W2R -->|"YES"| W2A
+  W2R -->|"NO"| W2B
+  W2A["Activate account using approval RPC; attempt roster reconciliation W6"]
+  W2A -->|"success"| W2W
+  W2A -->|"failure"| W2X
+  W2W["For newly active account only, attempt welcome email; retain activation on mail failure"]
+  W2W --> W2O
+  W2B[/"Keep pending; return missing review or readiness reason"/]
+  W2B --> W2E
+  W2X[/"Return structured activation failure"/]
+  W2X --> W2E
+  W2O[/"Return active/already-active and separate delivery status"/]
+  W2O --> W2E
+  W2E(["End activation attempt"])
+  W2A1["Reference: Latest required document selection and preview audit"]
+  W2V -. "uses" .-> W2A1

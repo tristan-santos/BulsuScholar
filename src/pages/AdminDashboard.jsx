@@ -67,6 +67,7 @@ import ThemeToggle from "../components/ThemeToggle"
 import CustomSelect from "../components/CustomSelect"
 import RegionLocationChecklist from "../components/RegionLocationChecklist"
 import RosterConflictReview from "../components/RosterConflictReview"
+import AdminRosterGrantorSelect from "../components/AdminRosterGrantorSelect"
 import NotFoundPage from "./NotFoundPage"
 import { TABLE_PAGE_SIZE, paginateRows } from "../utils/tablePaginationUtils"
 import { isImportFieldAlreadyMapped, prepareScholarImport } from "../utils/scholarImportInference"
@@ -1271,8 +1272,7 @@ export default function AdminDashboard() {
 	const [adminScholarImportHeaders, setAdminScholarImportHeaders] = useState([])
 	const [adminScholarColumnMapping, setAdminScholarColumnMapping] = useState([])
 	const [selectedAdminScholarImportRows, setSelectedAdminScholarImportRows] = useState([])
-	const [highlightedAdminScholarGrantorRows, setHighlightedAdminScholarGrantorRows] = useState([])
-	const [adminScholarImportGrantorAssignments, setAdminScholarImportGrantorAssignments] = useState({})
+	const [adminImportGrantorSelection, setAdminImportGrantorSelection] = useState({ mode: "existing", grantorId: "" })
 	const [adminScholarImportFile, setAdminScholarImportFile] = useState(null)
 	const [adminScholarImportWarnings, setAdminScholarImportWarnings] = useState([])
 	const [adminRosterPreview, setAdminRosterPreview] = useState(null)
@@ -1286,7 +1286,7 @@ export default function AdminDashboard() {
 
 	useEffect(() => {
 		setAdminRosterPreview(null)
-	}, [adminScholarColumnMapping, adminScholarForm, adminScholarImportGrantorAssignments, adminScholarImportRows])
+	}, [adminScholarColumnMapping, adminScholarForm, adminImportGrantorSelection, adminScholarImportRows])
 
 	useEffect(() => {
 		if ((!adminScholarModalOpen && scholarshipTab !== "warning") || adminIdentityRef.current?.role !== "full_admin") return undefined
@@ -2311,7 +2311,7 @@ export default function AdminDashboard() {
 		() =>
 			Math.max(
 				adminScholarImportHeaders.length,
-				...adminScholarImportRows.map((row) => (row.raw?.length || 0) + 1),
+				...adminScholarImportRows.map((row) => row.raw?.length || 0),
 				0,
 			),
 		[adminScholarImportHeaders, adminScholarImportRows],
@@ -5281,8 +5281,7 @@ export default function AdminDashboard() {
 		setAdminScholarImportHeaders([])
 		setAdminScholarColumnMapping([])
 		setSelectedAdminScholarImportRows([])
-		setHighlightedAdminScholarGrantorRows([])
-		setAdminScholarImportGrantorAssignments({})
+		setAdminImportGrantorSelection({ mode: "existing", grantorId: "" })
 		setAdminScholarImportFile(null)
 		setAdminScholarImportWarnings([])
 	}
@@ -5393,19 +5392,20 @@ export default function AdminDashboard() {
 				toast.error("Import file must include at least one student row.")
 				return
 			}
-			const displayHeaders = ["", ...prepared.headers]
-			const fieldMap = ["", ...prepared.mapping]
+			const importColumns = prepared.headers.map((header, index) => ({ header, index }))
+				.filter(({ header }) => !prepared.hasHeader || !/^(grantor|provider|sponsor)(name|id)?$/.test(String(header).toLowerCase().replace(/[^a-z0-9]/g, "")))
+			const displayHeaders = importColumns.map(({ header }) => header)
+			const fieldMap = importColumns.map(({ index }) => prepared.mapping[index])
 			const parsedRows = prepared.rows.map((row, rowIndex) => ({
 				rowNumber: rowIndex + (prepared.hasHeader ? 2 : 1),
-				raw: row,
+				raw: importColumns.map(({ index }) => row[index]),
 			}))
 			setAdminScholarImportFile(file)
 			setAdminScholarImportHeaders(displayHeaders)
 			setAdminScholarColumnMapping(fieldMap)
 			setAdminScholarImportRows(parsedRows)
 			setSelectedAdminScholarImportRows([])
-			setHighlightedAdminScholarGrantorRows([])
-			setAdminScholarImportGrantorAssignments({})
+			setAdminImportGrantorSelection({ mode: "existing", grantorId: "" })
 			setAdminScholarImportWarnings([])
 			setAdminRosterPreview(null)
 			const detectedCount = prepared.mapping.filter(Boolean).length
@@ -5422,8 +5422,7 @@ export default function AdminDashboard() {
 		setAdminScholarColumnMapping([])
 		setAdminScholarImportRows([])
 		setSelectedAdminScholarImportRows([])
-		setHighlightedAdminScholarGrantorRows([])
-		setAdminScholarImportGrantorAssignments({})
+		setAdminImportGrantorSelection({ mode: "existing", grantorId: "" })
 		setAdminScholarImportWarnings([])
 		setAdminRosterPreview(null)
 	}
@@ -5436,31 +5435,8 @@ export default function AdminDashboard() {
 			toast.info("All import rows were removed. The importer was cleared and restarted.")
 			return
 		}
-		const removedRowNumbers = new Set(adminScholarImportRows.filter((_, index) => selected.has(index)).map((row) => row.rowNumber))
 		setAdminScholarImportRows((prev) => prev.filter((_, index) => !selected.has(index)))
 		setSelectedAdminScholarImportRows([])
-		setHighlightedAdminScholarGrantorRows((prev) => prev.filter((rowNumber) => !removedRowNumbers.has(rowNumber)))
-		setAdminScholarImportGrantorAssignments((prev) => {
-			const next = { ...prev }
-			removedRowNumbers.forEach((rowNumber) => delete next[rowNumber])
-			return next
-		})
-	}
-
-	const getAdminScholarImportGrantorLabel = (grantorId = "") =>
-		adminScholarGrantorOptions.find((grantor) => grantor.value === grantorId)?.label || ""
-
-	const applyAdminScholarImportGrantor = (grantorId = "") => {
-		setAdminScholarForm((prev) => ({ ...prev, grantorId }))
-		if (!adminScholarImportRows.length || !grantorId || highlightedAdminScholarGrantorRows.length === 0) return
-		setAdminScholarImportGrantorAssignments((prev) => {
-			const next = { ...prev }
-			highlightedAdminScholarGrantorRows.forEach((rowNumber) => {
-				next[rowNumber] = grantorId
-			})
-			return next
-		})
-		setHighlightedAdminScholarGrantorRows([])
 	}
 
 	const requestAdminConfirmation = (dialog = {}) =>
@@ -5479,11 +5455,10 @@ export default function AdminDashboard() {
 		const record = {
 			rowNumber: rowRecord.rowNumber,
 			raw: rowRecord.raw || [],
-			reservedGrantorColumn: "",
 		}
 		adminScholarColumnMapping.forEach((field, colIndex) => {
-			if (!field || colIndex === 0) return
-			record[field] = rowRecord.raw?.[colIndex - 1] || ""
+			if (!field || field === "grantorId" || field === "grantorInput") return
+			record[field] = rowRecord.raw?.[colIndex] || ""
 		})
 		if (!record.fullName) {
 			record.fullName = [record.fname, record.mname, record.lname].filter(Boolean).join(" ").trim()
@@ -5491,16 +5466,18 @@ export default function AdminDashboard() {
 		return record
 	}
 
-	const submitAdminScholarRows = async (inputRows = []) => {
+	const submitAdminScholarRows = async (inputRows = [], grantorSelection = null) => {
 		if (isBusy) return
 		setIsBusy(true)
 		try {
 			const rows = inputRows.map((row) => {
+				if (grantorSelection) return row
 				const grantor = resolveAdminScholarGrantor(row.grantorId || row.grantorInput)
 				return grantor ? { ...buildAdminScholarPayload(row, grantor), rowNumber: row.rowNumber, grantorId: grantor.id } : { ...row, grantorId: "" }
 			})
 			const preview = await previewRosterImportWorkflow({
 				rows,
+				...(grantorSelection ? { grantorSelection } : {}),
 				sourceFileName: adminScholarImportFile?.name || "Manual admin entry",
 			})
 			const warnings = (preview.rows || []).map((row) => `Row ${row.rowNumber}: ${row.reason}`)
@@ -5521,7 +5498,7 @@ export default function AdminDashboard() {
 			closeAdminScholarModal()
 		} catch (error) {
 			console.error("Unable to add admin scholars.", error)
-			toast.error("Unable to add scholars right now.")
+			toast.error(error.message || "Unable to add scholars right now.")
 		} finally {
 			setIsBusy(false)
 		}
@@ -5569,9 +5546,8 @@ export default function AdminDashboard() {
 			return
 		}
 		const mappedRows = adminScholarImportRows.map((row) => buildAdminScholarImportRecord(row))
-		const rowsMissingGrantor = mappedRows.filter((row) => !(adminScholarImportGrantorAssignments[row.rowNumber] || adminScholarForm.grantorId))
-		if (rowsMissingGrantor.length > 0) {
-			toast.error("Assign a grantor to every imported row, or select one grantor as the fallback.")
+		if (adminImportGrantorSelection.mode === "new" ? !adminImportGrantorSelection.confirmed : !adminImportGrantorSelection.grantorId) {
+			toast.error("Select one grantor or confirm a new grantor name for this file.")
 			return
 		}
 		const hasIdentityMapping = mappedRows.some((row) => row.studentId || row.fullName || row.fname || row.lname)
@@ -5579,13 +5555,7 @@ export default function AdminDashboard() {
 			toast.error("Map at least one identity column such as Student ID, Full Name, First Name, or Last Name.")
 			return
 		}
-		submitAdminScholarRows(
-			mappedRows.map((row) => ({
-				...row,
-				grantorId: adminScholarImportGrantorAssignments[row.rowNumber] || adminScholarForm.grantorId,
-				grantorInput: adminScholarImportGrantorAssignments[row.rowNumber] || adminScholarForm.grantorId,
-			})),
-		)
+		submitAdminScholarRows(mappedRows, adminImportGrantorSelection)
 	}
 
 	const downloadPreviewDocument = async () => {
@@ -10922,17 +10892,17 @@ export default function AdminDashboard() {
 				<div
 					className="admin-detail-backdrop admin-detail-backdrop--admin-scholar-import"
 					role="presentation"
-					onClick={(event) => closeFromModalBackdrop(event, closeAdminScholarModal, {
+					onClick={isBusy ? undefined : (event) => closeFromModalBackdrop(event, closeAdminScholarModal, {
 						hasUnsavedChanges:
 							JSON.stringify(adminScholarForm) !== JSON.stringify(ADMIN_SCHOLAR_FORM) ||
 							adminScholarImportRows.length > 0,
 					})}
 				>
 					<div className="admin-detail-shell admin-detail-shell--review admin-detail-shell--admin-scholar-import" onClick={(event) => event.stopPropagation()}>
-						<button type="button" className="admin-detail-close" onClick={closeAdminScholarModal} aria-label="Close add scholar modal">
+						<button type="button" className="admin-detail-close" disabled={isBusy} onClick={closeAdminScholarModal} aria-label="Close add scholar modal">
 							<HiX />
 						</button>
-						<div className="admin-detail-modal admin-detail-modal--review admin-detail-modal--admin-scholar-import" role="dialog" aria-modal="true" aria-label="Add scholars">
+						<div className={`admin-detail-modal admin-detail-modal--review admin-detail-modal--admin-scholar-import${adminScholarImportRows.length ? " admin-roster-batch" : ""}`} role="dialog" aria-modal="true" aria-label="Add scholars">
 							<header className="admin-scholar-import-head">
 								<span className="admin-scholar-import-head-icon" aria-hidden="true">
 									<HiOutlineCloudUpload />
@@ -10945,7 +10915,7 @@ export default function AdminDashboard() {
 									<span className="admin-scholar-import-count">{adminScholarImportRows.length} Rows</span>
 								) : null}
 							</header>
-							<div className="admin-scholar-import-body">
+							<div className="admin-scholar-import-body" inert={isBusy}>
 								<RosterConflictReview conflicts={adminRosterConflicts} busy={adminRosterConflictBusy} reasons={rosterResolutionReasons} onReasonChange={(id, reason) => setRosterResolutionReasons((current) => ({ ...current, [id]: reason }))} onResolve={resolveAdminRosterConflict} />
 								{adminScholarImportRows.length > 0 ? (
 									<>
@@ -10968,15 +10938,7 @@ export default function AdminDashboard() {
 												</button>
 											</div>
 										</div>
-										<label className="admin-scholar-import-grantor-select">
-											<span>{highlightedAdminScholarGrantorRows.length > 0 ? `Apply Grantor To ${highlightedAdminScholarGrantorRows.length} Highlighted Cell${highlightedAdminScholarGrantorRows.length === 1 ? "" : "s"}` : "Fallback Grantor"}</span>
-											<select value={highlightedAdminScholarGrantorRows.length > 0 ? "" : adminScholarForm.grantorId} onChange={(event) => applyAdminScholarImportGrantor(event.target.value)}>
-												<option value="">Select active grantor</option>
-												{adminScholarGrantorOptions.map((grantor) => (
-													<option key={grantor.value} value={grantor.value}>{grantor.label}</option>
-												))}
-											</select>
-										</label>
+										<AdminRosterGrantorSelect grantors={grantorRows} value={adminImportGrantorSelection} onChange={setAdminImportGrantorSelection} disabled={isBusy} />
 										<div className="admin-scholar-duplicate-policy-note">
 											<HiOutlineExclamation />
 											<span>Duplicate prevention is active. Same-grantor and cross-grantor duplicate scholarships are blocked before import.</span>
@@ -10998,12 +10960,11 @@ export default function AdminDashboard() {
 														{adminScholarImportColumns.map((column) => (
 															<th
 																key={`admin_import_column_${column.index}`}
-																className={column.index === 0 ? "admin-scholar-import-grantor-col" : undefined}
 															>
 																<select
 																	className="admin-scholar-import-select"
 																	value={adminScholarColumnMapping[column.index] || ""}
-																	disabled={column.index === 0}
+																		disabled={isBusy}
 																	onChange={(event) => {
 																		if (isImportFieldAlreadyMapped(adminScholarColumnMapping, event.target.value, column.index)) return
 																		setAdminScholarColumnMapping((prev) => {
@@ -11014,8 +10975,8 @@ export default function AdminDashboard() {
 																	}}
 																	aria-label={`Map ${column.header}`}
 																>
-																	{column.index === 0 ? <option value="">Grantor</option> : <option value="">Ignore Column</option>}
-																	{column.index === 0 ? null : ADMIN_IMPORT_MAPPABLE_FIELDS.map((field) => (
+																		<option value="">Ignore Column</option>
+																		{ADMIN_IMPORT_MAPPABLE_FIELDS.map((field) => (
 																		<option key={field.value} value={field.value} disabled={isImportFieldAlreadyMapped(adminScholarColumnMapping, field.value, column.index)}>{field.label}</option>
 																	))}
 																</select>
@@ -11044,22 +11005,8 @@ export default function AdminDashboard() {
 															{adminScholarImportColumns.map((column) => (
 																<td
 																	key={`admin_import_${row.rowNumber}_${column.index}`}
-																	className={[
-																		column.index === 0 ? "admin-scholar-import-grantor-col admin-scholar-import-grantor-cell" : "",
-																		column.index === 0 && adminScholarImportGrantorAssignments[row.rowNumber] ? "has-grantor" : "",
-																		column.index === 0 && highlightedAdminScholarGrantorRows.includes(row.rowNumber) ? "is-highlighted" : "",
-																	].filter(Boolean).join(" ")}
-																	onClick={column.index === 0 ? () => {
-																		setHighlightedAdminScholarGrantorRows((prev) =>
-																			prev.includes(row.rowNumber)
-																				? prev.filter((rowNumber) => rowNumber !== row.rowNumber)
-																				: [...prev, row.rowNumber],
-																		)
-																	} : undefined}
 																>
-																	{column.index === 0
-																		? getAdminScholarImportGrantorLabel(adminScholarImportGrantorAssignments[row.rowNumber])
-																		: row.raw?.[column.index - 1] || "-"}
+																	{row.raw?.[column.index] || "-"}
 																</td>
 															))}
 														</tr>
@@ -11320,13 +11267,13 @@ export default function AdminDashboard() {
 									</div>
 								) : null}
 								<div className="admin-scholar-import-actions">
-									<button type="button" className="admin-danger-btn" onClick={closeAdminScholarModal}>
+									<button type="button" className="admin-danger-btn" disabled={isBusy} onClick={closeAdminScholarModal}>
 										<HiX /> Cancel
 									</button>
 									<button
 										type="button"
 										className="admin-safe-btn"
-										disabled={isBusy}
+										disabled={isBusy || (adminScholarImportRows.length > 0 && (adminImportGrantorSelection.mode === "new" ? !adminImportGrantorSelection.confirmed : !adminImportGrantorSelection.grantorId))}
 										onClick={adminScholarImportRows.length > 0 ? submitAdminScholarImport : submitAdminScholarManual}
 									>
 										<HiOutlineCheckCircle /> {isBusy ? "Saving..." : adminRosterPreview?.status === "ready" ? "Commit Import" : adminScholarImportRows.length > 0 ? `Preview ${adminScholarImportRows.length} Scholars` : "Preview Scholar"}

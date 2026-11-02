@@ -1,0 +1,26 @@
+flowchart TD
+  W1S(["Start registration"])
+  W1S --> W1I
+  W1I[/"Submit profile, COR, applicable ROG and identity"/]
+  W1I --> W1P
+  W1P["Read and parse private signup file batch"]
+  W1P --> W1D
+  W1D{"Batch file and signup document rules pass?"}
+  W1D -->|"YES"| W1V
+  W1D -->|"NO"| W1X
+  W1V["Validate required signup data, availability and roster identity"]
+  W1V --> W1A
+  W1A{"Final signup validation passes?"}
+  W1A -->|"YES"| W1C
+  W1A -->|"NO"| W1X
+  W1C["Create Auth registration and finalize pending signup records"]
+  W1C --> W1O
+  W1O[/"Return pending account; send confirmation; activation continues in W2"/]
+  W1O --> W1E
+  W1X[/"Return specific correction or service failure; do not claim successful signup"/]
+  W1X --> W1E
+  W1E(["End registration attempt"])
+  W1A1["Reference: PDF text/layout and Final-column extraction"]
+  W1P -. "uses" .-> W1A1
+  W1A2["Reference: Exact signup identity and roster-name comparison"]
+  W1V -. "uses" .-> W1A2

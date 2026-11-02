@@ -1,0 +1,26 @@
+document,documentType,field,expected,actual,correct
+first-year-cor.pdf,cor,studentId,20260001,20260001,True
+first-year-cor.pdf,cor,firstName,Student,Student,True
+first-year-cor.pdf,cor,lastName,Test,Test,True
+first-year-cor.pdf,cor,fullName,Student Test,Student Test,True
+first-year-cor.pdf,cor,course,Bachelor of Science in Information Technology,Bachelor of Science in Information Technology,True
+first-year-cor.pdf,cor,year,1,1,True
+first-year-cor.pdf,cor,academicYear,2026-2027,2026-2027,True
+first-year-cor.pdf,cor,semester,1st,1st,True
+upper-year-cor.pdf,cor,studentId,20260002,20260002,True
+upper-year-cor.pdf,cor,firstName,Upper,Upper,True
+upper-year-cor.pdf,cor,lastName,Test,Test,True
+upper-year-cor.pdf,cor,fullName,Upper Test,Upper Test,True
+upper-year-cor.pdf,cor,course,Bachelor of Science in Information Technology,Bachelor of Science in Information Technology,True
+upper-year-cor.pdf,cor,year,2,2,True
+upper-year-cor.pdf,cor,academicYear,2026-2027,2026-2027,True
+upper-year-cor.pdf,cor,semester,1st,1st,True
+upper-year-rog.pdf,rog,studentId,20260002,20260002,True
+upper-year-rog.pdf,rog,firstName,Upper,Upper,True
+upper-year-rog.pdf,rog,lastName,Test,Test,True
+upper-year-rog.pdf,rog,fullName,Upper Test,Upper Test,True
+upper-year-rog.pdf,rog,course,Bachelor of Science in Information Technology,Bachelor of Science in Information Technology,True
+upper-year-rog.pdf,rog,year,1,1,True
+upper-year-rog.pdf,rog,academicYear,2025-2026,2025-2026,True
+upper-year-rog.pdf,rog,semester,2nd,2nd,True
+upper-year-rog.pdf,rog,gwa,1.50,1.50,True

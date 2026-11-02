@@ -1,0 +1,24 @@
+flowchart TD
+  W5S(["Start existing manual or roster-entry workflow"])
+  W5S --> W5P
+  W5P["Authorize owner; validate cycle/program and compare proposed records"]
+  W5P --> W5D
+  W5D{"Any invalid, ambiguous or conflicting row?"}
+  W5D -->|"YES"| W5B
+  W5D -->|"NO"| W5I
+  W5B[/"Return blocked preview with per-row reasons"/]
+  W5B --> W5E
+  W5I[/"Confirm ready batch"/]
+  W5I --> W5C
+  W5C["Commit RPC locks and rechecks current records and cycle"]
+  W5C -->|"pass"| W5O
+  W5C -->|"failure"| W5X
+  W5O[/"Return existing import, linked assignment or unlinked preserved row"/]
+  W5O --> W5E
+  W5X[/"Return conflict; transaction does not accept stale preview"/]
+  W5X --> W5E
+  W5E(["End roster attempt"])
+  W5A1["Reference: Exact ID / complete normalized profile key"]
+  W5P -. "uses" .-> W5A1
+  W5A2["Reference: Transactional roster guard"]
+  W5C -. "uses" .-> W5A2

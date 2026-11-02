@@ -1,0 +1,23 @@
+flowchart TD
+  O1S(["Start grantor posting"])
+  O1S --> O1I
+  O1I[/"Enter announcement, image, requirements and application settings"/]
+  O1I --> O1D
+  O1D{"Owner, active grantor and posting fields valid?"}
+  O1D -->|"YES"| O1P
+  O1D -->|"NO"| O1X
+  O1P["Persist announcement; attempt/defer audience notification"]
+  O1P --> O1A
+  O1A["Student application or waitlist follows W7"]
+  O1A -->|"eligible application"| O1R
+  O1A -->|"blocked/waitlisted"| O1E
+  O1R[/"Authorized evaluator reviews permitted application stage"/]
+  O1R --> O1V
+  O1V{"Authorized current-stage decision valid?"}
+  O1V -->|"YES"| O1U
+  O1V -->|"NO"| O1X
+  O1U["Persist decision, release slot where applicable, update tracking/notifications"]
+  O1U --> O1E
+  O1X[/"Return validation/access/stage error"/]
+  O1X --> O1E
+  O1E(["End posting/application/evaluation stage"])

@@ -1,0 +1,38 @@
+{
+  "generatedAtUTC": "2026-11-02T12:51:01.071502+00:00",
+  "scope": "Documentation only; no fresh runtime tests or production operations",
+  "task": {
+    "path": "docs/ThesisPaper/Task Extract the Figures.txt",
+    "sha256": "dde2ff9e3aee281140179739a6594d0f680eaf970b1231df8f924715ad6eb622"
+  },
+  "manuscripts": {
+    "docs/ThesisPaper/CENTRALIZED-SCHOLARSHIP-MANAGEMENT-AND-TRACKING-SYSTEM-FOR-BULACAN-STATE-UNIVERSITY.docx": "e2615db3714e853e1decffa1a9af11593d1a94cc1ad658d6f4a7b0712c7f905d",
+    "docs/ThesisPaper/CENTRALIZED-SCHOLARSHIP-MANAGEMENT-AND-TRACKING-SYSTEM-FOR-BULACAN-STATE-UNIVERSITY.pdf": "596a3405741d9b022c0bc7abeafdd5d8ec65d6bc5d80019a29a1e750ace2a8e7"
+  },
+  "sources": {
+    "backend/academic_cycle_service.py": "2e8e25843182a62d4e06436286df77f4d5ddac074b89a013c58938acfd3f3417",
+    "backend/document_scanner.py": "ed80f85b938d7ac770651e38e3ffc8f493045da7c26361ce1da8db2318a000fa",
+    "backend/grantor_algorithms.py": "9a15e0985e36b1e2b485a304f943086b1d43d193718d1a28af666eca36d9a2bc",
+    "backend/main.py": "15432fe1eb27a40f9b91d305a3e22d923aea9bd853d32159d79413a4c94a6f82",
+    "backend/roster_workflow_service.py": "3507361591d2cd066e0e6834e1f4d58973cfe8059396cdedb605e936187d4cce",
+    "backend/scholarship_choice_service.py": "8d7e62b4e54b912cdfda5dd8f793cd8af83a87729c5aef8c5650bac84933492d",
+    "backend/scholarship_rules.py": "d20ee3c363fa833acda17439f330db155eacbf9257712d8283ad40a3c319c4a6",
+    "backend/security_history_service.py": "849d9553619eeab6dc7de2fc690dbfea91efd415bd13f36d349043f7637f2699",
+    "backend/signup_service.py": "d3dcf641b5279754873a8187a32a3dffec995db8864f3cd99b3a3d73230da421",
+    "backend/student_profile_service.py": "4c2c3d6080cd8901adc21e1a6d943cb5880c1dd4345eef66a072c8431c5f6f67",
+    "backend/workflow_service.py": "f3b8da3b682a002efe076b3ba1f9009b2fa59360b935d4629a74799b8a315fb2",
+    "src/pages/StudentRecommendedScholarshipsPage.jsx": "a9b836763f34bea3dac6ca2a438912a207e4a8ddcbf2107391d809682d5008e7",
+    "src/services/recommendedScholarshipService.js": "9c4f7e188435abaae4f61656a52ae407d1c5a30b6af8a0f91cf17333e62b24fb",
+    "src/services/scholarshipChoiceService.js": "a4c7c57006c578a5d89e3d403a9e79937a6d99bb74f8c707e92bfd99a3ee2e0e",
+    "supabase/migrations/20260924125213_security_history_signed_soe.sql": "6c98f8ed78807ce2e04f1b45addc35cc818bf77168353c411a7ac75dfa4e42bc",
+    "supabase/migrations/20261011135631_reversible_academic_cycle_management.sql": "e173c1166ca632fdd3df07ab8ec921b2edb6683d571c93e4020f05953a61049f",
+    "supabase/migrations/20261012100000_repair_normalized_materials_workflow.sql": "48dd1c33c3475db205f50d00987c6f3aad6ca2e6b279791ce8505524c4c3bd26",
+    "supabase/migrations/20261018090000_stable_materials_and_automatic_documents.sql": "54411c58b76f4a5a7e2f30e92cf8cd3363d276771cfe584faa455b93f75b033d",
+    "supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql": "499bec8246244dc6b60f4e1a74e45ba896062bd9786b4660039874e53a059ab9",
+    "supabase/migrations/20261026034945_cross_grantor_roster_identity_guard.sql": "ec24b945943a2123f13e8de97f08dd287de98351b6d838a10e4d96af90c2fe70",
+    "supabase/migrations/20261026043502_manual_roster_name_and_course_matching.sql": "67e8f65758412df05bbcd86a54d8378c78aba4c939e8b797400da1f57d33d9e2"
+  },
+  "trackedFilesUnchangedDuringGeneration": 437,
+  "changedTrackedFiles": [],
+  "figures": "Mermaid source and exact-node tables; actual UI screenshots must be captured separately"
+}

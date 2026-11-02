@@ -1,0 +1,29 @@
+flowchart TD
+  W8S(["Start Request Materials stage"])
+  W8S --> W8P
+  W8P["Load and cache authoritative preflight for application"]
+  W8P --> W8D
+  W8D{"Preflight eligible?"}
+  W8D -->|"YES"| W8I
+  W8D -->|"NO"| W8B
+  W8I[/"Show stable confirmation; confirm request once"/]
+  W8I -->|"confirm"| W8C
+  W8I -->|"cancel"| W8E
+  W8C["Set Requesting; transaction locks and repeats shared readiness check"]
+  W8C --> W8R
+  W8R{"Commit-time readiness still passes?"}
+  W8R -->|"YES"| W8A
+  W8R -->|"NO"| W8X
+  W8A["Return existing request or create commitment and request; close competing pending applications"]
+  W8A --> W8O
+  W8O[/"Return success; refresh materials, tracking, slots and inbox"/]
+  W8O --> W8E
+  W8B[/"Keep request disabled; show blocker without repeated checking"/]
+  W8B --> W8E
+  W8X[/"Return one structured conflict or service failure; no automatic request retry"/]
+  W8X --> W8E
+  W8E(["End request attempt"])
+  W8A1["Reference: Normalized materials readiness"]
+  W8P -. "uses" .-> W8A1
+  W8A2["Reference: Idempotent locked transaction and shared preflight"]
+  W8C -. "uses" .-> W8A2

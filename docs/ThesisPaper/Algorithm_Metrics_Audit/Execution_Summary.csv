@@ -1,0 +1,8 @@
+Evidence,Input / expected basis,Actual outcome,Metric interpretation / classification
+Weighted_Matching_Execution.json,Ten existing expectedDuplicate-labeled synthetic pairs,TP5 FP1 FN0 TN4; existing metrics reproduced,[T] Combined pair result only; author-assigned fixture labels
+Matching_Regression_Execution.txt / Results.json,Existing Solis and roster workflow unittest contracts,48 tests; failures 0; errors 0,"[T] Regression success, not 48 true positives"
+Current_Roster_SQL_Execution.json,Seven new synthetic Boolean contract assertions using latest pure functions,7/7 assertions passed in PGlite,"[T] Exact canonicalization tests, not labeled conflict accuracy"
+Document_Reexecution/Existing_Test_Execution.txt,Existing isolated document/signup tests,"33 tests, 0 failures/errors",[T] Some parser calls are mocked; pass rate is not extraction accuracy
+Document_Reexecution/Field_Comparisons.csv,"Three existing TEST PDFs, independent visible-field transcription",COR16/16; ROG9/9 present values,[T] Tiny synthetic text-PDF field measurement only
+Document_Reexecution/Evaluation_Results.json,Fifteen real-parser/in-memory workflow scenarios,9 expected outcomes; 4 limitations; 2 OCR blocks,[T] Not a 15/15 success claim; not all registration/HTTP/database paths
+test-results/solis-system-cases.json,Previously recorded isolated transaction assertions,"27 recorded Pass entries inspected, not rerun in this audit","[U] Historical artifact, not fresh current SQL transaction acceptance"

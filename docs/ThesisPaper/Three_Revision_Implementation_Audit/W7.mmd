@@ -1,0 +1,24 @@
+flowchart TD
+  W7S(["Start Apply action"])
+  W7S --> W7I
+  W7I[/"Submit normalized scholarship, announcement and grantor identifiers"/]
+  W7I --> W7P
+  W7P["Authorize owner and run current application, location and conflict guards"]
+  W7P --> W7D
+  W7D{"Current eligibility permits application or waitlist?"}
+  W7D -->|"YES"| W7C
+  W7D -->|"NO"| W7X
+  W7C{"Application slot available?"}
+  W7C -->|"YES"| W7A
+  W7C -->|"NO"| W7W
+  W7A["Reserve application and slot; attach profile snapshot where available"]
+  W7A --> W7O
+  W7W["Use existing waitlist policy and create eligible waitlist entry or return closure"]
+  W7W --> W7O
+  W7O[/"Return application/waitlist result and refresh affected state"/]
+  W7O --> W7E
+  W7X[/"Return structured eligibility, access or conflict reason"/]
+  W7X --> W7E
+  W7E(["End application attempt"])
+  W7A1["Reference: Cycle-aware commitment and scope guards"]
+  W7P -. "uses" .-> W7A1

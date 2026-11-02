@@ -1,0 +1,15 @@
+﻿Workflow,Main node,Separate reference box,Source,Purpose
+W1,W1P,PDF text/layout and Final-column extraction,backend/document_scanner.py:926 onward,Extract document metadata; no authenticity guarantee
+W1,W1V,Exact signup identity and roster-name comparison,backend/signup_service.py:575-612,Separate roster-ID lookup and name-consistency validation
+W2,W2V,Latest required document selection and preview audit,backend/student_account_review_service.py:147-223,Preview belongs to this administrator; download is not preview
+W3,W3U,Document-specific parser and configured policy,backend/student_profile_service.py:885-967,Do not substitute stronger signup rules
+W3,W3R,Latest-version and pending-state guards,backend/student_profile_service.py:999-1063,Avoid stale profile decisions
+W4,W4P,Weighted Record Linkage / Levenshtein,backend/grantor_algorithms.py:68-123,Pair result; consumer grouping adds score-only threshold
+W4,W4G,Canonical record preference,backend/grantor_algorithms.py:194-203,"Prefer real account, nonarchived and complete records"
+W5,W5P,Exact ID / complete normalized profile key,backend/roster_workflow_service.py:141-146,Current-cycle cross-provider duplicate comparison
+W5,W5C,Transactional roster guard,supabase/migrations/20261026034945_cross_grantor_roster_identity_guard.sql,"Authoritative commit, not merely frontend warning"
+W6,W6D,"Exact official identity, cycle and commitment guards",supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:69-194,No fuzzy automatic award
+W6,W6R,Protected conflict-resolution RPC,backend/roster_workflow_service.py:520-542,Candidate/existing/keep-current choices; reason required
+W7,W7P,Cycle-aware commitment and scope guards,supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql:447-582,Same authoritative blocker also applies to waitlist eligibility; ranking is not approval
+W8,W8P,Normalized materials readiness,supabase/migrations/20261018090000_stable_materials_and_automatic_documents.sql:170 onward,"Current COR/ROG or exemption, signup identity, approved profile revision and application/state requirements"
+W8,W8C,Idempotent locked transaction and shared preflight,supabase/migrations/20261012100000_repair_normalized_materials_workflow.sql:256 onward,Prevent stale client eligibility from authorizing conflicting commit

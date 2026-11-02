@@ -1,0 +1,16 @@
+﻿Step,Decision point,Exact condition,YES,NO,Lines
+C1,High-grade preparation,student_gwa is not None and student_gwa <= 1.75,Popularity weight later = 30,Popularity weight later = 22,142-143
+C2,Next candidate?,for item in scholarships,Evaluate C3,Sort and return,"146,204-216"
+C3,Blocked?,"item.get(""applicationsBlocked"") is True",Exclude; next candidate,C4,147-148
+C4,Disabled without override?,applicationEnabled is False and applyOpen is not True,Exclude; next candidate,C5,149-150
+C5,Minimum missing?,_to_float(minimumGwa or minGwa or minimumGrade) is None,Use provider policy; fallback 2.25,Keep parsed minimum,152-155
+C6,GWA missing or too high?,student_gwa is None or student_gwa > minimum_gwa,Exclude; next candidate,Score candidate,156-161
+C7,Strong grade margin?,"max(0, minimum_gwa - student_gwa) >= 0.5",Strong GWA reason,Meets minimum GWA reason,160-165
+C8,Positive max roster?,max_roster > 0,Compute relative popularity,Popularity = 0,167-169
+C9,Positive candidate roster?,roster_count > 0,Add roster reason,No roster reason,170-171
+C10,Nearest reason?,location_score >= 22,Add nearest reason,C11,173-175
+C11,Same-area reason?,location_score >= 12,Add same-province reason,C12,176-177
+C12,Pampanga to Bulacan?,normalized student province == pampanga and candidate province == bulacan,Add reduced-priority reason,No location reason,178-179
+C13,Candidate image exists?,profileImageUrl or authorImageUrl or imageUrl,Completeness = 10,Completeness = 8,181-183
+C14,Top label?,raw score >= 78,Best Scholarship Match For You,Check label reason precedence,185-186;265-274
+C15,Label alternatives,"Nearest reason, else roster reason, else Strong GWA reason",First applicable near/popular/strong label,Available Scholarship Match,265-274

@@ -1,0 +1,24 @@
+flowchart TD
+  W4S(["Start student-list check or scholar edit"])
+  W4S --> W4I
+  W4I[/"Supply permitted record set and candidate if editing"/]
+  W4I --> W4P
+  W4P["Compare normalized records using this consumer matching rule"]
+  W4P --> W4D
+  W4D{"Consumer duplicate rule matches?"}
+  W4D -->|"YES"| W4T
+  W4D -->|"NO"| W4N
+  W4T{"Student-table grouping consumer?"}
+  W4T -->|"YES"| W4G
+  W4T -->|"NO"| W4B
+  W4G["Return canonical groups and duplicate IDs; UI hides repeated display rows"]
+  W4G --> W4E
+  W4B[/"Block scholar edit and show duplicate message"/]
+  W4B --> W4E
+  W4N[/"Keep ordinary list display or allow edit to continue"/]
+  W4N --> W4E
+  W4E(["End duplicate check; no historical-row deletion"])
+  W4A1["Reference: Weighted Record Linkage / Levenshtein"]
+  W4P -. "uses" .-> W4A1
+  W4A2["Reference: Canonical record preference"]
+  W4G -. "uses" .-> W4A2

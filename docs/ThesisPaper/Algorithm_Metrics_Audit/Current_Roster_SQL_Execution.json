@@ -1,0 +1,144 @@
+{
+  "startedAtUTC": "2026-10-28T04:43:13.805Z",
+  "finishedAtUTC": "2026-10-28T04:43:15.675Z",
+  "environment": "Ephemeral local PostgreSQL/PGlite; no network/database credentials",
+  "command": "\"node\" \"C:\\\\Users\\\\santo\\\\Downloads\\\\CapstoneSystem\\\\BulsuScholar\\\\docs\\\\ThesisPaper\\\\Algorithm_Metrics_Audit\\\\verify_current_roster_sql.mjs\" \"C:/Users/santo/AppData/Local/Temp/bulsu-mpin-test-tools/node_modules/@electric-sql/pglite/dist/index.js\"",
+  "nodeVersion": "v22.18.0",
+  "pgliteVersion": "0.5.11",
+  "sourceDefinitions": [
+    {
+      "file": "supabase/migrations/20261026043502_manual_roster_name_and_course_matching.sql",
+      "function": "roster_import_profile_key"
+    },
+    {
+      "file": "supabase/migrations/20261026034945_cross_grantor_roster_identity_guard.sql",
+      "function": "roster_import_matches"
+    }
+  ],
+  "results": [
+    {
+      "id": "SQL-AUD-01",
+      "condition": "Comma names, course alias and year normalization",
+      "left": {
+        "fullName": "Fixture Family, Sample",
+        "course": "Bachelor of Science in Information Technology",
+        "yearLevel": "4th Year"
+      },
+      "right": {
+        "fullName": "sample fixture family",
+        "course": "B.S.I.T.",
+        "yearLevel": "Year 4"
+      },
+      "expected": true,
+      "actual": true,
+      "status": "Pass",
+      "labelBasis": "New synthetic contract check, not an independently labeled scholarship-conflict case"
+    },
+    {
+      "id": "SQL-AUD-02",
+      "condition": "Different explicit IDs override coincident profiles",
+      "left": {
+        "fullName": "Fixture Family, Sample",
+        "course": "Bachelor of Science in Information Technology",
+        "yearLevel": "4th Year",
+        "studentId": "SYN-A"
+      },
+      "right": {
+        "fullName": "sample fixture family",
+        "course": "B.S.I.T.",
+        "yearLevel": "Year 4",
+        "studentId": "SYN-B"
+      },
+      "expected": false,
+      "actual": false,
+      "status": "Pass",
+      "labelBasis": "New synthetic contract check, not an independently labeled scholarship-conflict case"
+    },
+    {
+      "id": "SQL-AUD-03",
+      "condition": "One missing ID permits exact normalized profile fallback",
+      "left": {
+        "fullName": "Fixture Family, Sample",
+        "course": "Bachelor of Science in Information Technology",
+        "yearLevel": "4th Year",
+        "studentId": "SYN-A"
+      },
+      "right": {
+        "fullName": "sample fixture family",
+        "course": "B.S.I.T.",
+        "yearLevel": "Year 4"
+      },
+      "expected": true,
+      "actual": true,
+      "status": "Pass",
+      "labelBasis": "New synthetic contract check, not an independently labeled scholarship-conflict case"
+    },
+    {
+      "id": "SQL-AUD-04",
+      "condition": "Different course prevents fallback",
+      "left": {
+        "fullName": "Fixture Family, Sample",
+        "course": "Bachelor of Science in Information Technology",
+        "yearLevel": "4th Year"
+      },
+      "right": {
+        "fullName": "sample fixture family",
+        "course": "BSBA",
+        "yearLevel": "Year 4"
+      },
+      "expected": false,
+      "actual": false,
+      "status": "Pass",
+      "labelBasis": "New synthetic contract check, not an independently labeled scholarship-conflict case"
+    },
+    {
+      "id": "SQL-AUD-05",
+      "condition": "Different year prevents fallback",
+      "left": {
+        "fullName": "Fixture Family, Sample",
+        "course": "Bachelor of Science in Information Technology",
+        "yearLevel": "4th Year"
+      },
+      "right": {
+        "fullName": "sample fixture family",
+        "course": "B.S.I.T.",
+        "yearLevel": "3"
+      },
+      "expected": false,
+      "actual": false,
+      "status": "Pass",
+      "labelBasis": "New synthetic contract check, not an independently labeled scholarship-conflict case"
+    },
+    {
+      "id": "SQL-AUD-06",
+      "condition": "Incomplete profile cannot match",
+      "left": {
+        "fullName": "Fixture Sample"
+      },
+      "right": {
+        "fullName": "Fixture Sample"
+      },
+      "expected": false,
+      "actual": false,
+      "status": "Pass",
+      "labelBasis": "New synthetic contract check, not an independently labeled scholarship-conflict case"
+    },
+    {
+      "id": "SQL-AUD-07",
+      "condition": "Exact explicit ID comparison is not fuzzy/name approval",
+      "left": {
+        "studentId": "SYN-A",
+        "fullName": "Fixture One"
+      },
+      "right": {
+        "studentId": "SYN-A",
+        "fullName": "Fixture Different"
+      },
+      "expected": true,
+      "actual": true,
+      "status": "Pass",
+      "labelBasis": "New synthetic contract check, not an independently labeled scholarship-conflict case"
+    }
+  ],
+  "metricsScope": "Boolean normalization contracts only. Not a conflict precision/recall dataset."
+}

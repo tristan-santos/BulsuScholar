@@ -1,0 +1,47 @@
+{
+  "caseId": "MATCH-004",
+  "recordA": {
+    "fullName": "Example Student Four",
+    "email": "four@example.test"
+  },
+  "recordB": {
+    "fullName": "Example Studen Four",
+    "email": "four@example.test"
+  },
+  "normalizedNameA": "example student four",
+  "normalizedNameB": "example studen four",
+  "normalizedEmail": "fourexampletest",
+  "nameLengthA": 20,
+  "nameLengthB": 19,
+  "editDistance": 1,
+  "directSimilarity": 0.95,
+  "tokenSortedSimilarity": 0.95,
+  "actualResult": {
+    "isDuplicate": true,
+    "score": 0.9625,
+    "nameSimilarity": 0.95,
+    "reasons": [
+      "name",
+      "email"
+    ],
+    "exactStudentId": false,
+    "exactEmail": true,
+    "exactPhone": false,
+    "algorithm": "Weighted Record Linkage with Levenshtein Similarity",
+    "fields": [
+      {
+        "label": "name",
+        "weight": 0.3,
+        "value": 0.95
+      },
+      {
+        "label": "email",
+        "weight": 0.1,
+        "value": 1.0
+      }
+    ]
+  },
+  "groundTruth": true,
+  "groundTruthScope": "Pre-existing synthetic label; no real student identity verification performed",
+  "classification": "truePositive"
+}

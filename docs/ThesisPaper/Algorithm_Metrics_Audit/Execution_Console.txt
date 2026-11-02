@@ -1,0 +1,9 @@
+Command: py -3.12 "docs/ThesisPaper/Algorithm_Metrics_Audit/run_metrics_audit.py"
+UTC: 2026-10-28T04:28:01.667642+00:00
+Python: 3.12.2
+Weighted pair evaluator: TP=5, FP=1, FN=0, TN=4
+Precision=0.833333333333; Recall=1.000000000000; F1=0.909090909091; Accuracy=0.900000000000
+Scope: ten existing synthetic labeled pairs ONLY. F1 is audit-derived, not an existing production metric.
+Matching/roster regressions: 48; failures=0; errors=0
+Existing document evaluator exit code: 0; see fresh Document_Reexecution artifacts.
+Unchanged tracked files verified: 437. No production access or new dependencies.

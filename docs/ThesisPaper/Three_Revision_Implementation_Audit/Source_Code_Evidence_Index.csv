@@ -1,0 +1,39 @@
+﻿Revision,Feature,File path,Function/class,Line range,Verified behavior
+1,Core recommendation,backend/scholarship_rules.py,recommend_scholarships,137-216,"Exclusion filters, factor scores, label, descending rank; no automatic award"
+1,Location factor,backend/scholarship_rules.py,_location_score,239-262,"Flat province/city/barangay bonuses, not geographic distance or scope enforcement"
+1,Label precedence,backend/scholarship_rules.py,_recommendation_label,265-274,"78-point label first; then nearest, roster, strong GWA, available"
+1,Authorized recommendation API,backend/main.py,recommend_scholarships_endpoint,797-803,Stored authenticated student replaces caller student; candidates remain caller supplied
+1,Candidate loader and degraded fallback,src/services/recommendedScholarshipService.js,source block,76-303,Open announcement candidates; cached roster counts; selected network failures use local scoring
+1,Displayed priority,src/pages/StudentRecommendedScholarshipsPage.jsx,source block,150-224,Invitations and notices merged; duplicate scholarships removed; priority then score
+"1,2",Application commitment/cooldown,src/services/scholarshipChoiceService.js,source block,1-84,Frontend commitment and same-grantor checks are separate from core ranking
+"2,3",PDF extraction,backend/document_scanner.py,parse_pdf_document,926-970,PDF text and positioned year; ROG table/word/text Final-column fallback
+"2,3",Signup file batch,backend/signup_service.py,create_signup_document_batch,172-306,COR ID/cycle/title/policy; ROG title/previous period/academic concerns; no ROG owner-ID equality here
+"2,3",Final signup,backend/signup_service.py,validate_student_signup,633-820,"Required profile/contact data, batch, cycle/year checks, availability and roster identity conflicts"
+"2,3",Signup persistence,backend/signup_service.py,finalize_student_signup,896-1055,Pending signup and versioned document records; not an award
+"2,3",Signup roster names,backend/signup_service.py,is_similar_roster_name,549-562,Direct/sorted name similarity or last-token overlap after roster-ID lookup
+"2,3",Signup roster lookup,backend/signup_service.py,find_roster_identity_conflicts,575-612,Existing roster ID aliases then name comparison; not universal fuzzy-first matching
+"2,3",Profile replacement,backend/student_profile_service.py,upload_student_document,885-967,PDF parser/title/policy; automatic acceptance after system review; fewer cross-document checks than signup
+"2,3",Profile PDF submission,backend/student_profile_service.py,submit_student_profile,846-882,"Profile validation, signature, PDF revision and pending administrator review"
+"2,3",Administrator review,backend/student_profile_service.py,review_document_submission,999-1063,Latest profile and pending state; rejection reason; review record and summary update
+"2,3",Weighted duplicate pair,backend/grantor_algorithms.py,evaluate_scholar_duplicate,68-123,Exact identifiers plus normalized Levenshtein fields; duplicate Boolean and score
+"2,3",Duplicate groups,backend/grantor_algorithms.py,check_student_table_duplicates,206-262,Pair flag OR configured score threshold; canonical record and duplicate IDs
+"2,3",Roster preview,backend/roster_workflow_service.py,preview_roster_import,258-465,"Current cycle, provider/program, exact ID or complete normalized profile and conflict outcomes"
+"2,3",Roster commit,backend/roster_workflow_service.py,commit_roster_import,468-480,Delegates authoritative transaction; preview is not final authority
+"2,3",Conflict resolution,backend/roster_workflow_service.py,resolve_roster_conflict,520-542,"Full administrator, reason, explicit resolution via RPC"
+"2,3",Materials preflight,backend/roster_workflow_service.py,preflight_student_materials,545-560,Authorized application ID to shared SQL preflight
+"2,3",Materials request,backend/roster_workflow_service.py,request_student_materials,563-600,"Transactional request, structured conflict response"
+"2,3",Application reserve,backend/scholarship_choice_service.py,reserve_scholarship_application,72-113,Student owner identity and normalized IDs; reserve-or-waitlist RPC
+"2,3",Announcement creation,backend/workflow_service.py,create_grantor_announcement,1383-1468,Owned active grantor; image and application-slot validation; persisted announcement
+"2,3",Application review,backend/workflow_service.py,update_admin_review,734-897,Authorized updates and immutable identity restrictions; stage-specific decisions
+"2,3",Signed SOE,backend/security_history_service.py,upload_signed_soe,110-150,Private original and optional processing copy; authorized finalizer
+"2,3",Cycle transition,backend/academic_cycle_service.py,activate_academic_cycle,41-97,Cycle format and expected-current-cycle; reversible SQL transition
+"2,3",Cycle-aware award guards,supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql,source block,26-42,Active roster exclusions and awarded application statuses; completed remains an award
+"2,3",Official roster assignment,supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql,source block,69-194,"Exact identity, cycle, competing awards, locks, idempotency and application/state writes"
+"2,3",Reconciliation,supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql,source block,196-254,Verified account attempts assignment; multiple/error states record conflicts
+"2,3",Application blocker,supabase/migrations/20261023070747_solis_cycle_aware_roster_reconciliation.sql,source block,447-582,Current/unknown-cycle conflicts and commitment gate application/waitlist
+"2,3",Latest roster commit,supabase/migrations/20261026034945_cross_grantor_roster_identity_guard.sql,source block,1-40,"Exact ID when both available, otherwise complete normalized name/course/year; later commit definition"
+"2,3",Latest profile identity key,supabase/migrations/20261026043502_manual_roster_name_and_course_matching.sql,source block,1-32,"Course aliases, comma name normalization and year key"
+"2,3",Normalized readiness,supabase/migrations/20261018090000_stable_materials_and_automatic_documents.sql,source block,170-205,Current-cycle normalized document readiness; inspect full function for all blockers
+"2,3",Materials transaction,supabase/migrations/20261012100000_repair_normalized_materials_workflow.sql,source block,256-330,"Locks, idempotency, same preflight, commitment and competing application closure"
+"2,3",Signed SOE finish,supabase/migrations/20260924125213_security_history_signed_soe.sql,source block,291-326,Finalizer marks signed upload and finish together; admin may reopen separately
+"2,3",Reversible cycle,supabase/migrations/20261011135631_reversible_academic_cycle_management.sql,source block,145-175,Transition snapshots; restore stored state or reconstruct legacy cycle

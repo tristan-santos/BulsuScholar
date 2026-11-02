@@ -1,0 +1,20 @@
+Document Type,Evaluated Field,Extraction/Validation Method,Correct Results,Evaluated Total,Evaluation Metric,Measured Result
+COR,academicYear,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",2,2,Field-value accuracy [T],2/2 = 100.00% (synthetic only)
+COR,course,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",2,2,Field-value accuracy [T],2/2 = 100.00% (synthetic only)
+COR,firstName,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",2,2,Field-value accuracy [T],2/2 = 100.00% (synthetic only)
+COR,fullName,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",2,2,Field-value accuracy [T],2/2 = 100.00% (synthetic only)
+COR,lastName,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",2,2,Field-value accuracy [T],2/2 = 100.00% (synthetic only)
+COR,semester,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",2,2,Field-value accuracy [T],2/2 = 100.00% (synthetic only)
+COR,studentId,Exact trimmed Student ID,2,2,Field-value accuracy [T],2/2 = 100.00% (synthetic only)
+COR,year,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",2,2,Field-value accuracy [T],2/2 = 100.00% (synthetic only)
+ROG,academicYear,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+ROG,course,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+ROG,firstName,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+ROG,fullName,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+ROG,gwa,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+ROG,lastName,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+ROG,semester,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+ROG,studentId,Exact trimmed Student ID,1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+ROG,year,"Predeclared canonical string, trimmed/case-insensitive; parser labels/layout/regex",1,1,Field-value accuracy [T],1/1 = 100.00% (synthetic only)
+COR/ROG,OCR page transcription,No operational OCR run/independent OCR reference alignment,-,-,CER/WER [U],Not yet evaluated
+COR/ROG,Field detection (presence or entity values),No predeclared detection annotation/matching protocol executed,-,-,Precision/Recall/F1 [U],Not yet evaluated
